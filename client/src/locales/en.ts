@@ -3748,7 +3748,7 @@ export default {
             loadFailed: 'Load failed',
             noInstances: 'No instances on this host',
             search: 'Search',
-            instanceSearchPlaceholder: 'Search by instance ID, name, username, email, IP address...',
+            instanceSearchPlaceholder: 'Search by instance ID, name, username, email, IP address, public port...',
             imagesOnHost: 'Images on host {name}',
             noImagesOnHost: 'No images on this host',
             selectImagesToSync: 'Select images to sync to host {name}',

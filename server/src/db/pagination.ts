@@ -383,6 +383,9 @@ export async function getInstancesPaginated(options: PaginationOptions = {}): Pr
     // 如果是数字，添加实例ID精确匹配
     if (isNumeric) {
       searchConditions.push({ id: searchNum })
+      // 公网端口为整数字段，仅在搜索词是完整数字时精确匹配。
+      // 关系条件会同时覆盖 TCP 与 UDP 映射。
+      searchConditions.push({ portMappings: { some: { publicPort: searchNum } } })
     }
     
     baseWhere.OR = searchConditions

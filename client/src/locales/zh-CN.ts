@@ -3745,7 +3745,7 @@ export default {
             loadFailed: '加载失败',
             noInstances: '该节点上暂无实例',
             search: '搜索',
-            instanceSearchPlaceholder: '搜索实例ID、名称、用户名、邮箱、IP地址...',
+            instanceSearchPlaceholder: '搜索实例ID、名称、用户名、邮箱、IP地址、公网端口...',
             imagesOnHost: '节点 {name} 上的镜像',
             noImagesOnHost: '该节点上暂无镜像',
             selectImagesToSync: '选择要同步到节点 {name} 的镜像',

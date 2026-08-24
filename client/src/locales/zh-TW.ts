@@ -4559,7 +4559,7 @@ export default {
             loadFailed: '載入失敗',
             noInstances: '該節點上暫無實例',
             search: '搜尋',
-            instanceSearchPlaceholder: '搜尋實例ID、名稱、使用者名稱、電郵、IP地址...',
+            instanceSearchPlaceholder: '搜尋實例ID、名稱、使用者名稱、電郵、IP地址、公網連接埠...',
             imagesOnHost: '節點 {name} 上的映像檔',
             noImagesOnHost: '該節點上暫無映像檔',
             selectImagesToSync: '選擇要同步到節點 {name} 的映像檔',
