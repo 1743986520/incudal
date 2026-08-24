@@ -31,6 +31,11 @@ import {
 } from '../lib/host-agent-credentials.js'
 import { processAgentInstanceReport } from '../services/agent-instance-report.js'
 import { sendSecurityIncidentNotification } from '../services/traffic-notifier.js'
+import { buildHostAgentPolicyBundle } from '../services/host-network-policy.js'
+import {
+  BUILTIN_AUDIT_RULES, analyzeAuditData, parseConnections, parseProcesses, parseStartupItems,
+  type AuditRuleDefinition, type AuditRuleMatchType, type AuditRuleTarget, type AuditSeverity
+} from '../lib/instance-audit.js'
 import { sendBanNotificationEmail } from '../lib/mailer.js'
 import { clearAuthCache } from '../plugins/auth-decorators.js'
 import { invalidateUserAccessTokens, revokeAllUserRefreshTokens } from '../lib/security.js'
@@ -59,6 +64,8 @@ interface AgentHeartbeatBody {
   resources?: Record<string, unknown>
   metrics?: Record<string, unknown>
   securityEvents?: Array<Record<string, unknown>>
+  auditSnapshots?: Array<Record<string, unknown>>
+  networkPolicyStatus?: Record<string, unknown>
 }
 
 const securityIncidentDedupe = new Map<string, number>()
@@ -1500,6 +1507,61 @@ export default async function agentRoutes(fastify: FastifyInstance) {
       request.log.warn({ agentId: agent.agentId, hostId: agent.hostId, error }, 'Failed to process Agent security events')
     }
 
+    if (request.body.networkPolicyStatus && typeof request.body.networkPolicyStatus === 'object') {
+      const statusRevision = sanitizeShortString(request.body.networkPolicyStatus.revision, 128)
+      const applied = request.body.networkPolicyStatus.applied === true
+      const applyError = sanitizeShortString(request.body.networkPolicyStatus.error, 2000)
+      const policyBundle = await buildHostAgentPolicyBundle(agent.hostId)
+      if (statusRevision && statusRevision === policyBundle.revision) {
+        await prisma.hostNetworkPolicy.updateMany({
+          where: { hostId: agent.hostId, enabled: true },
+          data: { applyStatus: applied ? 'applied' : 'failed', applyError: applied ? null : applyError, appliedAt: applied ? now : null }
+        })
+      }
+    }
+
+    if (Array.isArray(request.body.auditSnapshots)) {
+      const hostOwner = await prisma.host.findUnique({ where: { id: agent.hostId }, select: { userId: true } })
+      if (!hostOwner) throw new Error('Agent host not found')
+      for (const rawSnapshot of request.body.auditSnapshots.slice(0, 32)) {
+        const incusId = sanitizeShortString(rawSnapshot?.incusId, 200)
+        if (!incusId) continue
+        const instance = await prisma.instance.findFirst({ where: { hostId: agent.hostId, incusId }, select: { id: true } })
+        if (!instance) continue
+        const processes = parseProcesses(sanitizeShortString(rawSnapshot.processOutput, 131072) || '')
+        const connections = parseConnections(sanitizeShortString(rawSnapshot.connectionOutput, 131072) || '')
+        const startupItems = parseStartupItems(sanitizeShortString(rawSnapshot.startupOutput, 131072) || '')
+        const [customRules, overrides, ignores] = await Promise.all([
+          prisma.instanceAuditRule.findMany({ where: { enabled: true, OR: [{ hostId: null }, { hostId: agent.hostId }] } }),
+          prisma.instanceAuditBuiltinRuleOverride.findMany({ where: { hostId: agent.hostId } }),
+          prisma.instanceAuditIgnore.findMany({ where: { hostId: agent.hostId, enabled: true, OR: [{ instanceId: null }, { instanceId: instance.id }] } })
+        ])
+        const overrideMap = new Map(overrides.map(item => [item.builtinRuleId, item]))
+        const normalizeSeverity = (value: string): AuditSeverity => ['info', 'low', 'medium', 'high'].includes(value) ? value as AuditSeverity : 'medium'
+        const normalizeMatch = (value: string): AuditRuleMatchType => ['contains', 'regex', 'exact'].includes(value) ? value as AuditRuleMatchType : 'contains'
+        const normalizeTargets = (value: unknown): AuditRuleTarget[] => Array.isArray(value) ? value.filter((item): item is AuditRuleTarget => ['process', 'network', 'startup'].includes(String(item))) : []
+        const builtinRules: AuditRuleDefinition[] = BUILTIN_AUDIT_RULES.map(rule => {
+          const override = overrideMap.get(rule.id)
+          return override ? { ...rule, name: override.name, severity: normalizeSeverity(override.severity), category: override.category, targetTypes: normalizeTargets(override.targetTypes), matchType: normalizeMatch(override.matchType), patternText: override.pattern, caseSensitive: override.caseSensitive, enabled: override.enabled, recommendation: override.recommendation } : rule
+        }).filter(rule => rule.enabled)
+        const rules: AuditRuleDefinition[] = [...builtinRules, ...customRules.map(rule => ({
+          id: `custom:${rule.id}`, name: rule.name, description: rule.description, severity: normalizeSeverity(rule.severity),
+          category: rule.category, targetTypes: normalizeTargets(rule.targetTypes), matchType: normalizeMatch(rule.matchType),
+          patternText: rule.pattern, caseSensitive: rule.caseSensitive, source: 'custom' as const, enabled: rule.enabled, recommendation: rule.recommendation
+        }))]
+        const analysis = analyzeAuditData({ processes, connections, startupItems, rules, ignores: ignores.map(ignore => ({ id: ignore.id, ruleId: ignore.ruleId, targetType: ignore.targetType as any, matchText: ignore.matchText, reason: ignore.reason, expiresAt: ignore.expiresAt })) })
+        await prisma.instanceAuditScan.create({ data: {
+          hostId: agent.hostId, instanceId: instance.id, userId: hostOwner.userId,
+          status: rawSnapshot.success === false ? 'failed' : 'success', capability: sanitizeShortString(rawSnapshot.capability, 80) || 'agent',
+          riskLevel: analysis.summary.riskLevel, findingCount: analysis.summary.findingCount,
+          ignoredCount: analysis.findings.filter(item => item.ignored).length, processCount: analysis.summary.processCount,
+          connectionCount: analysis.summary.connectionCount, listeningCount: analysis.summary.listeningCount,
+          startupItemCount: analysis.summary.startupItemCount, findings: analysis.findings.slice(0, 80) as any,
+          error: sanitizeShortString(rawSnapshot.error, 2000)
+        } })
+      }
+    }
+
     await agentModel.update({
       where: { agentId: agent.agentId },
       data: {
@@ -1512,12 +1574,20 @@ export default async function agentRoutes(fastify: FastifyInstance) {
       }
     })
 
+    const auditConfig = await prisma.hostAgentAuditConfig.findUnique({ where: { hostId: agent.hostId } })
     return {
       ok: true,
       serverTime: now.toISOString(),
       taskPollIntervalSeconds: 15,
       instanceReport,
-      upgrade: await buildAgentUpgradeInstruction(request, request.body, agent)
+      upgrade: await buildAgentUpgradeInstruction(request, request.body, agent),
+      monitoring: {
+        enabled: auditConfig?.enabled === true,
+        force: Boolean(auditConfig?.lastRequestedAt && (!agent.lastSeenAt || auditConfig.lastRequestedAt > agent.lastSeenAt)),
+        intervalSeconds: auditConfig?.intervalSeconds || 300,
+        batchSize: auditConfig?.batchSize || 8
+      },
+      networkPolicies: await buildHostAgentPolicyBundle(agent.hostId)
     }
   })
 }

@@ -10,13 +10,18 @@ import (
 	"syscall"
 	"time"
 
+	"incudal-agent/internal/audit"
 	"incudal-agent/internal/config"
 	"incudal-agent/internal/panel"
+	"incudal-agent/internal/policy"
 	"incudal-agent/internal/report"
 	"incudal-agent/internal/upgrade"
 )
 
 var version = "dev"
+var auditScanner audit.Scanner
+var lastPolicyStatus *policy.Status
+var pendingAuditSnapshots []any
 
 func main() {
 	configPath := flag.String("config", "/etc/incudal-agent/config.yaml", "agent config file")
@@ -33,8 +38,10 @@ func main() {
 
 	client := panel.New(cfg)
 	if *once {
-		if _, err := sendHeartbeat(ctx, client, cfg.HeartbeatIntervalSeconds); err != nil {
+		if result, err := sendHeartbeat(ctx, client, cfg.HeartbeatIntervalSeconds); err != nil {
 			log.Fatalf("heartbeat: %v", err)
+		} else {
+			processInstructions(ctx, result)
 		}
 		return
 	}
@@ -45,6 +52,7 @@ func main() {
 	if result, err := sendHeartbeat(ctx, client, cfg.HeartbeatIntervalSeconds); err != nil {
 		log.Printf("heartbeat failed: %v", err)
 	} else {
+		processInstructions(ctx, result)
 		scheduleAgentUpgrade(ctx, upgradeRunner, result, &upgradeInProgress)
 	}
 
@@ -59,6 +67,7 @@ func main() {
 			if result, err := sendHeartbeat(ctx, client, cfg.HeartbeatIntervalSeconds); err != nil {
 				log.Printf("heartbeat failed: %v", err)
 			} else {
+				processInstructions(ctx, result)
 				scheduleAgentUpgrade(ctx, upgradeRunner, result, &upgradeInProgress)
 			}
 		}
@@ -66,13 +75,41 @@ func main() {
 }
 
 func sendHeartbeat(ctx context.Context, client *panel.Client, heartbeatIntervalSeconds int) (panel.HeartbeatResult, error) {
-	result, err := client.Heartbeat(ctx, report.HeartbeatPayload(version, heartbeatIntervalSeconds))
+	payload := report.HeartbeatPayload(version, heartbeatIntervalSeconds)
+	if lastPolicyStatus != nil {
+		payload["networkPolicyStatus"] = policy.StatusMap(*lastPolicyStatus)
+	}
+	if len(pendingAuditSnapshots) > 0 {
+		payload["auditSnapshots"] = pendingAuditSnapshots
+		pendingAuditSnapshots = nil
+	}
+	result, err := client.Heartbeat(ctx, payload)
 	if err != nil {
 		return result, err
 	}
 	upgradeAvailable := result.Upgrade != nil && result.Upgrade.Available
 	log.Printf("heartbeat ok: status=%d latencyMs=%d upgrade=%t", result.StatusCode, result.LatencyMs, upgradeAvailable)
 	return result, nil
+}
+
+func processInstructions(ctx context.Context, result panel.HeartbeatResult) {
+	if result.NetworkPolicies != nil && (lastPolicyStatus == nil || lastPolicyStatus.Revision != result.NetworkPolicies.Revision) {
+		applyCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		status := policy.Apply(applyCtx, *result.NetworkPolicies)
+		cancel()
+		lastPolicyStatus = &status
+		if status.Applied {
+			log.Printf("network policies applied: revision=%s", status.Revision)
+		} else {
+			log.Printf("network policies failed: revision=%s error=%s", status.Revision, status.Error)
+		}
+	}
+	if result.Monitoring != nil && result.Monitoring.Enabled {
+		pendingAuditSnapshots = auditScanner.Scan(ctx, *result.Monitoring)
+		if len(pendingAuditSnapshots) > 0 {
+			log.Printf("agent audit batch collected: count=%d", len(pendingAuditSnapshots))
+		}
+	}
 }
 
 func scheduleAgentUpgrade(ctx context.Context, runner *upgrade.Runner, result panel.HeartbeatResult, upgradeInProgress *atomic.Bool) {

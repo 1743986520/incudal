@@ -690,6 +690,8 @@ model Host {
   instanceAuditIgnores   InstanceAuditIgnore[]
   instanceAuditScans     InstanceAuditScan[]
   instanceAuditActions   InstanceAuditAction[]
+  agentAuditConfig       HostAgentAuditConfig?
+  networkPolicies        HostNetworkPolicy[]
 
   @@unique([userId, name]) // 同一用户下名称唯一
   @@index([userId])
@@ -741,6 +743,46 @@ model HostAgentNonce {
   @@index([agentId])
   @@index([expiresAt])
   @@map("host_agent_nonces")
+}
+
+model HostAgentAuditConfig {
+  id              Int       @id @default(autoincrement())
+  hostId          Int       @unique @map("host_id")
+  enabled         Boolean   @default(false)
+  intervalSeconds Int       @default(300) @map("interval_seconds")
+  batchSize       Int       @default(8) @map("batch_size")
+  lastRequestedAt DateTime? @map("last_requested_at")
+  updatedById     Int?      @map("updated_by_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  host Host @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@map("host_agent_audit_configs")
+}
+
+model HostNetworkPolicy {
+  id              Int       @id @default(autoincrement())
+  hostId          Int       @map("host_id")
+  createdById     Int       @map("created_by_id")
+  name            String
+  policyType      String    @map("policy_type")
+  targetMode      String    @default("selected") @map("target_mode")
+  targetInstanceIds Json    @default("[]") @map("target_instance_ids")
+  config          Json      @default("{}")
+  enabled         Boolean   @default(false)
+  revision        Int       @default(1)
+  applyStatus     String    @default("pending") @map("apply_status")
+  applyError      String?   @db.Text @map("apply_error")
+  appliedAt       DateTime? @map("applied_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  host Host @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@index([hostId, enabled])
+  @@index([hostId, updatedAt(sort: Desc)])
+  @@map("host_network_policies")
 }
 
 model HostAddressAlias {

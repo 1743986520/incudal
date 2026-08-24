@@ -24,11 +24,40 @@ type Client struct {
 }
 
 type HeartbeatResult struct {
-	StatusCode int
-	Body       string
-	OK         bool
-	Upgrade    *UpgradeInstruction
-	LatencyMs  int64
+	StatusCode      int
+	Body            string
+	OK              bool
+	Upgrade         *UpgradeInstruction
+	LatencyMs       int64
+	Monitoring      *MonitoringInstruction
+	NetworkPolicies *NetworkPolicyBundle
+}
+
+type MonitoringInstruction struct {
+	Enabled         bool `json:"enabled"`
+	Force           bool `json:"force"`
+	IntervalSeconds int  `json:"intervalSeconds"`
+	BatchSize       int  `json:"batchSize"`
+}
+
+type NetworkPolicyBundle struct {
+	Revision string          `json:"revision"`
+	Policies []NetworkPolicy `json:"policies"`
+}
+
+type NetworkPolicy struct {
+	ID       int                   `json:"id"`
+	Revision int                   `json:"revision"`
+	Type     string                `json:"type"`
+	Config   map[string]any        `json:"config"`
+	Targets  []NetworkPolicyTarget `json:"targets"`
+}
+
+type NetworkPolicyTarget struct {
+	InstanceID   int    `json:"instanceId"`
+	InstanceName string `json:"instanceName"`
+	IncusID      string `json:"incusId"`
+	MAC          string `json:"mac"`
 }
 
 type UpgradeInstruction struct {
@@ -41,7 +70,9 @@ type UpgradeInstruction struct {
 }
 
 type heartbeatResponse struct {
-	Upgrade *UpgradeInstruction `json:"upgrade"`
+	Upgrade         *UpgradeInstruction    `json:"upgrade"`
+	Monitoring      *MonitoringInstruction `json:"monitoring"`
+	NetworkPolicies *NetworkPolicyBundle   `json:"networkPolicies"`
 }
 
 func New(cfg config.Config) *Client {
@@ -106,6 +137,8 @@ func (client *Client) Heartbeat(ctx context.Context, payload map[string]any) (He
 	var parsedResponse heartbeatResponse
 	if err := json.Unmarshal(responseBody, &parsedResponse); err == nil {
 		result.Upgrade = parsedResponse.Upgrade
+		result.Monitoring = parsedResponse.Monitoring
+		result.NetworkPolicies = parsedResponse.NetworkPolicies
 	}
 
 	var parsed map[string]any

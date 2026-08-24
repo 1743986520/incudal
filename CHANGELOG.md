@@ -81,6 +81,19 @@
 
 涉及位置：`server/src/services/host-health-monitor.ts`、`server/src/services/schedulers.ts`、`server/src/app.ts`。
 
+### Agent 定时审查与按需网络策略
+
+- 原有手动实例审查继续保留；手动扫描同时触发 Incus 即时扫描与 Agent 强制采集，减少单一路径不可用时的盲区。
+- 可在维护面板按节点启用 Agent 定时审查，并配置 60–86400 秒周期及每批 1–32 个实例。默认关闭，不产生额外扫描负载。
+- Agent 分批采集进程、网络连接、监听端口和启动项原始数据；面板统一套用内置规则、自定义规则、节点覆盖规则和白名单，并写入原有审查历史。
+- 新增按需 IP/CIDR 封锁、强制平台 DNS、域名返回指定 IP、NXDOMAIN 和零地址策略。
+- 策略可应用于单一、多选、当前全部或当前及今后全部实例；按实例 MAC 在宿主机强制执行，不修改客户系统。
+- DNS 策略要求操作者自行配置上游 DNS；可选同时阻挡 DoT TCP 853。DoH HTTPS 不默认阻挡。
+- 所有策略默认关闭，启用后才下发 Agent；停用或删除后 Agent 在下一次心跳撤销。面板展示 pending、applied、failed、disabled 状态及错误原因。
+- nftables 使用独立 `incudal_managed_policy` 表并以事务方式替换，避免破坏现有 NAT、端口转发和 PPS 防护规则。
+
+涉及位置：`agent/internal/audit/`、`agent/internal/policy/`、`server/src/services/host-network-policy.ts`、`server/src/routes/agent.ts`、`server/src/routes/hosts.ts`、`client/src/components/host/HostOpsTab.vue`。
+
 ### 公共页面与方案展示
 
 - 优化未登录落地页、公共导航、概览和方案预览，使其跟随原有主题和图标体系。

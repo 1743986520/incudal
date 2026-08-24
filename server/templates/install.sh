@@ -1162,7 +1162,7 @@ install_deps() {
     fi
 
     if [[ "$OS_ID" == "rocky" ]]; then
-        dnf install -y -q epel-release curl gnupg2 python3 iproute iptables nftables tar gzip xz >/dev/null 2>&1 || {
+        dnf install -y -q epel-release curl gnupg2 python3 iproute iptables nftables dnsmasq tar gzip xz >/dev/null 2>&1 || {
             error "Rocky Linux 基础依赖安装失败"
             return 1
         }
@@ -1211,7 +1211,7 @@ install_deps() {
     fi
 
     # 安装基础依赖
-    apt-get install -y -qq curl gpg >/dev/null 2>&1
+    apt-get install -y -qq curl gpg dnsmasq >/dev/null 2>&1
 
     # ---- Debian ZFS 安装策略 ----
     # 优先级: 预编译包(秒级) → DKMS 编译(分钟级) → 跳过(使用 dir 存储池)

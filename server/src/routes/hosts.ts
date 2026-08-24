@@ -69,6 +69,7 @@ import {
 } from '../lib/instance-audit.js'
 import { provisionManagedInstanceAsync } from '../lib/managed-instance-provision.js'
 import crypto from 'crypto'
+import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -602,6 +603,129 @@ export default async function hostRoutes(fastify: FastifyInstance) {
   })
 
   // 添加宿主机（管理员或满足准入条件的用户）
+  fastify.get<{ Params: { id: string } }>('/:id/ops/agent-monitoring', {
+    onRequest: [fastify.authenticate]
+  }, async (request, reply) => {
+    const hostId = Number(request.params.id)
+    if (!Number.isInteger(hostId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    const auth = await getAuthorizedOpsHost(hostId, request.user)
+    if (!auth.host) return reply.code(auth.status).send(auth.error)
+    const config = await prisma.hostAgentAuditConfig.findUnique({ where: { hostId } })
+    return { config: config || { hostId, enabled: false, intervalSeconds: 300, batchSize: 8, lastRequestedAt: null } }
+  })
+
+  fastify.put<{
+    Params: { id: string }
+    Body: { enabled: boolean; intervalSeconds?: number; batchSize?: number }
+  }>('/:id/ops/agent-monitoring', {
+    onRequest: [fastify.authenticate]
+  }, async (request, reply) => {
+    const hostId = Number(request.params.id)
+    if (!Number.isInteger(hostId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    const auth = await getAuthorizedOpsHost(hostId, request.user)
+    if (!auth.host) return reply.code(auth.status).send(auth.error)
+    const intervalSeconds = Math.max(60, Math.min(86400, Number(request.body.intervalSeconds) || 300))
+    const batchSize = Math.max(1, Math.min(32, Number(request.body.batchSize) || 8))
+    const config = await prisma.hostAgentAuditConfig.upsert({
+      where: { hostId },
+      create: { hostId, enabled: request.body.enabled === true, intervalSeconds, batchSize, updatedById: request.user.id },
+      update: { enabled: request.body.enabled === true, intervalSeconds, batchSize, updatedById: request.user.id }
+    })
+    await createLog(request.user.id, 'host', 'host.ops.agent_monitoring.update', `Updated Agent monitoring on host "${auth.host.name}": enabled=${config.enabled}, interval=${intervalSeconds}s, batch=${batchSize}`, 'success')
+    return { config }
+  })
+
+  fastify.get<{ Params: { id: string } }>('/:id/ops/network-policies', {
+    onRequest: [fastify.authenticate]
+  }, async (request, reply) => {
+    const hostId = Number(request.params.id)
+    if (!Number.isInteger(hostId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    const auth = await getAuthorizedOpsHost(hostId, request.user)
+    if (!auth.host) return reply.code(auth.status).send(auth.error)
+    const [policies, instances] = await Promise.all([
+      prisma.hostNetworkPolicy.findMany({ where: { hostId }, orderBy: { updatedAt: 'desc' } }),
+      prisma.instance.findMany({ where: { hostId, status: { not: 'deleted' } }, select: { id: true, name: true, incusId: true, status: true }, orderBy: { name: 'asc' } })
+    ])
+    return { policies, instances }
+  })
+
+  fastify.post<{
+    Params: { id: string }
+    Body: { name: string; policyType: string; targetMode?: string; targetInstanceIds?: number[]; config?: Record<string, unknown>; enabled?: boolean }
+  }>('/:id/ops/network-policies', {
+    onRequest: [fastify.authenticate]
+  }, async (request, reply) => {
+    const hostId = Number(request.params.id)
+    if (!Number.isInteger(hostId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    const auth = await getAuthorizedOpsHost(hostId, request.user)
+    if (!auth.host) return reply.code(auth.status).send(auth.error)
+    const name = String(request.body.name || '').trim().slice(0, 100)
+    if (!name) return reply.code(400).send({ error: '请填写策略名称' })
+    try {
+      const normalized = normalizeNetworkPolicyInput(request.body)
+      const validTargetCount = await prisma.instance.count({ where: { hostId, id: { in: normalized.targetInstanceIds }, status: { not: 'deleted' } } })
+      if (normalized.targetMode === 'selected' && validTargetCount !== normalized.targetInstanceIds.length) return reply.code(400).send({ error: '部分目标实例不属于当前节点' })
+      const policy = await prisma.hostNetworkPolicy.create({ data: {
+        hostId, createdById: request.user.id, name, policyType: normalized.policyType,
+        targetMode: normalized.targetMode, targetInstanceIds: normalized.targetInstanceIds,
+        config: normalized.config as any, enabled: request.body.enabled === true,
+        applyStatus: request.body.enabled === true ? 'pending' : 'disabled'
+      } })
+      await createLog(request.user.id, 'host', 'host.ops.network_policy.create', `Created ${policy.policyType} policy "${policy.name}" on host "${auth.host.name}"`, 'success')
+      return reply.code(201).send({ policy })
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  fastify.patch<{
+    Params: { id: string; policyId: string }
+    Body: { name?: string; targetMode?: string; targetInstanceIds?: number[]; config?: Record<string, unknown>; enabled?: boolean }
+  }>('/:id/ops/network-policies/:policyId', {
+    onRequest: [fastify.authenticate]
+  }, async (request, reply) => {
+    const hostId = Number(request.params.id)
+    const policyId = Number(request.params.policyId)
+    if (!Number.isInteger(hostId) || !Number.isInteger(policyId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    const auth = await getAuthorizedOpsHost(hostId, request.user)
+    if (!auth.host) return reply.code(auth.status).send(auth.error)
+    const existing = await prisma.hostNetworkPolicy.findFirst({ where: { id: policyId, hostId } })
+    if (!existing) return reply.code(404).send({ error: '网络策略不存在' })
+    try {
+      const normalized = normalizeNetworkPolicyInput({
+        policyType: existing.policyType,
+        targetMode: request.body.targetMode ?? existing.targetMode,
+        targetInstanceIds: request.body.targetInstanceIds ?? existing.targetInstanceIds,
+        config: request.body.config ?? existing.config
+      })
+      const policy = await prisma.hostNetworkPolicy.update({ where: { id: policyId }, data: {
+        name: request.body.name?.trim().slice(0, 100) || existing.name,
+        targetMode: normalized.targetMode, targetInstanceIds: normalized.targetInstanceIds,
+        config: normalized.config as any, enabled: request.body.enabled ?? existing.enabled,
+        revision: { increment: 1 }, applyStatus: (request.body.enabled ?? existing.enabled) ? 'pending' : 'disabled', applyError: null
+      } })
+      await createLog(request.user.id, 'host', 'host.ops.network_policy.update', `Updated network policy "${policy.name}" on host "${auth.host.name}"`, 'success')
+      return { policy }
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  fastify.delete<{ Params: { id: string; policyId: string } }>('/:id/ops/network-policies/:policyId', {
+    onRequest: [fastify.authenticate]
+  }, async (request, reply) => {
+    const hostId = Number(request.params.id)
+    const policyId = Number(request.params.policyId)
+    if (!Number.isInteger(hostId) || !Number.isInteger(policyId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    const auth = await getAuthorizedOpsHost(hostId, request.user)
+    if (!auth.host) return reply.code(auth.status).send(auth.error)
+    const existing = await prisma.hostNetworkPolicy.findFirst({ where: { id: policyId, hostId } })
+    if (!existing) return reply.code(404).send({ error: '网络策略不存在' })
+    await prisma.hostNetworkPolicy.delete({ where: { id: policyId } })
+    await createLog(request.user.id, 'host', 'host.ops.network_policy.delete', `Deleted network policy "${existing.name}" on host "${auth.host.name}"`, 'warning')
+    return { success: true }
+  })
+
   fastify.post<{
     Body: CreateHostRequest & {
       tags?: string[]
@@ -7466,6 +7590,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     if (instance.host_id !== hostId) {
       return reply.code(400).send({ error: '实例不属于该节点' })
     }
+
+    await prisma.hostAgentAuditConfig.upsert({
+      where: { hostId },
+      create: { hostId, enabled: false, intervalSeconds: 300, batchSize: 8, lastRequestedAt: new Date(), updatedById: user.id },
+      update: { lastRequestedAt: new Date(), updatedById: user.id }
+    })
 
     try {
       const client = await getIncusClient(host as Host)

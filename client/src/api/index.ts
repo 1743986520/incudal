@@ -1900,7 +1900,19 @@ const api = {
     opsAuditHistory: (hostId: number, params?: { instanceId?: number; pageSize?: number }): Promise<{
       scans: Array<any>
       actions: Array<any>
-    }> => http.get(`/hosts/${hostId}/ops/audit/history`, { params })
+    }> => http.get(`/hosts/${hostId}/ops/audit/history`, { params }),
+    opsAgentMonitoring: (hostId: number): Promise<{ config: any }> =>
+      http.get(`/hosts/${hostId}/ops/agent-monitoring`),
+    opsUpdateAgentMonitoring: (hostId: number, data: { enabled: boolean; intervalSeconds: number; batchSize: number }): Promise<{ config: any }> =>
+      http.put(`/hosts/${hostId}/ops/agent-monitoring`, data),
+    opsNetworkPolicies: (hostId: number): Promise<{ policies: Array<any>; instances: Array<any> }> =>
+      http.get(`/hosts/${hostId}/ops/network-policies`),
+    opsCreateNetworkPolicy: (hostId: number, data: Record<string, unknown>): Promise<{ policy: any }> =>
+      http.post(`/hosts/${hostId}/ops/network-policies`, data),
+    opsUpdateNetworkPolicy: (hostId: number, policyId: number, data: Record<string, unknown>): Promise<{ policy: any }> =>
+      http.patch(`/hosts/${hostId}/ops/network-policies/${policyId}`, data),
+    opsDeleteNetworkPolicy: (hostId: number, policyId: number): Promise<{ success: boolean }> =>
+      http.delete(`/hosts/${hostId}/ops/network-policies/${policyId}`)
   },
 
   // 套餐管理
