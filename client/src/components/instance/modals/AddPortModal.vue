@@ -86,8 +86,12 @@ function parsePortRange(input: string): { start: number; end: number } | null {
 }
 
 // 解析后的端口范围
-function parseBatchRange(startValue: string, endValue: string): { start: number; end: number } | null {
-  if (!/^\d+$/.test(startValue) || !/^\d+$/.test(endValue)) return null
+function hasBatchValue(value: string | number): boolean {
+  return String(value).trim().length > 0
+}
+
+function parseBatchRange(startValue: string | number, endValue: string | number): { start: number; end: number } | null {
+  if (!/^\d+$/.test(String(startValue)) || !/^\d+$/.test(String(endValue))) return null
   const start = Number(startValue)
   const end = Number(endValue)
   return start >= 1 && end <= 65535 && start <= end ? { start, end } : null
@@ -136,8 +140,8 @@ const quotaSufficient = computed(() => {
 const validationError = computed(() => {
   if (addMode.value === 'batch') {
     const values = Object.values(batchForm.value)
-    if (values.every(value => !value.trim())) return null
-    if (values.some(value => !value.trim())) return t('portModal.batchAllFieldsRequired')
+    if (values.every(value => !hasBatchValue(value))) return null
+    if (values.some(value => !hasBatchValue(value))) return t('portModal.batchAllFieldsRequired')
   } else if (!form.value.privatePort.trim()) return null
   
   if (!parsedPrivatePort.value) {
@@ -188,7 +192,7 @@ const validationError = computed(() => {
 // 是否可提交
 const canSubmit = computed(() => {
   const hasRequiredInput = addMode.value === 'batch'
-    ? Object.values(batchForm.value).every(value => value.trim())
+    ? Object.values(batchForm.value).every(hasBatchValue)
     : Boolean(form.value.privatePort.trim())
   return hasRequiredInput &&
          parsedPrivatePort.value && 
