@@ -45,7 +45,7 @@ import {
 
 // 金额一致性检查容差（分）
 const AMOUNT_TOLERANCE_CENTS = 1
-const SUPPORTED_RECHARGE_PROVIDER_TYPES = new Set(['yipay', 'heleket', 'recharge_card'])
+const SUPPORTED_RECHARGE_PROVIDER_TYPES = new Set(['yipay', 'heleket', 'manual', 'recharge_card'])
 const HELEKET_CALLBACK_IPS = ['31.133.220.8']
 
 function isRechargeProviderTypeSupported(type: string): boolean {
@@ -312,6 +312,9 @@ function getRechargeCallbackBaseUrl(): string {
 }
 
 function getRechargeOrderExpiryAt(providerType: string, config: Record<string, unknown>): Date {
+  if (providerType === 'manual') {
+    return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  }
   if (providerType === 'heleket') {
     const { heleketConfig } = buildHeleketConfig(config)
     return new Date(Date.now() + heleketConfig.lifetimeSeconds * 1000)
@@ -480,6 +483,10 @@ function validateActiveRechargeProvider(
   }
 
   if (provider.type === 'recharge_card') {
+    return { valid: true }
+  }
+
+  if (provider.type === 'manual') {
     return { valid: true }
   }
 
@@ -661,7 +668,10 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
         minAmount: Number(p.minAmount),
         maxAmount: p.maxAmount ? Number(p.maxAmount) : null,
         feeRate: Number(p.feeRate),
-        feeFixed: Number(p.feeFixed)
+        feeFixed: Number(p.feeFixed),
+        instructions: p.type === 'manual' && p.config && typeof p.config === 'object'
+          ? String((p.config as Record<string, unknown>).instructions || '')
+          : ''
       }))
       
       return { providers: safeProviders }
@@ -682,10 +692,11 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
       }
 
       const user = request.user!
-      const { providerId, amount, paymentMethod } = request.body as {
+      const { providerId, amount, paymentMethod, manualNote } = request.body as {
         providerId: number
         amount: number
         paymentMethod?: string  // 支付方式：alipay, wxpay 等
+        manualNote?: string
       }
 
       // 参数验证
@@ -720,6 +731,9 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
         request.log.warn({ providerId, type: provider.type, error: providerValidation.error }, '拒绝使用未安全实现的支付渠道创建订单')
         return reply.status(400).send({ error: providerValidation.error || '支付渠道不可用' })
       }
+      if (provider.type === 'manual' && (!manualNote?.trim() || manualNote.trim().length > 2000)) {
+        return reply.status(400).send({ error: '请填写付款说明（最多 2000 字）', code: 'MANUAL_NOTE_REQUIRED' })
+      }
 
       // 验证金额范围
       const validation = db.validateRechargeAmount(provider, normalizedAmount)
@@ -741,7 +755,9 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
       const providerConfigSnapshot = buildRechargeProviderConfigSnapshot(provider.type, providerConfig)
       const providerPaymentDetails = provider.type === 'heleket'
         ? buildHeleketInvoicePaymentDetails(orderNo, payableAmount, buildHeleketConfig(providerConfig).heleketConfig)
-        : { kind: provider.type }
+        : provider.type === 'manual'
+          ? { kind: 'manual', manual: { note: manualNote!.trim(), submittedAt: new Date().toISOString() } }
+          : { kind: provider.type }
       const paymentDetails = mergeRechargeAmountDetails(providerPaymentDetails, {
         amount: normalizedAmount,
         payableAmount,
@@ -801,7 +817,8 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
           id: provider.id,
           name: provider.name,
           type: provider.type,
-          methods: provider.methods
+          methods: provider.methods,
+          instructions: provider.type === 'manual' ? String(providerConfig.instructions || '') : ''
         },
         payUrl
       }

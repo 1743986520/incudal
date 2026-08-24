@@ -2351,6 +2351,10 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             invoiceCurrency: paymentInfo.invoiceCurrency,
             gatewayStatus: paymentInfo.gatewayStatus,
             gatewayStatusDescription: paymentInfo.gatewayStatusDescription,
+            manualNote: typeof (r as any).paymentDetails?.manual?.note === 'string'
+              ? (r as any).paymentDetails.manual.note
+              : null,
+            failReason: r.failReason,
             provider: r.provider ? {
               id: r.provider.id,
               name: r.provider.name,

@@ -712,6 +712,9 @@ model HostAgent {
   lastReport            Json?     @default("{}") @map("last_report")
   lastSeenAt            DateTime? @map("last_seen_at")
   lastHeartbeatIp       String?   @map("last_heartbeat_ip")
+  upgradeRequestedAt    DateTime? @map("upgrade_requested_at")
+  upgradeTargetVersion  String?   @map("upgrade_target_version")
+  upgradeForce          Boolean   @default(false) @map("upgrade_force")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 

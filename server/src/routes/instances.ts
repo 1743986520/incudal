@@ -1700,6 +1700,162 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     })
   })
 
+  // 重试创建失败的实例。失败创建已经退款，因此重试时按上次实付金额重新扣款。
+  fastify.post<{ Params: { id: string } }>('/:id/retry-provision', {
+    onRequest: [fastify.authenticate]
+  }, async (request, reply) => {
+    const instanceId = Number(request.params.id)
+    if (!Number.isInteger(instanceId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+
+    const instance = await prisma.instance.findFirst({
+      where: { id: instanceId, userId: request.user.id },
+      include: { host: true, package: true, packagePlan: true }
+    })
+    if (!instance) return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+    if (instance.status !== 'error') {
+      return reply.code(409).send({ error: '只有创建失败的实例可以重试', code: 'INSTANCE_NOT_RETRYABLE' })
+    }
+    if (!instance.package) {
+      return reply.code(409).send({ error: '原套餐已不存在，无法重试创建', code: 'PACKAGE_NOT_FOUND' })
+    }
+    if (instance.host.status !== 'online') {
+      return reply.code(503).send({ error: '原节点当前不在线，暂时无法重试', code: 'HOST_UNAVAILABLE' })
+    }
+
+    const snapshot = (instance.snapshottedSpecs || {}) as Record<string, unknown>
+    const instanceType = ((instance.package as any).instanceType || (instance.package as any).instance_type || 'container') as 'container' | 'vm'
+    const rootPassword = (instance.rootPassword ? decryptSensitiveData(instance.rootPassword) : null) || generateRandomPassword(16)
+    let ipv4Address: string | null = null
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const candidate = generateRandomIPv4()
+      if (!(await db.isIpAddressExistsOnHost(candidate, instance.hostId))) {
+        ipv4Address = candidate
+        break
+      }
+    }
+
+    const hostRecord = await db.getHostById(instance.hostId)
+    if (!hostRecord) return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+    const networkMode = instance.networkMode as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
+    const hostIpv6 = instance.host as any
+    let cloudInitConfig: Record<string, string>
+    if (instanceType === 'vm') {
+      const { generateVmConfig } = await import('../lib/incus-config-vm.js')
+      cloudInitConfig = generateVmConfig({
+        instanceName: instance.name,
+        instanceIdSeed: instance.incusId,
+        imageAlias: instance.image,
+        rootPassword,
+        sshKey: '',
+        network: ipv4Address ? {
+          ipAddress: `${ipv4Address}/22`, gateway: '10.10.0.1', dns: ['10.10.0.1']
+        } : undefined
+      }).configPayload
+    } else {
+      cloudInitConfig = generateIncusConfig({
+        instanceName: instance.name,
+        imageAlias: instance.image,
+        rootPassword,
+        sshKey: '',
+        networkMode,
+        type: 'container',
+        network: ipv4Address ? {
+          ipAddress: `${ipv4Address}/22`, gateway: '10.10.0.1', dns: ['10.10.0.1']
+        } : undefined
+      }).configPayload
+    }
+
+    const portCount = ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode)
+      ? (instance.portLimit || 0) : 0
+    const claimed = await prisma.instance.updateMany({
+      where: { id: instanceId, userId: request.user.id, status: 'error' },
+      data: { status: 'creating', ipv4: null, ipv6: null, version: { increment: 1 } }
+    })
+    if (claimed.count !== 1) {
+      return reply.code(409).send({ error: '实例状态已变化，请刷新后重试', code: 'INSTANCE_STATE_CHANGED' })
+    }
+
+    let resourcesReserved = false
+    try {
+      await db.reserveResources({
+        hostId: instance.hostId, cpu: instance.cpu, memory: instance.memory,
+        disk: instance.disk, portCount
+      })
+      resourcesReserved = true
+
+      const lastPurchase = await prisma.instanceBillingRecord.findFirst({
+        where: { instanceId, type: 'newPurchase' }, orderBy: { createdAt: 'desc' }
+      })
+      const retryAmount = lastPurchase ? Math.max(0, Number(lastPurchase.amount)) : 0
+      if (retryAmount > 0) {
+        await prisma.$transaction(async tx => {
+          const user = await tx.user.findUnique({ where: { id: request.user.id }, select: { balance: true } })
+          if (!user || Number(user.balance) < retryAmount) throw new Error('BALANCE_INSUFFICIENT')
+          const balanceBefore = Number(user.balance)
+          const balanceAfter = Number((balanceBefore - retryAmount).toFixed(2))
+          await tx.user.update({ where: { id: request.user.id }, data: { balance: balanceAfter } })
+          const balanceLog = await tx.balanceLog.create({
+            data: { userId: request.user.id, type: 'consume', amount: -retryAmount, balanceBefore, balanceAfter, instanceId, remark: `重试创建实例：${instance.name}` }
+          })
+          const now = new Date()
+          const periodEnd = new Date(now)
+          periodEnd.setMonth(periodEnd.getMonth() + Math.max(1, instance.billingCycle || lastPurchase?.months || 1))
+          await tx.instanceBillingRecord.create({
+            data: { instanceId, userId: request.user.id, type: 'newPurchase', amount: retryAmount, months: instance.billingCycle || lastPurchase?.months || 1, periodStart: now, periodEnd, balanceLogId: balanceLog.id, remark: '创建失败后重新创建' }
+          })
+          await tx.instance.update({ where: { id: instanceId }, data: { expiresAt: periodEnd } })
+          await db.processHostingIncome(instance.hostId, retryAmount, instanceId, 'purchase', tx)
+        })
+      }
+    } catch (error) {
+      if (resourcesReserved) {
+        await db.rollbackResources({ hostId: instance.hostId, cpu: instance.cpu, memory: instance.memory, disk: instance.disk, portCount }).catch(() => {})
+      }
+      await prisma.instance.updateMany({ where: { id: instanceId, status: 'creating' }, data: { status: 'error' } })
+      const message = error instanceof Error && error.message === 'BALANCE_INSUFFICIENT' ? '余额不足，无法重试创建' : (error instanceof Error ? error.message : String(error))
+      return reply.code(error instanceof Error && error.message === 'BALANCE_INSUFFICIENT' ? 400 : 503).send({ error: message })
+    }
+
+    createInstanceAsync(instanceId, hostRecord, {
+      name: instance.incusId,
+      image: instance.image,
+      cpu: instance.cpu,
+      memory: instance.memory,
+      disk: instance.disk,
+      swapEnabled: instance.swapEnabled,
+      swapSize: instance.swapSize,
+      cloudInitConfig,
+      networkMode,
+      nested: Boolean(snapshot.nested),
+      privileged: Boolean(snapshot.privileged),
+      portLimit: instance.portLimit || 0,
+      instanceType,
+      sshPort: instance.sshPort,
+      storagePool: instance.storagePoolName || 'default',
+      ipv4Address,
+      ipv6Address: null,
+      ipv6Gateway: hostIpv6.ipv6Gateway || null,
+      hostInterface: hostIpv6.ipv6ParentInterface || 'eth0',
+      limitsRead: instance.limitsRead,
+      limitsWrite: instance.limitsWrite,
+      limitsReadIops: instance.limitsReadIops,
+      limitsWriteIops: instance.limitsWriteIops,
+      limitsIngress: instance.limitsIngress,
+      limitsEgress: instance.limitsEgress,
+      limitsProcesses: instance.limitsProcesses,
+      limitsCpuPriority: instance.limitsCpuPriority,
+      bootAutostart: instance.bootAutostart,
+      bootAutostartPriority: instance.bootAutostartPriority,
+      bootAutostartDelay: instance.bootAutostartDelay,
+      bootHostShutdownTimeout: instance.bootHostShutdownTimeout
+    }, request.user.id, { cpu: instance.cpu, memory: instance.memory, disk: instance.disk }).catch(err => {
+      fastify.log.error({ err }, `实例 ${instanceId} 重试创建失败`)
+    })
+
+    await createLog(request.user.id, 'instance', 'instance.retry_create', `Retrying failed instance "${instance.name}"`, 'success', { instanceId })
+    return reply.code(202).send({ message: 'Instance creation retry started', status: 'creating' })
+  })
+
   // 获取实例详情
   fastify.get<{ Params: { id: string } }>('/:id', {
     onRequest: [fastify.authenticate]
@@ -4064,6 +4220,22 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     if (privatePortCount <= 0 || privatePortCount > 100) {
       return reply.code(400).send({ error: '端口范围无效，最多支持 100 个连续端口' })
     }
+    if ((publicPortStart === undefined) !== (publicPortEnd === undefined)) {
+      return reply.code(400).send(apiError(ErrorCode.PORT_RANGE_MISMATCH, '公网端口起始和结束必须同时填写'))
+    }
+    if (publicPortStart !== undefined && publicPortEnd !== undefined) {
+      const publicPortCount = publicPortEnd - publicPortStart + 1
+      if (publicPortCount !== privatePortCount) {
+        return reply.code(400).send(apiError(ErrorCode.PORT_RANGE_MISMATCH, `内网 ${privatePortCount} 个端口，公网 ${publicPortCount} 个端口`))
+      }
+    }
+    if (portMappings && portMappings.length > 0) {
+      const expectedPrivatePorts = new Set(Array.from({ length: privatePortCount }, (_, index) => privatePortStart + index))
+      const actualPrivatePorts = new Set(portMappings.map(mapping => mapping.privatePort))
+      if (portMappings.length !== privatePortCount || actualPrivatePorts.size !== privatePortCount || [...actualPrivatePorts].some(port => !expectedPrivatePorts.has(port))) {
+        return reply.code(400).send(apiError(ErrorCode.PORT_RANGE_MISMATCH, '重新提交的映射数量或内部端口范围不一致'))
+      }
+    }
 
     // 3. 检查配额
     // TCP/UDP 各占 1 个配额，Both 占 2 个配额
@@ -5464,6 +5636,72 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         newInstanceId: task.newInstanceId
       }
     }
+  })
+
+  // 解除异常卡住的任务。仅释放数据库任务锁，不销毁或修改实例。
+  fastify.post<{ Params: { taskId: string }; Body: { force?: boolean } }>('/tasks/:taskId/recover', {
+    onRequest: [fastify.authenticate],
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { force: { type: 'boolean' } }
+      }
+    }
+  }, async (request, reply) => {
+    const taskId = Number(request.params.taskId)
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    }
+
+    const task = await getInstanceTaskById(taskId)
+    if (!task) {
+      return reply.code(404).send({ error: 'Task not found', code: 'TASK_NOT_FOUND' })
+    }
+
+    const host = await db.getHostById(task.hostId)
+    const isAdmin = request.user.role === 'admin'
+    const hasPermission = task.userId === request.user.id || isAdmin || host?.user_id === request.user.id
+    if (!hasPermission) {
+      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+    }
+    if (!['PENDING', 'PROCESSING'].includes(task.status)) {
+      return reply.code(409).send({ error: 'Task is not active', code: 'TASK_NOT_ACTIVE', currentStatus: task.status })
+    }
+
+    const ageMs = Date.now() - (task.startedAt || task.createdAt).getTime()
+    const staleAfterMs = 15 * 60 * 1000
+    if (ageMs < staleAfterMs && !(isAdmin && request.body?.force === true)) {
+      return reply.code(409).send({
+        error: 'Task is still within the normal execution window',
+        code: 'TASK_NOT_STALE',
+        recoverableAt: new Date((task.startedAt || task.createdAt).getTime() + staleAfterMs).toISOString()
+      })
+    }
+
+    const recovered = await prisma.instanceTask.updateMany({
+      where: { id: taskId, status: { in: ['PENDING', 'PROCESSING'] } },
+      data: {
+        status: 'FAILED',
+        progress: 'recovered',
+        error: `任务异常，由 ${isAdmin ? '管理员' : '用户'} 手动解除`,
+        finishedAt: new Date()
+      }
+    })
+    if (recovered.count !== 1) {
+      return reply.code(409).send({ error: 'Task state changed; refresh and retry', code: 'TASK_STATE_CHANGED' })
+    }
+
+    await createLog(
+      request.user.id,
+      'instance',
+      'task.recover',
+      `Recovered stuck ${task.taskType} task #${task.id} for instance #${task.instanceId}`,
+      'success',
+      { instanceId: task.instanceId }
+    )
+
+    return { message: 'Stuck task recovered', task: { id: task.id, status: 'FAILED' } }
   })
 
   // 取消任务（仅 PENDING 状态可取消）

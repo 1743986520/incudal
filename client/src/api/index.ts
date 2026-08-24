@@ -32,6 +32,7 @@ import type {
   HostAgentStatusResponse,
   HostAgentInstallCommandResponse,
   HostAgentUpgradeRequestResponse,
+  HostAgentBulkUpgradeResponse,
   Snapshot,
   Backup,
   CreateSnapshotRequest,
@@ -900,6 +901,8 @@ const api = {
     getPassword: (id: number): Promise<{ rootPassword: string | null }> => http.get(`/instances/${id}/password`),
     getStats: (id: number): Promise<InstanceStats & { status?: string }> => http.get(`/instances/${id}/stats`),
     create: (data: CreateInstanceRequest): Promise<Instance> => http.post('/instances', data),
+    retryProvision: (id: number): Promise<{ message: string; status: string }> =>
+      http.post(`/instances/${id}/retry-provision`, {}),
     getAvailableHosts: (params: Record<string, unknown> = {}): Promise<AvailableHost[]> =>
       http.get('/instances/available-hosts', { params }),
     getChangeHostOptions: (id: number): Promise<ChangeHostOptionsResponse> =>
@@ -950,6 +953,8 @@ const api = {
         newInstanceId?: number | null
       }
     }> => http.get(`/instances/tasks/${taskId}`),
+    recoverTask: (taskId: number, force = false): Promise<{ message: string; task: { id: number; status: string } }> =>
+      http.post(`/instances/tasks/${taskId}/recover`, { force }),
     rebuild: (id: number, data: { image: string; sshKeyId?: number; customInitCommandIds?: number[] }): Promise<{ message: string; taskId: number; status: string }> =>
       http.post(`/instances/${id}/rebuild`, data),
     recreate: (id: number, data: { image: string; sshKeyId?: number; customInitCommandIds?: number[] }): Promise<{ message: string; taskId: number; status: string }> =>
@@ -1385,6 +1390,8 @@ const api = {
       http.post(`/agent/hosts/${id}/install-command`, {}),
     requestAgentUpgrade: (id: number): Promise<HostAgentUpgradeRequestResponse> =>
       http.post(`/agent/hosts/${id}/upgrade`, {}),
+    forceUpgradeAllAgents: (): Promise<HostAgentBulkUpgradeResponse> =>
+      http.post('/agent/upgrade-all', {}),
     sync: (id: number): Promise<void> => http.post(`/hosts/${id}/sync`, {}, { timeout: TIMEOUT.LONG }),
     setMaintenance: (id: number, enabled: boolean): Promise<Host> =>
       http.post(`/hosts/${id}/maintenance`, { enabled }),
@@ -3340,11 +3347,12 @@ const api = {
         maxAmount: number | null
         feeRate: number
         feeFixed: number
+        instructions?: string
       }>
     }> => http.get('/recharge/providers'),
 
     // 创建充值订单
-    createRechargeOrder: (providerId: number, amount: number, paymentMethod?: string): Promise<{
+    createRechargeOrder: (providerId: number, amount: number, paymentMethod?: string, manualNote?: string): Promise<{
       order: {
         orderNo: string
         amount: number
@@ -3362,7 +3370,7 @@ const api = {
         methods: string[]
       }
       payUrl: string | null
-    }> => http.post('/recharge/orders', { providerId, amount, paymentMethod }),
+    }> => http.post('/recharge/orders', { providerId, amount, paymentMethod, manualNote }),
 
     // 获取充值记录列表
     getRechargeOrders: (params?: { page?: number; pageSize?: number; status?: string }): Promise<{
@@ -3384,6 +3392,8 @@ const api = {
         invoiceCurrency: string | null
         gatewayStatus: string | null
         gatewayStatusDescription: string | null
+        manualNote: string | null
+        failReason: string | null
         tradeNo: string | null
         createdAt: string
         expiredAt: string | null

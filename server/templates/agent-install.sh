@@ -6,7 +6,15 @@ CONFIG_DIR="${INCUDAL_CONFIG_DIR:-/etc/incudal-agent}"
 CONFIG_FILE="${INCUDAL_CONFIG_FILE:-${CONFIG_DIR}/config.yaml}"
 INSTALL_DIR="${INCUDAL_INSTALL_DIR:-/usr/local/bin}"
 BIN_PATH="${INCUDAL_AGENT_BIN:-${INSTALL_DIR}/incudal-agent}"
-SERVICE_FILE="${INCUDAL_SERVICE_FILE:-/etc/systemd/system/${SERVICE_NAME}.service}"
+INIT_SYSTEM="systemd"
+if command -v rc-service >/dev/null 2>&1 && ! command -v systemctl >/dev/null 2>&1; then
+  INIT_SYSTEM="openrc"
+fi
+if [ "${INIT_SYSTEM}" = "openrc" ]; then
+  SERVICE_FILE="${INCUDAL_SERVICE_FILE:-/etc/init.d/${SERVICE_NAME}}"
+else
+  SERVICE_FILE="${INCUDAL_SERVICE_FILE:-/etc/systemd/system/${SERVICE_NAME}.service}"
+fi
 HEARTBEAT_INTERVAL="${INCUDAL_HEARTBEAT_INTERVAL_SECONDS:-30}"
 REQUEST_TIMEOUT="${INCUDAL_REQUEST_TIMEOUT_SECONDS:-10}"
 DRY_RUN="${INCUDAL_AGENT_DRY_RUN:-0}"
@@ -195,6 +203,18 @@ manifest_value() {
   local platform="$2"
   local key="$3"
 
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "${manifest_path}" "${platform}" "${key}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle).get("files", {}).get(sys.argv[2], {}).get(sys.argv[3], "")
+print(value if isinstance(value, (str, int)) else "")
+PY
+    return
+  fi
+
   awk -v platform="\"${platform}\"" -v key="\"${key}\"" '
     $0 ~ platform { in_platform=1; next }
     in_platform && $0 ~ /^[[:space:]]*}/ { exit }
@@ -340,6 +360,27 @@ heartbeat_interval_seconds: ${HEARTBEAT_INTERVAL}
 request_timeout_seconds: ${REQUEST_TIMEOUT}
 EOF_CONFIG
 
+if [ "${INIT_SYSTEM}" = "openrc" ]; then
+write_file "${SERVICE_FILE}" 0755 root:root <<EOF_SERVICE
+#!/sbin/openrc-run
+name="Incudal Host Agent"
+description="Incudal Host Agent"
+command="${BIN_PATH}"
+command_args="-config ${CONFIG_FILE}"
+command_background="yes"
+pidfile="/run/${SERVICE_NAME}.pid"
+output_log="/var/log/${SERVICE_NAME}.log"
+error_log="/var/log/${SERVICE_NAME}.log"
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=0
+
+depend() {
+  need net
+  after firewall
+}
+EOF_SERVICE
+else
 write_file "${SERVICE_FILE}" 0644 root:root <<EOF_SERVICE
 [Unit]
 Description=Incudal Host Agent
@@ -359,17 +400,24 @@ ProtectHome=true
 [Install]
 WantedBy=multi-user.target
 EOF_SERVICE
+fi
 
 if [ "${DRY_RUN}" = "1" ]; then
   echo "Dry run completed."
   exit 0
 fi
 
-systemctl daemon-reload
 "${BIN_PATH}" -config "${CONFIG_FILE}" -once
-systemctl enable "${SERVICE_NAME}"
-# 已安装场景下 enable --now 不会重启旧进程；restart 确保升级后立即使用最新二进制和配置。
-systemctl restart "${SERVICE_NAME}"
-systemctl status "${SERVICE_NAME}" --no-pager --lines=20
+if [ "${INIT_SYSTEM}" = "openrc" ]; then
+  rc-update add "${SERVICE_NAME}" default >/dev/null 2>&1 || true
+  rc-service "${SERVICE_NAME}" restart || rc-service "${SERVICE_NAME}" start
+  rc-service "${SERVICE_NAME}" status
+else
+  systemctl daemon-reload
+  systemctl enable "${SERVICE_NAME}"
+  # 已安装场景下 enable --now 不会重启旧进程；restart 确保升级后立即使用最新二进制和配置。
+  systemctl restart "${SERVICE_NAME}"
+  systemctl status "${SERVICE_NAME}" --no-pager --lines=20
+fi
 
 echo "Incudal Agent installed or upgraded and started."

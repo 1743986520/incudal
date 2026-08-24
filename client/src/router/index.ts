@@ -95,7 +95,9 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/',
-    redirect: { name: 'dashboard' }
+    name: 'landing',
+    component: () => import('@/views/LandingView.vue'),
+    meta: { guest: true }
   },
   {
     path: '/dashboard',
@@ -111,10 +113,9 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/market',
-    redirect: (to) => ({
-      name: 'instance-create',
-      query: to.query
-    })
+    name: 'market',
+    component: () => import('@/views/MarketView.vue'),
+    meta: {}
   },
   {
     path: '/instances',
@@ -530,6 +531,19 @@ router.beforeEach(async (to: RouteLocationNormalized, _from: RouteLocationNormal
     } catch {
       // 静默失败
     }
+  }
+
+  // 兼容旧版购买链接：未登录访客先查看公开套餐预览，再登录继续开通。
+  if (
+    to.name === 'instance-create' &&
+    !authStore.isAuthenticated &&
+    typeof to.query.package === 'string'
+  ) {
+    next({
+      name: 'market',
+      query: to.query
+    })
+    return
   }
 
   // Pages requiring authentication

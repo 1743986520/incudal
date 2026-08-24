@@ -20,7 +20,12 @@ import {
 import { shouldSyncInstanceSwapSizeWithPlan } from '../lib/instance-swap.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
-import { HOSTING_BALANCE_LOG_LOCK_NAMESPACE, tryAdvisoryTransactionLock } from './advisory-locks.js'
+import {
+  HOSTING_BALANCE_LOG_LOCK_NAMESPACE,
+  INSTANCE_OPERATION_LOCK_NAMESPACE,
+  advisoryTransactionLock,
+  tryAdvisoryTransactionLock
+} from './advisory-locks.js'
 
 // ==================== 类型定义 ====================
 
@@ -191,6 +196,122 @@ export async function getMaxRefundable(instanceId: number): Promise<{ maxRefunda
 
 function roundCurrency(value: number): number {
   return Number(value.toFixed(2))
+}
+
+export interface FailedProvisionSettlementResult {
+  claimed: boolean
+  refundAmount: number
+}
+
+/**
+ * Atomically marks a creating instance as failed and fully reverses its charge.
+ *
+ * The instance advisory lock and status claim make this safe when the async
+ * provisioner and timeout scheduler race each other. Existing refund records
+ * are subtracted so retries cannot refund the same purchase twice.
+ */
+export async function failCreatingInstanceAndRefund(
+  instanceId: number,
+  reason: string
+): Promise<FailedProvisionSettlementResult> {
+  return prisma.$transaction(async (tx) => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const claimed = await tx.instance.updateMany({
+      where: { id: instanceId, status: 'creating' },
+      data: { status: 'error' }
+    })
+
+    if (claimed.count === 0) {
+      return { claimed: false, refundAmount: 0 }
+    }
+
+    const instance = await tx.instance.findUnique({
+      where: { id: instanceId },
+      select: {
+        id: true,
+        name: true,
+        userId: true,
+        hostId: true
+      }
+    })
+
+    if (!instance) {
+      throw new Error(`Instance ${instanceId} disappeared during failed provision settlement`)
+    }
+
+    const billingRecords = await tx.instanceBillingRecord.findMany({
+      where: {
+        instanceId,
+        type: { in: ['newPurchase', 'refund'] }
+      },
+      select: { type: true, amount: true }
+    })
+
+    const chargedAmount = billingRecords
+      .filter(record => record.type === 'newPurchase')
+      .reduce((sum, record) => sum + Math.max(0, Number(record.amount)), 0)
+    const refundedAmount = billingRecords
+      .filter(record => record.type === 'refund')
+      .reduce((sum, record) => sum + Math.abs(Number(record.amount)), 0)
+    const refundAmount = roundCurrency(Math.max(0, chargedAmount - refundedAmount))
+
+    if (refundAmount <= 0) {
+      return { claimed: true, refundAmount: 0 }
+    }
+
+    const user = await tx.user.findUnique({
+      where: { id: instance.userId },
+      select: { balance: true }
+    })
+    if (!user) {
+      throw new Error(`User ${instance.userId} not found during failed provision refund`)
+    }
+
+    const balanceBefore = Number(user.balance)
+    const balanceAfter = roundCurrency(balanceBefore + refundAmount)
+    await tx.user.update({
+      where: { id: instance.userId },
+      data: { balance: { increment: refundAmount } }
+    })
+
+    const balanceLog = await tx.balanceLog.create({
+      data: {
+        userId: instance.userId,
+        type: 'refund',
+        amount: refundAmount,
+        balanceBefore,
+        balanceAfter,
+        instanceId,
+        remark: `实例开通失败自动全额退款：${instance.name}（${reason}）`
+      }
+    })
+
+    const now = new Date()
+    await tx.instanceBillingRecord.create({
+      data: {
+        instanceId,
+        userId: instance.userId,
+        type: 'refund',
+        amount: -refundAmount,
+        months: 0,
+        periodStart: now,
+        periodEnd: now,
+        balanceLogId: balanceLog.id,
+        remark: `实例开通失败自动全额退款：${reason}`
+      }
+    })
+
+    await deductHostingBalance(
+      instance.hostId,
+      refundAmount,
+      instance.id,
+      `实例开通失败退款扣除托管收入：${instance.name}`,
+      tx
+    )
+
+    return { claimed: true, refundAmount }
+  })
 }
 
 /**

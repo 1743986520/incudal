@@ -20,6 +20,9 @@ export interface HostAgentRecord {
   lastReport: unknown
   lastSeenAt: Date | null
   lastHeartbeatIp: string | null
+  upgradeRequestedAt: Date | null
+  upgradeTargetVersion: string | null
+  upgradeForce: boolean
   createdAt: Date
   updatedAt: Date
 }

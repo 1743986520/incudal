@@ -33,6 +33,7 @@ import {
 import { registerAuthDecorators } from './plugins/auth-decorators.js'
 import { registerStaticServer } from './plugins/static-server.js'
 import { buildRateLimitErrorResponse } from './lib/rate-limit-error.js'
+import { applyVerifiedClientIp, trustedProxyRanges } from './lib/client-ip.js'
 
 // 导入调度器
 import { startSchedulers, stopSchedulers } from './services/schedulers.js'
@@ -132,7 +133,9 @@ const fastify = Fastify({
     serializers: logSerializers
   },
   disableRequestLogging: process.env.DISABLE_REQUEST_LOG !== 'false',
-  trustProxy: process.env.NODE_ENV === 'production',
+  // Never trust arbitrary X-Forwarded-For values. Only Cloudflare and loopback
+  // reverse proxies may supply the client address.
+  trustProxy: process.env.NODE_ENV === 'production' ? [...trustedProxyRanges] : false,
   bodyLimit: parseInt(process.env.BODY_LIMIT || '10485760', 10),
   routerOptions: {
     maxParamLength: 500
@@ -140,6 +143,12 @@ const fastify = Fastify({
   requestTimeout: 125000,
   keepAliveTimeout: 125000,
   forceCloseConnections: false
+})
+
+// Cloudflare's canonical visitor address is CF-Connecting-IP. Apply it before
+// rate limiting, authentication, GeoIP and audit hooks consume request.ip.
+fastify.addHook('onRequest', async (request) => {
+  applyVerifiedClientIp(request)
 })
 
 // 自定义 schema 验证错误处理

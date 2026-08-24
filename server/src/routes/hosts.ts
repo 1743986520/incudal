@@ -432,7 +432,8 @@ function injectInstallVariable(script: string, name: string, value: string): str
 }
 
 function buildHostInstallCommand(panelUrl: string, installToken: string): string {
-  return `curl -sL ${panelUrl}/api/hosts/install.sh/${installToken} -o incudal.sh && sudo bash incudal.sh`
+  const scriptUrl = `${panelUrl}/api/hosts/install.sh/${installToken}`
+  return `if command -v apk >/dev/null 2>&1; then if [ "$(id -u)" = 0 ]; then apk add --no-cache bash curl; else sudo apk add --no-cache bash curl; fi; fi && curl -sL ${scriptUrl} -o incudal.sh && if command -v sudo >/dev/null 2>&1; then sudo bash incudal.sh; else bash incudal.sh; fi`
 }
 
 export default async function hostRoutes(fastify: FastifyInstance) {

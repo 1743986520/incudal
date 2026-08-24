@@ -191,6 +191,7 @@ const rechargeRecordsPageSize = ref(100)
 const rechargeRecordsTotal = ref(0)
 const rechargeRecordsFilter = ref('')
 const syncingRecordId = ref<number | null>(null)
+const reviewingRechargeId = ref<number | null>(null)
 
 // 操作弹窗
 const showActionModal = ref(false)
@@ -637,6 +638,36 @@ async function syncRechargeRecord(record: any) {
     toast.error(err.message)
   } finally {
     syncingRecordId.value = null
+  }
+}
+
+async function approveManualRecharge(record: any) {
+  if (reviewingRechargeId.value || !confirm(`確認通過人工充值 ${record.orderNo}，並為 ${record.user?.username || record.userId} 入帳 ${formatMoney(record.actualAmount ?? record.amount)}？`)) return
+  reviewingRechargeId.value = record.id
+  try {
+    await api.admin.completeRechargeOrder(record.orderNo, `MANUAL-${record.orderNo}`)
+    toast.success('人工充值已通過並完成入帳')
+    await Promise.all([loadRechargeRecords(), loadOverview()])
+  } catch (err: any) {
+    toast.error(err.message)
+  } finally {
+    reviewingRechargeId.value = null
+  }
+}
+
+async function rejectManualRecharge(record: any) {
+  if (reviewingRechargeId.value) return
+  const reason = prompt('請輸入拒絕原因')?.trim()
+  if (!reason) return
+  reviewingRechargeId.value = record.id
+  try {
+    await api.admin.failRechargeOrder(record.orderNo, reason)
+    toast.success('人工充值申請已拒絕')
+    await loadRechargeRecords()
+  } catch (err: any) {
+    toast.error(err.message)
+  } finally {
+    reviewingRechargeId.value = null
   }
 }
 
@@ -1953,11 +1984,16 @@ function copyToClipboard(text: string) {
               <div v-if="rec.tradeNo" class="truncate font-mono" :title="rec.tradeNo">
                 {{ $t('admin.billing.tradeNo') }} {{ rec.tradeNo }}
               </div>
+              <div v-if="rec.manualNote" class="whitespace-pre-wrap rounded-lg bg-themed-secondary p-2 text-themed-secondary">{{ rec.manualNote }}</div>
             </div>
 
             <div class="flex justify-end">
+              <template v-if="rec.provider?.type === 'manual' && rec.status === 'pending'">
+                <button class="btn btn-sm btn-primary" :disabled="reviewingRechargeId === rec.id" @click="approveManualRecharge(rec)">通過</button>
+                <button class="btn btn-sm btn-danger ml-2" :disabled="reviewingRechargeId === rec.id" @click="rejectManualRecharge(rec)">拒絕</button>
+              </template>
               <button
-                v-if="rec.status === 'pending'"
+                v-else-if="rec.status === 'pending'"
                 class="btn btn-sm btn-ghost text-blue-500"
                 :disabled="syncingRecordId === rec.id"
                 @click="syncRechargeRecord(rec)"
@@ -2007,6 +2043,7 @@ function copyToClipboard(text: string) {
                   <div v-if="rec.paymentTxid" class="mt-1 truncate font-mono" :title="rec.paymentTxid">
                     {{ $t('admin.billing.paymentTxid') }} {{ rec.paymentTxid }}
                   </div>
+                  <div v-if="rec.manualNote" class="mt-2 whitespace-pre-wrap rounded-lg bg-themed-secondary p-2 text-themed-secondary">{{ rec.manualNote }}</div>
                 </td>
                 <td class="p-3 whitespace-nowrap">
                   <span :class="['badge', getRechargeStatusBadge(rec.status)]">{{ $t(`admin.billing.rechargeStatus.${rec.status}`) }}</span>
@@ -2021,8 +2058,12 @@ function copyToClipboard(text: string) {
                 </td>
                 <td class="p-3 text-themed-muted whitespace-nowrap">{{ formatDate(rec.createdAt) }}</td>
                 <td class="p-3 whitespace-nowrap">
+                  <template v-if="rec.provider?.type === 'manual' && rec.status === 'pending'">
+                    <button class="btn btn-sm btn-primary" :disabled="reviewingRechargeId === rec.id" @click="approveManualRecharge(rec)">通過</button>
+                    <button class="btn btn-sm btn-danger ml-2" :disabled="reviewingRechargeId === rec.id" @click="rejectManualRecharge(rec)">拒絕</button>
+                  </template>
                   <button
-                    v-if="rec.status === 'pending'"
+                    v-else-if="rec.status === 'pending'"
                     class="btn btn-sm btn-ghost text-blue-500"
                     :disabled="syncingRecordId === rec.id"
                     @click="syncRechargeRecord(rec)"

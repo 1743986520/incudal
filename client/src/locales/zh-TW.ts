@@ -10,6 +10,7 @@ export default {
 
     // 通用
     common: {
+        user: '使用者',
         confirm: '確認',
         cancel: '取消',
         save: '儲存',
@@ -86,7 +87,7 @@ export default {
             cn: '中國',
             hk: '中國香港',
             mo: '中國澳門',
-            tw: '中國台灣',
+            tw: '台灣',
             jp: '日本',
             kr: '韓國',
             sg: '新加坡',
@@ -1051,12 +1052,14 @@ export default {
             title: '實例異常',
             description: '實例異常，您可直接銷毀（付費實例剩餘價值退款不扣除手續費）',
             destroyNow: '立即銷毀',
+            retryNow: '重試',
             confirmDestroy: '確定要銷毀此異常實例嗎？付費實例的剩餘價值將退款至您的錢包（不扣除手續費）。',
         },
         actions: {
             start: '啟動',
             stop: '停止',
             restart: '重新啟動',
+            retry: '重試',
             delete: '刪除',
             console: '控制台',
             snapshot: '快照',
@@ -1066,6 +1069,7 @@ export default {
             suspend: '封停',
             unsuspend: '解封',
         },
+        retryCreateStarted: '已開始重新建立「{name}」',
         renameModal: {
             title: '重新命名實例',
             name: '實例名稱',
@@ -1488,6 +1492,12 @@ export default {
                 recreate: '正在重建...',
                 clone: '正在複製...',
                 change_host: '正在改節點...',
+            },
+            taskRecovery: {
+                action: '解除異常',
+                confirm: '確定將目前任務標記為失敗並解除操作鎖嗎？此操作不會刪除實例；請先確認宿主機上的原操作確實已停止。',
+                success: '異常任務已解除，現在可以重新發起操作',
+                failed: '解除異常任務失敗',
             },
             actions: {
                 starting: '實例啟動中',
@@ -2128,6 +2138,14 @@ export default {
 
     // 新增連接埠映射彈窗
     portModal: {
+        singleMode: '單個連接埠',
+        batchMode: '批量連接埠',
+        publicRange: '外部連接埠範圍',
+        privateRange: '內部連接埠範圍',
+        startPort: '起始連接埠',
+        endPort: '結束連接埠',
+        batchRangeHint: '外部與內部連接埠數量必須相同，並按順序一一對應映射。',
+        batchAllFieldsRequired: '批量添加時必須填寫外部和內部的起始、結束連接埠',
         title: '新增連接埠映射',
         protocol: '協定',
         bothHint: '將同時建立 TCP 和 UDP 映射，佔用 2 個配額',
@@ -2448,7 +2466,7 @@ export default {
             publicIp: '公網 IP',
             publicIpPlaceholder: '輸入公網 IP',
             location: '位置',
-            locationPlaceholder: '例如：中國台灣台北',
+            locationPlaceholder: '例如：台灣台北',
             description: '描述',
             descriptionPlaceholder: '輸入主機描述',
             apiUrl: 'API URL',
@@ -6163,7 +6181,7 @@ export default {
             description: '管理您的節點，這些節點可以供您和您的好友使用',
             create: '新增節點',
             createDesc: '新增一個 Incus 節點',
-            ubuntuOnlyHint: '目前僅支援 Ubuntu 22.04+ 和 Debian 11+ 系統。',
+            ubuntuOnlyHint: '支援 Ubuntu 22.04+、Debian 11+、Rocky Linux 10 與 Alpine Linux 3.20+。',
             installHintTitle: '填寫節點資訊並提交後，系統會生成包含面板地址和 Token 的安裝命令，複製到節點宿主機執行即可完成安裝。',
             installHintIpv6: '提示：如需 IPv6 網路模式（NAT+IPv6、IPv6 Only），請先在宿主機執行安裝腳本，腳本會自動生成 IPv6 子網資訊供您填入下方表單。',
             ipv6OptionalHint: '如不清楚以上資訊，可先留空。在節點宿主機執行安裝腳本後，腳本會自動檢測並輸出可用的 IPv6 子網，屆時回到面板編輯節點補充即可。',
@@ -6174,6 +6192,10 @@ export default {
             noHosts: '暫無節點',
             noHostsHint: '新增節點後可以在其上建立實例',
             calibrateAll: '對齊全部',
+            forceAgentUpgrade: '強制更新 Agent',
+            forceAgentUpgradeConfirm: '確定向所有已啟用的宿主機 Agent 強制下發最新版本嗎？離線節點會在恢復上線後執行。',
+            forceAgentUpgradeDone: '已下發 {version}：共 {total} 個，在線 {online} 個，離線待執行 {offline} 個',
+            forceAgentUpgradeFailed: 'Agent 批量更新下發失敗',
             noOnlineHosts: '沒有線上的節點可對齊',
             calibrateAllDone: '已對齊 {total} 個節點，其中 {changed} 個有差異已修正',
             calibrateAllNoChange: '已對齊 {total} 個節點，無差異',
@@ -6277,7 +6299,7 @@ export default {
             notifyChannelDesc: '當使用者刪除實例或主機所有者釋放配額時，系統會透過此渠道發送通知',
             // 分享連結
             copyShareLink: '複製分享連結',
-            shareLinkCopied: '分享連結已複製，使用者訪問該連結可直達開通實例頁面',
+            shareLinkCopied: '購買連結已複製，使用者可先預覽套餐詳情再繼續開通',
             // 管理員專用：套餐切換器
             mine: '我的套餐',
             hosted: '託管套餐',

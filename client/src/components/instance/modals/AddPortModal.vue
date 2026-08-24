@@ -37,6 +37,7 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 const themeStore = useThemeStore()
+const addMode = ref<'single' | 'batch'>('single')
 
 const form = ref<{ protocol: 'tcp' | 'udp' | 'both'; publicPort: string; privatePort: string; remark: string }>({
   protocol: 'both',
@@ -44,10 +45,18 @@ const form = ref<{ protocol: 'tcp' | 'udp' | 'both'; publicPort: string; private
   privatePort: '',
   remark: ''
 })
+const batchForm = ref({
+  publicPortStart: '',
+  publicPortEnd: '',
+  privatePortStart: '',
+  privatePortEnd: ''
+})
 
 watch(() => props.visible, (newVal) => {
   if (!newVal) {
+    addMode.value = 'single'
     form.value = { protocol: 'both', publicPort: '', privatePort: '', remark: '' }
+    batchForm.value = { publicPortStart: '', publicPortEnd: '', privatePortStart: '', privatePortEnd: '' }
   }
 })
 
@@ -77,13 +86,24 @@ function parsePortRange(input: string): { start: number; end: number } | null {
 }
 
 // 解析后的端口范围
-const parsedPrivatePort = computed(() => parsePortRange(form.value.privatePort))
-const parsedPublicPort = computed(() => parsePortRange(form.value.publicPort))
+function parseBatchRange(startValue: string, endValue: string): { start: number; end: number } | null {
+  if (!/^\d+$/.test(startValue) || !/^\d+$/.test(endValue)) return null
+  const start = Number(startValue)
+  const end = Number(endValue)
+  return start >= 1 && end <= 65535 && start <= end ? { start, end } : null
+}
+
+const parsedPrivatePort = computed(() => addMode.value === 'batch'
+  ? parseBatchRange(batchForm.value.privatePortStart, batchForm.value.privatePortEnd)
+  : parsePortRange(form.value.privatePort))
+const parsedPublicPort = computed(() => addMode.value === 'batch'
+  ? parseBatchRange(batchForm.value.publicPortStart, batchForm.value.publicPortEnd)
+  : parsePortRange(form.value.publicPort))
 
 // 是否为范围输入
 const isRangeInput = computed(() => {
   const priv = parsedPrivatePort.value
-  return priv && priv.start !== priv.end
+  return addMode.value === 'batch' || Boolean(priv && priv.start !== priv.end)
 })
 
 // 端口数量
@@ -114,7 +134,11 @@ const quotaSufficient = computed(() => {
 
 // 输入验证
 const validationError = computed(() => {
-  if (!form.value.privatePort.trim()) return null
+  if (addMode.value === 'batch') {
+    const values = Object.values(batchForm.value)
+    if (values.every(value => !value.trim())) return null
+    if (values.some(value => !value.trim())) return t('portModal.batchAllFieldsRequired')
+  } else if (!form.value.privatePort.trim()) return null
   
   if (!parsedPrivatePort.value) {
     return t('portModal.invalidPortFormat')
@@ -128,12 +152,12 @@ const validationError = computed(() => {
     }
   }
   
-  if (form.value.publicPort.trim() && !parsedPublicPort.value) {
+  if ((addMode.value === 'batch' || form.value.publicPort.trim()) && !parsedPublicPort.value) {
     return t('portModal.invalidPortFormat')
   }
   
   // 检查内网和公网端口数量是否匹配
-  if (form.value.publicPort.trim() && parsedPublicPort.value) {
+  if ((addMode.value === 'batch' || form.value.publicPort.trim()) && parsedPublicPort.value) {
     const priv = parsedPrivatePort.value!
     const pub = parsedPublicPort.value
     const privCount = priv.end - priv.start + 1
@@ -146,7 +170,7 @@ const validationError = computed(() => {
   }
   
   // 检查公网端口范围
-  if (form.value.publicPort.trim() && parsedPublicPort.value && props.portRangeStart && props.portRangeEnd) {
+  if ((addMode.value === 'batch' || form.value.publicPort.trim()) && parsedPublicPort.value && props.portRangeStart && props.portRangeEnd) {
     const pub = parsedPublicPort.value
     if (pub.start < props.portRangeStart || pub.end > props.portRangeEnd) {
       return t('portModal.publicPortOutOfRange', { start: props.portRangeStart, end: props.portRangeEnd })
@@ -163,7 +187,10 @@ const validationError = computed(() => {
 
 // 是否可提交
 const canSubmit = computed(() => {
-  return form.value.privatePort.trim() && 
+  const hasRequiredInput = addMode.value === 'batch'
+    ? Object.values(batchForm.value).every(value => value.trim())
+    : Boolean(form.value.privatePort.trim())
+  return hasRequiredInput &&
          parsedPrivatePort.value && 
          !validationError.value &&
          !props.loading
@@ -175,6 +202,8 @@ function handleSubmit(): void {
   
   emit('submit', {
     ...form.value,
+    privatePort: addMode.value === 'batch' && priv ? `${priv.start}-${priv.end}` : form.value.privatePort,
+    publicPort: addMode.value === 'batch' && pub ? `${pub.start}-${pub.end}` : form.value.publicPort,
     isRange: isRangeInput.value || false,
     privatePortStart: priv?.start,
     privatePortEnd: priv?.end,
@@ -224,6 +253,14 @@ function close(): void {
         
           <form class="p-5" @submit.prevent="handleSubmit">
             <div class="space-y-4">
+              <div class="grid grid-cols-2 gap-2 rounded-lg p-1" :class="themeStore.isDark ? 'bg-gray-800' : 'bg-gray-100'">
+                <button type="button" class="rounded-md px-3 py-2 text-sm transition-colors" :class="addMode === 'single' ? (themeStore.isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-900 shadow-sm') : 'text-gray-500'" @click="addMode = 'single'">
+                  {{ t('portModal.singleMode') }}
+                </button>
+                <button type="button" class="rounded-md px-3 py-2 text-sm transition-colors" :class="addMode === 'batch' ? (themeStore.isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-900 shadow-sm') : 'text-gray-500'" @click="addMode = 'batch'">
+                  {{ t('portModal.batchMode') }}
+                </button>
+              </div>
               <div class="flex gap-3">
                 <div class="flex-1">
                   <label class="block text-xs text-gray-500 mb-1.5">{{ t('portModal.protocol') }}</label>
@@ -275,6 +312,7 @@ function close(): void {
                 </div>
               </div>
 
+              <template v-if="addMode === 'single'">
               <div>
                 <label class="block text-xs text-gray-500 mb-1.5">
                   {{ t('portModal.privatePort') }} 
@@ -317,6 +355,25 @@ function close(): void {
                   </template>
                 </p>
               </div>
+              </template>
+
+              <template v-else>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1.5">{{ t('portModal.publicRange') }}</label>
+                  <div class="grid grid-cols-2 gap-3">
+                    <input v-model="batchForm.publicPortStart" type="number" min="1" max="65535" class="input" :placeholder="t('portModal.startPort')" />
+                    <input v-model="batchForm.publicPortEnd" type="number" min="1" max="65535" class="input" :placeholder="t('portModal.endPort')" />
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1.5">{{ t('portModal.privateRange') }}</label>
+                  <div class="grid grid-cols-2 gap-3">
+                    <input v-model="batchForm.privatePortStart" type="number" min="1" max="65535" class="input" :placeholder="t('portModal.startPort')" />
+                    <input v-model="batchForm.privatePortEnd" type="number" min="1" max="65535" class="input" :placeholder="t('portModal.endPort')" />
+                  </div>
+                  <p class="mt-1.5 text-xs" :class="themeStore.isDark ? 'text-gray-600' : 'text-gray-500'">{{ t('portModal.batchRangeHint') }}</p>
+                </div>
+              </template>
 
               <div>
                 <label class="block text-xs text-gray-500 mb-1.5">{{ t('portModal.remark') }} <span class="text-gray-400">{{ t('portModal.remarkOptional') }}</span></label>

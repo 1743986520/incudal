@@ -15,6 +15,7 @@ import {
   getInstanceState
 } from '../../lib/incus/index.js'
 import type { Host } from '../../types/database.js'
+import { failCreatingInstanceAndRefund } from '../../db/billing-operations.js'
 
 /**
  * 异步创建实例
@@ -267,17 +268,9 @@ export async function createInstanceAsync(
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.error(`[Provisioning] ✘ 实例 ${instanceId} 创建失败:`, errorMessage)
 
-    const updateResult = await prisma.instance.updateMany({
-      where: {
-        id: instanceId,
-        status: 'creating'
-      },
-      data: {
-        status: 'error'
-      }
-    })
+    const settlement = await failCreatingInstanceAndRefund(instanceId, errorMessage)
 
-    if (updateResult.count > 0 && userId && resources) {
+    if (settlement.claimed && userId && resources) {
       try {
         await db.rollbackResources({
           hostId: host.id,
@@ -290,8 +283,12 @@ export async function createInstanceAsync(
       } catch (rollbackErr) {
         console.error(`[Provisioning] 资源回滚失败:`, rollbackErr)
       }
-    } else if (updateResult.count === 0) {
+    } else if (!settlement.claimed) {
       console.log(`[Provisioning] 实例 ${instanceId} 已被超时清理任务处理，跳过资源回滚`)
+    }
+
+    if (settlement.refundAmount > 0) {
+      console.log(`[Provisioning] 实例 ${instanceId} 已自动退款 ¥${settlement.refundAmount.toFixed(2)}`)
     }
 
     try {

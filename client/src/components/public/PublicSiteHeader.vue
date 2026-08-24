@@ -70,39 +70,25 @@ function onScroll(): void {
 const ui = computed(() => themeStore.isDark
   ? {
       shell: scrolled.value
-        ? 'bg-[#111418]/85 backdrop-blur-xl border-b border-[#2a2d33]'
+        ? 'bg-black/85 backdrop-blur-xl border-b border-gray-800'
         : 'bg-transparent border-b border-transparent',
-      brandMark: 'bg-[#1a2c52]',
-      brandText: 'text-[#e3e2e6]',
-      brandSubtext: 'text-[#8e9199]',
+      brandMark: 'border border-gray-800 bg-gray-950', brandText: 'text-gray-100', brandSubtext: 'text-gray-500',
       navRail: '',
-      navActive: 'bg-[#1a2c52] text-[#d3e3fd]',
-      navIdle: 'text-[#c3c6cf] hover:bg-[#272a2f] hover:text-[#e3e2e6]',
-      iconButton: 'text-[#c3c6cf] hover:bg-[#272a2f]',
-      menuPanel: 'border-[#43474e] bg-[#1d2024] shadow-[0_4px_8px_3px_rgba(0,0,0,0.15),0_1px_3px_rgba(0,0,0,0.3)]',
-      menuActive: 'bg-[#1a2c52] text-[#d3e3fd]',
-      menuIdle: 'text-[#c3c6cf] hover:bg-[#272a2f] hover:text-[#e3e2e6]',
-      cta: 'bg-[#a8c7fa] text-[#062e6f] shadow-[0_1px_2px_rgba(0,0,0,0.3),0_1px_3px_1px_rgba(0,0,0,0.15)] hover:bg-[#bdd3fb]',
-      mobileActive: 'bg-[#1a2c52] text-[#d3e3fd]',
-      mobileIdle: 'text-[#c3c6cf] hover:bg-[#272a2f] hover:text-[#e3e2e6]'
+      navActive: 'bg-gray-900 text-white', navIdle: 'text-gray-400 hover:bg-gray-900 hover:text-white',
+      iconButton: 'text-gray-400 hover:bg-gray-900 hover:text-white', menuPanel: 'border-gray-800 bg-gray-950 shadow-lg',
+      menuActive: 'bg-gray-900 text-white', menuIdle: 'text-gray-400 hover:bg-gray-900 hover:text-white',
+      cta: 'bg-white text-gray-900 hover:bg-gray-100', mobileActive: 'bg-gray-900 text-white', mobileIdle: 'text-gray-400 hover:bg-gray-900 hover:text-white'
     }
   : {
       shell: scrolled.value
-        ? 'bg-[#fcfcfd]/85 backdrop-blur-xl border-b border-[#e3e5ec]'
+        ? 'bg-white/85 backdrop-blur-xl border-b border-gray-200'
         : 'bg-transparent border-b border-transparent',
-      brandMark: 'bg-[#d3e3fd]',
-      brandText: 'text-[#1a1b20]',
-      brandSubtext: 'text-[#74777f]',
+      brandMark: 'border border-gray-200 bg-white shadow-sm', brandText: 'text-gray-900', brandSubtext: 'text-gray-500',
       navRail: '',
-      navActive: 'bg-[#d3e3fd] text-[#041e49]',
-      navIdle: 'text-[#43474e] hover:bg-[#eef0f8] hover:text-[#1a1b20]',
-      iconButton: 'text-[#43474e] hover:bg-[#eef0f8]',
-      menuPanel: 'border-[#c3c6cf] bg-white shadow-[0_4px_8px_3px_rgba(15,23,42,0.08),0_1px_3px_rgba(15,23,42,0.06)]',
-      menuActive: 'bg-[#d3e3fd] text-[#041e49]',
-      menuIdle: 'text-[#43474e] hover:bg-[#eef0f8] hover:text-[#1a1b20]',
-      cta: 'bg-[#0b57d0] text-white shadow-[0_1px_2px_rgba(11,87,208,0.3),0_1px_3px_1px_rgba(11,87,208,0.15)] hover:bg-[#0848ad]',
-      mobileActive: 'bg-[#d3e3fd] text-[#041e49]',
-      mobileIdle: 'text-[#43474e] hover:bg-[#eef0f8] hover:text-[#1a1b20]'
+      navActive: 'bg-gray-100 text-gray-900', navIdle: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+      iconButton: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900', menuPanel: 'border-gray-200 bg-white shadow-lg',
+      menuActive: 'bg-gray-100 text-gray-900', menuIdle: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+      cta: 'bg-gray-900 text-white hover:bg-gray-700', mobileActive: 'bg-gray-100 text-gray-900', mobileIdle: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
     }
 )
 
@@ -213,7 +199,7 @@ onUnmounted(() => {
               v-for="item in navigation"
               :key="item.to"
               :to="item.to"
-              class="rounded-full px-4 py-2 text-sm font-medium tracking-[-0.01em] transition-colors duration-150"
+              class="rounded-lg px-4 py-2 text-sm font-medium tracking-[-0.01em] transition-colors duration-150"
               :class="isActive(item.to)
                 ? ui.navActive
                 : ui.navIdle"
@@ -225,7 +211,7 @@ onUnmounted(() => {
 
         <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <button
-            class="group relative rounded-full p-2.5 transition-colors duration-150"
+            class="group relative rounded-lg p-2.5 transition-colors duration-150"
             :class="ui.iconButton"
             :title="getThemeTooltip()"
             :aria-label="t('nav.toggleTheme')"
@@ -244,7 +230,7 @@ onUnmounted(() => {
 
           <div ref="langMenuRef" class="relative">
             <button
-              class="rounded-full px-3 py-2 text-xs font-semibold transition-colors duration-150 sm:px-3.5"
+              class="rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 sm:px-3.5"
               :class="ui.iconButton"
               :aria-label="t('nav.toggleLanguage')"
               @click.stop="toggleLangMenu"
@@ -284,7 +270,7 @@ onUnmounted(() => {
           </div>
 
           <button
-            class="inline-flex h-10 min-w-0 shrink-0 items-center gap-1.5 rounded-full px-5 text-sm font-medium tracking-[0.01em] transition-[background-color,box-shadow] duration-150 sm:gap-2"
+            class="inline-flex h-10 min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-5 text-sm font-medium tracking-[0.01em] transition-[background-color,box-shadow] duration-150 sm:gap-2"
             :class="ui.cta"
             @click="handlePrimaryAction"
           >
@@ -302,7 +288,7 @@ onUnmounted(() => {
           v-for="item in navigation"
           :key="item.to"
           :to="item.to"
-          class="inline-flex min-w-0 items-center rounded-full px-3.5 py-2 text-xs font-semibold transition-colors duration-150"
+          class="inline-flex min-w-0 items-center rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors duration-150"
           :class="isActive(item.to)
             ? ui.mobileActive
             : ui.mobileIdle"

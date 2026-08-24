@@ -24,7 +24,7 @@ const hiddenHostingRouteNames = new Set([
 ])
 
 // 不需要布局的页面
-const noLayoutRoutes: string[] = ['login', 'register']
+const noLayoutRoutes: string[] = ['login', 'register', 'landing', 'market']
 const showLayout = computed<boolean>(() => {
   return authStore.isAuthenticated && !noLayoutRoutes.includes(route.name as string)
 })

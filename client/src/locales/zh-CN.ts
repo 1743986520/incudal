@@ -77,7 +77,7 @@ export default {
             cn: '中国',
             hk: '中国香港',
             mo: '中国澳门',
-            tw: '中国台湾',
+            tw: '台湾',
             jp: '日本',
             kr: '韩国',
             sg: '新加坡',
@@ -1298,6 +1298,12 @@ export default {
                 clone: '正在复制...',
                 change_host: '正在改节点...',
             },
+            taskRecovery: {
+                action: '解除异常',
+                confirm: '确定将当前任务标记为失败并解除操作锁吗？此操作不会删除实例；请先确认宿主机上的原操作确实已停止。',
+                success: '异常任务已解除，现在可以重新发起操作',
+                failed: '解除异常任务失败',
+            },
             actions: {
                 starting: '实例启动中',
                 stopped: '实例已停止',
@@ -1643,6 +1649,14 @@ export default {
 
     // 端口映射弹窗
     portModal: {
+        singleMode: '单个端口',
+        batchMode: '批量端口',
+        publicRange: '外部端口范围',
+        privateRange: '内部端口范围',
+        startPort: '起始端口',
+        endPort: '结束端口',
+        batchRangeHint: '外部与内部端口数量必须相同，并按顺序一一对应映射。',
+        batchAllFieldsRequired: '批量添加时必须填写外部和内部的起始、结束端口',
         title: '添加端口映射',
         protocol: '协议',
         bothHint: '将同时创建 TCP 和 UDP 映射，占用 2 个配额',
@@ -5476,7 +5490,7 @@ export default {
             description: '管理您的节点，这些节点可以供您和您的好友使用',
             create: '添加节点',
             createDesc: '添加一个新的 Incus 节点',
-            ubuntuOnlyHint: '目前仅支持 Ubuntu 22.04+ 和 Debian 11+ 系统。',
+            ubuntuOnlyHint: '支持 Ubuntu 22.04+、Debian 11+、Rocky Linux 10 与 Alpine Linux 3.20+。',
             installHintTitle: '填写节点信息并提交后，系统会生成包含面板地址和 Token 的安装命令，复制到节点宿主机执行即可完成安装。',
             installHintIpv6: '提示：如需 IPv6 网络模式（NAT+IPv6、IPv6 Only），请先在宿主机执行安装脚本，脚本会自动生成 IPv6 子网信息供您填入下方表单。',
             ipv6OptionalHint: '如不清楚以上信息，可先留空。在节点宿主机执行安装脚本后，脚本会自动检测并输出可用的 IPv6 子网，届时回到面板编辑节点补充即可。',
@@ -5487,6 +5501,10 @@ export default {
             noHosts: '暂无节点',
             noHostsHint: '添加节点后可以在其上创建实例',
             calibrateAll: '对齐全部',
+            forceAgentUpgrade: '强制更新 Agent',
+            forceAgentUpgradeConfirm: '确定向所有已启用的宿主机 Agent 强制下发最新版本吗？离线节点会在恢复上线后执行。',
+            forceAgentUpgradeDone: '已下发 {version}：共 {total} 个，在线 {online} 个，离线待执行 {offline} 个',
+            forceAgentUpgradeFailed: 'Agent 批量更新下发失败',
             noOnlineHosts: '没有在线的节点可对齐',
             calibrateAllDone: '已对齐 {total} 个节点，其中 {changed} 个有差异已修正',
             calibrateAllNoChange: '已对齐 {total} 个节点，无差异',
@@ -5572,7 +5590,7 @@ export default {
             notifyChannelDesc: '当用户删除实例或宿主机所有者释放配额时，系统会通过此渠道发送通知',
             // 分享链接
             copyShareLink: '复制分享链接',
-            shareLinkCopied: '分享链接已复制，用户访问该链接可直达开通实例页面',
+            shareLinkCopied: '购买链接已复制，用户可先预览套餐详情再继续开通',
             // 管理员专用：套餐切换器
             mine: '我的套餐',
             hosted: '托管套餐',

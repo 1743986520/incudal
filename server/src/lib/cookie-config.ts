@@ -27,7 +27,7 @@ export const COOKIE_CONFIG = {
   // Refresh Token Cookie 配置（简化版：延长到 30 天）
   REFRESH_TOKEN: {
     name: 'refreshToken',
-    maxAge: 30 * 24 * 60 * 60,  // 30天（秒）
+    maxAge: 62 * 24 * 60 * 60,  // 30天（秒）
     path: '/',
   },
 } as const

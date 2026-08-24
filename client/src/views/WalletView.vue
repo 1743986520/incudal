@@ -82,6 +82,7 @@ const selectedProvider = ref<number | null>(null)
 const rechargeAmount = ref(10)
 const rechargeCardNo = ref('')
 const rechargeCardPassword = ref('')
+const manualRechargeNote = ref('')
 // 新增：支付方式选择
 const selectedPaymentMethod = ref<string>('')
 // 服务条款勾选
@@ -559,12 +560,17 @@ async function createRechargeOrder() {
   rechargeLoading.value = true
   try {
     let paymentMethod = ''
-    if (provider && provider.type !== 'heleket' && provider.methods && provider.methods.length > 0) {
+    if (provider && provider.type !== 'heleket' && provider.type !== 'manual' && provider.methods && provider.methods.length > 0) {
       // 如果用户选择了特定支付方式，使用该方式；否则使用默认第一个
       paymentMethod = selectedPaymentMethod.value || provider.methods[0]
     }
     
-    const res = await api.billing.createRechargeOrder(selectedProvider.value, rechargeAmount.value, paymentMethod)
+    const res = await api.billing.createRechargeOrder(
+      selectedProvider.value,
+      rechargeAmount.value,
+      paymentMethod,
+      provider?.type === 'manual' ? manualRechargeNote.value.trim() : undefined
+    )
     
     // 如果有支付链接，跳转支付
     if (res.payUrl) {
@@ -580,6 +586,7 @@ async function createRechargeOrder() {
     // 如果没有支付链接（如人工充值）
     toast.success(t('wallet.orderCreated'))
     showRechargeModal.value = false
+    manualRechargeNote.value = ''
     toast.info(`${t('wallet.orderNo')}: ${res.order.orderNo}`)
     
     // 刷新记录
@@ -768,11 +775,13 @@ const logsTotalPages = computed(() => Math.ceil(logsTotal.value / logsPageSize.v
 const recordsTotalPages = computed(() => Math.ceil(recordsTotal.value / recordsPageSize.value))
 const selectedProviderInfo = computed(() => providers.value.find(p => p.id === selectedProvider.value))
 const isRechargeCardProvider = computed(() => selectedProviderInfo.value?.type === 'recharge_card')
+const isManualRechargeProvider = computed(() => selectedProviderInfo.value?.type === 'manual')
 const rechargeSubmitDisabled = computed(() => {
   if (rechargeLoading.value || !selectedProvider.value) return true
   if (isRechargeCardProvider.value) {
     return !rechargeCardNo.value.trim() || !rechargeCardPassword.value.trim()
   }
+  if (isManualRechargeProvider.value && !manualRechargeNote.value.trim()) return true
   return rechargeAmount.value <= 0 || !agreedToNoRefund.value || !agreedToRechargeNotice.value || !agreedToTerms.value
 })
 const balanceTransferAvailable = computed(() => !configStore.freeSiteMode && configStore.balanceTransferEnabled)
@@ -1512,6 +1521,7 @@ function formatTransferAmount() {
                 <div v-if="getRechargeGatewayStatusText(rec)" class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   {{ getRechargeGatewayStatusText(rec) }}
                 </div>
+                <div v-if="rec.failReason" class="mt-1 text-xs text-red-500">{{ rec.failReason }}</div>
               </div>
 
               <div class="flex items-center justify-between gap-3 lg:block">
@@ -1527,7 +1537,7 @@ function formatTransferAmount() {
               </div>
 
               <div class="flex flex-wrap gap-2 lg:justify-end">
-                <template v-if="rec.status === 'pending' && !isOrderExpired(rec.expiredAt)">
+                <template v-if="rec.status === 'pending' && !isOrderExpired(rec.expiredAt) && rec.provider?.type !== 'manual'">
                   <button
                     class="btn btn-sm btn-primary"
                     :disabled="repayLoading === rec.orderNo"
@@ -2061,6 +2071,22 @@ function formatTransferAmount() {
 
             <div v-else-if="selectedProviderInfo?.type === 'heleket'" class="text-xs text-themed-muted rounded-lg bg-themed-secondary px-3 py-2">
               {{ $t('wallet.heleketSelectionHint') }}
+            </div>
+
+            <div v-else-if="isManualRechargeProvider" class="space-y-3">
+              <div v-if="selectedProviderInfo?.instructions" class="whitespace-pre-wrap rounded-lg border border-themed bg-themed-secondary px-3 py-3 text-sm leading-6 text-themed-secondary">
+                {{ selectedProviderInfo.instructions }}
+              </div>
+              <div>
+                <label class="label mb-2 text-xs uppercase tracking-wide text-themed-muted">付款說明 / 交易資訊</label>
+                <textarea
+                  v-model.trim="manualRechargeNote"
+                  class="input min-h-28 w-full resize-y"
+                  maxlength="2000"
+                  placeholder="請填寫付款方式、交易編號、付款時間或其他供管理員核對的資訊"
+                ></textarea>
+                <div class="mt-1 text-right text-xs text-themed-muted">{{ manualRechargeNote.length }} / 2000</div>
+              </div>
             </div>
 
             <div v-else-if="isRechargeCardProvider" class="space-y-3">

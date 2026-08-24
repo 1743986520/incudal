@@ -28,6 +28,10 @@ export async function startSchedulers(): Promise<void> {
   const { startStatusScheduler } = await import('../services/status-scheduler.js')
   startStatusScheduler()
 
+  // 主动探测 Incus 节点健康状态，连续失败自动离线、恢复后自动上线
+  const { startHostHealthMonitor } = await import('../services/host-health-monitor.js')
+  startHostHealthMonitor()
+
   // 启动实例操作任务调度器
   const { cleanupStaleTasks: cleanupStaleInstanceTasks, startInstanceTaskWorker } = await import('../workers/instanceTaskWorker.js')
   await cleanupStaleInstanceTasks()
@@ -83,21 +87,20 @@ export async function startSchedulers(): Promise<void> {
       for (const instance of stuckInstances) {
         console.log(`[CreateTimeout] 清理超时创建实例: ${instance.name} (ID: ${instance.id})`)
 
-        // 使用原子操作更新状态，防止与 createInstanceAsync 的失败回滚竞争
-        const { prisma } = await import('../db/prisma.js')
-        const updateResult = await prisma.instance.updateMany({
-          where: {
-            id: instance.id,
-            status: 'creating'
-          },
-          data: {
-            status: 'error'
-          }
-        })
+        // 原子认领失败状态并退还开通费用，防止与异步创建失败处理竞争或重复退款
+        const { failCreatingInstanceAndRefund } = await import('../db/billing-operations.js')
+        const settlement = await failCreatingInstanceAndRefund(
+          instance.id,
+          '创建超过 10 分钟未完成'
+        )
 
-        if (updateResult.count === 0) {
+        if (!settlement.claimed) {
           console.log(`[CreateTimeout] 实例 ${instance.name} 状态已被其他进程修改，跳过清理`)
           continue
+        }
+
+        if (settlement.refundAmount > 0) {
+          console.log(`[CreateTimeout] 实例 ${instance.name} 已自动退款 ¥${settlement.refundAmount.toFixed(2)}`)
         }
 
         // 回滚资源

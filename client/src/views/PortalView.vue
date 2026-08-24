@@ -9,7 +9,7 @@ import { useThemeStore } from '@/stores/theme'
 import { useBrand } from '@/composables/useBrand'
 import {
   formatPublicPrice,
-  formatPublicTraffic,
+  getPackageTrafficLabel,
   getStartingMonthlyPrice,
   type PackageSource,
   type PublicPackage,
@@ -104,79 +104,38 @@ const consoleActionCompactLabel = computed(() => (
   authStore.isAuthenticated ? t('publicSite.actions.consoleCompact') : t('publicSite.actions.signIn')
 ))
 
-// Material 3 baseline tokens
-// Light: primary #0b57d0, on-primary #fff, primary-container #d3e3fd, on-primary-container #041e49
-//        surface #faf9fd, surface-container #eef0f8, surface-container-high #e8eaf2, outline-variant #c3c6cf
-// Dark:  primary #a8c7fa, on-primary #062e6f, primary-container #284777, on-primary-container #d3e3fd
-//        surface #111418, surface-container #1d2024, surface-container-high #272a2f, outline-variant #43474e
 const ui = computed(() => themeStore.isDark
   ? {
-      badge: 'border-[#284777] bg-[#1a2c52] text-[#d3e3fd]',
-      body: 'text-[#c3c6cf]',
-      primaryButton: 'bg-[#a8c7fa] text-[#062e6f] shadow-[0_1px_2px_rgba(0,0,0,0.3),0_1px_3px_1px_rgba(0,0,0,0.15)] hover:bg-[#bdd3fb] hover:shadow-[0_1px_2px_rgba(0,0,0,0.3),0_2px_6px_2px_rgba(0,0,0,0.15)] focus-visible:ring-[#a8c7fa]/40',
-      secondaryButton: 'bg-[#284777] text-[#d3e3fd] hover:bg-[#304f81] focus-visible:ring-[#a8c7fa]/40',
-      statCard: 'border-[#43474e] bg-[#1d2024]',
-      statValue: 'text-[#e3e2e6]',
-      statLabel: 'text-[#8e9199]',
-      heroTint: 'bg-[linear-gradient(180deg,rgba(26,44,82,0.55)_0%,rgba(26,44,82,0.25)_45%,rgba(17,20,24,0)_100%)]',
-      previewCard: 'bg-[#1a2c52] text-[#d3e3fd] shadow-[0_4px_8px_3px_rgba(0,0,0,0.15),0_1px_3px_rgba(0,0,0,0.3)]',
-      previewLabel: 'text-[#a8c7fa]',
-      previewTitle: 'text-[#eaf1ff]',
-      previewButton: 'bg-[#a8c7fa] text-[#062e6f] hover:bg-[#bdd3fb]',
-      previewBody: 'text-[#c3dafd]',
-      terminalCard: 'bg-[#0b1422] text-[#d3e3fd]',
-      terminalMeta: 'text-[#89a2cf]',
-      platformCard: 'bg-[#1f3159] text-[#eaf1ff]',
-      platformTitle: 'text-[#eaf1ff]',
-      platformBody: 'text-[#b8cbe8]',
-      sectionLabel: 'text-[#8e9199]',
-      sectionBody: 'text-[#c3c6cf]',
-      ecosystemOfficialCard: 'bg-[#1a2c52] text-[#d3e3fd]',
-      ecosystemMarketCard: 'bg-[#223527] text-[#c8e6c9]',
-      ecosystemOfficialBody: 'text-[#c3dafd]',
-      ecosystemMarketBody: 'text-[#b7d3b7]',
-      ecosystemOfficialList: 'text-[#eaf1ff]',
-      ecosystemMarketList: 'text-[#dbeadb]',
-      ecosystemOfficialButton: 'bg-[#a8c7fa] text-[#062e6f] hover:bg-[#bdd3fb]',
-      ecosystemMarketButton: 'bg-[#a0cfa2] text-[#0c3810] hover:bg-[#b4d9b5]',
-      browseWrap: 'border-[#43474e] bg-[#1d2024]',
-      browseCard: 'shadow-[0_1px_2px_rgba(0,0,0,0.3),0_1px_3px_1px_rgba(0,0,0,0.15)] hover:shadow-[0_1px_3px_rgba(0,0,0,0.3),0_4px_8px_3px_rgba(0,0,0,0.15)]',
-      emptyState: 'border-[#43474e] bg-[#1d2024] text-[#8e9199]',
-      skeleton: 'bg-[#272a2f]'
+      badge: 'border-gray-800 bg-gray-950 text-gray-300', body: 'text-gray-400',
+      primaryButton: 'bg-white text-gray-900 hover:bg-gray-100 focus-visible:ring-white/20',
+      secondaryButton: 'border border-gray-800 text-gray-100 hover:bg-gray-900 focus-visible:ring-gray-700',
+      statCard: 'border border-gray-800 bg-gray-950', statValue: 'text-gray-100', statLabel: 'text-gray-500',
+      previewCard: 'border border-gray-800 bg-gray-950 text-gray-100', previewLabel: 'text-gray-500', previewTitle: 'text-gray-100',
+      previewButton: 'bg-white text-gray-900 hover:bg-gray-100', previewBody: 'text-gray-400',
+      terminalCard: 'border border-gray-800 bg-black text-gray-300', terminalMeta: 'text-gray-600',
+      platformCard: 'border border-gray-800 bg-gray-900 text-gray-100', platformTitle: 'text-gray-100', platformBody: 'text-gray-400',
+      sectionLabel: 'text-gray-500', sectionBody: 'text-gray-400',
+      ecosystemOfficialCard: 'border border-gray-800 bg-gray-950 text-gray-100', ecosystemMarketCard: 'border border-gray-800 bg-gray-950 text-gray-100',
+      ecosystemOfficialBody: 'text-gray-400', ecosystemMarketBody: 'text-gray-400', ecosystemOfficialList: 'text-gray-300', ecosystemMarketList: 'text-gray-300',
+      ecosystemOfficialButton: 'bg-white text-gray-900 hover:bg-gray-100', ecosystemMarketButton: 'border border-gray-700 text-gray-100 hover:bg-gray-900',
+      browseWrap: 'border border-gray-800 bg-gray-950', browseCard: 'border border-gray-800 hover:border-gray-700',
+      emptyState: 'border-gray-800 bg-gray-950 text-gray-500', skeleton: 'bg-gray-800'
     }
   : {
-      badge: 'border-[#aac7fa]/60 bg-[#d3e3fd] text-[#041e49]',
-      body: 'text-[#43474e]',
-      primaryButton: 'bg-[#0b57d0] text-white shadow-[0_1px_2px_rgba(11,87,208,0.3),0_1px_3px_1px_rgba(11,87,208,0.15)] hover:bg-[#0848ad] hover:shadow-[0_1px_2px_rgba(11,87,208,0.3),0_2px_6px_2px_rgba(11,87,208,0.15)] focus-visible:ring-[#0b57d0]/30',
-      secondaryButton: 'bg-[#d3e3fd] text-[#041e49] hover:bg-[#c1d6fc] focus-visible:ring-[#0b57d0]/30',
-      statCard: 'bg-white shadow-[0_1px_2px_rgba(15,23,42,0.08),0_1px_3px_1px_rgba(15,23,42,0.06)]',
-      statValue: 'text-[#1a1b20]',
-      statLabel: 'text-[#74777f]',
-      heroTint: 'bg-[linear-gradient(180deg,rgba(211,227,253,0.7)_0%,rgba(223,235,254,0.35)_45%,rgba(252,252,253,0)_100%)]',
-      previewCard: 'bg-[#d3e3fd] text-[#041e49] shadow-[0_1px_3px_rgba(11,87,208,0.1),0_4px_8px_3px_rgba(11,87,208,0.08)]',
-      previewLabel: 'text-[#1a4191]',
-      previewTitle: 'text-[#041e49]',
-      previewButton: 'bg-[#0b57d0] text-white hover:bg-[#0848ad]',
-      previewBody: 'text-[#24366e]',
-      terminalCard: 'bg-[#1b273e] text-[#e3ebff]',
-      terminalMeta: 'text-[#a8bce6]',
-      platformCard: 'bg-white/80 text-[#041e49]',
-      platformTitle: 'text-[#041e49]',
-      platformBody: 'text-[#3b4a73]',
-      sectionLabel: 'text-[#74777f]',
-      sectionBody: 'text-[#43474e]',
-      ecosystemOfficialCard: 'bg-[#d3e3fd] text-[#041e49]',
-      ecosystemMarketCard: 'bg-[#d7edd9] text-[#0c3810]',
-      ecosystemOfficialBody: 'text-[#24366e]',
-      ecosystemMarketBody: 'text-[#295330]',
-      ecosystemOfficialList: 'text-[#041e49]',
-      ecosystemMarketList: 'text-[#0c3810]',
-      ecosystemOfficialButton: 'bg-[#0b57d0] text-white hover:bg-[#0848ad]',
-      ecosystemMarketButton: 'bg-[#3a6a49] text-white hover:bg-[#2c5238]',
-      browseWrap: 'bg-[#eef0f8]',
-      browseCard: 'shadow-[0_1px_2px_rgba(15,23,42,0.08),0_1px_3px_1px_rgba(15,23,42,0.06)] hover:shadow-[0_1px_3px_rgba(15,23,42,0.1),0_4px_8px_3px_rgba(15,23,42,0.08)]',
-      emptyState: 'border-[#c3c6cf] bg-white text-[#74777f]',
-      skeleton: 'bg-[#e2e4ed]'
+      badge: 'border-gray-200 bg-white text-gray-600', body: 'text-gray-600',
+      primaryButton: 'bg-gray-900 text-white hover:bg-gray-700 focus-visible:ring-gray-900/20',
+      secondaryButton: 'border border-gray-300 text-gray-900 hover:bg-gray-100 focus-visible:ring-gray-300',
+      statCard: 'border border-gray-200 bg-white shadow-sm', statValue: 'text-gray-900', statLabel: 'text-gray-500',
+      previewCard: 'border border-gray-200 bg-white text-gray-900 shadow-sm', previewLabel: 'text-gray-500', previewTitle: 'text-gray-900',
+      previewButton: 'bg-gray-900 text-white hover:bg-gray-700', previewBody: 'text-gray-600',
+      terminalCard: 'border border-gray-800 bg-gray-950 text-gray-200', terminalMeta: 'text-gray-500',
+      platformCard: 'border border-gray-200 bg-gray-50 text-gray-900', platformTitle: 'text-gray-900', platformBody: 'text-gray-600',
+      sectionLabel: 'text-gray-500', sectionBody: 'text-gray-600',
+      ecosystemOfficialCard: 'border border-gray-200 bg-white text-gray-900 shadow-sm', ecosystemMarketCard: 'border border-gray-200 bg-white text-gray-900 shadow-sm',
+      ecosystemOfficialBody: 'text-gray-600', ecosystemMarketBody: 'text-gray-600', ecosystemOfficialList: 'text-gray-700', ecosystemMarketList: 'text-gray-700',
+      ecosystemOfficialButton: 'bg-gray-900 text-white hover:bg-gray-700', ecosystemMarketButton: 'border border-gray-300 text-gray-900 hover:bg-gray-100',
+      browseWrap: 'border border-gray-200 bg-gray-50', browseCard: 'border border-gray-200 hover:border-gray-300 hover:shadow-sm',
+      emptyState: 'border-gray-300 bg-white text-gray-500', skeleton: 'bg-gray-200'
     }
 )
 
@@ -187,8 +146,8 @@ usePageSeo(() => ({
   keywords: t('publicSite.seo.keywords').replace(/Incudal/g, brand.brandName)
 }))
 
-function formatTraffic(bytes: string | null): string {
-  return formatPublicTraffic(bytes, t('common.unlimited'))
+function formatPackageTraffic(pkg: PublicPackage): string {
+  return getPackageTrafficLabel(pkg, t('common.unlimited'))
 }
 
 function getPriceLabel(pkg: PublicPackage): string {
@@ -201,35 +160,23 @@ function getPriceLabel(pkg: PublicPackage): string {
 }
 
 function getSourceChipClass(source: PackageSource): string {
-  if (source === 'official') {
-    return themeStore.isDark
-      ? 'border border-[#a8c7fa]/70 text-[#a8c7fa]'
-      : 'border border-[#0b57d0]/40 text-[#0b57d0]'
-  }
-
-  return themeStore.isDark
-    ? 'border border-[#a1cdb3]/70 text-[#a1cdb3]'
-    : 'border border-[#3a6a49]/40 text-[#3a6a49]'
+  void source
+  return themeStore.isDark ? 'border border-gray-700 text-gray-300' : 'border border-gray-300 text-gray-600'
 }
 
 function getSourceDotClass(source: PackageSource): string {
-  if (source === 'official') {
-    return themeStore.isDark ? 'bg-[#a8c7fa]' : 'bg-[#0b57d0]'
-  }
-
-  return themeStore.isDark ? 'bg-[#a1cdb3]' : 'bg-[#3a6a49]'
+  void source
+  return themeStore.isDark ? 'bg-gray-500' : 'bg-gray-400'
 }
 
 function getInstanceChipClass(instanceType: string): string {
   if (instanceType === 'vm') {
-    return themeStore.isDark
-      ? 'border border-[#ffdfa6]/60 text-[#ffdfa6]'
-      : 'border border-[#7a5900]/40 text-[#7a5900]'
+    return themeStore.isDark ? 'border border-gray-700 text-gray-300' : 'border border-gray-300 text-gray-600'
   }
 
   return themeStore.isDark
-    ? 'border border-[#8e9199]/60 text-[#c3c6cf]'
-    : 'border border-[#74777f]/40 text-[#43474e]'
+    ? 'border border-gray-700 text-gray-400'
+    : 'border border-gray-300 text-gray-500'
 }
 
 function getEcosystemCardClass(source: PackageSource): string {
@@ -241,15 +188,15 @@ function getEcosystemCardClass(source: PackageSource): string {
 
 function getPackageCardClass(_source: PackageSource): string {
   return themeStore.isDark
-    ? 'bg-[#272a2f] hover:bg-[#2d3136]'
-    : 'bg-white hover:bg-[#f8f9fc]'
+    ? 'bg-gray-950 hover:bg-gray-900'
+    : 'bg-white hover:bg-gray-50'
 }
 
 function getPriceTextClass(source: PackageSource): string {
   if (source === 'official') {
-    return themeStore.isDark ? 'text-[#a8c7fa]' : 'text-[#0b57d0]'
+    return themeStore.isDark ? 'text-gray-100' : 'text-gray-900'
   }
-  return themeStore.isDark ? 'text-[#a1cdb3]' : 'text-[#3a6a49]'
+  return themeStore.isDark ? 'text-gray-300' : 'text-gray-700'
 }
 
 function browseCatalog(source?: PackageSource): void {
@@ -313,7 +260,7 @@ onMounted(() => {
             class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium"
             :class="ui.badge"
           >
-            <span class="h-1.5 w-1.5 rounded-full" :class="themeStore.isDark ? 'bg-[#a8c7fa]' : 'bg-[#0b57d0]'"></span>
+            <span class="h-1.5 w-1.5 rounded-lg" :class="themeStore.isDark ? 'bg-[#a8c7fa]' : 'bg-[#0b57d0]'"></span>
             {{ t('publicSite.portal.badge') }}
           </div>
 
@@ -326,7 +273,7 @@ onMounted(() => {
 
           <div class="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
-              class="inline-flex h-10 items-center justify-center gap-2 rounded-full px-6 text-sm font-medium tracking-[0.01em] transition-[background-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-4"
+              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-6 text-sm font-medium tracking-[0.01em] transition-[background-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-4"
               :class="ui.primaryButton"
               @click="browseCatalog()"
             >
@@ -337,7 +284,7 @@ onMounted(() => {
             </button>
 
             <button
-              class="inline-flex h-10 items-center justify-center gap-2 rounded-full px-6 text-sm font-medium tracking-[0.01em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-4"
+              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-6 text-sm font-medium tracking-[0.01em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-4"
               :class="ui.secondaryButton"
               @click="goToConsole"
             >
@@ -350,7 +297,7 @@ onMounted(() => {
             <div
               v-for="item in statCards"
               :key="item.label"
-              class="rounded-2xl px-4 py-4 transition-shadow duration-150"
+              class="rounded-lg px-4 py-4 transition-shadow duration-150"
               :class="ui.statCard"
             >
               <div class="text-xs font-medium" :class="ui.statLabel">
@@ -365,7 +312,7 @@ onMounted(() => {
 
         <div class="relative">
           <div
-            class="relative overflow-hidden rounded-[28px] p-6"
+            class="relative overflow-hidden rounded-xl p-6"
             :class="ui.previewCard"
           >
             <div class="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -379,7 +326,7 @@ onMounted(() => {
               </div>
 
               <button
-                class="h-10 rounded-full px-5 text-sm font-medium transition-colors duration-150"
+                class="h-10 rounded-lg px-5 text-sm font-medium transition-colors duration-150"
                 :class="ui.previewButton"
                 @click="browseCatalog()"
               >
@@ -391,7 +338,7 @@ onMounted(() => {
               {{ t('publicSite.portal.previewDescription') }}
             </p>
 
-            <div class="mt-6 rounded-2xl p-5 font-mono text-xs leading-6" :class="ui.terminalCard">
+            <div class="mt-6 rounded-lg p-5 font-mono text-xs leading-6" :class="ui.terminalCard">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <span>root@incudal</span>
                 <span :class="ui.terminalMeta">incus console</span>
@@ -407,7 +354,7 @@ onMounted(() => {
               <div
                 v-for="card in platformCards"
                 :key="card.title"
-                class="rounded-2xl p-4 transition-colors duration-150"
+                class="rounded-lg p-4 transition-colors duration-150"
                 :class="ui.platformCard"
               >
                 <div class="text-sm font-medium" :class="ui.platformTitle">
@@ -441,7 +388,7 @@ onMounted(() => {
           <article
             v-for="line in ecosystemCards"
             :key="line.key"
-            class="rounded-[28px] p-7 transition-shadow duration-150"
+            class="rounded-xl p-7 transition-shadow duration-150"
             :class="getEcosystemCardClass(line.source)"
           >
             <div class="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -463,14 +410,14 @@ onMounted(() => {
 
             <div class="mt-6 space-y-3 text-sm" :class="line.source === 'official' ? ui.ecosystemOfficialList : ui.ecosystemMarketList">
               <div v-for="point in line.points" :key="point" class="flex items-start gap-3">
-                <span class="mt-1.5 h-1.5 w-1.5 rounded-full" :class="getSourceDotClass(line.source)"></span>
+                <span class="mt-1.5 h-1.5 w-1.5 rounded-lg" :class="getSourceDotClass(line.source)"></span>
                 <span>{{ point }}</span>
               </div>
             </div>
 
             <div class="mt-6">
               <button
-                class="inline-flex h-10 items-center gap-2 rounded-full px-6 text-sm font-medium transition-colors duration-150"
+                class="inline-flex h-10 items-center gap-2 rounded-lg px-6 text-sm font-medium transition-colors duration-150"
                 :class="line.source === 'official' ? ui.ecosystemOfficialButton : ui.ecosystemMarketButton"
                 @click="browseCatalog(line.source)"
               >
@@ -484,7 +431,7 @@ onMounted(() => {
 
     <section class="px-4 pb-20 sm:px-6 lg:px-8">
       <div
-        class="mx-auto max-w-7xl rounded-[28px] px-6 py-10 sm:px-10"
+        class="mx-auto max-w-7xl rounded-xl px-6 py-10 sm:px-10"
         :class="ui.browseWrap"
       >
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -501,7 +448,7 @@ onMounted(() => {
           </div>
 
           <button
-            class="inline-flex h-10 items-center justify-center gap-2 rounded-full px-6 text-sm font-medium tracking-[0.01em] transition-[background-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-4"
+            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-6 text-sm font-medium tracking-[0.01em] transition-[background-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-4"
             :class="ui.primaryButton"
             @click="browseCatalog()"
           >
@@ -523,7 +470,7 @@ onMounted(() => {
             <button
               v-for="pkg in spotlightPackages"
               :key="pkg.id"
-              class="flex flex-col gap-4 rounded-2xl p-5 text-left transition-[background-color,box-shadow] duration-150 sm:flex-row sm:items-start sm:justify-between"
+              class="flex flex-col gap-4 rounded-lg p-5 text-left transition-[background-color,box-shadow] duration-150 sm:flex-row sm:items-start sm:justify-between"
               :class="[ui.browseCard, getPackageCardClass(pkg.sourceType)]"
               @click="openPackage(pkg)"
             >
@@ -545,7 +492,7 @@ onMounted(() => {
                 <div class="mt-3 truncate text-lg font-medium" :class="ui.platformTitle">
                   {{ pkg.name }}
                 </div>
-                <div class="mt-2 line-clamp-2 text-sm leading-5" :class="ui.sectionBody">
+                <div class="portal-package-description mt-2 text-sm leading-5" :class="ui.sectionBody">
                   {{ pkg.description || t('publicSite.portal.packageFallback') }}
                 </div>
               </div>
@@ -555,7 +502,7 @@ onMounted(() => {
                   {{ getPriceLabel(pkg) }}
                 </div>
                 <div class="mt-1 text-xs" :class="ui.statLabel">
-                  {{ formatTraffic(pkg.monthly_traffic_limit) }}
+                  {{ formatPackageTraffic(pkg) }}
                 </div>
               </div>
             </button>
@@ -563,7 +510,7 @@ onMounted(() => {
 
           <div
             v-else
-            class="rounded-2xl border border-dashed px-4 py-8 text-center text-sm"
+            class="rounded-lg border border-dashed px-4 py-8 text-center text-sm"
             :class="ui.emptyState"
           >
             {{ t('publicSite.portal.emptyPackages') }}
@@ -573,3 +520,18 @@ onMounted(() => {
     </section>
   </div>
 </template>
+
+<style scoped>
+.portal-package-description {
+  display: -webkit-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+</style>

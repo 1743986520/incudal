@@ -24,6 +24,7 @@ INJECT_AGENT_SECRET=""
 INJECT_AGENT_INSTALL_TOKEN=""
 INJECT_AGENT_BINARY_URL=""
 INJECT_AGENT_ENABLED="true"
+INJECT_PPS_LIMIT=""
 # ==============================
 
 # ========================== 全局常量 ==========================
@@ -45,7 +46,7 @@ readonly AGENT_BIN_PATH="${INCUDAL_AGENT_BIN:-/usr/local/bin/incudal-agent}"
 
 # ZFS 预编译模块下载地址（GitHub Release）
 # 格式: ${ZFS_PREBUILT_URL}/zfs-modules-<内核版本>.tar.gz
-readonly ZFS_PREBUILT_URL="https://github.com/0xdabiaoge/Incudal-Debian-ZFS/releases/download/Debian-ZFS"
+readonly ZFS_PREBUILT_URL="https://github.com/IncuShlii/IncuShlii-Debian-ZFS/releases/download/Debian-ZFS"
 
 # ========================== 颜色定义 ==========================
 readonly RED='\033[1;31m'
@@ -68,6 +69,13 @@ DEFAULT_IFACE=""
 IS_PURE_IPV6="false"
 AGENT_INSTALL_STATUS="未安装"
 AGENT_HEARTBEAT_INTERVAL_SECONDS="30"
+PPS_PROTECTION_ENABLED="true"
+PPS_LIMIT="${INJECT_PPS_LIMIT:-20000}"
+PPS_OPTION_EXPLICIT="false"
+readonly PPS_BURST_PACKETS="5000"
+readonly PPS_SINGLE_TARGET_LIMIT="10000"
+readonly PPS_SINGLE_TARGET_BURST="2500"
+readonly PPS_BLOCK_SECONDS="3600"
 
 # ========================== 工具函数 ==========================
 log()   { echo -e "${GREEN}[✓]${NC} $1"; }
@@ -185,6 +193,8 @@ show_agent_summary_line() {
     local label="${DIM}未安装${NC}"
     if command -v systemctl &>/dev/null && systemctl is-active --quiet "$AGENT_SERVICE_NAME" 2>/dev/null; then
         label="${GREEN}运行中${NC}"
+    elif command -v rc-service &>/dev/null && rc-service "$AGENT_SERVICE_NAME" status >/dev/null 2>&1; then
+        label="${GREEN}运行中${NC}"
     elif [[ -f "$AGENT_CONFIG_FILE" || -x "$AGENT_BIN_PATH" ]]; then
         label="${YELLOW}已安装（未运行）${NC}"
     fi
@@ -225,11 +235,13 @@ detect_system() {
     OS_VERSION="${VERSION_ID:-unknown}"
     OS_CODENAME="${VERSION_CODENAME:-unknown}"
     ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    [[ "$ARCH" == "x86_64" ]] && ARCH="amd64"
+    [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
 
-    # 仅支持 Ubuntu 和 Debian
-    if [[ "$OS_ID" != "ubuntu" && "$OS_ID" != "debian" ]]; then
+    # Ubuntu/Debian use Zabbly packages; Rocky 10 uses the Incus COPR repository.
+    if [[ "$OS_ID" != "ubuntu" && "$OS_ID" != "debian" && "$OS_ID" != "rocky" && "$OS_ID" != "alpine" ]]; then
         error "不支持的操作系统: ${OS_ID}"
-        error "本脚本仅支持 Ubuntu 和 Debian 系统"
+        error "本脚本支持 Ubuntu、Debian、Rocky Linux 10 和 Alpine Linux 3.20+"
         exit 1
     fi
 
@@ -250,6 +262,21 @@ detect_system() {
             local deb_major="${OS_VERSION%%.*}"
             if [[ "$deb_major" -lt 11 ]] 2>/dev/null; then
                 error "Debian 版本过低 (${OS_VERSION})，最低要求 Debian 11 (Bullseye)"
+                exit 1
+            fi
+            ;;
+        rocky)
+            local rocky_major="${OS_VERSION%%.*}"
+            if [[ "$rocky_major" -ne 9 && "$rocky_major" -ne 10 ]] 2>/dev/null; then
+                error "Rocky Linux 版本不受支持 (${OS_VERSION})，目前支持 Rocky Linux 9 和 10"
+                exit 1
+            fi
+            ;;
+        alpine)
+            local alpine_major="${OS_VERSION%%.*}"
+            local alpine_minor="${OS_VERSION#*.}"; alpine_minor="${alpine_minor%%.*}"
+            if (( alpine_major < 3 || (alpine_major == 3 && alpine_minor < 20) )); then
+                error "Alpine Linux 版本过低 (${OS_VERSION})，最低要求 3.20"
                 exit 1
             fi
             ;;
@@ -380,12 +407,13 @@ show_menu() {
     echo -e "    ${CYAN}4)${NC}  查看系统信息"
     echo -e "    ${CYAN}7)${NC}  网络模式说明（必看说明）"
     echo -e "    ${CYAN}8)${NC}  Agent 管理  ${DIM}─  安装 / 更新宿主机 Agent${NC}"
+    echo -e "    ${CYAN}9)${NC}  PPS 防护管理  ${DIM}─  为每台实例限制异常发包${NC}"
     echo ""
     echo -e "    ${RED}5)${NC}  卸载 RFW  ${DIM}─  移除 RFW 防火墙${NC}"
     echo -e "    ${RED}6)${NC}  卸载节点  ${DIM}─  彻底清理还原系统${NC}"
     echo -e "    ${CYAN}0)${NC}  退出"
     echo ""
-    echo -ne "  ${BOLD}请输入选项 [0-8]: ${NC}"
+    echo -ne "  ${BOLD}请输入选项 [0-9]: ${NC}"
 }
 
 # ========================== 网络模式说明 ==========================
@@ -512,6 +540,9 @@ confirm_install() {
     case "$OS_ID" in
         ubuntu) os_label="Ubuntu ${OS_VERSION}" ;;
         debian) os_label="Debian ${OS_VERSION}" ;;
+        rocky)  os_label="Rocky Linux ${OS_VERSION}" ;;
+        alpine) os_label="Alpine Linux ${OS_VERSION}" ;;
+        *)      os_label="${OS_ID} ${OS_VERSION}" ;;
     esac
 
     # Token 脱敏显示（仅显示首8位和末4位）
@@ -528,6 +559,12 @@ confirm_install() {
         echo -e "  IPv6 子网 :  ${GREEN}${IPV6_SUBNET}${NC} (${IPV6_IFACE:-auto})"
     fi
     echo -e "  通信端口  :  ${GREEN}[::]:${LISTEN_PORT}${NC}"
+    if [[ "$PPS_PROTECTION_ENABLED" == "true" ]]; then
+        echo -e "  PPS 防护  :  ${GREEN}每实例 ${PPS_LIMIT} 包/秒${NC}（突发 ${PPS_BURST_PACKETS} 包）"
+        echo -e "  单 IP 封锁:  ${GREEN}${PPS_SINGLE_TARGET_LIMIT} 包/秒，封锁 ${PPS_BLOCK_SECONDS} 秒${NC}"
+    else
+        echo -e "  PPS 防护  :  ${YELLOW}关闭${NC}"
+    fi
     echo -e "  Token     :  ${GREEN}${token_masked}${NC}"
     if [[ "$AGENT_ENABLED" == "true" && ( -n "$AGENT_INSTALL_TOKEN" || ( -n "$AGENT_ID" && -n "$AGENT_SECRET" ) ) ]]; then
         echo -e "  Agent     :  ${GREEN}${AGENT_HEARTBEAT_INTERVAL_SECONDS} 秒上报${NC}"
@@ -606,9 +643,15 @@ probe_ipv6_subnet() {
 
     # 确保 python3 可用（用于 IPv6 地址偏移计算）
     if ! command -v python3 &>/dev/null; then
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq >/dev/null 2>&1 || true
-        apt-get install -y -qq python3 >/dev/null 2>&1 || true
+        if [[ "$OS_ID" == "alpine" ]]; then
+            apk add --no-cache python3 >/dev/null 2>&1 || true
+        elif [[ "$OS_ID" == "rocky" ]]; then
+            dnf install -y -q python3 >/dev/null 2>&1 || true
+        else
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq >/dev/null 2>&1 || true
+            apt-get install -y -qq python3 >/dev/null 2>&1 || true
+        fi
     fi
 
     if ! command -v python3 &>/dev/null; then
@@ -813,6 +856,11 @@ setup_temp_network() {
 
 setup_warp_v4() {
     step "破壁出击：安装 Cloudflare WARP 提供全局 IPv4 逃生出站隧道..."
+    if [[ "$OS_ID" == "alpine" ]]; then
+        warn "Alpine 轻量模式暂不自动部署 WARP；保留原生 IPv6 出站"
+        warn "Incus、Agent 与 IPv6 NAT 仍会继续安装"
+        return 0
+    fi
     
     # 核心修复一：在建隧道前，抓取并物理备份原生态纯净网关参数
     REAL_V6_IFACE=$(ip -6 route show default 2>/dev/null | grep -v wg | grep -oP 'dev \K\S+' | head -1)
@@ -823,8 +871,14 @@ setup_warp_v4() {
 
     # 强制不干涉内核锁版本依赖
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq 2>/dev/null || true
-    if ! apt-get install -y -qq wireguard-tools openresolv >/dev/null 2>&1; then
+    if [[ "$OS_ID" == "alpine" ]]; then
+        apk add --no-cache wireguard-tools >/dev/null 2>&1 || true
+    elif [[ "$OS_ID" == "rocky" ]]; then
+        dnf install -y -q wireguard-tools >/dev/null 2>&1 || true
+    else
+        apt-get update -qq 2>/dev/null || true
+    fi
+    if [[ "$OS_ID" != "rocky" ]] && ! apt-get install -y -qq wireguard-tools openresolv >/dev/null 2>&1; then
         warn "wireguard-tools 安装失败（纯 IPv6 环境 apt 源可能不可达）"
         warn "尝试仅安装 wireguard-tools..."
         apt-get install -y -qq wireguard-tools >/dev/null 2>&1 || true
@@ -1093,6 +1147,35 @@ EOF
 install_deps() {
     step "步骤 [2/5]  安装系统依赖..."
 
+    if [[ "$OS_ID" == "alpine" ]]; then
+        apk update >/dev/null
+        apk add --no-cache bash curl ca-certificates openssl python3 iproute2 iptables nftables \
+            util-linux coreutils grep sed gawk tar gzip xz shadow-uidmap dnsmasq rsync squashfs-tools \
+            btrfs-progs >/dev/null || {
+            error "Alpine Linux 基础依赖安装失败"
+            return 1
+        }
+        update-ca-certificates >/dev/null 2>&1 || true
+        warn "Alpine 轻量模式默认不安装 ZFS，将使用 dir/btrfs 存储池"
+        log "Alpine 系统依赖安装完成"
+        return 0
+    fi
+
+    if [[ "$OS_ID" == "rocky" ]]; then
+        dnf install -y -q epel-release curl gnupg2 python3 iproute iptables nftables tar gzip xz >/dev/null 2>&1 || {
+            error "Rocky Linux 基础依赖安装失败"
+            return 1
+        }
+        if dnf install -y -q zfs >/dev/null 2>&1 && modprobe zfs 2>/dev/null; then
+            log "系统依赖安装完成（含 ZFS）"
+            persist_zfs_module || true
+        else
+            warn "Rocky Linux 未提供可用的 ZFS 模块，将使用 dir/btrfs 存储池"
+            log "基础依赖安装完成"
+        fi
+        return 0
+    fi
+
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq 2>/dev/null
 
@@ -1137,59 +1220,232 @@ install_deps() {
         local kernel_ver
         kernel_ver=$(uname -r)
 
-        # 策略 1: 尝试下载预编译 ZFS 模块包
+        local kernel_flavor="standard"
+        if [[ "$kernel_ver" =~ (cloud|virtual|aws|azure|gcp|oracle|kvm|xen) ]]; then
+            kernel_flavor="cloud"
+            info "检测到 Cloud/虚拟化内核: ${kernel_ver}"
+        fi
+
+        # 新预编译源同时覆盖标准、Cloud 内核及 amd64/arm64。
         if install_zfs_prebuilt "$kernel_ver"; then
             debian_zfs_compiled=false  # 预编译模式不需要后续清理编译环境
             log "系统依赖安装完成（ZFS 预编译模块，秒级部署）"
-        # 策略 2: 询问用户是否进行 DKMS 即时编译
         else
             warn "未找到内核 ${kernel_ver} 的预编译 ZFS 模块包"
-            echo ""
-            info "当前内核版本暂无预编译包，可选择 DKMS 即时编译（约 5-10 分钟）"
-            echo -ne "  ${BOLD}是否进行实时编译？${NC}[Y/n]: "
-            read -r dkms_confirm || true
-            if [[ "${dkms_confirm:-}" =~ ^[nN]$ ]]; then
-                warn "已跳过 ZFS 安装，返回主菜单"
-                return 1
+            info "尝试为当前内核安装精确 headers 并构建 ZFS DKMS..."
+            if install_zfs_dkms; then
+                debian_zfs_compiled=true
+            else
+                warn "当前 Cloud/定制内核无法构建 ZFS，已自动回退到 dir/btrfs 存储"
+                warn "这不会影响 Incus、容器、NAT 或 Agent 安装"
+                debian_zfs_compiled=false
             fi
-            info "开始 DKMS 即时编译..."
-            install_zfs_dkms
-            debian_zfs_compiled=true
         fi
     else
         # Ubuntu: 直接安装（预编译模块随内核提供）
         if apt-get install -y -qq zfsutils-linux >/dev/null 2>&1; then
-            log "系统依赖安装完成（含 ZFS）"
+            if ! modprobe zfs 2>/dev/null; then
+                apt-get install -y -qq "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 || true
+            fi
+            if modprobe zfs 2>/dev/null; then
+                log "系统依赖安装完成（含 ZFS）"
+                persist_zfs_module || true
+            else
+                warn "当前 Ubuntu Cloud 内核没有可加载的 ZFS 模块，将使用 dir/btrfs 存储池"
+                log "基础依赖安装完成"
+            fi
         else
             warn "ZFS 工具安装失败，已跳过（面板可使用 dir/btrfs 存储池）"
             log "基础依赖安装完成"
         fi
     fi
 
-    # Debian DKMS 编译后清理：删除编译工具链以释放资源
+    # 保留 headers/DKMS，使 Cloud 内核升级后能自动重建 ZFS 模块。
     if [[ "$debian_zfs_compiled" == "true" ]]; then
-        info "ZFS DKMS 编译成功，清理编译环境以释放资源..."
-
-        # 锁定当前内核版本，防止自动更新时 DKMS 在无编译环境下重编译失败
-        local kernel_pkg
-        kernel_pkg=$(dpkg -l | awk '/^ii.*linux-image-[0-9]/ {print $2}' | head -n1 || true)
-        if [[ -n "$kernel_pkg" ]]; then
-            apt-mark hold "$kernel_pkg" >/dev/null 2>&1 || true
-            info "已锁定内核版本: ${kernel_pkg}（防止自动更新导致 ZFS 失效）"
-        fi
-
-        # 卸载编译工具链（gcc、g++、make 等，约 200-500MB）
-        apt-get purge -y -qq build-essential cpp gcc g++ make dpkg-dev >/dev/null 2>&1 || true
-        # 卸载内核头文件（约 100-200MB）
-        apt-get purge -y -qq "linux-headers-$(uname -r)" linux-headers-* >/dev/null 2>&1 || true
-        # 自动清理不再需要的依赖
-        apt-get autoremove -y -qq >/dev/null 2>&1 || true
-        # 清理 APT 下载缓存
         apt-get clean 2>/dev/null || true
+        info "已保留 DKMS 与当前内核 headers，后续内核升级可自动重建 ZFS 模块"
+    fi
+}
 
-        log "编译环境已清理，磁盘空间已释放"
-        warn "注意：内核版本已锁定，如需更新内核请先重装编译依赖"
-        info "更新内核前请运行: apt install build-essential linux-headers-\$(uname -r)"
+# ========================== 每实例 PPS 防护 ==========================
+# 在 Linux bridge 转发层按来源 MAC 独立计数。攻击实例超过阈值时只丢弃
+# 该实例的流量，不会限制宿主机管理流量，也不会连带影响其他实例。
+install_pps_guard() {
+    if [[ "$PPS_PROTECTION_ENABLED" != "true" ]]; then
+        warn "已按配置跳过每实例 PPS 防护"
+        return 0
+    fi
+
+    step "安装每实例 PPS 防护（${PPS_LIMIT} 包/秒）..."
+
+    if ! command -v nft &>/dev/null; then
+        error "未找到 nftables，请先安装 nftables 后重试"
+        return 1
+    fi
+
+    if ! [[ "$PPS_LIMIT" =~ ^[0-9]+$ ]] || (( PPS_LIMIT < 1000 || PPS_LIMIT > 500000 )); then
+        warn "PPS 阈值 ${PPS_LIMIT} 无效，已回退为 20000"
+        PPS_LIMIT="20000"
+    fi
+
+    mkdir -p /etc/incudal
+    cat > /etc/incudal/pps-guard.conf <<EOF
+PPS_LIMIT=${PPS_LIMIT}
+PPS_BURST_PACKETS=${PPS_BURST_PACKETS}
+PPS_SINGLE_TARGET_LIMIT=${PPS_SINGLE_TARGET_LIMIT}
+PPS_SINGLE_TARGET_BURST=${PPS_SINGLE_TARGET_BURST}
+PPS_BLOCK_SECONDS=${PPS_BLOCK_SECONDS}
+BRIDGE_NAME=${BRIDGE_NAME}
+EOF
+
+    cat > /usr/local/sbin/incudal-pps-guard <<'GUARD'
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/incudal/pps-guard.conf
+
+nft delete table inet incudal_pps_guard 2>/dev/null || true
+nft -f - <<EOF
+table inet incudal_pps_guard {
+  set blocked_v4 {
+    type ether_addr . ipv4_addr
+    flags timeout
+    timeout ${PPS_BLOCK_SECONDS}s
+  }
+  set blocked_v6 {
+    type ether_addr . ipv6_addr
+    flags timeout
+    timeout ${PPS_BLOCK_SECONDS}s
+  }
+  chain forward {
+    type filter hook forward priority -200; policy accept;
+    iifname "${BRIDGE_NAME}" ether saddr . ip daddr @blocked_v4 counter drop
+    iifname "${BRIDGE_NAME}" ether saddr . ip6 daddr @blocked_v6 counter drop
+    iifname "${BRIDGE_NAME}" meter per_target_v4 { ether saddr . ip daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v4 { ether saddr . ip daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V4 " counter drop
+    iifname "${BRIDGE_NAME}" meter per_target_v6 { ether saddr . ip6 daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v6 { ether saddr . ip6 daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V6 " counter drop
+    iifname "${BRIDGE_NAME}" meter per_instance_pps { ether saddr limit rate over ${PPS_LIMIT}/second burst ${PPS_BURST_PACKETS} packets } counter drop
+  }
+}
+
+manage_pps_guard() {
+    echo ""
+    divider
+    echo -e "  ${BOLD}每实例 PPS 防护${NC}"
+    divider
+    if nft list table inet incudal_pps_guard >/dev/null 2>&1; then
+        echo -e "  当前状态  :  ${GREEN}运行中${NC}"
+        if [[ -f /etc/incudal/pps-guard.conf ]]; then
+            local saved_limit=""
+            saved_limit=$(sed -nE 's/^PPS_LIMIT=([0-9]+)$/\1/p' /etc/incudal/pps-guard.conf | head -n1 || true)
+            [[ -n "$saved_limit" ]] && PPS_LIMIT="$saved_limit"
+        fi
+        echo -e "  当前阈值  :  ${GREEN}${PPS_LIMIT} 包/秒${NC}"
+    else
+        echo -e "  当前状态  :  ${YELLOW}未启用${NC}"
+    fi
+    echo ""
+    echo -e "    ${CYAN}1)${NC} 启用 / 更新防护"
+    echo -e "    ${RED}2)${NC} 关闭防护"
+    echo -e "    ${CYAN}0)${NC} 返回"
+    echo ""
+    echo -ne "  ${BOLD}请选择 [0-2]: ${NC}"
+    local choice=""
+    read -r choice
+    case "$choice" in
+        1)
+            echo -ne "  ${BOLD}每实例 PPS 上限 [默认 ${PPS_LIMIT}]: ${NC}"
+            local requested=""
+            read -r requested
+            if [[ -n "$requested" ]]; then
+                if [[ "$requested" =~ ^[0-9]+$ ]] && (( requested >= 1000 && requested <= 500000 )); then
+                    PPS_LIMIT="$requested"
+                else
+                    warn "无效阈值，继续使用 ${PPS_LIMIT}"
+                fi
+            fi
+            PPS_PROTECTION_ENABLED="true"
+            install_pps_guard
+            ;;
+        2)
+            if command -v systemctl &>/dev/null; then
+                systemctl disable --now incudal-pps-guard 2>/dev/null || true
+            elif command -v rc-service &>/dev/null; then
+                rc-service incudal-pps-guard stop 2>/dev/null || true
+                rc-update del incudal-pps-guard default 2>/dev/null || true
+            fi
+            nft delete table inet incudal_pps_guard 2>/dev/null || true
+            log "每实例 PPS 防护已关闭"
+            ;;
+        0) return 0 ;;
+        *) warn "无效选项" ;;
+    esac
+    pause_return
+}
+EOF
+GUARD
+    chmod 0755 /usr/local/sbin/incudal-pps-guard
+
+    if command -v systemctl &>/dev/null; then
+        cat > /etc/systemd/system/incudal-pps-guard.service <<'EOF'
+[Unit]
+Description=Incudal per-instance PPS protection
+After=network-online.target incus.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/incudal-pps-guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable --now incudal-pps-guard.service
+    elif command -v rc-service &>/dev/null; then
+        cat > /etc/init.d/incudal-pps-guard <<'EOF'
+#!/sbin/openrc-run
+description="Incudal per-instance PPS protection"
+command="/usr/local/sbin/incudal-pps-guard"
+command_background="no"
+depend() {
+    need net
+    after incus
+}
+EOF
+        chmod 0755 /etc/init.d/incudal-pps-guard
+        rc-update add incudal-pps-guard default >/dev/null 2>&1 || true
+        rc-service incudal-pps-guard restart
+    else
+        /usr/local/sbin/incudal-pps-guard
+    fi
+
+    if nft list table inet incudal_pps_guard >/dev/null 2>&1; then
+        log "每实例 PPS 防护已启用：${PPS_LIMIT} 包/秒，突发 ${PPS_BURST_PACKETS} 包"
+        log "单一目的 IP 超过 ${PPS_SINGLE_TARGET_LIMIT} 包/秒时，将对该实例封锁目标 ${PPS_BLOCK_SECONDS} 秒"
+    else
+        error "PPS 防护规则未能加载"
+        return 1
+    fi
+}
+
+# ZFS 加载成功后固化开机加载，并刷新当前内核的 initramfs。
+persist_zfs_module() {
+    if ! modprobe zfs 2>/dev/null; then
+        return 1
+    fi
+
+    mkdir -p /etc/modules-load.d
+    printf '%s\n' zfs > /etc/modules-load.d/zfs.conf
+    info "已配置 ZFS 模块开机自动加载"
+
+    if command -v update-initramfs &>/dev/null; then
+        info "正在将 ZFS 模块写入当前内核 initramfs..."
+        update-initramfs -u -k "$(uname -r)" >/dev/null 2>&1 || \
+            warn "initramfs 刷新失败；modules-load 配置仍会在开机时加载 ZFS"
+    elif command -v dracut &>/dev/null; then
+        info "正在使用 dracut 刷新当前内核 initramfs..."
+        dracut -f --kver "$(uname -r)" >/dev/null 2>&1 || \
+            warn "dracut 刷新失败；modules-load 配置仍会在开机时加载 ZFS"
     fi
 }
 
@@ -1266,6 +1522,7 @@ install_zfs_prebuilt() {
     fi
 
     info "ZFS 内核模块加载成功 ✓"
+    persist_zfs_module || true
 
     # 安装 ZFS 用户空间工具（不拉取 DKMS，避免触发编译）
     info "安装 ZFS 用户空间工具..."
@@ -1292,17 +1549,41 @@ install_zfs_prebuilt() {
 # ---- Debian ZFS 策略 2: DKMS 即时编译（回退方案）----
 install_zfs_dkms() {
     info "安装 DKMS 编译依赖（linux-headers、build-essential）..."
-    
-    # 优先安装通用编译核心工具，防止一处失败导致全部跳过
-    apt-get install -y -qq build-essential dkms >/dev/null 2>&1 || true
+    local kernel_ver
+    kernel_ver=$(uname -r)
 
-    # 尝试安装精确版本内核源码头
-    if ! apt-get install -y -qq "linux-headers-$(uname -r)" >/dev/null 2>&1; then
-        warn "未找到精确的内核头文件 linux-headers-$(uname -r)"
-        info "正尝试拉取架构级通用头文件（linux-headers-amd64）..."
-        apt-get install -y -qq linux-headers-amd64 >/dev/null 2>&1 || {
-            warn "内核头文件均安装失败，ZFS DKMS 编译极可能无法正常进行"
-        }
+    # 优先安装通用编译核心工具，防止一处失败导致全部跳过
+    if ! apt-get install -y -qq build-essential dkms >/dev/null 2>&1; then
+        warn "DKMS 编译工具安装失败"
+        return 1
+    fi
+
+    # 只能针对正在运行的精确内核构建；元包安装出的新内核不能冒充当前 headers。
+    if [[ ! -e "/lib/modules/${kernel_ver}/build/Makefile" ]]; then
+        apt-get install -y -qq "linux-headers-${kernel_ver}" >/dev/null 2>&1 || true
+    fi
+
+    if [[ ! -e "/lib/modules/${kernel_ver}/build/Makefile" ]]; then
+        local deb_arch flavor_meta=""
+        deb_arch=$(dpkg --print-architecture 2>/dev/null || echo amd64)
+        case "$kernel_ver" in
+            *-cloud-*) flavor_meta="linux-headers-cloud-${deb_arch}" ;;
+            *-virtual) flavor_meta="linux-headers-virtual" ;;
+            *-aws) flavor_meta="linux-headers-aws" ;;
+            *-azure) flavor_meta="linux-headers-azure" ;;
+            *-gcp) flavor_meta="linux-headers-gcp" ;;
+            *-oracle) flavor_meta="linux-headers-oracle" ;;
+        esac
+        if [[ -n "$flavor_meta" ]]; then
+            info "尝试安装 Cloud 内核 headers 元包: ${flavor_meta}"
+            apt-get install -y -qq "$flavor_meta" >/dev/null 2>&1 || true
+        fi
+    fi
+
+    if [[ ! -e "/lib/modules/${kernel_ver}/build/Makefile" ]]; then
+        warn "软件源没有与当前运行内核完全匹配的 headers: linux-headers-${kernel_ver}"
+        warn "可能是 DD 后遗留的定制/云厂商内核；跳过 ZFS，避免错误编译或卡住安装"
+        return 1
     fi
 
     info "开始 DKMS 编译 ZFS 模块（CPU 将跑满，请耐心等待）..."
@@ -1315,13 +1596,45 @@ install_zfs_dkms() {
         # 验证 ZFS 模块
         if modprobe zfs 2>/dev/null; then
             log "ZFS DKMS 编译成功（模块已加载）"
+            persist_zfs_module || true
+            return 0
         else
             warn "ZFS 工具已安装但内核模块加载失败（DKMS 编译可能不完整）"
             info "面板仍可使用 dir/btrfs 存储池，ZFS 可稍后手动修复"
+            return 1
         fi
     else
         warn "ZFS 安装失败，已跳过（面板可使用 dir/btrfs 存储池）"
+        return 1
     fi
+}
+
+# 等待 daemon 的 Unix socket 和 API 真正就绪，避免服务管理器已返回但 Incus 尚未可用。
+wait_for_incus_daemon() {
+    local attempt
+    for attempt in $(seq 1 30); do
+        if incus version 2>/dev/null | grep -q -E "Server version: [0-9]"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+# Incus 的非特权容器需要 root 拥有 subordinate UID/GID 范围。
+# 部分 RPM 包不会像 Debian/Alpine 包一样自动建立它们。
+ensure_root_idmap() {
+    local changed="false"
+    touch /etc/subuid /etc/subgid
+    if ! awk -F: '$1 == "root" && $3 > 0 { found=1 } END { exit !found }' /etc/subuid; then
+        echo "root:1000000:1000000000" >> /etc/subuid
+        changed="true"
+    fi
+    if ! awk -F: '$1 == "root" && $3 > 0 { found=1 } END { exit !found }' /etc/subgid; then
+        echo "root:1000000:1000000000" >> /etc/subgid
+        changed="true"
+    fi
+    [[ "$changed" == "true" ]]
 }
 
 # 步骤 3: 安装 Incus
@@ -1330,9 +1643,63 @@ install_incus() {
 
     # 幂等性：已安装且服务端正常运行则跳过
     if incus version 2>/dev/null | grep -q -E "Server version: [0-9]"; then
+        if ensure_root_idmap; then
+            if [[ "$OS_ID" == "alpine" ]]; then
+                rc-service incusd restart >/dev/null 2>&1 || true
+            else
+                systemctl restart incus.service 2>/dev/null || systemctl restart incus 2>/dev/null || true
+            fi
+            wait_for_incus_daemon || true
+        fi
         local current_ver
         current_ver=$(incus version 2>/dev/null | awk '/Client version/ {print $3}' || echo "未知")
         info "Incus 服务已安装并运行（版本: ${current_ver}），跳过安装"
+        return 0
+    fi
+
+    if [[ "$OS_ID" == "alpine" ]]; then
+        local alpine_branch="v$(printf '%s' "$OS_VERSION" | cut -d. -f1,2)"
+        local alpine_repo="https://dl-cdn.alpinelinux.org/alpine/${alpine_branch}"
+        grep -qxF "${alpine_repo}/main" /etc/apk/repositories || echo "${alpine_repo}/main" >> /etc/apk/repositories
+        grep -qxF "${alpine_repo}/community" /etc/apk/repositories || echo "${alpine_repo}/community" >> /etc/apk/repositories
+        apk update >/dev/null
+        apk add --no-cache incus incus-client incus-openrc >/dev/null || {
+            error "Alpine Incus 安装失败，请检查 ${alpine_branch} main/community 仓库"
+            return 1
+        }
+        ensure_root_idmap || true
+        rc-update add incusd default >/dev/null 2>&1 || true
+        rc-service incusd restart >/dev/null 2>&1 || rc-service incusd start >/dev/null 2>&1
+        if ! wait_for_incus_daemon; then
+            error "Alpine Incus 服务启动超时，请运行 rc-service incusd status 检查"
+            return 1
+        fi
+        log "Incus 安装完成（Alpine OpenRC）"
+        return 0
+    fi
+
+    if [[ "$OS_ID" == "rocky" ]]; then
+        local rocky_major="${OS_VERSION%%.*}"
+        local rocky_copr_repo=""
+        if [[ "$rocky_major" == "9" ]]; then
+            rocky_copr_repo="https://copr.fedorainfracloud.org/coprs/neelc/incus/repo/epel-9/neelc-incus-epel-9.repo"
+        else
+            rocky_copr_repo="https://copr.fedorainfracloud.org/coprs/neelc/incus/repo/rhel+epel-10/neelc-incus-rhel+epel-10.repo"
+        fi
+        dnf install -y -q epel-release wget dnf-plugins-core >/dev/null 2>&1
+        mkdir -p /etc/yum.repos.d
+        curl -fsSL "$rocky_copr_repo" -o /etc/yum.repos.d/neelc-incus.repo
+        dnf install -y -q incus incus-tools >/dev/null 2>&1 || {
+            error "Rocky Linux Incus 安装失败，请检查 EPEL/COPR 网络连接"
+            return 1
+        }
+        ensure_root_idmap || true
+        systemctl enable --now incus.service incus.socket 2>/dev/null || systemctl enable --now incus 2>/dev/null || true
+        if ! wait_for_incus_daemon; then
+            error "Rocky Linux Incus 服务启动超时，请运行 systemctl status incus 检查"
+            return 1
+        fi
+        log "Incus 安装完成（Rocky Linux COPR）"
         return 0
     fi
 
@@ -1354,6 +1721,12 @@ SRC
 
     apt-get update -qq 2>/dev/null
     apt-get install -y -qq incus >/dev/null
+    ensure_root_idmap || true
+    systemctl enable --now incus.service incus.socket 2>/dev/null || systemctl enable --now incus 2>/dev/null || true
+    if ! wait_for_incus_daemon; then
+        error "Incus 服务启动超时，请运行 systemctl status incus 检查"
+        return 1
+    fi
     log "Incus 安装完成"
 }
 
@@ -1390,8 +1763,14 @@ init_incus() {
         
         # 配置 ndppd (邻居发现)，这是对非直连路由云主机的保底策略
         if [[ -n "${IPV6_SUBNET:-}" && -n "${IPV6_IFACE:-}" ]]; then
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get install -y -qq ndppd >/dev/null 2>&1 || true
+            if [[ "$OS_ID" == "alpine" ]]; then
+                apk add --no-cache ndppd >/dev/null 2>&1 || true
+            elif [[ "$OS_ID" == "rocky" ]]; then
+                dnf install -y -q ndppd >/dev/null 2>&1 || true
+            else
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get install -y -qq ndppd >/dev/null 2>&1 || true
+            fi
             cat > /etc/ndppd.conf <<EOF
 proxy ${IPV6_IFACE} {
     rule ${IPV6_SUBNET} {
@@ -1399,8 +1778,13 @@ proxy ${IPV6_IFACE} {
     }
 }
 EOF
-            systemctl restart ndppd 2>/dev/null || true
-            systemctl enable ndppd 2>/dev/null || true
+            if [[ "$OS_ID" == "alpine" ]]; then
+                rc-update add ndppd default >/dev/null 2>&1 || true
+                rc-service ndppd restart >/dev/null 2>&1 || rc-service ndppd start >/dev/null 2>&1 || true
+            else
+                systemctl restart ndppd 2>/dev/null || true
+                systemctl enable ndppd 2>/dev/null || true
+            fi
             info "NDPPD 路由代理保活已附加配置"
         fi
     else
@@ -1587,8 +1971,16 @@ show_incudal_agent_status() {
         else
             echo -e "  服务状态  :  ${DIM}未安装${NC}"
         fi
+    elif command -v rc-service &>/dev/null; then
+        if rc-service "$AGENT_SERVICE_NAME" status >/dev/null 2>&1; then
+            echo -e "  服务状态  :  ${GREEN}运行中 (OpenRC)${NC}"
+        elif [[ -x "/etc/init.d/${AGENT_SERVICE_NAME}" ]]; then
+            echo -e "  服务状态  :  ${YELLOW}已安装（未运行）${NC}"
+        else
+            echo -e "  服务状态  :  ${DIM}未安装${NC}"
+        fi
     else
-        echo -e "  服务状态  :  ${DIM}systemctl 不可用${NC}"
+        echo -e "  服务状态  :  ${DIM}服务管理器不可用${NC}"
     fi
 
     divider
@@ -1678,11 +2070,14 @@ install_incudal_agent_with_token() {
 
 show_incudal_agent_logs() {
     step "查看 Agent 最近日志"
-    if ! command -v journalctl &>/dev/null; then
-        error "journalctl 不可用"
+    if command -v journalctl &>/dev/null; then
+        journalctl -u "$AGENT_SERVICE_NAME" --no-pager -n 80 || true
+    elif [[ -f "/var/log/${AGENT_SERVICE_NAME}.log" ]]; then
+        tail -n 80 "/var/log/${AGENT_SERVICE_NAME}.log" || true
+    else
+        error "未找到 Agent 日志"
         return 1
     fi
-    journalctl -u "$AGENT_SERVICE_NAME" --no-pager -n 80 || true
 }
 
 manage_incudal_agent() {
@@ -1763,6 +2158,11 @@ SHORTCUT
     echo -e "  API 监听  :  ${GREEN}[::]:${LISTEN_PORT}${NC}"
     echo -e "  网络模式  :  ${GREEN}${mode_label}${NC}"
     echo -e "  Agent     :  ${GREEN}${AGENT_INSTALL_STATUS}${NC}"
+    if [[ "$PPS_PROTECTION_ENABLED" == "true" ]]; then
+        echo -e "  PPS 防护  :  ${GREEN}已启用（每实例 ${PPS_LIMIT} 包/秒）${NC}"
+    else
+        echo -e "  PPS 防护  :  ${YELLOW}未启用${NC}"
+    fi
     echo -e "  快捷命令  :  ${GREEN}incudal${NC}"
     echo ""
     divider
@@ -1917,6 +2317,10 @@ configure_rfw_rules() {
 
 # 安装 RFW 防火墙
 install_rfw() {
+    if [[ "$OS_ID" == "alpine" ]]; then
+        warn "Alpine 轻量母机暂不支持 RFW systemd 扩展；Incus NAT 与 nftables 不受影响"
+        return 0
+    fi
     echo ""
     divider
     echo -e "  ${BOLD}安装 RFW 入站流量屏蔽防火墙${NC}"
@@ -2292,6 +2696,10 @@ do_uninstall() {
 
     # ---- 步骤 4: 停止 Incus 服务 ----
     step "步骤 [4/8]  停止 Incus 服务..."
+    if [[ "$OS_ID" == "alpine" ]]; then
+        rc-service incusd stop 2>/dev/null || true
+        rc-update del incusd default 2>/dev/null || true
+    fi
     systemctl stop incus.service 2>/dev/null || true
     systemctl stop incus.socket 2>/dev/null || true
     systemctl stop incus-user.service 2>/dev/null || true
@@ -2314,7 +2722,13 @@ do_uninstall() {
     pkill -9 -f "incus" 2>/dev/null || true
 
     # 2. 直接强制尝试卸载所有相关的包（使用正则覆盖包名）
-    apt-get purge -y -qq "^incus.*" lxcfs 2>/dev/null || true
+    if [[ "$OS_ID" == "alpine" ]]; then
+        apk del incus incus-client incus-vm 2>/dev/null || true
+    elif [[ "$OS_ID" == "rocky" ]]; then
+        dnf remove -y -q 'incus*' lxcfs 2>/dev/null || true
+    else
+        apt-get purge -y -qq "^incus.*" lxcfs 2>/dev/null || true
+    fi
     
     # 3. 兜底彻底斩断二进制文件（防止包管理器 Broken 状态导致系统内指令幽灵残留）
     rm -rf /opt/incus 2>/dev/null || true
@@ -2323,7 +2737,13 @@ do_uninstall() {
     log "Incus 相关软件包及其幽灵残留已强制清除"
 
     # 清理不再需要的依赖
-    apt-get autoremove -y -qq 2>/dev/null || true
+    if [[ "$OS_ID" == "alpine" ]]; then
+        apk cache clean 2>/dev/null || true
+    elif [[ "$OS_ID" == "rocky" ]]; then
+        dnf autoremove -y -q 2>/dev/null || true
+    else
+        apt-get autoremove -y -qq 2>/dev/null || true
+    fi
     log "依赖清理完成"
 
     # ---- 步骤 6: 清理 APT 源和密钥 ----
@@ -2342,8 +2762,14 @@ do_uninstall() {
         cleaned=true
     fi
 
+    if [[ -f /etc/yum.repos.d/neelc-incus.repo ]]; then
+        rm -f /etc/yum.repos.d/neelc-incus.repo
+        info "已删除: neelc-incus.repo"
+        cleaned=true
+    fi
+
     if [[ "$cleaned" == "true" ]]; then
-        apt-get update -qq 2>/dev/null || true
+        if [[ "$OS_ID" == "alpine" ]]; then apk update >/dev/null 2>&1 || true; elif [[ "$OS_ID" == "rocky" ]]; then dnf makecache -q 2>/dev/null || true; else apt-get update -qq 2>/dev/null || true; fi
         log "APT 源和密钥已清理"
     else
         info "APT 源和密钥不存在，跳过"
@@ -2359,6 +2785,21 @@ do_uninstall() {
     else
         info "RFW 未安装，跳过"
     fi
+
+    # 清理每实例 PPS 防护（只删除 Incudal 自有表和服务）
+    if command -v systemctl &>/dev/null; then
+        systemctl stop incudal-pps-guard 2>/dev/null || true
+        systemctl disable incudal-pps-guard 2>/dev/null || true
+        rm -f /etc/systemd/system/incudal-pps-guard.service
+        systemctl daemon-reload 2>/dev/null || true
+    elif command -v rc-service &>/dev/null; then
+        rc-service incudal-pps-guard stop 2>/dev/null || true
+        rc-update del incudal-pps-guard default 2>/dev/null || true
+        rm -f /etc/init.d/incudal-pps-guard
+    fi
+    nft delete table inet incudal_pps_guard 2>/dev/null || true
+    rm -f /usr/local/sbin/incudal-pps-guard /etc/incudal/pps-guard.conf
+    info "已清理: 每实例 PPS 防护"
 
     # 2. 清理 WARP 和 IPv6 路由守护神
     if ip link show wg0 >/dev/null 2>&1 || [[ -f /usr/local/bin/wgcf ]] || [[ -d /etc/wireguard ]]; then
@@ -2488,6 +2929,7 @@ setup_v6_guardian() {
     
     local guardian_script="/usr/local/bin/incus-v6-guardian.sh"
     local guardian_service="/etc/systemd/system/incus-v6-guardian.service"
+    [[ "$OS_ID" == "alpine" ]] && guardian_service="/etc/init.d/incus-v6-guardian"
     
     cat > "$guardian_script" << 'EOF'
 #!/bin/bash
@@ -2554,7 +2996,25 @@ EOF
 
     chmod +x "$guardian_script"
 
-    cat > "$guardian_service" << EOF
+    if [[ "$OS_ID" == "alpine" ]]; then
+        cat > "$guardian_service" << EOF
+#!/sbin/openrc-run
+name="Incudal IPv6 Dual-Stack Guardian"
+command="$guardian_script"
+command_background="yes"
+pidfile="/run/incus-v6-guardian.pid"
+output_log="/var/log/incus-v6-guardian.log"
+error_log="/var/log/incus-v6-guardian.log"
+supervisor="supervise-daemon"
+respawn_delay=10
+respawn_max=0
+depend() { need net incusd; }
+EOF
+        chmod +x "$guardian_service"
+        rc-update add incus-v6-guardian default >/dev/null 2>&1 || true
+        rc-service incus-v6-guardian restart >/dev/null 2>&1 || rc-service incus-v6-guardian start >/dev/null 2>&1 || true
+    else
+        cat > "$guardian_service" << EOF
 [Unit]
 Description=Incudal IPv6 Dual-Stack Guardian Daemon
 After=network.target
@@ -2568,10 +3028,10 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    systemctl daemon-reload 2>/dev/null || true
-    systemctl enable incus-v6-guardian 2>/dev/null || true
-    systemctl restart incus-v6-guardian 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl enable incus-v6-guardian 2>/dev/null || true
+        systemctl restart incus-v6-guardian 2>/dev/null || true
+    fi
     
     info "守护神服务已启动：每隔 15 秒自动打通新增容器的反向 IPv6 映射"
 }
@@ -2605,6 +3065,10 @@ main() {
                 IPV6_IFACE="$2"; shift 2 ;;
             --port|-p)
                 LISTEN_PORT="$2"; shift 2 ;;
+            --pps-limit)
+                PPS_LIMIT="$2"; PPS_PROTECTION_ENABLED="true"; PPS_OPTION_EXPLICIT="true"; shift 2 ;;
+            --disable-pps-protection)
+                PPS_PROTECTION_ENABLED="false"; PPS_OPTION_EXPLICIT="true"; shift ;;
             --uninstall)
                 ACTION="uninstall"; shift ;;
             --agent|--agent-menu)
@@ -2618,6 +3082,8 @@ main() {
                 echo "  --ipv6-subnet <CIDR>    IPv6 子网段（例如 2001:db8::/64）"
                 echo "  --ipv6-iface <IFACE>    IPv6 路由父网卡（例如 eth0）"
                 echo "  --port <PORT>           自定义 Incus 运行端口 (默认 8443)"
+                echo "  --pps-limit <PPS>       每实例 PPS 上限（默认 20000，范围 1000-500000）"
+                echo "  --disable-pps-protection 关闭每实例 PPS 防护（不建议）"
                 echo "  --uninstall             卸载 Incus 节点并还原系统"
                 echo "  --agent                 打开 Agent 安装 / 更新菜单"
                 echo "  --help, -h              显示帮助信息"
@@ -2718,6 +3184,7 @@ main() {
                 6)  do_uninstall; exit 0 ;;
                 7)  show_network_mode_help; continue ;;
                 8)  manage_incudal_agent; continue ;;
+                9)  manage_pps_guard; continue ;;
                 0)  info "再见！"; exit 0 ;;
                 *)  warn "无效选项，请重新选择"; continue ;;
             esac
@@ -2752,6 +3219,27 @@ main() {
     fi
 
     configure_agent_heartbeat_interval
+
+    # 每实例 PPS 防护默认开启；交互安装允许调整，面板/管道安装直接采用安全默认值。
+    if [[ -t 0 && -z "${INJECT_PPS_LIMIT:-}" && "$PPS_OPTION_EXPLICIT" != "true" ]]; then
+        echo -e "\n${CYAN}==> 每实例 PPS 发包保护${NC}"
+        echo -e "  ${DIM}默认开启并限制每台实例 20000 包/秒，低于约 29000 PPS 的上游封锁线${NC}"
+        echo -ne "  ${BOLD}启用 PPS 防护？[Y/n]: ${NC}"
+        read -r PPS_CHOICE
+        if [[ "${PPS_CHOICE:-Y}" =~ ^[nN]$ ]]; then
+            PPS_PROTECTION_ENABLED="false"
+        else
+            echo -ne "  ${BOLD}每实例 PPS 上限 [默认 ${PPS_LIMIT}，范围 1000-500000]: ${NC}"
+            read -r USER_PPS_LIMIT
+            if [[ -n "${USER_PPS_LIMIT:-}" ]]; then
+                if [[ "$USER_PPS_LIMIT" =~ ^[0-9]+$ ]] && (( USER_PPS_LIMIT >= 1000 && USER_PPS_LIMIT <= 500000 )); then
+                    PPS_LIMIT="$USER_PPS_LIMIT"
+                else
+                    warn "PPS 阈值无效，继续使用 ${PPS_LIMIT}"
+                fi
+            fi
+        fi
+    fi
 
     # WARP 询问逻辑（纯 IPv6 专供）
     if [[ "$IS_PURE_IPV6" == "true" ]]; then
@@ -2804,6 +3292,7 @@ main() {
     install_incus     # 3/5 安装 Incus
     init_incus        # 4/5 初始化 Incus
     import_cert       # 5/5 导入证书
+    install_pps_guard # 默认启用：按实例限制异常 PPS
     
     # 仅当启用了 IPv6 相关功能时，挂载 IPv6 双栈同步守护神
     if [[ "$MODE" == "nat_ipv6" ]]; then

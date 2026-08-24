@@ -41,7 +41,7 @@ const form = ref({
   cpuAllowanceMax: 0,
   memoryMax: 0,
   instanceType: 'container' as 'container' | 'vm' | 'both',
-  networkMode: 'nat' as 'nat' | 'nat_ipv6' | 'ipv6_only',
+  networkMode: 'nat' as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only',
   ipv6Subnet: '',
   ipv6ParentInterface: '',
   natPublicIp: '',
@@ -157,6 +157,7 @@ async function createHost() {
   const networkModeMap: Record<string, { networkMode: string; ipv6Mode: number; needsIpv6Subnet: boolean; needsNatConfig: boolean }> = {
     'nat':          { networkMode: 'nat',      ipv6Mode: 3, needsIpv6Subnet: false, needsNatConfig: true },
     'nat_ipv6':     { networkMode: 'nat_ipv6', ipv6Mode: 1, needsIpv6Subnet: true,  needsNatConfig: true },
+    'nat_ipv6_nat': { networkMode: 'nat_ipv6_nat', ipv6Mode: 2, needsIpv6Subnet: false, needsNatConfig: true },
     'ipv6_only':    { networkMode: 'nat_ipv6', ipv6Mode: 1, needsIpv6Subnet: true,  needsNatConfig: false },
   }
   const modeConfig = networkModeMap[form.value.networkMode] || networkModeMap['nat']
@@ -397,6 +398,7 @@ function closeAndGoBack() {
                 <select v-model="form.networkMode" class="input">
                   <option value="nat">{{ t('admin.hosts.networkModeNat') }}</option>
                   <option value="nat_ipv6">{{ t('admin.hosts.networkModeNatIpv6') }}</option>
+                  <option value="nat_ipv6_nat">{{ t('admin.hosts.networkModeNatIpv6Nat') }}</option>
                   <option value="ipv6_only">{{ t('admin.hosts.networkModeIpv6Only') }}</option>
                 </select>
               </div>

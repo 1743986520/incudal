@@ -102,7 +102,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         type: 'object',
         required: ['username'],
         properties: {
-          username: { type: 'string', minLength: 3, maxLength: 32 }
+          username: { type: 'string', minLength: 3, maxLength: 254 }
         }
       }
     }
@@ -129,7 +129,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         type: 'object',
         required: ['username', 'password'],
         properties: {
-          username: { type: 'string', minLength: 3, maxLength: 32 },
+          username: { type: 'string', minLength: 3, maxLength: 254 },
           password: { type: 'string', minLength: 6, maxLength: 128 },
           totpCode: { type: 'string', minLength: 6, maxLength: 6 },
           recoveryCode: { type: 'string', minLength: 8, maxLength: 20 },
@@ -302,7 +302,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       username: user.username,
       role: user.role,
       sid: sessionId  // 会话标识，用于会话级别的 token 失效
-    }, { expiresIn: '30m' })
+    }, { expiresIn: '7d' })
 
     // 设置 Refresh Token Cookie (HttpOnly)
     // SEC005: 使用统一的 Cookie 配置
@@ -635,7 +635,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       username: newUser.username,
       role: newUser.role,
       sid: sessionId  // 会话标识，用于会话级别的 token 失效
-    }, { expiresIn: '30m' })
+    }, { expiresIn: '7d' })
 
     // 设置 Refresh Token Cookie (HttpOnly)
     // SEC005: 使用统一的 Cookie 配置
@@ -765,6 +765,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
           tokenData = await verifyRefreshToken(refreshToken, clientIp, userAgent)
         } catch (retryError) {
           fastify.log.error({ err: retryError }, 'Refresh token verification retry failed')
+          // Keep the existing cookie on infrastructure failures. The client
+          // will retain its session and retry later instead of being logged out.
+          throw retryError
         }
       }
 
@@ -800,7 +803,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         username: user.username,
         role: user.role,
         sid: sessionId
-      }, { expiresIn: '30m' })
+      }, { expiresIn: '7d' })
 
       // 如果会话成功延期，同步更新 Cookie 有效期
       // SEC005: 使用统一的 Cookie 配置

@@ -189,6 +189,7 @@ const showChangePlanModal = ref<boolean>(false)
 const showDestroyModal = ref<boolean>(false)
 const destroyLoading = ref<boolean>(false)
 const errorDestroyLoading = ref<boolean>(false)
+const errorRetryLoading = ref<boolean>(false)
 const destroyInfo = ref<{
   canDestroy: boolean
   cannotDestroyReason: string
@@ -1260,6 +1261,21 @@ async function handleErrorDestroy(): Promise<void> {
   }
 }
 
+async function handleErrorRetry(): Promise<void> {
+  if (!instance.value) return
+  errorRetryLoading.value = true
+  try {
+    await api.instances.retryProvision(instance.value.id)
+    instance.value = { ...instance.value, status: 'creating' }
+    toast.success(t('instance.retryCreateStarted', { name: instance.value.name }))
+    router.push({ name: 'instances' })
+  } catch (err) {
+    toast.error(translateError(err))
+  } finally {
+    errorRetryLoading.value = false
+  }
+}
+
 // 任务状态轮询
 const activeTask = ref<{
   id: number
@@ -1268,7 +1284,16 @@ const activeTask = ref<{
   progress?: string | null
   error?: string | null
   queuePosition: number
+  createdAt: string
+  startedAt?: string | null
 } | null>(null)
+const taskRecoveryLoading = ref(false)
+const canRecoverActiveTask = computed(() => {
+  if (!activeTask.value) return false
+  if (authStore.isAdmin) return true
+  const since = activeTask.value.startedAt || activeTask.value.createdAt
+  return Date.now() - new Date(since).getTime() >= 15 * 60 * 1000
+})
 let taskPollingInterval: ReturnType<typeof setInterval> | null = null
 
 // 是否禁用所有操作按钮（有任务进行中、有待处理转移或实例被封停时）
@@ -1332,6 +1357,22 @@ function stopTaskPolling(): void {
     taskPollingInterval = null
   }
   activeTask.value = null
+}
+
+async function recoverActiveTask(): Promise<void> {
+  if (!activeTask.value || taskRecoveryLoading.value) return
+  if (!confirm(t('instance.detail.taskRecovery.confirm'))) return
+  taskRecoveryLoading.value = true
+  try {
+    await api.instances.recoverTask(activeTask.value.id, authStore.isAdmin)
+    toast.success(t('instance.detail.taskRecovery.success'))
+    stopTaskPolling()
+    await loadInstance()
+  } catch (error) {
+    toast.error(`${t('instance.detail.taskRecovery.failed')}: ${translateError(error)}`)
+  } finally {
+    taskRecoveryLoading.value = false
+  }
 }
 
 async function handleAction(action: InstanceAction): Promise<void> {
@@ -2354,6 +2395,15 @@ function formatShortDate(dateStr: string | null | undefined): string {
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
             </svg>
             <span class="hidden sm:inline">{{ $t(`instance.detail.task.${activeTask.taskType}`) }}</span>
+            <button
+              v-if="canRecoverActiveTask"
+              type="button"
+              class="ml-1 rounded border border-current px-2 py-0.5 font-medium hover:bg-black/5 dark:hover:bg-white/10"
+              :disabled="taskRecoveryLoading"
+              @click="recoverActiveTask"
+            >
+              {{ taskRecoveryLoading ? $t('common.processing') : $t('instance.detail.taskRecovery.action') }}
+            </button>
           </div>
           <!-- Transfer Lock Warning -->
           <div 
@@ -2662,12 +2712,21 @@ function formatShortDate(dateStr: string | null | undefined): string {
             </p>
           </div>
         </div>
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+        <button
+          class="flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors w-full sm:w-auto text-center bg-blue-600 hover:bg-blue-700 text-white"
+          :disabled="errorRetryLoading || errorDestroyLoading"
+          @click="handleErrorRetry"
+        >
+          <span v-if="errorRetryLoading">{{ $t('common.processing') }}</span>
+          <span v-else>{{ $t('instance.errorBanner.retryNow') }}</span>
+        </button>
         <button
           class="flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors w-full sm:w-auto text-center"
           :class="themeStore.isDark 
             ? 'bg-red-600 hover:bg-red-700 text-white' 
             : 'bg-red-600 hover:bg-red-700 text-white'"
-          :disabled="errorDestroyLoading"
+          :disabled="errorDestroyLoading || errorRetryLoading"
           @click="handleErrorDestroy"
         >
           <span v-if="errorDestroyLoading" class="inline-flex items-center gap-2">
@@ -2679,6 +2738,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
           </span>
           <span v-else>{{ $t('instance.errorBanner.destroyNow') }}</span>
         </button>
+        </div>
       </div>
 
       <!-- Tab Content -->

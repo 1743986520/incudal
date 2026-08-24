@@ -11,6 +11,7 @@ import { isIP } from 'net'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { prisma } from '../db/prisma.js'
+import * as db from '../db/index.js'
 import { createLog, LogModule, LogResult } from '../db/logs.js'
 import { decryptSensitiveData } from '../lib/security.js'
 import {
@@ -29,6 +30,11 @@ import {
   type HostAgentRecord
 } from '../lib/host-agent-credentials.js'
 import { processAgentInstanceReport } from '../services/agent-instance-report.js'
+import { sendSecurityIncidentNotification } from '../services/traffic-notifier.js'
+import { sendBanNotificationEmail } from '../lib/mailer.js'
+import { clearAuthCache } from '../plugins/auth-decorators.js'
+import { invalidateUserAccessTokens, revokeAllUserRefreshTokens } from '../lib/security.js'
+import { closeUserSessions } from '../lib/terminal-proxy.js'
 
 interface AgentCredentialsParams {
   hostId: string
@@ -52,6 +58,97 @@ interface AgentHeartbeatBody {
   instances?: Record<string, unknown>
   resources?: Record<string, unknown>
   metrics?: Record<string, unknown>
+  securityEvents?: Array<Record<string, unknown>>
+}
+
+const securityIncidentDedupe = new Map<string, number>()
+
+async function processAgentSecurityEvents(hostId: number, events: unknown, instancesReport: unknown): Promise<void> {
+  if (!Array.isArray(events) || events.length === 0) return
+  const host = await prisma.host.findUnique({ where: { id: hostId }, select: { name: true } })
+  const now = Date.now()
+  const instanceNameByMac = new Map<string, string>()
+  if (instancesReport && typeof instancesReport === 'object') {
+    const items = (instancesReport as { items?: unknown }).items
+    if (Array.isArray(items)) {
+      for (const rawItem of items) {
+        if (!rawItem || typeof rawItem !== 'object') continue
+        const item = rawItem as Record<string, unknown>
+        const name = sanitizeShortString(item.name, 200)
+        const network = item.network && typeof item.network === 'object' ? item.network as Record<string, unknown> : null
+        const mac = sanitizeShortString(network?.mac, 32)?.toLowerCase()
+        if (name && mac && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) instanceNameByMac.set(mac, name)
+      }
+    }
+  }
+  for (const [key, expiresAt] of securityIncidentDedupe) {
+    if (expiresAt <= now) securityIncidentDedupe.delete(key)
+  }
+
+  for (const raw of events.slice(0, 64)) {
+    if (!raw || typeof raw !== 'object') continue
+    const event = raw as Record<string, unknown>
+    if (event.type !== 'single_target_pps_block') continue
+    const sourceMac = sanitizeShortString(event.sourceMac, 32)
+    const destinationIp = sanitizeShortString(event.destinationIp, 128)
+    if (!sourceMac || !/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(sourceMac) || !destinationIp || isIP(destinationIp) === 0) continue
+    const expiresInSeconds = Math.max(0, Math.min(86400, Number(event.expiresInSeconds) || 0))
+    const dedupeKey = `${hostId}:${sourceMac.toLowerCase()}:${destinationIp}`
+    if (securityIncidentDedupe.has(dedupeKey)) continue
+    securityIncidentDedupe.set(dedupeKey, now + Math.max(60000, expiresInSeconds * 1000))
+
+    const reportedName = instanceNameByMac.get(sourceMac.toLowerCase())
+    const instance = reportedName ? await prisma.instance.findFirst({
+      where: { hostId, incusId: reportedName, status: { not: 'deleted' } },
+      include: { user: { select: { id: true, username: true, email: true, status: true, role: true } } }
+    }) : null
+    let suspensionResult = '未找到实例，未执行用户封禁'
+    let emailResult = '未发送'
+
+    if (instance) {
+      const reason = `检测到实例 ${instance.name} 向 ${destinationIp} 的单目标发包超过 ${Math.max(1, Number(event.thresholdPps) || 10000).toLocaleString()} PPS，系统因滥用风险自动封禁账户。`
+      if (instance.user.status !== 'banned' && instance.user.role !== 'admin') {
+        await db.updateUserStatus(instance.userId, 'banned', reason)
+        clearAuthCache(instance.userId)
+        await revokeAllUserRefreshTokens(instance.userId)
+        await invalidateUserAccessTokens(instance.userId)
+        const closedSessions = closeUserSessions(instance.userId, 'User account automatically banned for PPS abuse')
+        await createLog(instance.userId, LogModule.USER, 'user.security_auto_ban', `用户 ${instance.user.username} 因实例 ${instance.name} 的 PPS 安全事件被自动封禁；关闭 ${closedSessions} 个终端会话`, LogResult.SUCCESS)
+        if (instance.user.email) {
+          const mail = await sendBanNotificationEmail(instance.user.email, {
+            username: instance.user.username,
+            reason
+          })
+          emailResult = mail.success ? '邮件已发送' : `邮件发送失败：${mail.error || '未知错误'}`
+        } else {
+          emailResult = '用户未设置邮箱，未发送'
+        }
+        suspensionResult = `面板已封禁用户账户；已关闭 ${closedSessions} 个终端会话；实例流量规则已封锁异常目标`
+      } else if (instance.user.role === 'admin') {
+        suspensionResult = '目标属于管理员账户，安全规则拒绝自动封禁并已上报'
+        emailResult = '未发送'
+      } else {
+        suspensionResult = '用户原本已被封禁，未重复处理'
+        emailResult = '未重复发送'
+      }
+    }
+
+    void sendSecurityIncidentNotification({
+      hostName: host?.name || `Host ${hostId}`,
+      hostId,
+      sourceMac,
+      destinationIp,
+      family: event.family === 'ipv6' ? 'IPv6' : 'IPv4',
+      thresholdPps: Math.max(1, Number(event.thresholdPps) || 10000),
+      instanceLimitPps: Math.max(1, Number(event.instanceLimitPps) || 20000),
+      expiresInSeconds,
+      instanceName: instance?.name,
+      username: instance?.user.username,
+      userId: instance?.userId,
+      suspensionResult,
+      emailResult
+    }).catch(error => console.error('[Agent] Failed to send PPS security notification:', error))
+  }
 }
 
 interface AgentBinaryParams {
@@ -102,7 +199,7 @@ const agentModel = prisma.hostAgent
 const nonceModel = prisma.hostAgentNonce
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const agentBinaryNamePattern = /^incudal-agent-linux-(amd64|arm64)$/
+const agentBinaryNamePattern = /^incudal-agent-linux-(amd64|arm64)(?:\.gz)?$/
 const agentReleaseBinaryNamePattern = /^incudal-agent-(x86_64|aarch64)-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/
 const defaultAgentReleaseRepository = 'qwer-xyz/incudal_classic'
 const githubApiBaseUrl = 'https://api.github.com'
@@ -116,6 +213,67 @@ const minAgentOfflineThresholdSeconds = 120
 let agentReleaseManifestCache: { expiresAt: number; manifest: AgentUpgradeManifest } | null = null
 let agentReleaseAssetCache: { expiresAt: number; assets: Map<string, GitHubReleaseAsset> } | null = null
 let agentReleaseBinaryCache: { expiresAt: number; binaries: Map<string, Buffer> } | null = null
+
+function getLocalAgentDistPath(): string {
+  return process.env.INCUDAL_AGENT_LOCAL_DIST?.trim() || join(__dirname, '../../../agent/dist')
+}
+
+function readLocalAgentManifest(): AgentUpgradeManifest | null {
+  try {
+    const distPath = getLocalAgentDistPath()
+    const raw = JSON.parse(readFileSync(join(distPath, 'manifest.json'), 'utf8')) as AgentUpgradeManifest
+    const version = sanitizeShortString(raw.version, 128)
+    if (!version || !/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+      return null
+    }
+
+    const manifest: AgentUpgradeManifest = {
+      version,
+      generatedAt: sanitizeShortString(raw.generatedAt, 80) ?? new Date().toISOString(),
+      files: {}
+    }
+    const binaries = new Map<string, Buffer>()
+
+    for (const platform of ['linux-amd64', 'linux-arm64'] as const) {
+      const file = raw.files?.[platform]
+      const name = sanitizeShortString(file?.name, 128)
+      if (!name || !agentBinaryNamePattern.test(name) || !isSha256(file?.sha256)) {
+        return null
+      }
+      const expectedName = `incudal-agent-${platform}`
+      if (name !== expectedName && name !== `${expectedName}.gz`) {
+        return null
+      }
+
+      const binary = readFileSync(join(distPath, name))
+      if (binary.length === 0 || binary.length > agentBinaryDownloadLimitBytes) {
+        return null
+      }
+      const actualSha256 = createHash('sha256').update(binary).digest('hex')
+      if (actualSha256 !== file.sha256.toLowerCase()) {
+        console.warn('[AgentRelease] Local Agent binary checksum mismatch', { name })
+        return null
+      }
+
+      manifest.files![platform] = {
+        name,
+        sha256: actualSha256,
+        size: binary.length,
+        gzip: file?.gzip ?? name.endsWith('.gz')
+      }
+      binaries.set(`${version}:${name}:${actualSha256}`, binary)
+    }
+
+    agentReleaseBinaryCache = {
+      expiresAt: Date.now() + agentReleaseCacheTtlMs,
+      binaries
+    }
+    return manifest
+  } catch (error) {
+    console.warn('[AgentRelease] Local Agent release is unavailable', error)
+    return null
+  }
+}
 
 function parsePositiveId(value: string): number | null {
   const id = Number.parseInt(value, 10)
@@ -469,6 +627,15 @@ async function readAgentUpgradeManifest(): Promise<AgentUpgradeManifest | null> 
     return agentReleaseManifestCache.manifest
   }
 
+  const localManifest = readLocalAgentManifest()
+  if (localManifest) {
+    agentReleaseManifestCache = {
+      expiresAt: Date.now() + agentReleaseCacheTtlMs,
+      manifest: localManifest
+    }
+    return localManifest
+  }
+
   let release: GitHubRelease | null = null
   try {
     release = await fetchLatestAgentRelease()
@@ -624,7 +791,7 @@ function isSha256(value: string | undefined): value is string {
   return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
 }
 
-async function buildAgentUpgradeInstruction(request: FastifyRequest, body: AgentHeartbeatBody): Promise<AgentUpgradeInstruction> {
+async function buildAgentUpgradeInstruction(request: FastifyRequest, body: AgentHeartbeatBody, agent: HostAgentRecord): Promise<AgentUpgradeInstruction> {
   const manifest = await readAgentUpgradeManifest()
   const manifestVersion = sanitizeShortString(manifest?.version, 128)
   if (!manifest || !manifestVersion) {
@@ -632,7 +799,19 @@ async function buildAgentUpgradeInstruction(request: FastifyRequest, body: Agent
   }
 
   const currentVersion = sanitizeShortString(body.version, 128)
-  if (currentVersion === manifestVersion) {
+  const requestedTarget = sanitizeShortString(agent.upgradeTargetVersion, 128)
+  const hasPendingRequest = Boolean(agent.upgradeRequestedAt && requestedTarget === manifestVersion)
+  const requestAlreadyDelivered = Boolean(
+    hasPendingRequest && agent.lastSeenAt && agent.upgradeRequestedAt && agent.lastSeenAt >= agent.upgradeRequestedAt
+  )
+  if (requestAlreadyDelivered && currentVersion === manifestVersion) {
+    await agentModel.update({
+      where: { id: agent.id },
+      data: { upgradeRequestedAt: null, upgradeTargetVersion: null, upgradeForce: false }
+    })
+    return { available: false, version: manifestVersion }
+  }
+  if (currentVersion === manifestVersion && !(hasPendingRequest && agent.upgradeForce)) {
     return { available: false, version: manifestVersion }
   }
 
@@ -1023,6 +1202,10 @@ export default async function agentRoutes(fastify: FastifyInstance) {
     }
 
     const nextHeartbeatSeconds = getAgentHeartbeatIntervalSeconds(agent)
+    await agentModel.update({
+      where: { id: agent.id },
+      data: { upgradeRequestedAt: new Date(), upgradeTargetVersion: latestVersion, upgradeForce: true }
+    })
     await createLog(
       request.user.id,
       LogModule.HOST,
@@ -1039,6 +1222,35 @@ export default async function agentRoutes(fastify: FastifyInstance) {
       nextHeartbeatSeconds,
       message: 'Agent upgrade request accepted; upgrade instruction will be delivered on next heartbeat'
     }
+  })
+
+  fastify.post('/upgrade-all', {
+    onRequest: [fastify.authenticateAdmin]
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const latestVersion = await getLatestAgentVersion()
+    if (!latestVersion) {
+      return reply.code(503).send({ error: 'Agent latest version unavailable', code: 'AGENT_LATEST_VERSION_UNAVAILABLE' })
+    }
+    const agents = await agentModel.findMany({
+      where: { enabled: true },
+      select: { id: true, status: true, version: true }
+    })
+    const now = new Date()
+    await agentModel.updateMany({
+      where: { id: { in: agents.map(agent => agent.id) } },
+      data: { upgradeRequestedAt: now, upgradeTargetVersion: latestVersion, upgradeForce: true }
+    })
+    const online = agents.filter(agent => agent.status === 'online').length
+    const offline = agents.length - online
+    const alreadyLatest = agents.filter(agent => agent.version === latestVersion).length
+    await createLog(
+      request.user.id,
+      LogModule.HOST,
+      'host.agent_force_upgrade_all',
+      `强制更新全部 Agent 到 ${latestVersion}: 总计 ${agents.length}，在线 ${online}，离线待执行 ${offline}`,
+      LogResult.SUCCESS
+    )
+    return { requested: agents.length, online, pendingOffline: offline, alreadyLatest, latestVersion }
   })
 
   fastify.post<{ Params: AgentCredentialsParams; Body: AgentCredentialsBody }>('/hosts/:hostId/install-command', {
@@ -1257,6 +1469,11 @@ export default async function agentRoutes(fastify: FastifyInstance) {
           instances: { type: 'object', additionalProperties: true },
           resources: { type: 'object', additionalProperties: true },
           metrics: { type: 'object', additionalProperties: true }
+          ,securityEvents: {
+            type: 'array',
+            maxItems: 64,
+            items: { type: 'object', additionalProperties: true }
+          }
         }
       }
     }
@@ -1277,6 +1494,12 @@ export default async function agentRoutes(fastify: FastifyInstance) {
       )
     }
 
+    try {
+      await processAgentSecurityEvents(agent.hostId, request.body.securityEvents, request.body.instances)
+    } catch (error) {
+      request.log.warn({ agentId: agent.agentId, hostId: agent.hostId, error }, 'Failed to process Agent security events')
+    }
+
     await agentModel.update({
       where: { agentId: agent.agentId },
       data: {
@@ -1294,7 +1517,7 @@ export default async function agentRoutes(fastify: FastifyInstance) {
       serverTime: now.toISOString(),
       taskPollIntervalSeconds: 15,
       instanceReport,
-      upgrade: await buildAgentUpgradeInstruction(request, request.body)
+      upgrade: await buildAgentUpgradeInstruction(request, request.body, agent)
     }
   })
 }

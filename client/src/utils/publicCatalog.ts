@@ -115,6 +115,31 @@ export function formatPublicTraffic(bytes: string | null, unlimitedLabel: string
   return `${(Number(value) / (1024 * 1024)).toFixed(0)} MB`
 }
 
+export function getPackageTrafficLabel(
+  pkg: Pick<PublicPackage, 'plans' | 'monthly_traffic_limit'>,
+  unlimitedLabel: string
+): string {
+  const availablePlans = pkg.plans.filter(plan => !plan.isSoldOut)
+  const plans = availablePlans.length > 0 ? availablePlans : pkg.plans
+
+  if (plans.length === 0) {
+    return formatPublicTraffic(pkg.monthly_traffic_limit, unlimitedLabel)
+  }
+
+  const limits = [...new Set(plans.map(plan => plan.trafficLimit || '0'))]
+    .sort((left, right) => {
+      const leftValue = left === '0' ? null : BigInt(left)
+      const rightValue = right === '0' ? null : BigInt(right)
+      if (leftValue === null) return rightValue === null ? 0 : 1
+      if (rightValue === null) return -1
+      return leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0
+    })
+
+  const minimum = formatPublicTraffic(limits[0], unlimitedLabel)
+  const maximum = formatPublicTraffic(limits[limits.length - 1], unlimitedLabel)
+  return minimum === maximum ? minimum : `${minimum} – ${maximum}`
+}
+
 export function formatPublicPrice(cents: number): string {
   return (cents / 100).toFixed(2)
 }

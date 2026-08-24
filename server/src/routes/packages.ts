@@ -525,7 +525,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           price: p.price,
           billingCycle: p.billingCycle,
           setupFee: p.setupFee,
-          isSoldOut: p.isSoldOut,
+          isSoldOut: p.isSoldOut || soldOut,
           slaGuarantee: p.slaGuarantee,
           monthlyPrice: Number(p.price) / (p.billingCycle || 1)
         }))
@@ -2171,10 +2171,16 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const plans = await db.getPlansByPackageId(packageId, { activeOnly })
+    const [plans, packageSoldOut] = await Promise.all([
+      db.getPlansByPackageId(packageId, { activeOnly }),
+      db.checkPackageSoldOut(packageId)
+    ])
 
     return {
-      plans: plans.map(plan => serializePackagePlan(plan, pkg))
+      plans: plans.map(plan => ({
+        ...serializePackagePlan(plan, pkg),
+        isSoldOut: plan.isSoldOut || packageSoldOut
+      }))
     }
   })
 

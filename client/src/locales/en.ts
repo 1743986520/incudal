@@ -893,12 +893,14 @@ export default {
             title: 'Instance Error',
             description: 'This instance is in an error state. You can destroy it directly (paid instance refunds will not incur any fees)',
             destroyNow: 'Destroy Now',
+            retryNow: 'Retry',
             confirmDestroy: 'Are you sure you want to destroy this abnormal instance? Remaining value of paid instances will be refunded to your wallet (no fees charged).',
         },
         actions: {
             start: 'Start',
             stop: 'Stop',
             restart: 'Restart',
+            retry: 'Retry',
             delete: 'Delete',
             console: 'Console',
             snapshot: 'Snapshot',
@@ -908,6 +910,7 @@ export default {
             suspend: 'Suspend',
             unsuspend: 'Unsuspend',
         },
+        retryCreateStarted: 'Retrying creation of "{name}"',
         renameModal: {
             title: 'Rename Instance',
             name: 'Instance Name',
@@ -1298,6 +1301,12 @@ export default {
                 clone: 'Cloning...',
                 change_host: 'Changing host...',
             },
+            taskRecovery: {
+                action: 'Release stuck task',
+                confirm: 'Mark this task as failed and release its operation lock? This will not delete the instance. Confirm that the original host operation has stopped first.',
+                success: 'The stuck task was released. You can retry the operation now.',
+                failed: 'Failed to release the stuck task',
+            },
             actions: {
                 starting: 'Instance is starting',
                 stopped: 'Instance has been stopped',
@@ -1643,6 +1652,14 @@ export default {
 
     // Port mapping modal
     portModal: {
+        singleMode: 'Single port',
+        batchMode: 'Port range',
+        publicRange: 'External port range',
+        privateRange: 'Internal port range',
+        startPort: 'Start port',
+        endPort: 'End port',
+        batchRangeHint: 'External and internal ranges must contain the same number of ports and are mapped in order.',
+        batchAllFieldsRequired: 'All external and internal start/end ports are required for batch creation',
         title: 'Add Port Mapping',
         protocol: 'Protocol',
         bothHint: 'Will create both TCP and UDP mappings, using 2 quota slots',
@@ -5470,7 +5487,7 @@ export default {
             description: 'Manage your hosts that can be used by you and your friends',
             create: 'Add Host',
             createDesc: 'Add a new Incus host',
-            ubuntuOnlyHint: 'Currently supports Ubuntu 22.04+ and Debian 11+ only.',
+            ubuntuOnlyHint: 'Supports Ubuntu 22.04+, Debian 11+, Rocky Linux 10, and Alpine Linux 3.20+.',
             installHintTitle: 'After submitting, the system will generate an install command with the panel URL and Token embedded. Copy and run it on the host to complete installation.',
             installHintIpv6: 'Tip: For IPv6 modes (NAT+IPv6, IPv6 Only), run the install script on the host first. It will auto-generate IPv6 subnet info for you to fill in below.',
             ipv6OptionalHint: 'Not sure? Leave blank for now. Run the install script on the host first — it will detect and display your IPv6 subnet. Then come back and edit the node to fill in.',
@@ -5481,6 +5498,10 @@ export default {
             noHosts: 'No hosts',
             noHostsHint: 'Add hosts to create instances on them',
             calibrateAll: 'Sync All Usage',
+            forceAgentUpgrade: 'Force Agent Update',
+            forceAgentUpgradeConfirm: 'Force the latest Agent version to every enabled host? Offline hosts will update after reconnecting.',
+            forceAgentUpgradeDone: 'Queued {version} for {total} hosts: {online} online, {offline} pending offline',
+            forceAgentUpgradeFailed: 'Failed to queue Agent updates',
             noOnlineHosts: 'No online hosts to sync',
             calibrateAllDone: 'Synced {total} hosts, {changed} with differences corrected',
             calibrateAllNoChange: 'Synced {total} hosts, no differences',
@@ -5568,7 +5589,7 @@ export default {
             notifyChannelDesc: 'System will send notifications via this channel when users delete instances or when quota is released',
             // Share link
             copyShareLink: 'Copy Share Link',
-            shareLinkCopied: 'Share link copied, users can access this link to directly create instances',
+            shareLinkCopied: 'Purchase link copied. Users can preview the package before continuing to checkout.',
             // Admin only: Package scope toggle
             mine: 'My Packages',
             hosted: 'Hosted',

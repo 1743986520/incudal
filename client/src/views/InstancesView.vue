@@ -703,7 +703,7 @@ function getInstanceExpiryInfo(instance: Instance): InstanceExpiryInfo {
   }
 }
 
-type InstanceAction = 'start' | 'stop' | 'restart' | 'delete'
+type InstanceAction = 'start' | 'stop' | 'restart' | 'retry' | 'delete'
 type BatchSimpleAction = 'start' | 'stop' | 'restart' | 'sync'
 type InstanceOrderAction = 'top' | 'up' | 'down' | 'bottom'
 const SIMPLE_BATCH_CONCURRENCY = 5
@@ -833,6 +833,12 @@ async function handleAction(instance: Instance, action: InstanceAction): Promise
       if (idx !== -1) {
         (instances.value[idx] as any).status = 'restarting'
       }
+    }
+    else if (action === 'retry') {
+      await api.instances.retryProvision(instance.id)
+      const idx = instances.value.findIndex(i => i.id === instance.id)
+      if (idx !== -1) instances.value[idx] = { ...instances.value[idx], status: 'creating' }
+      toast.success(t('instance.retryCreateStarted', { name: instance.name }))
     }
     else if (action === 'delete') {
       if (!confirm(t('instance.confirmDelete', { name: instance.name }))) {
@@ -1707,6 +1713,17 @@ async function confirmBatchDestroy(): Promise<void> {
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                   </button>
+                  <button
+                    v-if="instance.status?.toLowerCase() === 'error'"
+                    :disabled="!!actionLoading[instance.id]"
+                    class="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-500 transition-colors disabled:opacity-50"
+                    :title="$t('instance.actions.retry')"
+                    @click.stop="handleAction(instance, 'retry')"
+                  >
+                    <svg :class="['w-5 h-5', actionLoading[instance.id] === 'retry' ? 'animate-spin' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8 8 0 104.582 9M20 4v5h-5" />
+                    </svg>
+                  </button>
                   <span
                     class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-themed-muted transition-colors"
                     :title="$t('instance.details')"
@@ -1906,6 +1923,17 @@ async function confirmBatchDestroy(): Promise<void> {
                 <span class="text-xs">{{ actionLoading[instance.id] === 'start' ? '...' : $t('instance.actions.start') }}</span>
               </button>
               <button
+                v-if="instance.status?.toLowerCase() === 'error'"
+                :disabled="!!actionLoading[instance.id]"
+                class="btn-ghost btn-sm flex-1 text-blue-500"
+                @click.stop="handleAction(instance, 'retry')"
+              >
+                <svg :class="['w-3.5 h-3.5', actionLoading[instance.id] === 'retry' ? 'animate-spin' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8 8 0 104.582 9M20 4v5h-5" />
+                </svg>
+                <span class="text-xs">{{ $t('instance.actions.retry') }}</span>
+              </button>
+              <button
                 v-if="instance.status?.toLowerCase() === 'running'"
                 :disabled="!!actionLoading[instance.id]"
                 class="btn-ghost btn-sm flex-1"
@@ -1929,7 +1957,7 @@ async function confirmBatchDestroy(): Promise<void> {
                 <span class="text-xs">{{ actionLoading[instance.id] === 'restart' ? '...' : $t('instance.actions.restart') }}</span>
               </button>
               <button
-                v-if="!instance.packagePlanId && (instance as any).allow_instance_deletion !== false"
+                v-if="(instance.status?.toLowerCase() === 'error' || !instance.packagePlanId) && (instance as any).allow_instance_deletion !== false"
                 :disabled="!!actionLoading[instance.id]"
                 class="btn-ghost btn-sm flex-1 text-red-500 hover:text-red-400"
                 @click.stop="handleAction(instance, 'delete')"
@@ -2178,6 +2206,20 @@ async function confirmBatchDestroy(): Promise<void> {
                     </button>
 
                     <button
+                      v-if="instance.status?.toLowerCase() === 'error'"
+                      :disabled="!!actionLoading[instance.id]"
+                      class="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
+                      :class="getCardActionButtonClass()"
+                      :title="$t('instance.actions.retry')"
+                      :aria-label="$t('instance.actions.retry')"
+                      @click.stop="handleAction(instance, 'retry')"
+                    >
+                      <svg :class="['w-3.5 h-3.5', actionLoading[instance.id] === 'retry' ? 'animate-spin' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8 8 0 104.582 9M20 4v5h-5" />
+                      </svg>
+                    </button>
+
+                    <button
                       v-if="instance.status?.toLowerCase() === 'running'"
                       :disabled="!!actionLoading[instance.id]"
                       class="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
@@ -2196,7 +2238,7 @@ async function confirmBatchDestroy(): Promise<void> {
                     </button>
 
                     <button
-                      v-if="!instance.packagePlanId && (instance as any).allow_instance_deletion !== false"
+                      v-if="(instance.status?.toLowerCase() === 'error' || !instance.packagePlanId) && (instance as any).allow_instance_deletion !== false"
                       :disabled="!!actionLoading[instance.id]"
                       class="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
                       :class="getCardActionButtonClass('danger')"

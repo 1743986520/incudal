@@ -833,6 +833,14 @@ export interface HostAgentUpgradeRequestResponse {
   message: string
 }
 
+export interface HostAgentBulkUpgradeResponse {
+  requested: number
+  online: number
+  pendingOffline: number
+  alreadyLatest: number
+  latestVersion: string
+}
+
 export interface HostAgentInstallCommandResponse {
   host: {
     id: number

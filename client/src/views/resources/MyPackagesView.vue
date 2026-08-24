@@ -227,7 +227,7 @@ function copyShareLink(pkg: Package): void {
   const hostNames = getHostNames(pkg)
   const isHostedPackage = hostNames.split(', ').some(name => name.toUpperCase().startsWith('PEER'))
   const source = isHostedPackage ? 'market' : 'official'
-  const link = `${window.location.origin}/instances/create?source=${source}&package=${pkg.id}`
+  const link = `${window.location.origin}/market?source=${source}&package=${pkg.id}`
 
   navigator.clipboard.writeText(link).then(() => {
     toast.success(t('resources.packages.shareLinkCopied'))

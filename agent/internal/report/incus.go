@@ -224,6 +224,12 @@ func buildIncusInstanceReportItem(client *http.Client, instance incusInstanceSum
 		if ipv6 != "" {
 			network["ipv6"] = ipv6
 		}
+		for ifName, ifData := range state.Network {
+			if isLikelyExternalGuestInterface(ifName) && ifData.Hwaddr != "" {
+				network["mac"] = strings.ToLower(ifData.Hwaddr)
+				break
+			}
+		}
 		item["network"] = network
 	}
 

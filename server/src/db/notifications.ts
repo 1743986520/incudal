@@ -130,6 +130,24 @@ export async function getEnabledChannelsByUserId(userId: number): Promise<Notifi
   }))
 }
 
+/** 获取管理员启用的全局通知渠道（安全事件等平台级告警）。 */
+export async function getEnabledGlobalNotificationChannels(): Promise<NotificationChannel[]> {
+  const channels = await prisma.notificationChannel.findMany({
+    where: { enabled: true, isGlobal: true },
+    orderBy: { id: 'asc' }
+  })
+
+  return channels.map(ch => ({
+    id: ch.id,
+    user_id: ch.userId,
+    type: ch.type,
+    name: ch.name,
+    config: JSON.stringify(ch.config as any),
+    enabled: ch.enabled ? 1 : 0,
+    created_at: ch.createdAt.toISOString()
+  }))
+}
+
 /**
  * 创建通知日志
  */

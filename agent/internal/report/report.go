@@ -18,15 +18,16 @@ var incusSocketCandidates = []string{
 func HeartbeatPayload(version string, heartbeatIntervalSeconds int) map[string]any {
 	return map[string]any{
 		"version":      version,
-		"capabilities": []any{"heartbeat", "report", "host-metrics", "instance-status", "traffic-counters"},
+		"capabilities": []any{"heartbeat", "report", "host-metrics", "instance-status", "traffic-counters", "security-events"},
 		"runtime": map[string]any{
 			"goos":   runtime.GOOS,
 			"goarch": runtime.GOARCH,
 		},
-		"incus":     detectIncus(),
-		"instances": collectIncusInstanceReport(),
-		"resources": collectResources(),
-		"metrics":   collectMetrics(heartbeatIntervalSeconds),
+		"incus":          detectIncus(),
+		"instances":      collectIncusInstanceReport(),
+		"securityEvents": collectSecurityEvents(),
+		"resources":      collectResources(),
+		"metrics":        collectMetrics(heartbeatIntervalSeconds),
 	}
 }
 

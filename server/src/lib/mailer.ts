@@ -1664,6 +1664,63 @@ export async function sendBanNotificationEmail(
 }
 
 /**
+ * 发送实例安全事件自动封锁通知邮件
+ */
+export async function sendInstanceSecuritySuspensionEmail(
+    email: string,
+    data: {
+        username: string
+        instanceName: string
+        hostName: string
+        destinationIp: string
+        thresholdPps: number
+    }
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const transporter = await getTransporter()
+        if (!transporter) return { success: false, error: 'SMTP not configured' }
+
+        const { config, brandName, brandLogoUrl } = await getMailContext()
+        const title = '实例已暂时封锁'
+        const paragraphs = [
+            `检测到您的实例 ${data.instanceName} 向单一目的 IP 异常高频发包。为保护节点及其他用户，我们已暂时封锁该实例。`,
+            `判定依据：发往 ${data.destinationIp} 的流量超过 ${data.thresholdPps.toLocaleString()} PPS。`,
+            '请检查系统安全、异常程序及账号泄露情况，处理完成后提交工单申请解封。'
+        ]
+        const template = {
+            title,
+            alertType: 'danger' as const,
+            alertTitle: title,
+            alertMessage: '您的机器出现异常流量，我们已暂时封锁。',
+            greeting: `您好，${data.username}`,
+            paragraphs,
+            infoTitle: '受影响实例',
+            infoItems: [
+                { label: '实例', value: data.instanceName },
+                { label: '节点', value: data.hostName },
+                { label: '目的 IP', value: data.destinationIp }
+            ],
+            actionTip: '请通过工单联系我们，并在确认问题已处理后申请解封。',
+            brandName,
+            brandLogoUrl
+        }
+
+        await transporter.sendMail({
+            from: config.fromName ? `"${config.fromName}" <${config.fromEmail}>` : config.fromEmail,
+            to: email,
+            subject: formatBrandSubject(brandName, title),
+            text: generateEmailText(template),
+            html: generateEmailHtml(template)
+        })
+        return { success: true }
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('Failed to send instance security suspension email:', errorMessage)
+        return { success: false, error: errorMessage }
+    }
+}
+
+/**
  * 发送宿主机通知邮件
  */
 export async function sendHostAnnouncementEmail(

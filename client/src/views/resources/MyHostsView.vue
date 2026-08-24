@@ -49,6 +49,7 @@ const hosts = ref([])
 const loading = ref(true)
 const search = ref('')
 const calibratingAll = ref(false)
+const forcingAgentUpgrade = ref(false)
 const page = ref(1)
 const pageSize = ref(100)
 const total = ref(0)
@@ -196,6 +197,24 @@ async function goToCreate() {
 // 跳转到详情页面
 function goToDetail(host) {
   router.push(`/resources/hosts/${host.id}`)
+}
+
+async function forceUpgradeAllAgents() {
+  if (!confirm(t('resources.hosts.forceAgentUpgradeConfirm'))) return
+  forcingAgentUpgrade.value = true
+  try {
+    const result = await api.hosts.forceUpgradeAllAgents()
+    toast.success(t('resources.hosts.forceAgentUpgradeDone', {
+      version: result.latestVersion,
+      total: result.requested,
+      online: result.online,
+      offline: result.pendingOffline
+    }))
+  } catch (err) {
+    toast.error(err?.message || t('resources.hosts.forceAgentUpgradeFailed'))
+  } finally {
+    forcingAgentUpgrade.value = false
+  }
 }
 
 // 测试宿主机连接
@@ -426,6 +445,17 @@ onActivated(() => {
         </div>
       </div>
       <div class="flex items-center gap-2 w-full sm:w-auto">
+        <button
+          v-if="isAdmin"
+          class="btn-secondary flex-1 sm:flex-none justify-center"
+          :disabled="forcingAgentUpgrade"
+          @click="forceUpgradeAllAgents"
+        >
+          <svg class="w-4 h-4" :class="{ 'animate-spin': forcingAgentUpgrade }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          {{ t('resources.hosts.forceAgentUpgrade') }}
+        </button>
         <button
           v-if="scope === 'mine'"
           class="btn-secondary flex-1 sm:flex-none justify-center"
