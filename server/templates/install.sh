@@ -72,9 +72,12 @@ AGENT_HEARTBEAT_INTERVAL_SECONDS="30"
 PPS_PROTECTION_ENABLED="true"
 PPS_LIMIT="${INJECT_PPS_LIMIT:-20000}"
 PPS_OPTION_EXPLICIT="false"
-readonly PPS_BURST_PACKETS="5000"
+# nftables 的 limit 是 token bucket，不是固定的一秒采样窗口。burst 会明确
+# 允许超过 PPS 阈值的额外包；设置成大值会让“10000 PPS”实际先放行 12500
+# 包，短时间测试时看起来就像计数器失效。保留 1 个包作为调度抖动余量。
+readonly PPS_BURST_PACKETS="1"
 readonly PPS_SINGLE_TARGET_LIMIT="10000"
-readonly PPS_SINGLE_TARGET_BURST="2500"
+readonly PPS_SINGLE_TARGET_BURST="1"
 readonly PPS_BLOCK_SECONDS="3600"
 
 # ========================== 工具函数 ==========================
