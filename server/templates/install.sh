@@ -72,12 +72,11 @@ AGENT_HEARTBEAT_INTERVAL_SECONDS="30"
 PPS_PROTECTION_ENABLED="true"
 PPS_LIMIT="${INJECT_PPS_LIMIT:-20000}"
 PPS_OPTION_EXPLICIT="false"
-# nftables 的 limit 是 token bucket，不是固定的一秒采样窗口。burst 会明确
-# 允许超过 PPS 阈值的额外包；设置成大值会让“10000 PPS”实际先放行 12500
-# 包，短时间测试时看起来就像计数器失效。保留 1 个包作为调度抖动余量。
-readonly PPS_BURST_PACKETS="1"
+# nftables 的 limit 是 token bucket；这里保留原有突发余量，仅用于实例级
+# 网络层保护。单目标安全事件不会再把普通 TCP 下载流量当成异常发包。
+readonly PPS_BURST_PACKETS="5000"
 readonly PPS_SINGLE_TARGET_LIMIT="10000"
-readonly PPS_SINGLE_TARGET_BURST="1"
+readonly PPS_SINGLE_TARGET_BURST="2500"
 readonly PPS_BLOCK_SECONDS="3600"
 
 # ========================== 工具函数 ==========================
@@ -1323,8 +1322,12 @@ table inet incudal_pps_guard {
     type filter hook forward priority -200; policy accept;
     iifname "${BRIDGE_NAME}" ether saddr . ip daddr @blocked_v4 counter drop
     iifname "${BRIDGE_NAME}" ether saddr . ip6 daddr @blocked_v6 counter drop
-    iifname "${BRIDGE_NAME}" meter per_target_v4 { ether saddr . ip daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v4 { ether saddr . ip daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V4 " counter drop
-    iifname "${BRIDGE_NAME}" meter per_target_v6 { ether saddr . ip6 daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v6 { ether saddr . ip6 daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V6 " counter drop
+    # Established TCP download packets are normal high-rate traffic, not PPS abuse.
+    # Only UDP and TCP SYN packets can create a single-target security event.
+    iifname "${BRIDGE_NAME}" meta l4proto udp meter per_target_udp_v4 { ether saddr . ip daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v4 { ether saddr . ip daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V4 " counter drop
+    iifname "${BRIDGE_NAME}" meta l4proto tcp tcp flags & (syn | ack) == syn meter per_target_syn_v4 { ether saddr . ip daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v4 { ether saddr . ip daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V4 " counter drop
+    iifname "${BRIDGE_NAME}" meta l4proto udp meter per_target_udp_v6 { ether saddr . ip6 daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v6 { ether saddr . ip6 daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V6 " counter drop
+    iifname "${BRIDGE_NAME}" meta l4proto tcp tcp flags & (syn | ack) == syn meter per_target_syn_v6 { ether saddr . ip6 daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v6 { ether saddr . ip6 daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V6 " counter drop
     iifname "${BRIDGE_NAME}" meter per_instance_pps { ether saddr limit rate over ${PPS_LIMIT}/second burst ${PPS_BURST_PACKETS} packets } counter drop
   }
 }

@@ -36,10 +36,6 @@ import {
   BUILTIN_AUDIT_RULES, analyzeAuditData, parseConnections, parseProcesses, parseStartupItems,
   type AuditRuleDefinition, type AuditRuleMatchType, type AuditRuleTarget, type AuditSeverity
 } from '../lib/instance-audit.js'
-import { sendBanNotificationEmail } from '../lib/mailer.js'
-import { clearAuthCache } from '../plugins/auth-decorators.js'
-import { invalidateUserAccessTokens, revokeAllUserRefreshTokens } from '../lib/security.js'
-import { closeUserSessions } from '../lib/terminal-proxy.js'
 
 interface AgentCredentialsParams {
   hostId: string
@@ -109,34 +105,19 @@ async function processAgentSecurityEvents(hostId: number, events: unknown, insta
       where: { hostId, incusId: reportedName, status: { not: 'deleted' } },
       include: { user: { select: { id: true, username: true, email: true, status: true, role: true } } }
     }) : null
-    let suspensionResult = '未找到实例，未执行用户封禁'
+    let suspensionResult = '未找到实例，仅执行网络层目标封锁'
     let emailResult = '未发送'
 
     if (instance) {
-      const reason = `检测到实例 ${instance.name} 向 ${destinationIp} 的单目标发包超过 ${Math.max(1, Number(event.thresholdPps) || 10000).toLocaleString()} PPS，系统因滥用风险自动封禁账户。`
-      if (instance.user.status !== 'banned' && instance.user.role !== 'admin') {
-        await db.updateUserStatus(instance.userId, 'banned', reason)
-        clearAuthCache(instance.userId)
-        await revokeAllUserRefreshTokens(instance.userId)
-        await invalidateUserAccessTokens(instance.userId)
-        const closedSessions = closeUserSessions(instance.userId, 'User account automatically banned for PPS abuse')
-        await createLog(instance.userId, LogModule.USER, 'user.security_auto_ban', `用户 ${instance.user.username} 因实例 ${instance.name} 的 PPS 安全事件被自动封禁；关闭 ${closedSessions} 个终端会话`, LogResult.SUCCESS)
-        if (instance.user.email) {
-          const mail = await sendBanNotificationEmail(instance.user.email, {
-            username: instance.user.username,
-            reason
-          })
-          emailResult = mail.success ? '邮件已发送' : `邮件发送失败：${mail.error || '未知错误'}`
-        } else {
-          emailResult = '用户未设置邮箱，未发送'
-        }
-        suspensionResult = `面板已封禁用户账户；已关闭 ${closedSessions} 个终端会话；实例流量规则已封锁异常目标`
-      } else if (instance.user.role === 'admin') {
+      if (instance.user.role === 'admin') {
         suspensionResult = '目标属于管理员账户，安全规则拒绝自动封禁并已上报'
-        emailResult = '未发送'
+      } else if (instance.user.status === 'banned') {
+        suspensionResult = '用户当前已被封禁；本次事件未重复处理，仅保留网络层目标封锁'
       } else {
-        suspensionResult = '用户原本已被封禁，未重复处理'
-        emailResult = '未重复发送'
+        // PPS is a network signal, not proof of abuse. A legitimate
+        // high-throughput download can produce a high packet rate, so this
+        // event must never change account state automatically.
+        suspensionResult = '仅执行网络层目标封锁，未自动封禁账户；需管理员复核'
       }
     }
 
