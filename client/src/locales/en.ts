@@ -4879,7 +4879,7 @@ Hosted products are supplied by third-party node owners. The platform provides p
 ## B. Node-owner admission and node creation
 
 1. Sign in, open My Nodes at /resources/hosts, and click “Create node / Add”. Regular users go through the hosting-access check: currently they must have owned at least one instance, and hosting must be enabled; administrators can enter directly. A failed check shows the admission reason and hint in the page, and the backend checks it again.
-2. In /resources/hosts/create, enter the node name, host address, API port, country/region, instance type, and network mode. A regular user's name must start with PEER{your user ID}-; the API port defaults to 8443. Modes include NAT, NAT+IPv6, and IPv6-only; when IPv6 data is supplied, the subnet and parent interface must be supplied together. NAT settings include public and bind IPs plus a port range, defaulting to 10000–65000. CPU, memory limits, and container/VM support are configured here too.
+2. In /resources/hosts/create, enter the node name, host address, API port, country/region, instance type, and network mode. A regular user's name must start with PEER + your user ID + -; the API port defaults to 8443. Modes include NAT, NAT+IPv6, and IPv6-only; when IPv6 data is supplied, the subnet and parent interface must be supplied together. NAT settings include public and bind IPs plus a port range, defaulting to 10000–65000. CPU, memory limits, and container/VM support are configured here too.
 3. After clicking “Create node”, the page opens the generated install-command dialog. The host initialization token expires after 24 hours; if it expires, open /resources/hosts/:id and click “Reinstall” to generate a new command. A node cannot be deleted while it still has instances.
 
 ## C. Install the Agent, verify the connection, and inspect status
@@ -5113,7 +5113,7 @@ In “My Nodes”, click “Add Node”. Normally, a regular user must own at le
 
 ## 2. Fill in “Add Node”
 
-1. **Node name**: regular users enter a suffix and the panel adds PEER{user ID}-; admins can enter the complete name. It must be 2–64 characters, using only letters, numbers, underscores, and hyphens, and must be unique for that user.
+1. **Node name**: regular users enter a suffix and the panel adds PEER + user ID + -; admins can enter the complete name. It must be 2–64 characters, using only letters, numbers, underscores, and hyphens, and must be unique for that user.
 2. **Description/location and country/region**: location is limited to 100 characters and is used to identify the node.
 3. **Host address and API port**: use an IPv4 address, a raw IPv6 address, or a domain name. The API port defaults to 8443 and must be 1–65535. This is the address used by the panel to connect to Incus, not a service port exposed by an instance.
 4. **Network mode**: choose NAT, NAT + IPv6, NAT + IPv6 NAT, or IPv6 Only according to the host. Routed IPv6 modes require both an IPv6 subnet (including a slash) and an IPv6 parent interface; you may leave both blank initially and fill them in under “Settings” after running the script.
