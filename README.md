@@ -20,10 +20,10 @@ Incudal 是一个基于 Incus 的容器与 KVM 虚拟机管理、销售和托管
 
 ### 节点安全
 
-- 新节点默认启用每实例 PPS 防护：总限制 `20,000 PPS`，单一目的 IP 限制 `10,000 PPS`。
+- 新节点默认启用每实例 PPS 防护：总限制和单一目的 IP 最低阈值均为 `20,000 PPS`；全局保护只计 UDP 与 TCP SYN，避免正常 TCP 下载被误伤。
 - nftables 按实例来源 MAC 和目的 IP 精确封锁，不影响同节点其他实例。
 - Agent 将安全事件上报面板，面板精确关联实例和用户。
-- PPS 事件只执行网络层目标封锁并通知管理员，需人工确认后再执行用户封禁，避免正常高速下载造成误封。
+- TCP SYN 单目标超限才执行网络层目标封锁；UDP 单目标超限只记录并通知管理员，需人工确认后再执行用户封禁，避免正常高速下载或 UDP 业务造成误封。
 - 无法关联实例时只执行网络层封锁和管理员告警，不猜测或误封。
 
 ### Agent 运维
@@ -92,6 +92,22 @@ pnpm build
 ```
 
 随后重启服务端，并通过管理员节点页面向节点强制下发最新版 Agent。数据库升级前请先备份 PostgreSQL；`ENCRYPTION_KEY` 不可随意更换。
+
+### 远程更新
+
+已部署的面板可以直接从 GitHub 仓库下载最新更新脚本并执行升级。默认来源为本仓库，也可以通过 `--source` 指定其他 GitHub 仓库：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/1743986520/incudal/main/scripts/remote-update.sh | sudo bash
+
+# 从指定仓库更新
+curl -fsSL https://raw.githubusercontent.com/1743986520/incudal/main/scripts/remote-update.sh \
+  | sudo bash -s -- --source https://github.com/owner/repo
+```
+
+脚本会自动识别 Docker Compose 与 systemd 产物包部署，并在升级前保留现有 `.env`、证书和数据库数据。
+
+管理员也可以登录站点，在「管理 → 系统更新」中手动检查版本、选择更新来源和部署模式，再点击「立即更新」。更新需要明确确认，不会在后台静默执行；如果当前部署没有站点更新执行器，页面会提供可复制的 root 命令。
 
 ## 项目结构
 

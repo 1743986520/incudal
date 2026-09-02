@@ -145,6 +145,9 @@ void configStore.loadPublicConfig()
             <RouterLink class="transition-colors" :class="themeStore.isDark ? 'text-zinc-300 hover:text-white' : 'text-zinc-700 hover:text-zinc-950'" to="/market">
               {{ t('publicSite.nav.products') }}
             </RouterLink>
+            <RouterLink class="transition-colors" :class="themeStore.isDark ? 'text-zinc-300 hover:text-white' : 'text-zinc-700 hover:text-zinc-950'" to="/help">
+              {{ t('publicSite.nav.help') }}
+            </RouterLink>
           </div>
         </div>
 
@@ -163,9 +166,6 @@ void configStore.loadPublicConfig()
               {{ link.label }}
             </RouterLink>
           </div>
-          <p class="text-xs leading-6" :class="themeStore.isDark ? 'text-zinc-500' : 'text-zinc-500'">
-            {{ t('publicSite.footer.purchaseHint') }}
-          </p>
         </div>
       </div>
     </div>

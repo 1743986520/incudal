@@ -16,6 +16,7 @@ const DEFAULT_CATEGORIES = [
   { id: 'getting-started', name: '快速开始', color: '#22c55e' },
   { id: 'instances', name: '实例管理', color: '#3b82f6' },
   { id: 'networking', name: '网络配置', color: '#8b5cf6' },
+  { id: 'hosting', name: '托管服务', color: '#06b6d4' },
   { id: 'billing', name: '计费相关', color: '#f59e0b' },
   { id: 'faq', name: '常见问题', color: '#ef4444' }
 ]
@@ -415,4 +416,3 @@ export default async function helpRoutes(fastify: FastifyInstance) {
     return { message: 'Article deleted' }
   })
 }
-

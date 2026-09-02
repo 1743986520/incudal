@@ -33,6 +33,9 @@ import type {
   HostAgentInstallCommandResponse,
   HostAgentUpgradeRequestResponse,
   HostAgentBulkUpgradeResponse,
+  SystemUpdateMode,
+  SystemUpdateStatusResponse,
+  SystemUpdateCheckResponse,
   Snapshot,
   Backup,
   CreateSnapshotRequest,
@@ -59,6 +62,13 @@ import type {
   UserOAuthBinding,
   UpdateOAuthConfigRequest,
   HelpArticle,
+  HelpArticleListResponse,
+  HelpCategoriesResponse,
+  HelpArticleResponse,
+  HelpAdminArticleListResponse,
+  HelpAdminArticleResponse,
+  HelpArticleCreateResponse,
+  HelpArticleUpdateResponse,
   CreateHelpArticleRequest,
   UpdateHelpArticleRequest,
   HostImagePolicy,
@@ -1512,6 +1522,7 @@ const api = {
       disk?: number
       planId?: number
       giftDays?: number
+      forceGenerateSshKey?: boolean
     }): Promise<{
       message: string
       instance: {
@@ -1527,6 +1538,7 @@ const api = {
         amount: number
         expiresAt: string | null
         giftDays?: number | null
+        generatedPrivateKey?: string | null
       }
     }> => http.post(`/hosts/${hostId}/instances/create-for-user`, data),
     // 修改付费实例的续费价格（托管节点所有者专用）
@@ -2154,20 +2166,20 @@ const api = {
 
   // 帮助文章（公开）
   help: {
-    list: (params: Record<string, unknown> = {}): Promise<PaginatedResponse<HelpArticle>> =>
+    list: (params: Record<string, unknown> = {}): Promise<HelpArticleListResponse> =>
       http.get('/help', { params }),
     pinned: (limit?: number): Promise<{ articles: Array<Pick<HelpArticle, 'id' | 'title' | 'slug' | 'category'>> }> =>
       http.get('/help/pinned', { params: limit ? { limit } : {} }),
-    categories: (): Promise<string[]> => http.get('/help/categories'),
+    categories: (): Promise<HelpCategoriesResponse> => http.get('/help/categories'),
     categoryConfig: (): Promise<{ categories: Array<{ id: string; name: string; color: string }> }> =>
       http.get('/help/category-config'),
-    getBySlug: (slug: string): Promise<HelpArticle> => http.get(`/help/article/${slug}`),
+    getBySlug: (slug: string): Promise<HelpArticleResponse> => http.get(`/help/article/${slug}`),
     // 管理员接口
-    adminList: (params: Record<string, unknown> = {}): Promise<PaginatedResponse<HelpArticle>> =>
+    adminList: (params: Record<string, unknown> = {}): Promise<HelpAdminArticleListResponse> =>
       http.get('/help/admin', { params }),
-    adminGet: (id: number): Promise<HelpArticle> => http.get(`/help/admin/${id}`),
-    create: (data: CreateHelpArticleRequest): Promise<HelpArticle> => http.post('/help/admin', data),
-    update: (id: number, data: UpdateHelpArticleRequest): Promise<HelpArticle> =>
+    adminGet: (id: number): Promise<HelpAdminArticleResponse> => http.get(`/help/admin/${id}`),
+    create: (data: CreateHelpArticleRequest): Promise<HelpArticleCreateResponse> => http.post('/help/admin', data),
+    update: (id: number, data: UpdateHelpArticleRequest): Promise<HelpArticleUpdateResponse> =>
       http.patch(`/help/admin/${id}`, data),
     delete: (id: number): Promise<void> => http.delete(`/help/admin/${id}`),
     saveCategoryConfig: (categories: Array<{ id: string; name: string; color: string }>): Promise<{ message: string }> =>
@@ -2209,6 +2221,18 @@ const api = {
 
   // 健康检查
   health: (): Promise<{ status: string; timestamp: string }> => http.get('/health'),
+
+  // 管理员：站点显式控制面板更新
+  systemUpdate: {
+    status: (source?: string): Promise<SystemUpdateStatusResponse> =>
+      http.get('/system-update/status', source ? { params: { source } } : undefined),
+    check: (source?: string): Promise<SystemUpdateCheckResponse> =>
+      http.post('/system-update/check', source ? { source } : {}),
+    apply: (source: string | undefined, mode: SystemUpdateMode): Promise<{
+      accepted: boolean
+      execution: SystemUpdateStatusResponse['execution']
+    }> => http.post('/system-update/apply', { source, mode, confirm: true })
+  },
 
   // 系统配置（管理员）
   systemConfig: {
@@ -4294,6 +4318,8 @@ const api = {
         email: string | null
         role: string
         status: string
+        hasSshKey: boolean
+        balance: number
       }
     }> => http.get('/users/lookup', { params: { username } }),
 
@@ -4312,6 +4338,7 @@ const api = {
       customInitCommandIds?: number[]
       planId?: number           // 付费方案ID（传入则创建付费实例）
       chargeFirstMonth?: boolean // 是否扣除首月费用（默认 true）
+      forceGenerateSshKey?: boolean // 目标用户没有 SSH 密钥时，由系统生成
     }): Promise<{
       message: string
       instance: {
@@ -4328,6 +4355,7 @@ const api = {
         charged: boolean
         amount: number
         expiresAt: string | null
+        generatedPrivateKey?: string | null
       }
     }> => http.post('/admin/instances/create', data)
   },

@@ -87,6 +87,25 @@ export async function checkInstancePermission(
     return { allowed: false, reason: 'No permission to operate this instance' }
 }
 
+/** 仅允许实例所有者或管理员执行敏感/破坏性实例操作。 */
+export function checkInstanceOwnerOrAdminPermission(
+    user: AuthUser,
+    instance: { user_id: number }
+): PermissionResult {
+    if (user.role === 'admin') {
+        return { allowed: true, permissionType: 'admin' }
+    }
+
+    if (instance.user_id === user.id) {
+        return { allowed: true, permissionType: 'owner' }
+    }
+
+    return {
+        allowed: false,
+        reason: 'This operation is only allowed for the instance owner or an administrator'
+    }
+}
+
 /**
  * 检查用户对实例的查看权限
  * 与操作权限一致，管理员拥有宿主机所有者的权限

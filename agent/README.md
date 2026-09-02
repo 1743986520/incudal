@@ -55,6 +55,7 @@ go run ./cmd/incudal-agent -config /etc/incudal-agent/config.yaml
 - 生成 HMAC-SHA256 签名
 - 调用 `POST /api/agent/heartbeat`
 - 读取心跳响应中的 `upgrade` 指令并自动升级自身
+- Agent 启动及升级后自动同步 `/etc/incudal/pps-guard.conf` 与 PPS nftables 规则；未启用 PPS 时不创建或恢复规则
 
 当前不执行实例创建、销毁、启停等下发任务。
 
@@ -113,10 +114,11 @@ assets:
 
 面板运行时不会读取本地 `agent/dist`。它会从 GitHub Release 查询最新 Agent 版本，动态生成 `/api/agent/manifest.json`，并通过 `/api/agent/binary/*` 代理下载对应 Release 资产。
 
-默认 GitHub Release 仓库为 `qwer-xyz/incudal_classic`。如果部署到 fork 或私有仓库，可设置：
+默认 GitHub Release 仓库为 `1743986520/incudal`。如果部署到 fork 或私有仓库，可设置仓库地址或 `owner/repo`：
 
 ```bash
-INCUDAL_AGENT_RELEASE_REPOSITORY="owner/repo"
+INCUDAL_AGENT_RELEASE_URL="https://github.com/owner/repo"
+# 或：INCUDAL_AGENT_RELEASE_REPOSITORY="owner/repo"
 INCUDAL_AGENT_RELEASE_TOKEN="github_pat_xxx" # 私有仓库需要
 ```
 
@@ -129,6 +131,7 @@ curl -fsSL "$PANEL_URL/api/agent/install.sh" | sudo env \
   INCUDAL_PANEL_URL="$PANEL_URL" \
   INCUDAL_AGENT_INSTALL_TOKEN="$AGENT_INSTALL_TOKEN" \
   INCUDAL_AGENT_BINARY_URL="$BINARY_URL" \
+  INCUDAL_AGENT_BINARY_SHA256="$BINARY_SHA256" \
   bash
 ```
 
@@ -159,7 +162,7 @@ https://<panel>/api/agent/manifest.json
 
 安装脚本会按当前 OS/ARCH 取出文件名和 SHA-256，下载后先校验摘要，再解包安装。
 
-如果手动传入 `INCUDAL_AGENT_BINARY_URL`，可同时传入 `INCUDAL_AGENT_BINARY_SHA256` 开启校验；未传 SHA-256 时仍保留兼容安装，但会输出 warning。
+如果手动传入 `INCUDAL_AGENT_BINARY_URL`，必须同时传入 `INCUDAL_AGENT_BINARY_SHA256`；安装脚本会拒绝未校验摘要的自定义二进制。
 
 安装脚本会先下载到临时文件，再原子替换 `/usr/local/bin/incudal-agent`。
 重复安装或升级时，会执行 `systemctl restart incudal-agent` 确保立即切换到最新二进制。
@@ -168,7 +171,7 @@ dry-run 验证：
 
 ```bash
 INCUDAL_AGENT_DRY_RUN=1 \
-INCUDAL_PANEL_URL="http://127.0.0.1:8888" \
+INCUDAL_PANEL_URL="https://127.0.0.1:8888" \
 INCUDAL_AGENT_INSTALL_TOKEN="ait_testtoken_abcdefghijklmnopqrstuvwxyz123456" \
 bash server/templates/agent-install.sh
 ```

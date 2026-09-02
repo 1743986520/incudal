@@ -8,6 +8,7 @@ import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { validateName } from '../lib/security.js'
+import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import crypto from 'crypto'
 
 export default async function sshKeyRoutes(fastify: FastifyInstance) {
@@ -121,10 +122,12 @@ export default async function sshKeyRoutes(fastify: FastifyInstance) {
   })
 
   // 生成 SSH 密钥对
-  // 使用 Node.js 原生 crypto 模块生成 Ed25519 密钥对
+  // 使用 Node.js 原生 crypto 模块生成 RSA 密钥对
   // 返回私钥给用户保存，公钥自动保存到系统
   fastify.post('/generate', {
-    onRequest: [fastify.authenticateUser]
+    onRequest: [fastify.authenticateUser],
+    // RSA 4096 生成是同步 CPU 操作，避免被反复调用阻塞事件循环。
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     // 检查用户密钥数量限制，防止滥用
     const existingKeys = await db.getSSHKeysByUserId(request.user.id)
@@ -133,18 +136,13 @@ export default async function sshKeyRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: `Maximum ${MAX_SSH_KEYS} SSH keys allowed per user` })
     }
 
-    // 生成 RSA 密钥对 (4096位)
-    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 4096,
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs1', format: 'pem' }
-    })
-
-    // 将 PEM 格式的公钥转换为 OpenSSH 格式
-    const sshPublicKey = convertRSAToOpenSSHFormat(publicKey)
-    
-    // RSA 私钥直接使用 PEM 格式（OpenSSH 支持）
-    const sshPrivateKey = privateKey
+    const generatedKey = generateSshKeyPair()
+    const {
+      publicKey: sshPublicKey,
+      privateKey: sshPrivateKey,
+      name: keyName,
+      fingerprint
+    } = generatedKey
 
     // 解析公钥获取 keyData
     const parsed = parseSSHPublicKey(sshPublicKey)
@@ -152,17 +150,10 @@ export default async function sshKeyRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: 'Failed to generate valid SSH key' })
     }
 
-    // 计算指纹
-    const fingerprint = calculateFingerprint(parsed.keyData)
-
     // 检查是否已存在相同指纹的密钥
     if (existingKeys.some(k => k.fingerprint === fingerprint)) {
       return reply.code(400).send({ error: 'Key already exists' })
     }
-
-    // 生成5位随机字符后缀
-    const randomSuffix = crypto.randomBytes(4).toString('base64url').slice(0, 5)
-    const keyName = `Incudal-${randomSuffix}`
 
     // 保存公钥到数据库
     const keyId = await db.createSSHKey({
@@ -264,49 +255,3 @@ function truncateKey(publicKey: string): string {
 /**
  * 写入 4 字节 big-endian 整数
  */
-function writeUInt32BE(value: number): Buffer {
-  const buf = Buffer.alloc(4)
-  buf.writeUInt32BE(value, 0)
-  return buf
-}
-
-/**
- * 将 PEM 格式的 RSA 公钥转换为 OpenSSH 格式
- */
-function convertRSAToOpenSSHFormat(pemPublicKey: string): string {
-  // 使用 crypto 模块解析公钥
-  const publicKeyObject = crypto.createPublicKey({
-    key: pemPublicKey,
-    format: 'pem'
-  })
-  
-  // 导出为 JWK 格式获取 n 和 e
-  const jwk = publicKeyObject.export({ format: 'jwk' }) as { n?: string; e?: string }
-  if (!jwk.n || !jwk.e) {
-    throw new Error('Failed to export RSA public key as JWK')
-  }
-  
-  // 从 base64url 解码
-  const n = Buffer.from(jwk.n, 'base64url')
-  const e = Buffer.from(jwk.e, 'base64url')
-  
-  // RSA 模数需要确保最高位不是 1（否则会被解释为负数）
-  // 如果最高位是 1，需要在前面加一个 0x00 字节
-  const nWithPadding = n[0] & 0x80 ? Buffer.concat([Buffer.from([0x00]), n]) : n
-  const eWithPadding = e[0] & 0x80 ? Buffer.concat([Buffer.from([0x00]), e]) : e
-  
-  // 构建 OpenSSH 格式: 类型长度 + 类型 + e长度 + e + n长度 + n
-  const keyType = 'ssh-rsa'
-  const keyTypeBuffer = Buffer.from(keyType, 'utf8')
-  
-  const blob = Buffer.concat([
-    writeUInt32BE(keyTypeBuffer.length),
-    keyTypeBuffer,
-    writeUInt32BE(eWithPadding.length),
-    eWithPadding,
-    writeUInt32BE(nWithPadding.length),
-    nWithPadding
-  ])
-  
-  return `ssh-rsa ${blob.toString('base64')}`
-}

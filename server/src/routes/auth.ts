@@ -5,8 +5,10 @@
 // @ts-ignore - bcryptjs has its own types
 import bcrypt from 'bcryptjs'
 import { nanoid } from 'nanoid'
+import { Prisma } from '@prisma/client'
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import * as db from '../db/index.js'
+import { prisma } from '../db/prisma.js'
 import { createLog } from '../db/logs.js'
 import {
   checkLoginLock,
@@ -18,10 +20,9 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
   revokeRefreshToken,
-  revokeAllUserRefreshTokens,
   updateSessionActivity,
   invalidateSessionAccessToken,
-  invalidateUserAccessTokens,
+  updateUserPasswordAndInvalidateSessions,
   generate2FASecret,
   generate2FAQRCode,
   verify2FAToken,
@@ -41,7 +42,7 @@ import { createVerificationCode, verifyCode } from '../db/email-verification.js'
 import { validateEmailDomain } from '../lib/email-domain.js'
 import {
     isOperationVerified,
-    consumeOperationVerification
+    claimOperationVerification
 } from '../lib/operation-verification.js'
 import {
     getRefreshTokenCookieOptions,
@@ -236,30 +237,49 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
       // 如果 TOTP 验证失败，尝试恢复码
       if (!verified && recoveryCode) {
-        const encryptedCodes = await db.get2FARecoveryCodes(user.id)
-        if (encryptedCodes) {
-          const decryptedCodesJson = decryptSensitiveData(encryptedCodes)
-          if (decryptedCodesJson) {
-            try {
-              const codes: string[] = JSON.parse(decryptedCodesJson)
-              const codeIndex = codes.indexOf(recoveryCode.toUpperCase())
-              if (codeIndex !== -1) {
-                // 恢复码有效，移除已使用的恢复码
-                codes.splice(codeIndex, 1)
-                const newEncryptedCodes = encryptSensitiveData(JSON.stringify(codes))
-                await db.save2FARecoveryCodes(user.id, newEncryptedCodes)
-                verified = true
+        // 锁定用户行后重新读取并更新恢复码，避免并发登录复用同一个恢复码。
+        const recoveryResult = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw(Prisma.sql`SELECT id FROM "users" WHERE id = ${user.id} FOR UPDATE`)
 
-                await logSecurityEvent(SecurityEventType.LOGIN_SUCCESS, user.id, {
-                  ip: clientIp,
-                  username,
-                  reason: `Used recovery code, ${codes.length} remaining`
-                })
-              }
-            } catch {
-              // JSON 解析失败，忽略
-            }
+          const lockedUser = await tx.user.findUnique({
+            where: { id: user.id },
+            select: { twoFactorRecoveryCodes: true }
+          })
+          if (!lockedUser?.twoFactorRecoveryCodes) {
+            return null
           }
+
+          const decryptedCodesJson = decryptSensitiveData(lockedUser.twoFactorRecoveryCodes)
+          if (!decryptedCodesJson) {
+            return null
+          }
+
+          try {
+            const codes: string[] = JSON.parse(decryptedCodesJson)
+            const codeIndex = codes.indexOf(recoveryCode.trim().toUpperCase())
+            if (codeIndex === -1) {
+              return null
+            }
+
+            codes.splice(codeIndex, 1)
+            await tx.user.update({
+              where: { id: user.id },
+              data: { twoFactorRecoveryCodes: encryptSensitiveData(JSON.stringify(codes)) }
+            })
+            return { remaining: codes.length }
+          } catch {
+            return null
+          }
+        })
+
+        if (recoveryResult) {
+          verified = true
+
+          await logSecurityEvent(SecurityEventType.LOGIN_SUCCESS, user.id, {
+            ip: clientIp,
+            username,
+            reason: `Used recovery code, ${recoveryResult.remaining} remaining`
+          })
         }
       }
 
@@ -715,9 +735,20 @@ export default async function authRoutes(fastify: FastifyInstance) {
       sessionIdsToInvalidate.add(currentSessionId)
     }
 
-    // 撤销 Refresh Token (从 Redis 删除)
+    // 撤销 Refresh Token。数据库失败时必须返回失败，不能清 Cookie 后假报登出成功。
     if (refreshToken) {
-      await revokeRefreshToken(refreshToken)
+      try {
+        const revoked = await revokeRefreshToken(refreshToken)
+        if (!revoked) {
+          throw new Error('Refresh token revocation was not confirmed')
+        }
+      } catch (error) {
+        request.log.error({ err: error }, 'Logout failed to revoke refresh token')
+        return reply.code(503).send({
+          error: 'Logout temporarily unavailable',
+          code: 'LOGOUT_FAILED'
+        })
+      }
     }
 
     for (const sessionId of sessionIdsToInvalidate) {
@@ -1065,6 +1096,16 @@ export default async function authRoutes(fastify: FastifyInstance) {
       }
     }
 
+    // 原子领取二次验证，防止并发请求重复执行禁用操作。
+    const claimedVerification = await claimOperationVerification(request.user.id, 'disable_2fa')
+    if (!claimedVerification) {
+      return reply.code(403).send({
+        error: 'Sensitive operation requires verification',
+        code: 'VERIFICATION_REQUIRED',
+        operationType: 'disable_2fa'
+      })
+    }
+
     // 禁用 2FA（清除所有 2FA 数据包括恢复码）
     await db.disable2FAComplete(request.user.id)
 
@@ -1074,9 +1115,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
     await sendNotification(request.user.id, '2fa_disabled', {
       instanceName: ''
     })
-
-    // 清理已使用的验证记录
-    await consumeOperationVerification(request.user.id, 'disable_2fa')
 
     return { message: '2FA disabled' }
   })
@@ -1287,21 +1325,18 @@ export default async function authRoutes(fastify: FastifyInstance) {
     const is2FAEnabled = await db.is2FAEnabled(user.id)
     let twoFactorDisabled = false
 
-    // 如果启用了2FA，则禁用
+    // 原子更新密码并撤销所有会话；失效标记写入失败时事务回滚，
+    // 因而不会出现密码已变更但旧 Access Token 仍可用的状态。
+    await updateUserPasswordAndInvalidateSessions(user.id, { passwordHash })
+
+    // 密码和会话安全状态已成功更新后，再清理 2FA，避免前一步失败留下部分变更。
     if (is2FAEnabled) {
       await db.disable2FAComplete(user.id)
       twoFactorDisabled = true
-      
-      // 记录日志
+
       await createLog(user.id, 'security', '2fa.disable', '2FA disabled due to password reset', 'success')
     }
 
-    // 更新密码
-    await db.updateUser(user.id, { passwordHash })
-
-    // 撤销用户所有会话，强制重新登录（安全措施）
-    await revokeAllUserRefreshTokens(user.id)
-    await invalidateUserAccessTokens(user.id)
     closeUserSessions(user.id, 'Password reset')
     // 清除认证缓存，确保令牌失效立即生效
     clearAuthCache(user.id)

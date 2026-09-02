@@ -35,6 +35,8 @@ import ImageSelector from '@/components/instance/ImageSelector.vue'
 import SSHKeySelector from '@/components/instance/SSHKeySelector.vue'
 import InitCommandSelector from '@/components/extensions/InitCommandSelector.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
+import SSHKeyGenerationPromptModal from '@/components/SSHKeyGenerationPromptModal.vue'
+import GeneratedSshKeyModal from '@/components/GeneratedSshKeyModal.vue'
 import type { Package, UserQuota, AvailableHost, CreateInstanceRequest } from '@/types/api'
 import { normalizePackageSourceQuery, toPackageSourceRequest, type PackageSource } from '@/utils/publicCatalog'
 import { validateName as validateInstanceName } from '@/utils/validation'
@@ -118,6 +120,10 @@ const plansLoading = ref<boolean>(false)
 const loading = ref<boolean>(true)
 const submitting = ref<boolean>(false)
 const error = ref<string>('')
+const showSshKeyGenerationPrompt = ref<boolean>(false)
+const sshKeyGenerating = ref<boolean>(false)
+const showGeneratedSshKeyModal = ref<boolean>(false)
+const generatedPrivateKey = ref<string>('')
 
 // 表单数据
 interface InstanceForm {
@@ -369,8 +375,7 @@ const canSubmit = computed<boolean>(() => {
          form.value.hostId !== null &&
          !!form.value.image &&
          availableImages.value.length > 0 &&
-         sshKeys.value.length > 0 &&
-         form.value.sshKeyId !== null &&
+         (sshKeys.value.length === 0 || form.value.sshKeyId !== null) &&
          quotaCheck.value.valid &&
          resourceLimitCheck.value.valid &&
          !submitting.value &&
@@ -459,6 +464,12 @@ const selectedHostingZone = computed<HostingZoneTab | null>(() => {
 onMounted(async (): Promise<void> => {
   await configStore.loadPublicConfig()
 
+  try {
+    // 分享链接中的托管区域必须在解析来源前加载完成，否则冷启动时会被误判为官方来源。
+    if (configStore.hostingMarketEntryEnabled) {
+      await resourcesStore.loadHostingZones()
+    }
+
   // 检查 URL 参数（分享链接）
   const packageParam = route.query.package as string | undefined
   const planParam = route.query.plan as string | undefined
@@ -470,10 +481,7 @@ onMounted(async (): Promise<void> => {
   const effectiveInitialSource = getSelectablePackageSource(initialSource)
   const initialSourceRequest = toPackageSourceRequest(effectiveInitialSource)
 
-  try {
-    // 合并为单个 Promise.all：5 个请求全部并行（initialSourceRequest 仅依赖 route.query，不依赖其他请求结果）
-    const [, userRes, , packagesRes, regionsRes] = await Promise.all([
-      configStore.hostingMarketEntryEnabled ? resourcesStore.loadHostingZones() : Promise.resolve(),
+    const [userRes, , packagesRes, regionsRes] = await Promise.all([
       api.users.get(authStore.user!.id),
       resourcesStore.loadSshKeys(),
       api.packages.list(initialSourceRequest),
@@ -976,9 +984,7 @@ async function loadAvailableImages(instanceType?: 'container' | 'vm', memory?: n
   }
 }
 
-async function handleSubmit(): Promise<void> {
-  if (!canSubmit.value) return
-  
+async function submitInstance(): Promise<boolean> {
   error.value = ''
   submitting.value = true
   
@@ -1009,10 +1015,58 @@ async function handleSubmit(): Promise<void> {
     
     toast.success(t('instance.createPage.createSuccess'))
     router.push('/instances')
+    return true
+  } catch (err: any) {
+    error.value = translateError(err)
+    return false
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function handleSubmit(): Promise<void> {
+  if (!canSubmit.value) return
+
+  if (sshKeys.value.length === 0) {
+    showSshKeyGenerationPrompt.value = true
+    return
+  }
+
+  await submitInstance()
+}
+
+async function confirmSshKeyGeneration(): Promise<void> {
+  if (sshKeyGenerating.value) return
+
+  sshKeyGenerating.value = true
+  error.value = ''
+  try {
+    const result = await api.sshKeys.generate()
+    form.value.sshKeyId = result.key.id
+    await resourcesStore.loadSshKeys(true)
+    showSshKeyGenerationPrompt.value = false
+    generatedPrivateKey.value = result.privateKey
+    showGeneratedSshKeyModal.value = true
   } catch (err: any) {
     error.value = translateError(err)
   } finally {
-    submitting.value = false
+    sshKeyGenerating.value = false
+  }
+}
+
+function closeGeneratedSshKeyModal(): void {
+  showGeneratedSshKeyModal.value = false
+  generatedPrivateKey.value = ''
+}
+
+async function continueAfterSshKeyGeneration(): Promise<void> {
+  showGeneratedSshKeyModal.value = false
+  const submitted = await submitInstance()
+  if (submitted) {
+    generatedPrivateKey.value = ''
+  } else {
+    // 创建失败时保留私钥并重新显示弹窗，避免用户只剩公钥而丢失私钥。
+    showGeneratedSshKeyModal.value = true
   }
 }
 </script>
@@ -1291,7 +1345,7 @@ async function handleSubmit(): Promise<void> {
             </div>
             <div v-if="sshKeys.length === 0" class="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-400 dark:border-yellow-500/30 rounded-lg">
               <p class="text-sm text-yellow-800 dark:text-yellow-300 font-medium mb-1">⚠️ {{ $t('instance.createPage.missingSshKey') }}</p>
-              <p class="text-xs text-yellow-700 dark:text-yellow-400">{{ $t('instance.createPage.missingSshKeyDesc') }} <router-link to="/profile" class="underline hover:text-yellow-900 dark:hover:text-yellow-200 font-medium">{{ $t('instance.createPage.profileSettings') }}</router-link> {{ $t('instance.createPage.addSshKey') }}</p>
+              <p class="text-xs text-yellow-700 dark:text-yellow-400">{{ $t('instance.createPage.autoGenerateSshKeyDesc') }}</p>
             </div>
             <div v-if="!quotaCheck.valid" class="p-3 rounded-lg border" :class="themeStore.isDark ? 'bg-red-900/20 border-red-500/30' : 'bg-red-50 border-red-200'">
               <p class="text-sm font-medium mb-2" :class="themeStore.isDark ? 'text-red-400' : 'text-red-700'">{{ $t('instance.createPage.quotaInsufficient') }}</p>
@@ -1314,6 +1368,28 @@ async function handleSubmit(): Promise<void> {
       </div><!-- end grid -->
     </form>
   </div>
+
+  <SSHKeyGenerationPromptModal
+    :visible="showSshKeyGenerationPrompt"
+    :loading="sshKeyGenerating"
+    :title="$t('instance.createPage.autoGenerateSshKeyTitle')"
+    :description="$t('instance.createPage.autoGenerateSshKeyDesc')"
+    :confirm-label="$t('instance.createPage.autoGenerateSshKeyConfirm')"
+    :cancel-label="$t('instance.createPage.autoGenerateSshKeyCancel')"
+    :loading-label="$t('instance.createPage.autoGenerateSshKeyGenerating')"
+    @close="showSshKeyGenerationPrompt = false"
+    @confirm="confirmSshKeyGeneration"
+  />
+
+  <GeneratedSshKeyModal
+    :visible="showGeneratedSshKeyModal"
+    :private-key="generatedPrivateKey"
+    :title="$t('instance.createPage.generatedSshKeyTitle')"
+    :description="$t('instance.createPage.generatedSshKeyDesc')"
+    :action-label="$t('instance.createPage.generatedSshKeyContinue')"
+    @close="closeGeneratedSshKeyModal"
+    @action="continueAfterSshKeyGeneration"
+  />
 
   <!-- 托管者信息弹窗 -->
   <Teleport to="body">

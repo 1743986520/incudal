@@ -91,7 +91,16 @@ export async function startSchedulers(): Promise<void> {
         const { failCreatingInstanceAndRefund } = await import('../db/billing-operations.js')
         const settlement = await failCreatingInstanceAndRefund(
           instance.id,
-          '创建超过 10 分钟未完成'
+          '创建超过 10 分钟未完成',
+          {
+            hostId: instance.host_id,
+            cpu: instance.cpu,
+            memory: instance.memory,
+            disk: instance.disk,
+            portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.network_mode)
+              ? (instance.port_limit || 0)
+              : 0
+          }
         )
 
         if (!settlement.claimed) {
@@ -103,20 +112,7 @@ export async function startSchedulers(): Promise<void> {
           console.log(`[CreateTimeout] 实例 ${instance.name} 已自动退款 ¥${settlement.refundAmount.toFixed(2)}`)
         }
 
-        // 回滚资源
-        try {
-          const { rollbackResources } = await import('../db/index.js')
-          await rollbackResources({
-            hostId: instance.host_id,
-            cpu: instance.cpu,
-            memory: instance.memory,
-            disk: instance.disk,
-            portCount: instance.network_mode === 'nat' ? (instance.port_limit || 0) : 0
-          })
-          console.log(`[CreateTimeout] 实例 ${instance.name} 资源已回滚`)
-        } catch (rollbackErr) {
-          console.error(`[CreateTimeout] 资源回滚失败:`, rollbackErr)
-        }
+        console.log(`[CreateTimeout] 实例 ${instance.name} 资源已回滚`)
 
         // 尝试清理 Incus 残留
         try {

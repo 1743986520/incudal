@@ -2040,13 +2040,25 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
         return reply.status(400).send({ error: '订单已完成' })
       }
 
-      if (record.status === 'cancelled' || record.status === 'refunded') {
-        return reply.status(400).send({ error: '订单已取消或已退款' })
+      if (record.status === 'cancelled' || record.status === 'failed' || record.status === 'refunded') {
+        return reply.status(400).send({ error: '订单已取消、失败或已退款' })
+      }
+
+      let normalizedActualAmount: number | undefined
+      if (actualAmount !== undefined) {
+        try {
+          normalizedActualAmount = db.validateRechargeActualAmount(actualAmount, record.amount)
+        } catch (error) {
+          if (error instanceof Error && error.message === 'ACTUAL_AMOUNT_EXCEEDS_ORDER') {
+            return reply.status(400).send({ error: '实际到账金额不能超过订单金额', code: error.message })
+          }
+          return reply.status(400).send({ error: '实际到账金额必须为正数且最多保留两位小数', code: 'INVALID_ACTUAL_AMOUNT' })
+        }
       }
 
       await db.completeRecharge(orderNo, {
         tradeNo,
-        actualAmount,
+        actualAmount: normalizedActualAmount,
         callbackData: { manual: true, operator: request.user!.username }
       })
 

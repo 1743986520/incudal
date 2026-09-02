@@ -1,12 +1,16 @@
 package report
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const securityNftTimeout = 10 * time.Second
 
 type nftDocument struct {
 	Nftables []struct {
@@ -26,11 +30,15 @@ type nftDocument struct {
 
 func collectSecurityEvents() []any {
 	events := make([]any, 0)
-	for _, spec := range []struct{ setName, family string }{
-		{"blocked_v4", "ipv4"},
-		{"blocked_v6", "ipv6"},
+	ctx, cancel := context.WithTimeout(context.Background(), securityNftTimeout)
+	defer cancel()
+	for _, spec := range []struct{ setName, family, eventType, action string }{
+		{"blocked_v4", "ipv4", "single_target_pps_block", "blocked_source_mac_destination_pair"},
+		{"blocked_v6", "ipv6", "single_target_pps_block", "blocked_source_mac_destination_pair"},
+		{"observed_v4", "ipv4", "single_target_pps_observation", "observed_source_mac_destination_pair"},
+		{"observed_v6", "ipv6", "single_target_pps_observation", "observed_source_mac_destination_pair"},
 	} {
-		output, err := exec.Command("nft", "-j", "list", "set", "inet", "incudal_pps_guard", spec.setName).Output()
+		output, err := exec.CommandContext(ctx, "nft", "-j", "list", "set", "inet", "incudal_pps_guard", spec.setName).Output()
 		if err != nil {
 			continue
 		}
@@ -47,14 +55,14 @@ func collectSecurityEvents() []any {
 					continue
 				}
 				events = append(events, map[string]any{
-					"type":             "single_target_pps_block",
+					"type":             spec.eventType,
 					"family":           spec.family,
 					"sourceMac":        entry.Elem.Val.Concat[0],
 					"destinationIp":    entry.Elem.Val.Concat[1],
 					"expiresInSeconds": entry.Elem.Expires,
-					"thresholdPps":     readGuardInteger("PPS_SINGLE_TARGET_LIMIT", 10000),
+					"thresholdPps":     readGuardInteger("PPS_SINGLE_TARGET_LIMIT", 20000),
 					"instanceLimitPps": readGuardInteger("PPS_LIMIT", 20000),
-					"action":           "blocked_source_mac_destination_pair",
+					"action":           spec.action,
 				})
 			}
 		}

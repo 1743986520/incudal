@@ -83,6 +83,11 @@ download_binary_once() {
   local binary_path="${binary_url%%\?*}"
   binary_path="${binary_path%%#*}"
 
+  case "${binary_url}" in
+    https://*|file://*) ;;
+    *) fail "agent binary URL must use https (or file:// for local testing)" ;;
+  esac
+
   if [ "${DRY_RUN}" = "1" ]; then
     echo "+ download ${binary_url} -> ${target}"
     if [ -n "${expected_sha256}" ]; then
@@ -138,7 +143,7 @@ download_binary() {
 
   if [ -n "${fallback_url}" ]; then
     echo "warning: failed to download ${binary_url}, fallback to ${fallback_url}" >&2
-    download_binary_once "${fallback_url}" "${target}"
+    download_binary_once "${fallback_url}" "${target}" "${expected_sha256}"
     return $?
   fi
 
@@ -188,6 +193,11 @@ verify_sha256() {
 download_manifest() {
   local manifest_url="$1"
   local target="$2"
+
+  case "${manifest_url}" in
+    https://*) ;;
+    *) fail "agent manifest URL must use https" ;;
+  esac
 
   if [ "${DRY_RUN}" = "1" ]; then
     echo "+ download ${manifest_url} -> ${target}"
@@ -284,6 +294,11 @@ fetch_agent_install_config() {
 
 need_env INCUDAL_PANEL_URL
 
+case "${INCUDAL_PANEL_URL}" in
+  https://*) ;;
+  *) fail "INCUDAL_PANEL_URL must use https" ;;
+esac
+
 PANEL_BASE_URL="${INCUDAL_PANEL_URL%/}"
 OS="$(detect_os)"
 ARCH="$(detect_arch)"
@@ -325,6 +340,9 @@ if [ -z "${INCUDAL_AGENT_BINARY_URL:-}" ]; then
     if [ -z "${BINARY_NAME}" ] || [ -z "${BINARY_EXPECTED_SHA256}" ]; then
       fail "agent manifest does not contain ${OS}-${ARCH} binary metadata"
     fi
+    if [[ ! "${BINARY_EXPECTED_SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      fail "agent manifest contains an invalid sha256 for ${OS}-${ARCH}"
+    fi
     validate_binary_name "${BINARY_NAME}" "${OS}" "${ARCH}"
   else
     BINARY_NAME="${BINARY_NAME}.gz"
@@ -333,7 +351,9 @@ if [ -z "${INCUDAL_AGENT_BINARY_URL:-}" ]; then
   BINARY_URL="${BINARY_BASE_URL}/${BINARY_NAME}"
   BINARY_URL="$(append_query_param "${BINARY_URL}" "v" "${BINARY_CACHE_BUSTER}")"
 elif [ -z "${BINARY_EXPECTED_SHA256}" ]; then
-  echo "warning: INCUDAL_AGENT_BINARY_URL is set without INCUDAL_AGENT_BINARY_SHA256, skip binary checksum verification" >&2
+  fail "INCUDAL_AGENT_BINARY_SHA256 is required when INCUDAL_AGENT_BINARY_URL is set"
+elif [[ ! "${BINARY_EXPECTED_SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  fail "INCUDAL_AGENT_BINARY_SHA256 must be a 64-character hexadecimal SHA256"
 fi
 
 echo "Installing Incudal Agent"

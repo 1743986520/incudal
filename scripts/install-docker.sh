@@ -15,15 +15,17 @@
 #   升级：  sudo bash install-docker.sh --upgrade
 #   卸载：  sudo bash install-docker.sh --uninstall
 #
-# 项目地址: https://github.com/0xdabiaoge/incudal
+# 项目地址: https://github.com/1743986520/incudal
 # ============================================================================
 set -euo pipefail
 
 # ========================== 全局常量 ==========================
 readonly SCRIPT_VERSION="1.0.0"
-readonly GITHUB_REPO="0xdabiaoge/incudal"
+readonly DEFAULT_GITHUB_REPO="1743986520/incudal"
+readonly DEFAULT_UPDATE_REF="deeb7d65b1d2a1df461373d48090d77b2b2e4741"
+readonly GITHUB_REPO="${INCUDAL_GITHUB_REPO:-${INCUDAL_UPDATE_SOURCE:-$DEFAULT_GITHUB_REPO}}"
 readonly DOCKER_IMAGE="ghcr.io/${GITHUB_REPO}"
-readonly INSTALL_DIR="/opt/incudal"
+readonly INSTALL_DIR="${INCUDAL_INSTALL_DIR:-/opt/incudal}"
 readonly ENV_FILE="${INSTALL_DIR}/.env"
 readonly COMPOSE_FILE="${INSTALL_DIR}/docker-compose.yml"
 readonly DEFAULT_PORT=3000
@@ -74,7 +76,10 @@ set_env_if_missing() {
     current="$(get_env_value "$key")"
 
     if [[ -n "$current" ]]; then
-        return 0
+        if [[ "$key" != "ADMIN_PASSWORD" || "$current" != "admin123" ]]; then
+            return 0
+        fi
+        warn "检测到不安全的默认管理员密码，正在替换为随机密码"
     fi
 
     if grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
@@ -98,6 +103,40 @@ set_env_if_missing() {
     log "已自动补充 ${label}: ${key}"
 }
 
+get_app_port() {
+    local app_port
+    app_port="$(get_env_value APP_PORT)"
+    app_port="${app_port:-$DEFAULT_PORT}"
+    if [[ ! "$app_port" =~ ^[0-9]+$ ]] || (( app_port < 1 || app_port > 65535 )); then
+        error "APP_PORT 必须是 1-65535 的端口号: ${app_port}"
+        return 1
+    fi
+    printf '%s' "$app_port"
+}
+
+set_env_value() {
+    local key="$1"
+    local value="$2"
+    local tmp_file
+
+    if grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
+        tmp_file="$(mktemp)"
+        awk -v key="$key" -v value="$value" '
+            BEGIN { replaced = 0 }
+            $0 ~ "^" key "=" && replaced == 0 {
+                print key "=" value
+                replaced = 1
+                next
+            }
+            { print }
+        ' "$ENV_FILE" > "$tmp_file"
+        cat "$tmp_file" > "$ENV_FILE"
+        rm -f "$tmp_file"
+    else
+        printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    fi
+}
+
 ensure_env_keys() {
     if [[ ! -f "$ENV_FILE" ]]; then
         return 0
@@ -109,6 +148,8 @@ ensure_env_keys() {
     set_env_if_missing "COOKIE_SECRET" "$(gen_secret 48)" "Cookie 密钥"
     set_env_if_missing "ENCRYPTION_KEY" "$(openssl rand -base64 32)" "敏感数据加密密钥"
     set_env_if_missing "ADMIN_PASSWORD" "$(gen_password 16)" "管理员初始密码"
+    set_env_if_missing "APP_PORT" "$DEFAULT_PORT" "应用端口"
+    set_env_if_missing "INCUDAL_IMAGE" "${DOCKER_IMAGE}:latest" "Incudal 镜像地址"
 
     chmod 600 "$ENV_FILE"
 }
@@ -222,6 +263,8 @@ generate_panel_cert() {
 
     # 幂等性：证书已存在则跳过
     if [[ -f "$cert_file" && -f "$key_file" ]]; then
+        chmod 644 "$cert_file"
+        chmod 600 "$key_file"
         log "面板客户端证书已存在，跳过生成"
         return 0
     fi
@@ -237,7 +280,8 @@ generate_panel_cert() {
         -subj "/CN=incudal-panel/O=Incudal" \
         2>/dev/null
 
-    chmod 644 "$cert_file" "$key_file"
+    chmod 644 "$cert_file"
+    chmod 600 "$key_file"
 
     log "面板客户端证书生成完成"
 }
@@ -287,6 +331,7 @@ ENCRYPTION_KEY=${encryption_key}
 # ============ 应用配置 ============
 APP_PORT=${DEFAULT_PORT}
 ADMIN_PASSWORD=${admin_password}
+INCUDAL_IMAGE=${DOCKER_IMAGE}:latest
 LOG_LEVEL=info
 DISABLE_REQUEST_LOG=true
 
@@ -313,9 +358,9 @@ generate_compose() {
     cat > "$COMPOSE_FILE" << 'COMPOSEFILE'
 services:
   app:
-    image: ghcr.io/0xdabiaoge/incudal:latest
+    image: ${INCUDAL_IMAGE:-ghcr.io/1743986520/incudal:latest}
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - HOST=0.0.0.0
@@ -330,6 +375,12 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - DISABLE_REQUEST_LOG=${DISABLE_REQUEST_LOG:-true}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - PAYMENT_CALLBACK_BASE_URL=${PAYMENT_CALLBACK_BASE_URL:-}
+      - PAYMENT_CALLBACK_IP_WHITELIST=${PAYMENT_CALLBACK_IP_WHITELIST:-}
+      - PAYMENT_CALLBACK_SKIP_IP_WHITELIST=${PAYMENT_CALLBACK_SKIP_IP_WHITELIST:-false}
+      - INCUDAL_AGENT_RELEASE_URL=${INCUDAL_AGENT_RELEASE_URL:-}
+      - INCUDAL_AGENT_RELEASE_REPOSITORY=${INCUDAL_AGENT_RELEASE_REPOSITORY:-}
+      - INCUDAL_AGENT_RELEASE_TOKEN=${INCUDAL_AGENT_RELEASE_TOKEN:-}
     volumes:
       - ./server/certs:/app/server/certs:ro
     depends_on:
@@ -384,6 +435,11 @@ start_docker() {
 
     cd "$INSTALL_DIR"
 
+    local app_port
+    if ! app_port="$(get_app_port)"; then
+        return 1
+    fi
+
     info "拉取最新镜像..."
     docker compose pull 2>&1 | tail -5
 
@@ -395,7 +451,7 @@ start_docker() {
     local retries=0
     local max_retries=30
     while [[ $retries -lt $max_retries ]]; do
-        if curl -sf "http://127.0.0.1:${DEFAULT_PORT}/api/health" &>/dev/null 2>&1; then
+        if curl -sf "http://127.0.0.1:${app_port}/api/health" &>/dev/null 2>&1; then
             log "服务启动成功！"
             return 0
         fi
@@ -405,11 +461,16 @@ start_docker() {
 
     warn "服务尚未就绪，请查看日志确认状态:"
     warn "  docker compose -f ${COMPOSE_FILE} logs -f app"
+    return 1
 }
 
 # ========================== Nginx + Certbot ==========================
 setup_nginx_certbot() {
     info "准备配置 Nginx 反代及 Let's Encrypt SSL 自动证书"
+    local app_port
+    if ! app_port="$(get_app_port)"; then
+        return 1
+    fi
     echo -ne "  ${BOLD}请输入你要绑定的域名 (例如 panel.yourdomain.com): ${NC}"
     read -r DOMAIN
 
@@ -439,7 +500,7 @@ server {
     add_header X-Frame-Options DENY;
 
     location / {
-        proxy_pass http://127.0.0.1:${DEFAULT_PORT};
+        proxy_pass http://127.0.0.1:${app_port};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -482,8 +543,12 @@ NGINX
 
 # ========================== Cloudflare Tunnel ==========================
 setup_cf_tunnel() {
+    local app_port
+    if ! app_port="$(get_app_port)"; then
+        return 1
+    fi
     info "请前往 Cloudflare Zero Trust 控制台创建 Tunnel"
-    info "配置 Tunnel 时，将 Public Hostname 指向 http://127.0.0.1:${DEFAULT_PORT}"
+    info "配置 Tunnel 时，将 Public Hostname 指向 http://127.0.0.1:${app_port}"
     echo ""
     echo -ne "  ${BOLD}请输入你绑定的域名 (用于更新 FRONTEND_URL): ${NC}"
     read -r CF_DOMAIN
@@ -518,7 +583,7 @@ show_result() {
     echo -e "${NC}" >&2
     divider
     echo -e "  ${BOLD}部署模式${NC}     Docker Compose" >&2
-    echo -e "  ${BOLD}访问地址${NC}     ${frontend_url:-http://服务器IP:${app_port}}" >&2
+    echo -e "  ${BOLD}访问地址${NC}     ${frontend_url:-http://127.0.0.1:${app_port}}" >&2
     echo -e "  ${BOLD}管理员账号${NC}   admin" >&2
     echo -e "  ${BOLD}管理员密码${NC}   ${admin_pass}" >&2
     divider
@@ -528,6 +593,7 @@ show_result() {
     echo -e "  ${DIM}重启服务${NC}     docker compose -f ${COMPOSE_FILE} restart" >&2
     echo -e "  ${DIM}停止服务${NC}     docker compose -f ${COMPOSE_FILE} down" >&2
     echo -e "  ${DIM}更新镜像${NC}     sudo bash $0 --upgrade" >&2
+    echo -e "  ${DIM}远程更新${NC}     curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/${DEFAULT_UPDATE_REF}/scripts/remote-update.sh | sudo bash -s -- --ref ${DEFAULT_UPDATE_REF}" >&2
     divider
     echo "" >&2
 
@@ -552,6 +618,27 @@ do_upgrade() {
 
     cd "$INSTALL_DIR"
 
+    # 让远程更新可以切换到指定 GitHub 仓库，同时兼容旧版固定镜像地址。
+    local desired_image="${DOCKER_IMAGE}:latest"
+    if grep -qE '^[[:space:]]*image:[[:space:]]*ghcr\.io/' "$COMPOSE_FILE" 2>/dev/null; then
+        local compose_tmp
+        compose_tmp="$(mktemp)"
+        awk -v image="$desired_image" '
+            BEGIN { replaced = 0 }
+            replaced == 0 && $0 ~ /^[[:space:]]*image:[[:space:]]*ghcr\.io\// {
+                match($0, /^[[:space:]]*/)
+                indent = substr($0, 1, RLENGTH)
+                print indent "image: ${INCUDAL_IMAGE:-" image "}"
+                replaced = 1
+                next
+            }
+            { print }
+        ' "$COMPOSE_FILE" > "$compose_tmp"
+        cat "$compose_tmp" > "$COMPOSE_FILE"
+        rm -f "$compose_tmp"
+    fi
+    set_env_value "INCUDAL_IMAGE" "$desired_image"
+
     info "拉取最新镜像..."
     docker compose pull 2>&1 | tail -5
 
@@ -560,14 +647,24 @@ do_upgrade() {
 
     # 等待服务就绪
     info "等待服务启动..."
+    local app_port
+    if ! app_port="$(get_app_port)"; then
+        return 1
+    fi
     local retries=0
     while [[ $retries -lt 20 ]]; do
-        if curl -sf "http://127.0.0.1:${DEFAULT_PORT}/api/health" &>/dev/null 2>&1; then
+        if curl -sf "http://127.0.0.1:${app_port}/api/health" &>/dev/null 2>&1; then
             break
         fi
         retries=$((retries + 1))
         sleep 2
     done
+
+    if [[ $retries -ge 20 ]]; then
+        error "升级后服务未在预期时间内就绪，请查看日志"
+        docker compose logs --tail=50 app >&2 || true
+        return 1
+    fi
 
     log "升级完成！"
     info "当前镜像: $(docker compose images app --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || echo 'unknown')"
@@ -684,30 +781,19 @@ do_install() {
         1|2)
             ;; # Nginx/CF 方案会在后续步骤中自动写入 FRONTEND_URL
         *)
-            # 自动探测面板公网地址，用于写入 FRONTEND_URL
-            local detected_ip=""
-            detected_ip=$(curl -4sf --connect-timeout 5 https://api.ipify.org 2>/dev/null || \
-                          curl -4sf --connect-timeout 5 https://ifconfig.me 2>/dev/null || \
-                          curl -6sf --connect-timeout 5 https://api6.ipify.org 2>/dev/null || echo "")
-
             echo ""
-            if [[ -n "$detected_ip" ]]; then
-                # 检测到公网 IP，构建默认地址
-                local default_url="http://${detected_ip}:${DEFAULT_PORT}"
-                info "检测到公网 IP: ${detected_ip}"
-                echo -ne "  ${BOLD}请输入面板访问地址 [默认 ${default_url}]: ${NC}"
-                read -r manual_url
-                manual_url=${manual_url:-${default_url}}
-            else
-                echo -ne "  ${BOLD}请输入面板访问地址 (例如 https://panel.example.com 或 http://IP:${DEFAULT_PORT}): ${NC}"
-                read -r manual_url
-            fi
+            echo -ne "  ${BOLD}请输入 HTTPS 面板访问地址（由反向代理提供，例如 https://panel.example.com）: ${NC}"
+            read -r manual_url
 
             if [[ -n "$manual_url" ]]; then
                 # 去掉末尾斜杠
                 manual_url="${manual_url%/}"
-                sed -i "s|^FRONTEND_URL=.*|FRONTEND_URL=${manual_url}|" "$ENV_FILE"
-                log "面板访问地址已设置: ${manual_url}"
+                if [[ "$manual_url" == https://* ]]; then
+                    sed -i "s|^FRONTEND_URL=.*|FRONTEND_URL=${manual_url}|" "$ENV_FILE"
+                    log "面板访问地址已设置: ${manual_url}"
+                else
+                    warn "公网面板地址必须使用 HTTPS；应用仅绑定 127.0.0.1，未写入 FRONTEND_URL"
+                fi
             else
                 warn "未设置面板访问地址，节点注册功能将不可用"
                 warn "请后续编辑 ${ENV_FILE} 手动设置 FRONTEND_URL"

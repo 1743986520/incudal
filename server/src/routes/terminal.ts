@@ -51,21 +51,17 @@ function safeSend(socket: WebSocket, data: string): boolean {
  * 权限规则：
  * 1. 管理员可以访问所有实例的终端
  * 2. 实例所有者可以访问自己实例的终端
- * 3. 节点所有者可以访问其节点上所有实例的终端
+ * 3. 节点所有者不能因为拥有节点而获得其他租户的 root 终端
  */
-async function checkTerminalPermission(
+function checkTerminalPermission(
     user: { id: number; role: string },
-    instance: { user_id: number; host_id: number }
-): Promise<boolean> {
+    instance: { user_id: number }
+): boolean {
     // 管理员有权限访问所有实例
     if (user.role === 'admin') return true
 
     // 实例所有者有权限
     if (instance.user_id === user.id) return true
-
-    // 检查是否是节点所有者
-    const host = await db.getHostById(instance.host_id)
-    if (host && host.user_id === user.id) return true
 
     return false
 }
@@ -83,6 +79,15 @@ export default async function terminalRoutes(fastify: FastifyInstance) {
         const instanceId = Number(request.params.id)
         if (isNaN(instanceId)) {
             return reply.code(400).send({ error: 'Invalid instance ID', code: 'INVALID_ID' })
+        }
+
+        const instance = await db.getInstanceById(instanceId)
+        if (!instance) {
+            return reply.code(404).send({ error: 'Instance not found', code: 'INSTANCE_NOT_FOUND' })
+        }
+
+        if (!checkTerminalPermission(request.user, instance)) {
+            return reply.code(403).send({ error: 'Forbidden', code: 'FORBIDDEN' })
         }
 
         const issuedAt = request.user.iat
@@ -229,7 +234,7 @@ export default async function terminalRoutes(fastify: FastifyInstance) {
         }
 
         // 6. 权限检查
-        const hasPermission = await checkTerminalPermission(user, instance)
+        const hasPermission = checkTerminalPermission(user, instance)
         if (!hasPermission) {
             safeSend(socket, JSON.stringify({
                 type: 'error',

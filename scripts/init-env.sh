@@ -46,7 +46,10 @@ set_env_if_missing() {
     current="$(get_env_value "$key")"
 
     if [[ -n "$current" ]]; then
-        return 0
+        if [[ "$key" != "ADMIN_PASSWORD" || "$current" != "admin123" ]]; then
+            return 0
+        fi
+        info "检测到不安全的默认管理员密码，正在替换为随机密码"
     fi
 
     if grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
@@ -89,6 +92,7 @@ set_env_if_missing "COOKIE_SECRET" "$(gen_secret 48)" "Cookie 密钥"
 set_env_if_missing "ENCRYPTION_KEY" "$(openssl rand -base64 32)" "敏感数据加密密钥"
 set_env_if_missing "APP_PORT" "3000" "应用端口"
 set_env_if_missing "ADMIN_PASSWORD" "$(gen_password 16)" "管理员初始密码"
+set_env_if_missing "INCUDAL_IMAGE" "ghcr.io/1743986520/incudal:latest" "Incudal 镜像地址"
 set_env_if_missing "LOG_LEVEL" "info" "日志级别"
 set_env_if_missing "DISABLE_REQUEST_LOG" "true" "请求日志开关"
 

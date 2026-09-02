@@ -11,7 +11,6 @@ import { isIP } from 'net'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { prisma } from '../db/prisma.js'
-import * as db from '../db/index.js'
 import { createLog, LogModule, LogResult } from '../db/logs.js'
 import { decryptSensitiveData } from '../lib/security.js'
 import {
@@ -31,7 +30,7 @@ import {
 } from '../lib/host-agent-credentials.js'
 import { processAgentInstanceReport } from '../services/agent-instance-report.js'
 import { sendSecurityIncidentNotification } from '../services/traffic-notifier.js'
-import { buildHostAgentPolicyBundle } from '../services/host-network-policy.js'
+import { buildHostAgentPolicyBundle, hasMissingTargetMac } from '../services/host-network-policy.js'
 import {
   BUILTIN_AUDIT_RULES, analyzeAuditData, parseConnections, parseProcesses, parseStartupItems,
   type AuditRuleDefinition, type AuditRuleMatchType, type AuditRuleTarget, type AuditSeverity
@@ -49,6 +48,7 @@ interface AgentInstallCommandBody {
   enabled?: boolean
   baseUrl?: string
   binaryUrl?: string
+  binarySha256?: string
 }
 
 interface AgentHeartbeatBody {
@@ -91,12 +91,14 @@ async function processAgentSecurityEvents(hostId: number, events: unknown, insta
   for (const raw of events.slice(0, 64)) {
     if (!raw || typeof raw !== 'object') continue
     const event = raw as Record<string, unknown>
-    if (event.type !== 'single_target_pps_block') continue
+    const isNetworkBlocked = event.type === 'single_target_pps_block'
+    const isObservation = event.type === 'single_target_pps_observation'
+    if (!isNetworkBlocked && !isObservation) continue
     const sourceMac = sanitizeShortString(event.sourceMac, 32)
     const destinationIp = sanitizeShortString(event.destinationIp, 128)
     if (!sourceMac || !/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(sourceMac) || !destinationIp || isIP(destinationIp) === 0) continue
     const expiresInSeconds = Math.max(0, Math.min(86400, Number(event.expiresInSeconds) || 0))
-    const dedupeKey = `${hostId}:${sourceMac.toLowerCase()}:${destinationIp}`
+    const dedupeKey = `${hostId}:${event.type}:${sourceMac.toLowerCase()}:${destinationIp}`
     if (securityIncidentDedupe.has(dedupeKey)) continue
     securityIncidentDedupe.set(dedupeKey, now + Math.max(60000, expiresInSeconds * 1000))
 
@@ -105,19 +107,27 @@ async function processAgentSecurityEvents(hostId: number, events: unknown, insta
       where: { hostId, incusId: reportedName, status: { not: 'deleted' } },
       include: { user: { select: { id: true, username: true, email: true, status: true, role: true } } }
     }) : null
-    let suspensionResult = '未找到实例，仅执行网络层目标封锁'
+    let suspensionResult = isNetworkBlocked
+      ? '未找到实例，仅执行网络层目标封锁'
+      : '未找到实例，仅记录 UDP 单目标异常'
     let emailResult = '未发送'
 
     if (instance) {
       if (instance.user.role === 'admin') {
-        suspensionResult = '目标属于管理员账户，安全规则拒绝自动封禁并已上报'
+        suspensionResult = isNetworkBlocked
+          ? '目标属于管理员账户，安全规则拒绝自动封禁并已上报'
+          : '目标属于管理员账户，UDP 观察事件已上报'
       } else if (instance.user.status === 'banned') {
-        suspensionResult = '用户当前已被封禁；本次事件未重复处理，仅保留网络层目标封锁'
+        suspensionResult = isNetworkBlocked
+          ? '用户当前已被封禁；本次事件未重复处理，仅保留网络层目标封锁'
+          : '用户当前已被封禁；本次 UDP 观察事件未重复处理'
       } else {
         // PPS is a network signal, not proof of abuse. A legitimate
         // high-throughput download can produce a high packet rate, so this
         // event must never change account state automatically.
-        suspensionResult = '仅执行网络层目标封锁，未自动封禁账户；需管理员复核'
+        suspensionResult = isNetworkBlocked
+          ? '仅执行网络层目标封锁，未自动封禁账户；需管理员复核'
+          : '仅记录并通知管理员，未执行网络层目标封锁或账户封禁'
       }
     }
 
@@ -127,12 +137,15 @@ async function processAgentSecurityEvents(hostId: number, events: unknown, insta
       sourceMac,
       destinationIp,
       family: event.family === 'ipv6' ? 'IPv6' : 'IPv4',
-      thresholdPps: Math.max(1, Number(event.thresholdPps) || 10000),
+      thresholdPps: Math.max(1, Number(event.thresholdPps) || 20000),
       instanceLimitPps: Math.max(1, Number(event.instanceLimitPps) || 20000),
       expiresInSeconds,
       instanceName: instance?.name,
       username: instance?.user.username,
       userId: instance?.userId,
+      networkAction: isNetworkBlocked
+        ? 'blocked_source_mac_destination_pair'
+        : 'observed_source_mac_destination_pair',
       suspensionResult,
       emailResult
     }).catch(error => console.error('[Agent] Failed to send PPS security notification:', error))
@@ -189,7 +202,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const agentBinaryNamePattern = /^incudal-agent-linux-(amd64|arm64)(?:\.gz)?$/
 const agentReleaseBinaryNamePattern = /^incudal-agent-(x86_64|aarch64)-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/
-const defaultAgentReleaseRepository = 'qwer-xyz/incudal_classic'
+const defaultAgentReleaseRepository = '1743986520/incudal'
 const githubApiBaseUrl = 'https://api.github.com'
 const githubDownloadBaseUrl = 'https://github.com'
 const agentReleaseCacheTtlMs = 5 * 60 * 1000
@@ -471,10 +484,33 @@ function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
+function validateCustomAgentBinary(binaryUrl?: string, binarySha256?: string): string | null {
+  const url = binaryUrl?.trim() || ''
+  const sha256 = binarySha256?.trim() || ''
+
+  if (!url && !sha256) return null
+  if (!url) return 'binarySha256 不能脱离 binaryUrl 单独提供'
+  if (!/^[a-fA-F0-9]{64}$/.test(sha256)) {
+    return '自定义 Agent 二进制必须提供 64 位十六进制 SHA-256 摘要'
+  }
+
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:' || !parsed.host) {
+      return '自定义 Agent 二进制 URL 必须使用 HTTPS'
+    }
+  } catch {
+    return '自定义 Agent 二进制 URL 无效'
+  }
+
+  return null
+}
+
 function buildAgentInstallCommand(input: {
   panelUrl: string
   installToken: string
   binaryUrl?: string | null
+  binarySha256?: string | null
 }): string {
   const envParts = [
     `INCUDAL_PANEL_URL=${shellEscape(input.panelUrl)}`,
@@ -484,6 +520,7 @@ function buildAgentInstallCommand(input: {
   const binaryUrl = input.binaryUrl?.trim()
   if (binaryUrl) {
     envParts.push(`INCUDAL_AGENT_BINARY_URL=${shellEscape(binaryUrl)}`)
+    envParts.push(`INCUDAL_AGENT_BINARY_SHA256=${shellEscape(input.binarySha256?.trim() || '')}`)
   }
 
   return `curl -fsSL ${shellEscape(`${input.panelUrl}/api/agent/install.sh`)} | sudo env ${envParts.join(' ')} bash`
@@ -499,10 +536,39 @@ function buildAgentInstallConfig(input: {
   ].join('\n') + '\n'
 }
 
+function normalizeGitHubRepository(value: string): string | null {
+  let candidate = value.trim().replace(/\/+$/, '').replace(/\.git$/, '')
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(candidate)) {
+    return candidate
+  }
+
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com') {
+      return null
+    }
+    const parts = parsed.pathname.split('/').filter(Boolean)
+    if (parts.length !== 2 || !parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part))) {
+      return null
+    }
+    return `${parts[0]}/${parts[1]}`
+  } catch {
+    return null
+  }
+}
+
 function getAgentReleaseRepository(): string {
-  const configured = process.env.INCUDAL_AGENT_RELEASE_REPOSITORY?.trim() || process.env.GITHUB_REPOSITORY?.trim()
-  const repository = configured || defaultAgentReleaseRepository
-  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ? repository : defaultAgentReleaseRepository
+  const candidates = [
+    process.env.INCUDAL_AGENT_RELEASE_URL,
+    process.env.INCUDAL_AGENT_RELEASE_REPOSITORY,
+    process.env.GITHUB_REPOSITORY
+  ]
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const repository = normalizeGitHubRepository(candidate)
+    if (repository) return repository
+  }
+  return defaultAgentReleaseRepository
 }
 
 function getAgentReleaseApiUrl(): string {
@@ -909,9 +975,52 @@ async function serializeAgentStatus(agent: HostAgentRecord) {
 }
 
 function buildHeartbeatReport(body: AgentHeartbeatBody): Record<string, unknown> {
+  const rawInstances = isRecord(body.instances) ? body.instances : {}
+  const items = Array.isArray(rawInstances.items) ? rawInstances.items.slice(0, 1000).flatMap(rawItem => {
+    if (!isRecord(rawItem)) return []
+    const item: Record<string, unknown> = {}
+    const name = sanitizeShortString(rawItem.name, 200)
+    if (name) item.name = name
+    const status = sanitizeShortString(rawItem.status, 64)
+    if (status) item.status = status
+    const type = sanitizeShortString(rawItem.type, 64)
+    if (type) item.type = type
+    const statusCode = parseInteger(rawItem.statusCode)
+    if (statusCode !== null) item.statusCode = statusCode
+
+    if (isRecord(rawItem.network)) {
+      const network: Record<string, string> = {}
+      for (const key of ['ipv4', 'ipv6', 'mac'] as const) {
+        const value = sanitizeShortString(rawItem.network[key], 128)
+        if (value && (key !== 'mac' || /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(value))) {
+          network[key] = key === 'mac' ? value.toLowerCase() : value
+        }
+      }
+      if (Object.keys(network).length > 0) item.network = network
+    }
+
+    if (isRecord(rawItem.traffic)) {
+      const traffic: Record<string, string> = {}
+      for (const key of ['rxBytes', 'txBytes'] as const) {
+        const value = sanitizeShortString(rawItem.traffic[key], 32)
+        if (value && /^\d+$/.test(value)) traffic[key] = value
+      }
+      if (Object.keys(traffic).length > 0) item.traffic = traffic
+    }
+
+    return Object.keys(item).length > 0 ? [item] : []
+  }) : []
+
   return {
     runtime: body.runtime ?? {},
     incus: body.incus ?? {},
+    instances: {
+      available: rawInstances.available === true,
+      reportedAt: sanitizeShortString(rawInstances.reportedAt, 80),
+      total: Math.max(0, Math.min(1000, parseInteger(rawInstances.total) ?? items.length)),
+      truncated: rawInstances.truncated === true,
+      items
+    },
     resources: body.resources ?? {},
     metrics: normalizeAgentMetrics(body.metrics)
   }
@@ -1274,6 +1383,9 @@ export default async function agentRoutes(fastify: FastifyInstance) {
     }
 
     const panelUrl = derivePanelUrl(request)
+    if (!panelUrl.startsWith('https://')) {
+      return reply.code(400).send({ error: 'Agent 安装命令必须使用 HTTPS 面板地址', code: 'AGENT_HTTPS_REQUIRED' })
+    }
     let result: Awaited<ReturnType<typeof issueHostAgentInstallToken>>
     try {
       result = await issueHostAgentInstallToken(hostId, request.body?.enabled ?? true)
@@ -1391,7 +1503,8 @@ export default async function agentRoutes(fastify: FastifyInstance) {
         properties: {
           enabled: { type: 'boolean' },
           baseUrl: { type: 'string', minLength: 1 },
-          binaryUrl: { type: 'string', minLength: 1 }
+          binaryUrl: { type: 'string', minLength: 1 },
+          binarySha256: { type: 'string', minLength: 64, maxLength: 64 }
         }
       }
     }
@@ -1405,6 +1518,16 @@ export default async function agentRoutes(fastify: FastifyInstance) {
     }
 
     const panelUrl = derivePanelUrl(request, request.body?.baseUrl)
+    if (!panelUrl.startsWith('https://')) {
+      return reply.code(400).send({ error: 'Agent 安装命令必须使用 HTTPS 面板地址', code: 'AGENT_HTTPS_REQUIRED' })
+    }
+    const binaryValidationError = validateCustomAgentBinary(
+      request.body?.binaryUrl,
+      request.body?.binarySha256
+    )
+    if (binaryValidationError) {
+      return reply.code(400).send({ error: binaryValidationError, code: 'INVALID_AGENT_BINARY' })
+    }
     let result: Awaited<ReturnType<typeof issueHostAgentInstallToken>>
     try {
       result = await issueHostAgentInstallToken(hostId, request.body?.enabled ?? true)
@@ -1418,7 +1541,8 @@ export default async function agentRoutes(fastify: FastifyInstance) {
     const installCommand = buildAgentInstallCommand({
       panelUrl,
       installToken: result.installToken,
-      binaryUrl: request.body?.binaryUrl
+      binaryUrl: request.body?.binaryUrl,
+      binarySha256: request.body?.binarySha256
     })
 
     await createLog(
@@ -1488,15 +1612,40 @@ export default async function agentRoutes(fastify: FastifyInstance) {
       request.log.warn({ agentId: agent.agentId, hostId: agent.hostId, error }, 'Failed to process Agent security events')
     }
 
+    // Persist the current instance/MAC snapshot before compiling the policy
+    // bundle below. Otherwise a newly reported MAC is invisible until the
+    // next heartbeat, and a successful apply can be recorded against stale
+    // target data.
+    await agentModel.update({
+      where: { agentId: agent.agentId },
+      data: {
+        status: 'online',
+        version: sanitizeShortString(request.body.version, 128),
+        capabilities: normalizeCapabilities(request.body.capabilities) as Prisma.InputJsonValue,
+        lastReport: buildHeartbeatReport(request.body) as Prisma.InputJsonObject,
+        lastSeenAt: now,
+        lastHeartbeatIp: sanitizeShortString(getAgentHeartbeatIp(request), 128)
+      }
+    })
+
     if (request.body.networkPolicyStatus && typeof request.body.networkPolicyStatus === 'object') {
       const statusRevision = sanitizeShortString(request.body.networkPolicyStatus.revision, 128)
       const applied = request.body.networkPolicyStatus.applied === true
       const applyError = sanitizeShortString(request.body.networkPolicyStatus.error, 2000)
       const policyBundle = await buildHostAgentPolicyBundle(agent.hostId)
       if (statusRevision && statusRevision === policyBundle.revision) {
+        const missingTargetMac = hasMissingTargetMac(policyBundle)
+        const effectiveApplied = applied && !missingTargetMac
+        const effectiveError = effectiveApplied
+          ? null
+          : (missingTargetMac ? 'Agent policy targets are missing valid MAC addresses' : applyError)
         await prisma.hostNetworkPolicy.updateMany({
           where: { hostId: agent.hostId, enabled: true },
-          data: { applyStatus: applied ? 'applied' : 'failed', applyError: applied ? null : applyError, appliedAt: applied ? now : null }
+          data: {
+            applyStatus: effectiveApplied ? 'applied' : 'failed',
+            applyError: effectiveError,
+            appliedAt: effectiveApplied ? now : null
+          }
         })
       }
     }
@@ -1542,18 +1691,6 @@ export default async function agentRoutes(fastify: FastifyInstance) {
         } })
       }
     }
-
-    await agentModel.update({
-      where: { agentId: agent.agentId },
-      data: {
-        status: 'online',
-        version: sanitizeShortString(request.body.version, 128),
-        capabilities: normalizeCapabilities(request.body.capabilities) as Prisma.InputJsonValue,
-        lastReport: buildHeartbeatReport(request.body) as Prisma.InputJsonObject,
-        lastSeenAt: now,
-        lastHeartbeatIp: sanitizeShortString(getAgentHeartbeatIp(request), 128)
-      }
-    })
 
     const auditConfig = await prisma.hostAgentAuditConfig.findUnique({ where: { hostId: agent.hostId } })
     return {

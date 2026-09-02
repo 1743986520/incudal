@@ -14,14 +14,16 @@
 #   升级：  sudo bash install-panel.sh --upgrade
 #   卸载：  sudo bash install-panel.sh --uninstall
 #
-# 项目地址: https://github.com/0xdabiaoge/incudal
+# 项目地址: https://github.com/1743986520/incudal
 # ============================================================================
 set -euo pipefail
 
 # ========================== 全局常量 ==========================
 readonly SCRIPT_VERSION="3.0.0"
-readonly GITHUB_REPO="0xdabiaoge/incudal"
-readonly INSTALL_DIR="/opt/incudal"
+readonly DEFAULT_GITHUB_REPO="1743986520/incudal"
+readonly DEFAULT_UPDATE_REF="deeb7d65b1d2a1df461373d48090d77b2b2e4741"
+readonly GITHUB_REPO="${INCUDAL_GITHUB_REPO:-${INCUDAL_UPDATE_SOURCE:-$DEFAULT_GITHUB_REPO}}"
+readonly INSTALL_DIR="${INCUDAL_INSTALL_DIR:-/opt/incudal}"
 readonly SERVICE_NAME="incudal"
 readonly SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 readonly ENV_FILE="${INSTALL_DIR}/.env"
@@ -29,6 +31,7 @@ readonly RUN_USER="incudal"
 readonly DEFAULT_PORT=3000
 readonly NODE_MAJOR=22
 readonly PG_VERSION=16
+UPGRADE_BACKUP_DIR=""
 
 # ========================== 颜色定义 ==========================
 readonly RED='\033[1;31m'
@@ -58,6 +61,41 @@ gen_password() {
 
 gen_secret() {
     printf 'A1!%s' "$(openssl rand -hex 64)" | cut -c "1-${1:-48}"
+}
+
+resolve_admin_password() {
+    local password="${1:-}"
+    local confirmation=""
+
+    if [[ -z "$password" && -t 0 ]]; then
+        printf '请输入管理员初始密码（至少 12 位）: ' >&2
+        IFS= read -r -s password || return 1
+        printf '\n请再次输入管理员初始密码: ' >&2
+        IFS= read -r -s confirmation || return 1
+        printf '\n' >&2
+        if [[ "$password" != "$confirmation" ]]; then
+            error "两次输入的管理员密码不一致"
+            return 1
+        fi
+    fi
+
+    if [[ -z "$password" ]]; then
+        password=$(gen_password 24)
+        warn "未提供 ADMIN_PASSWORD，已生成随机管理员初始密码；安装完成时会显示一次"
+    fi
+
+    if [[ ${#password} -lt 12 ]]; then
+        error "管理员密码至少需要 12 位"
+        return 1
+    fi
+
+    # .env 使用未加引号的 KEY=VALUE 格式，拒绝会改变配置语义的字符。
+    if [[ ! "$password" =~ ^[A-Za-z0-9._~!@%+,-]+$ ]]; then
+        error "管理员密码只能包含字母、数字及 . _ ~ ! @ % + , -"
+        return 1
+    fi
+
+    printf '%s' "$password"
 }
 
 get_env_value() {
@@ -108,10 +146,136 @@ ensure_env_keys() {
     set_env_if_missing "JWT_SECRET" "$(gen_secret 48)" "JWT 密钥"
     set_env_if_missing "COOKIE_SECRET" "$(gen_secret 48)" "Cookie 密钥"
     set_env_if_missing "ENCRYPTION_KEY" "$(openssl rand -base64 32)" "敏感数据加密密钥"
-    set_env_if_missing "ADMIN_PASSWORD" "$(gen_password 16)" "管理员初始密码"
+    local current_admin_password
+    current_admin_password="$(get_env_value ADMIN_PASSWORD)"
+    if [[ "$current_admin_password" == "admin123" ]]; then
+        warn "检测到不安全的默认管理员密码，正在替换为随机密码"
+        current_admin_password=""
+    fi
+    if [[ -z "$current_admin_password" ]]; then
+        local provided_admin_password="${ADMIN_PASSWORD:-}"
+        [[ "$provided_admin_password" == "admin123" ]] && provided_admin_password=""
+        current_admin_password=$(resolve_admin_password "$provided_admin_password") || return 1
+        if grep -qE '^ADMIN_PASSWORD=' "$ENV_FILE" 2>/dev/null; then
+            local tmp_env
+            tmp_env="$(mktemp)"
+            awk -v password="$current_admin_password" '
+                BEGIN { replaced = 0 }
+                /^ADMIN_PASSWORD=/ && replaced == 0 {
+                    print "ADMIN_PASSWORD=" password
+                    replaced = 1
+                    next
+                }
+                { print }
+            ' "$ENV_FILE" > "$tmp_env"
+            cat "$tmp_env" > "$ENV_FILE"
+            rm -f "$tmp_env"
+        else
+            printf '\nADMIN_PASSWORD=%s\n' "$current_admin_password" >> "$ENV_FILE"
+        fi
+    fi
 
     chmod 600 "$ENV_FILE"
     chown "${RUN_USER}:${RUN_USER}" "$ENV_FILE" 2>/dev/null || true
+}
+
+install_web_update_helper() {
+    local helper_path="/usr/local/sbin/incudal-web-update"
+    local sudoers_path="/etc/sudoers.d/incudal-web-update"
+    local bundled_script="${INSTALL_DIR}/scripts/remote-update.sh"
+    local trusted_script="/usr/local/libexec/incudal-remote-update.sh"
+
+    # 更新器必须来自当前发行包，而不是由面板服务账号以 root 下载可变的 main 分支。
+    # 旧安装若尚未包含发行包内脚本，保留一个安全的失败闭包，避免回退到任意远程脚本。
+    if [[ ! -f "$bundled_script" ]]; then
+        cat > "$helper_path" << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "发行包缺少固定版本更新器，请先执行一次受校验的手动升级" >&2
+exit 1
+EOF
+        chmod 0755 "$helper_path"
+        chown root:root "$helper_path"
+        rm -f "$sudoers_path"
+        rm -f "$trusted_script"
+        warn "当前发行包没有内置更新器，站点更新暂不可用"
+        return 0
+    fi
+
+    # 安装目录会归 incudal 用户用于读取运行时文件；root helper 不能直接执行其中的脚本。
+    install -d -o root -g root -m 0755 "$(dirname "$trusted_script")"
+    install -o root -g root -m 0755 "$bundled_script" "$trusted_script"
+
+    cat > "$helper_path" << EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly BUNDLED_SCRIPT="${trusted_script}"
+readonly INSTALL_DIR="${INSTALL_DIR}"
+readonly ALLOWED_SOURCE="https://github.com/${DEFAULT_GITHUB_REPO}"
+
+args=("\$@")
+for ((index = 0; index < \${#args[@]}; index += 1)); do
+    case "\${args[index]}" in
+        --install-dir|--install-dir=*)
+            echo "--install-dir 由系统安装目录固定，不允许从站点覆盖" >&2
+            exit 2
+            ;;
+        --source|--url|--repo)
+            ((index + 1 < \${#args[@]})) || { echo "--source 缺少参数" >&2; exit 2; }
+            source="\${args[index + 1]}"
+            if [[ "\$source" != "\$ALLOWED_SOURCE" && "\$source" != "${DEFAULT_GITHUB_REPO}" ]]; then
+                echo "站点更新只允许使用内置官方仓库: \$ALLOWED_SOURCE" >&2
+                exit 2
+            fi
+            ((index += 1))
+            ;;
+        --mode)
+            ((index + 1 < \${#args[@]})) || { echo "--mode 缺少参数" >&2; exit 2; }
+            case "\${args[index + 1]}" in
+                auto|docker|release) ;;
+                *) echo "更新模式无效" >&2; exit 2 ;;
+            esac
+            ((index += 1))
+            ;;
+        *)
+            echo "不支持的更新参数: \${args[index]}" >&2
+            exit 2
+            ;;
+    esac
+done
+
+exec /usr/bin/bash "\$BUNDLED_SCRIPT" "\${args[@]}" --install-dir "\$INSTALL_DIR"
+EOF
+    chmod 0755 "$helper_path"
+    chown root:root "$helper_path"
+
+    if command -v visudo >/dev/null 2>&1; then
+        cat > "$sudoers_path" << EOF
+${RUN_USER} ALL=(root) NOPASSWD: ${helper_path}
+EOF
+        chmod 0440 "$sudoers_path"
+        if ! visudo -cf "$sudoers_path" >/dev/null 2>&1; then
+            rm -f "$sudoers_path"
+            warn "站点更新 sudo 权限配置校验失败，页面将显示手动更新命令"
+        fi
+    fi
+
+    log "站点更新执行器已配置: ${helper_path}"
+}
+
+configure_web_update_service() {
+    local dropin_dir="/etc/systemd/system/${SERVICE_NAME}.service.d"
+    local dropin_path="${dropin_dir}/web-update.conf"
+
+    mkdir -p "$dropin_dir"
+    cat > "$dropin_path" << EOF
+[Service]
+# 允许 incudal 通过固定、受 sudoers 限制的更新执行器触发 root 更新。
+NoNewPrivileges=false
+ReadWritePaths=${INSTALL_DIR}/server/certs /var/lib/incudal/web-updates
+EOF
+    systemctl daemon-reload
 }
 
 # ========================== 系统检查 ==========================
@@ -286,7 +450,45 @@ get_latest_version() {
         version=$(echo "$response" | grep '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true)
     fi
 
+    if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+        version=""
+    fi
     echo "$version"
+}
+
+sha256_file() {
+    local path="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$path" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$path" | awk '{print $1}'
+    else
+        error "系统缺少 sha256sum 或 shasum，无法校验发行包"
+        return 1
+    fi
+}
+
+verify_release_package() {
+    local tar_file="$1"
+    local checksum_file="${2:-${tar_file}.sha256}"
+    local expected actual
+
+    if [[ ! -f "$tar_file" || ! -f "$checksum_file" ]]; then
+        error "发行包或 SHA256 校验文件缺失: ${tar_file}"
+        return 1
+    fi
+
+    expected="$(awk 'NF { print $1; exit }' "$checksum_file")"
+    if [[ ! "$expected" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        error "SHA256 校验文件格式无效: ${checksum_file}"
+        return 1
+    fi
+
+    actual="$(sha256_file "$tar_file")"
+    if [[ "${actual,,}" != "${expected,,}" ]]; then
+        error "发行包 SHA256 校验失败: expected=${expected} actual=${actual}"
+        return 1
+    fi
 }
 
 # ========================== 自动下载产物包 ==========================
@@ -294,12 +496,18 @@ download_release() {
     local version="$1"
     local filename="incudal-${version}-linux-${ARCH}.tar.gz"
     local download_url="https://github.com/${GITHUB_REPO}/releases/download/${version}/${filename}"
-    local tmp_file="/tmp/${filename}"
+    local tmp_file
+    local checksum_file
+    tmp_file="$(mktemp "/tmp/incudal-${version}-${ARCH}.XXXXXX.tar.gz")"
+    checksum_file="${tmp_file}.sha256"
 
     info "下载地址: ${download_url}"
 
     if curl -fSL --progress-bar --connect-timeout 15 --max-time 600 \
-        "$download_url" -o "$tmp_file" 2>/dev/null; then
+        "$download_url" -o "$tmp_file" 2>/dev/null \
+        && curl -fSL --silent --show-error --connect-timeout 15 --max-time 60 \
+        "${download_url}.sha256" -o "$checksum_file" 2>/dev/null \
+        && verify_release_package "$tmp_file" "$checksum_file"; then
         local file_size
         file_size=$(du -h "$tmp_file" | cut -f1 || true)
         log "下载完成 (${file_size})"
@@ -307,7 +515,7 @@ download_release() {
         return 0
     fi
 
-    rm -f "$tmp_file" 2>/dev/null || true
+    rm -f "$tmp_file" "$checksum_file" 2>/dev/null || true
     return 1
 }
 
@@ -352,6 +560,7 @@ wait_for_manual_package() {
     echo "" >&2
     echo -e "  ${BOLD}所需文件名格式：${NC}" >&2
     echo -e "  ${GREEN}incudal-vX.Y.Z-linux-${ARCH}.tar.gz${NC}" >&2
+    echo -e "  ${GREEN}并提供同名 .sha256 校验文件${NC}" >&2
     echo "" >&2
     echo -e "  ${DIM}提示: 可使用 scp、wget、rz 等方式将文件传到服务器${NC}" >&2
     echo -e "  ${DIM}例如: scp incudal-v1.0.0-linux-${ARCH}.tar.gz root@服务器IP:${MANUAL_PKG_DIR}/${NC}" >&2
@@ -408,6 +617,14 @@ wait_for_manual_package() {
                         continue
                     fi
 
+                    if ! verify_release_package "$pkg_file"; then
+                        warn "拒绝未通过 SHA256 校验的手动产物包，请检查同名 .sha256 文件"
+                        stable_count=0
+                        last_size=0
+                        sleep 3
+                        continue
+                    fi
+
                     log "上传完成！文件大小: ${current_size_human}"
                     echo "$pkg_file"
                     return 0
@@ -450,6 +667,7 @@ obtain_release() {
     existing_pkg=$(scan_manual_package) || true
     if [[ -n "$existing_pkg" ]]; then
         log "检测到手动放置的产物包: $(basename "$existing_pkg")"
+        verify_release_package "$existing_pkg" || return 1
         echo "$existing_pkg"
         return 0
     fi
@@ -490,51 +708,58 @@ install_release() {
 
     step "安装产物包..."
 
+    if ! verify_release_package "$tar_file"; then
+        error "拒绝安装未通过 SHA256 校验的发行包"
+        return 1
+    fi
+
     # 创建安装目录
     mkdir -p "$INSTALL_DIR"
 
     if [[ "$is_upgrade" == "true" ]]; then
-        # 升级模式：先备份当前版本
-        info "备份当前版本..."
-        local backup_dir="${INSTALL_DIR}.bak.$(date +%Y%m%d%H%M%S)"
-        cp -r "$INSTALL_DIR" "$backup_dir"
-        info "备份已保存到: ${backup_dir}"
+        # 升级模式：先在旁路目录完整解压，成功后再切换目录。
+        # 这样解压失败不会破坏当前版本，迁移/启动失败时还可以恢复旧版本。
+        local stamp="$(date +%Y%m%d%H%M%S)-$$"
+        local new_dir="${INSTALL_DIR}.new.${stamp}"
+        UPGRADE_BACKUP_DIR="${INSTALL_DIR}.bak.${stamp}"
 
-        # 保留 .env 文件和证书目录
-        local env_backup=""
-        local certs_backup=""
+        if [[ -e "$new_dir" || -e "$UPGRADE_BACKUP_DIR" ]]; then
+            error "升级临时目录已存在，请清理后重试"
+            return 1
+        fi
+
+        mkdir -p "$new_dir"
+        if ! tar -xzf "$tar_file" -C "$new_dir" --strip-components=0; then
+            rm -rf "$new_dir"
+            UPGRADE_BACKUP_DIR=""
+            error "产物包解压失败，当前版本未改变"
+            return 1
+        fi
+
+        # 仅迁移运行时配置和客户端证书，避免新包被旧代码覆盖。
         if [[ -f "${INSTALL_DIR}/.env" ]]; then
-            env_backup=$(mktemp)
-            cp "${INSTALL_DIR}/.env" "$env_backup"
+            cp "${INSTALL_DIR}/.env" "${new_dir}/.env"
         fi
         if [[ -d "${INSTALL_DIR}/server/certs" ]]; then
-            certs_backup=$(mktemp -d)
-            cp -r "${INSTALL_DIR}/server/certs" "$certs_backup/"
+            mkdir -p "${new_dir}/server/certs"
+            cp -a "${INSTALL_DIR}/server/certs/." "${new_dir}/server/certs/"
         fi
 
-        # 清理旧文件（保留 .env 和 certs）
-        rm -rf "${INSTALL_DIR}/client" "${INSTALL_DIR}/server/dist" "${INSTALL_DIR}/server/node_modules"
-
-        # 解压新版本
-        tar -xzf "$tar_file" -C "$INSTALL_DIR" --strip-components=0
-
-        # 恢复 .env 和证书
-        if [[ -n "$env_backup" && -f "$env_backup" ]]; then
-            cp "$env_backup" "${INSTALL_DIR}/.env"
-            rm -f "$env_backup"
+        mv "$INSTALL_DIR" "$UPGRADE_BACKUP_DIR"
+        if ! mv "$new_dir" "$INSTALL_DIR"; then
+            mv "$UPGRADE_BACKUP_DIR" "$INSTALL_DIR"
+            UPGRADE_BACKUP_DIR=""
+            error "切换新版本失败，当前版本已恢复"
+            return 1
         fi
-        if [[ -n "$certs_backup" && -d "$certs_backup/certs" ]]; then
-            mkdir -p "${INSTALL_DIR}/server/certs"
-            cp -r "$certs_backup/certs/"* "${INSTALL_DIR}/server/certs/" 2>/dev/null || true
-            rm -rf "$certs_backup"
-        fi
+        info "旧版本已备份到: ${UPGRADE_BACKUP_DIR}"
     else
         # 全新安装
         tar -xzf "$tar_file" -C "$INSTALL_DIR" --strip-components=0
     fi
 
     # 清理下载的临时文件
-    rm -f "$tar_file"
+    rm -f "$tar_file" "${tar_file}.sha256"
 
     # 创建证书目录
     mkdir -p "${INSTALL_DIR}/server/certs"
@@ -553,7 +778,7 @@ create_user() {
         log "系统用户 ${RUN_USER} 创建完成"
     fi
 
-    # 创建 npm 缓存目录（npx/prisma 需要可写的 home 目录）
+    # 创建 npm 缓存目录（运行时依赖需要可写的 home 目录）
     mkdir -p "${INSTALL_DIR}/.npm"
     mkdir -p "${INSTALL_DIR}/.cache"
 
@@ -573,6 +798,9 @@ generate_panel_cert() {
 
     # 幂等性：证书已存在则跳过
     if [[ -f "$cert_file" && -f "$key_file" ]]; then
+        chmod 644 "$cert_file"
+        chmod 600 "$key_file"
+        chown "${RUN_USER}:${RUN_USER}" "$cert_file" "$key_file"
         log "面板客户端证书已存在，跳过生成"
         return 0
     fi
@@ -624,7 +852,7 @@ setup_database() {
 generate_env() {
     local db_password="$1"
     local redis_password="$2"
-    local admin_password="${3:-admin123}"
+    local admin_password="${3:-${ADMIN_PASSWORD:-}}"
 
     step "生成环境配置..."
 
@@ -640,6 +868,7 @@ generate_env() {
     cookie_secret=$(gen_secret 48)
     local encryption_key
     encryption_key=$(openssl rand -base64 32)
+    admin_password=$(resolve_admin_password "$admin_password") || return 1
 
     cat > "$ENV_FILE" << EOF
 # ============================================================================
@@ -712,16 +941,28 @@ run_migrations() {
     step "执行数据库迁移..."
 
     cd "${INSTALL_DIR}/server"
+    local prisma_cli="${INSTALL_DIR}/server/node_modules/.bin/prisma"
+    local database_url
 
-    # 以 incudal 用户身份加载 .env 并运行迁移
-    # HOME 需要指向有写权限的目录，否则 npm 缓存报 EACCES
-    sudo -u "$RUN_USER" HOME="${INSTALL_DIR}" bash -c "
-        set -a
-        source '${ENV_FILE}'
-        set +a
-        cd '${INSTALL_DIR}/server'
-        npx prisma migrate deploy
-    "
+    if [[ ! -x "$prisma_cli" ]]; then
+        error "发行包缺少固定版本 Prisma CLI: ${prisma_cli}"
+        return 1
+    fi
+    database_url="$(get_env_value DATABASE_URL)"
+    if [[ -z "$database_url" ]]; then
+        error "环境配置缺少 DATABASE_URL"
+        return 1
+    fi
+
+    # 以 incudal 用户身份调用发行包内固定版本 CLI，禁止运行时联网安装。
+    if ! sudo -u "$RUN_USER" env \
+        HOME="${INSTALL_DIR}" \
+        NPM_CONFIG_CACHE="${INSTALL_DIR}/.npm" \
+        DATABASE_URL="$database_url" \
+        "$prisma_cli" migrate deploy; then
+        error "数据库迁移失败"
+        return 1
+    fi
 
     log "数据库迁移完成"
 }
@@ -749,7 +990,7 @@ Environment=HOME=${INSTALL_DIR}
 Environment=NPM_CONFIG_CACHE=${INSTALL_DIR}/.npm
 
 # 启动前自动执行数据库迁移
-ExecStartPre=/usr/bin/bash -c 'cd ${INSTALL_DIR}/server && npx prisma migrate deploy'
+ExecStartPre=/usr/bin/bash -c 'cd ${INSTALL_DIR}/server && exec ${INSTALL_DIR}/server/node_modules/.bin/prisma migrate deploy'
 
 # 启动主程序
 ExecStart=/usr/bin/node ${INSTALL_DIR}/server/dist/app.js
@@ -765,11 +1006,11 @@ RestartSec=10
 StartLimitBurst=5
 StartLimitIntervalSec=300
 
-# 安全加固
-NoNewPrivileges=true
+# 安全加固；站点更新通过 sudoers 限制的 root 执行器显式触发
+NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=${INSTALL_DIR}/server/certs
+ReadWritePaths=${INSTALL_DIR}/server/certs /var/lib/incudal/web-updates
 PrivateTmp=true
 
 # 资源限制
@@ -907,8 +1148,21 @@ start_service() {
     else
         error "服务启动失败，查看日志："
         journalctl -u "$SERVICE_NAME" --no-pager -n 20
-        exit 1
+        return 1
     fi
+}
+
+rollback_upgrade() {
+    if [[ -z "$UPGRADE_BACKUP_DIR" || ! -d "$UPGRADE_BACKUP_DIR" ]]; then
+        error "找不到可恢复的旧版本目录: ${UPGRADE_BACKUP_DIR:-<empty>}"
+        return 1
+    fi
+
+    rm -rf "$INSTALL_DIR"
+    mv "$UPGRADE_BACKUP_DIR" "$INSTALL_DIR"
+    UPGRADE_BACKUP_DIR=""
+    chown -R "${RUN_USER}:${RUN_USER}" "$INSTALL_DIR"
+    log "已恢复旧版本文件"
 }
 
 # ========================== 显示安装结果 ==========================
@@ -924,9 +1178,11 @@ show_result() {
     echo -e "  服务名称  :  ${GREEN}${SERVICE_NAME}${NC}"
     echo -e "  监听端口  :  ${GREEN}${DEFAULT_PORT}${NC}"
     echo ""
-    echo -e "  ${BOLD}默认账号${NC}"
+    local admin_password
+    admin_password="$(get_env_value ADMIN_PASSWORD)"
+    echo -e "  ${BOLD}管理员账号${NC}"
     echo -e "  用户名    :  ${GREEN}admin${NC}"
-    echo -e "  密码      :  ${GREEN}admin123${NC}  ${YELLOW}（请在首次登录后立即修改！）${NC}"
+    echo -e "  初始密码  :  ${GREEN}${admin_password}${NC}"
     echo ""
     echo -e "  ${BOLD}常用命令${NC}"
     echo -e "  启动服务  :  ${CYAN}systemctl start ${SERVICE_NAME}${NC}"
@@ -934,6 +1190,7 @@ show_result() {
     echo -e "  重启服务  :  ${CYAN}systemctl restart ${SERVICE_NAME}${NC}"
     echo -e "  查看状态  :  ${CYAN}systemctl status ${SERVICE_NAME}${NC}"
     echo -e "  查看日志  :  ${CYAN}journalctl -u ${SERVICE_NAME} -f${NC}"
+    echo -e "  远程更新  :  ${CYAN}curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/${DEFAULT_UPDATE_REF}/scripts/remote-update.sh | sudo bash -s -- --ref ${DEFAULT_UPDATE_REF}${NC}"
     echo ""
     divider
 }
@@ -956,24 +1213,47 @@ do_upgrade() {
 
     # 获取产物包（自动下载或手动放置）
     local tar_file
-    tar_file=$(obtain_release) || exit 1
-    if [[ -z "$tar_file" ]]; then
+    if ! tar_file=$(obtain_release); then
+        start_service || true
         exit 1
     fi
-    install_release "$tar_file" true
+    if [[ -z "$tar_file" ]]; then
+        start_service || true
+        exit 1
+    fi
 
-    # 修复权限
-    chown -R "${RUN_USER}:${RUN_USER}" "$INSTALL_DIR"
+    if ! install_release "$tar_file" true; then
+        rm -f "$tar_file" 2>/dev/null || true
+        start_service || true
+        exit 1
+    fi
 
-    # 运行迁移
-    run_migrations
+    # 解压成功后，迁移和启动任一失败都恢复旧版本。
+    if ! chown -R "${RUN_USER}:${RUN_USER}" "$INSTALL_DIR"; then
+        error "升级包权限修复失败"
+        start_service || true
+        exit 1
+    fi
 
-    # 重启服务
-    start_service
+    install_web_update_helper
+    configure_web_update_service
+
+    if ! run_migrations || ! start_service; then
+        error "升级后的版本未通过迁移或启动检查，开始回滚..."
+        if rollback_upgrade; then
+            install_web_update_helper
+            configure_web_update_service
+            start_service || error "旧版本恢复后也无法启动，请立即检查 systemd 日志"
+        fi
+        exit 1
+    fi
+
+    rm -rf "$UPGRADE_BACKUP_DIR"
+    UPGRADE_BACKUP_DIR=""
 
     echo ""
     divider
-    echo -e "  ${GREEN}${BOLD}✅ Incudal 升级到 ${version} 完成！${NC}"
+    echo -e "  ${GREEN}${BOLD}✅ Incudal 升级完成！${NC}"
     divider
 }
 
@@ -998,6 +1278,9 @@ do_uninstall() {
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     rm -f "$SERVICE_FILE"
+    rm -rf "/etc/systemd/system/${SERVICE_NAME}.service.d"
+    rm -f /usr/local/sbin/incudal-web-update /usr/local/libexec/incudal-remote-update.sh /etc/sudoers.d/incudal-web-update
+    rm -rf /var/lib/incudal/web-updates
     systemctl daemon-reload
 
     # 删除安装目录
@@ -1079,6 +1362,10 @@ do_install() {
 
     # 创建用户
     create_user
+
+    # 配置站点管理员显式触发更新所需的 root 执行器
+    install_web_update_helper
+    configure_web_update_service
 
     # 生成面板客户端证书（与 Incus API mTLS 通信所需）
     generate_panel_cert

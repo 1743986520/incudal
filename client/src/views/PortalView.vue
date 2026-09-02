@@ -206,6 +206,10 @@ function browseCatalog(source?: PackageSource): void {
   })
 }
 
+function goToHostingGuide(): void {
+  void router.push({ name: 'help-article', params: { slug: 'hosting-tutorial' } })
+}
+
 function openPackage(pkg: PublicPackage): void {
   void router.push({
     path: '/market',
@@ -415,13 +419,21 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="mt-6">
+            <div class="mt-6 flex flex-wrap gap-3">
               <button
                 class="inline-flex h-10 items-center gap-2 rounded-lg px-6 text-sm font-medium transition-colors duration-150"
                 :class="line.source === 'official' ? ui.ecosystemOfficialButton : ui.ecosystemMarketButton"
                 @click="browseCatalog(line.source)"
               >
                 {{ line.source === 'official' ? t('publicSite.actions.browseOfficial') : t('publicSite.actions.browseMarket') }}
+              </button>
+              <button
+                v-if="line.source === 'market'"
+                class="inline-flex h-10 items-center gap-2 rounded-lg border px-5 text-sm font-medium transition-colors duration-150"
+                :class="ui.ecosystemMarketButton"
+                @click="goToHostingGuide"
+              >
+                {{ t('publicSite.actions.viewHostingTutorial') }}
               </button>
             </div>
           </article>

@@ -26,7 +26,7 @@ func TestApplyUpgradeReplacesBinaryAndRestarts(t *testing.T) {
 	nextBinary := []byte("new-binary")
 	packageBytes := gzipBytes(t, nextBinary)
 	sha := sha256Hex(packageBytes)
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.WriteHeader(http.StatusOK)
 		_, _ = response.Write(packageBytes)
 	}))
@@ -88,7 +88,7 @@ func TestApplyUpgradeRejectsBadSHA(t *testing.T) {
 		t.Fatalf("write current binary: %v", err)
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.WriteHeader(http.StatusOK)
 		_, _ = response.Write([]byte("payload"))
 	}))
@@ -141,7 +141,7 @@ func TestApplyUpgradeDoesNotRollbackWhenSelfRestartIsInterrupted(t *testing.T) {
 	nextBinary := []byte("new-binary")
 	packageBytes := gzipBytes(t, nextBinary)
 	sha := sha256Hex(packageBytes)
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.WriteHeader(http.StatusOK)
 		_, _ = response.Write(packageBytes)
 	}))

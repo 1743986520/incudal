@@ -593,7 +593,8 @@ export async function updateInstanceSwap(instanceId: number, data: {
 
 /**
  * 获取超时的创建中实例
- * 返回创建时间超过指定时间且仍处于 creating 状态的实例
+ * 返回最后一次进入/触碰创建流程的时间超过指定时间且仍处于 creating 状态的实例。
+ * 使用 updatedAt 而不是 createdAt，确保失败实例重试后会重新获得完整的超时窗口。
  */
 export async function getStuckCreatingInstances(timeoutMs: number): Promise<Array<{
   id: number
@@ -613,7 +614,7 @@ export async function getStuckCreatingInstances(timeoutMs: number): Promise<Arra
   const instances = await prisma.instance.findMany({
     where: {
       status: 'creating',
-      createdAt: { lt: threshold }
+      updatedAt: { lt: threshold }
     },
     select: {
       id: true,
@@ -701,7 +702,7 @@ export async function getExpiringInstances(beforeDate: Date): Promise<Array<{
   const instances = await prisma.instance.findMany({
     where: {
       expiresAt: { lte: beforeDate },
-      status: { notIn: ['deleted', 'suspended'] }
+      status: { in: ['running', 'stopped'] }
     },
     select: {
       id: true,
@@ -734,7 +735,7 @@ export async function getExpiredUnsuspendedInstances(): Promise<Array<{
   const instances = await prisma.instance.findMany({
     where: {
       expiresAt: { lte: now },
-      status: { notIn: ['deleted', 'suspended'] }
+      status: { in: ['running', 'stopped'] }
     },
     select: {
       id: true,

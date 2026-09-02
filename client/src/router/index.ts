@@ -301,6 +301,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.statistics', title: '统计' }
   },
   {
+    path: '/admin/update',
+    name: 'admin-update',
+    component: () => import('@/views/admin/SystemUpdateView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.updates', title: '系统更新' }
+  },
+  {
     path: '/admin/oauth',
     name: 'admin-oauth',
     component: () => import('@/views/admin/OAuthConfigView.vue'),
@@ -412,18 +418,18 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/admin/AdminMailView.vue'),
     meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.mail', title: '邮箱' }
   },
-  // Help articles (public access)
+// Help articles (public access)
   {
     path: '/help',
     name: 'help',
     component: () => import('@/views/HelpView.vue'),
-    meta: { requiresAuth: true, titleKey: 'nav.help', title: '帮助' }
+    meta: { titleKey: 'nav.help', title: '帮助' }
   },
   {
     path: '/help/:slug',
     name: 'help-article',
     component: () => import('@/views/HelpView.vue'),
-    meta: { requiresAuth: true, titleKey: 'nav.help', title: '帮助' }
+    meta: { titleKey: 'nav.help', title: '帮助' }
   },
   // Inbox (notifications)
   {

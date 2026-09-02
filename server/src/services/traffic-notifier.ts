@@ -216,6 +216,7 @@ export async function sendSecurityIncidentNotification(input: {
     thresholdPps: number
     instanceLimitPps: number
     expiresInSeconds: number
+    networkAction: 'blocked_source_mac_destination_pair' | 'observed_source_mac_destination_pair'
     instanceName?: string
     username?: string
     userId?: number
@@ -224,8 +225,9 @@ export async function sendSecurityIncidentNotification(input: {
 }): Promise<void> {
     const channels = await db.getEnabledGlobalNotificationChannels()
     const title = '🚨 节点 PPS 安全事件'
+    const isNetworkBlocked = input.networkAction === 'blocked_source_mac_destination_pair'
     const message = [
-        `发生什么：检测到单一实例对单一目的 IP 异常高频发包`,
+        `发生什么：检测到单一实例对单一目的 IP 的 ${isNetworkBlocked ? 'TCP SYN 异常高频发包' : 'UDP 异常高频发包（观察事件）'}`,
         `节点：${input.hostName} (#${input.hostId})`,
         `实例：${input.instanceName || '未能通过 MAC 对应实例'}`,
         `用户：${input.username ? `${input.username} (#${input.userId})` : '未知'}`,
@@ -233,11 +235,11 @@ export async function sendSecurityIncidentNotification(input: {
         `目的 IP：${input.destinationIp} (${input.family})`,
         `判定依据：同一 MAC → 同一 IP 超过 ${input.thresholdPps.toLocaleString()} PPS`,
         `节点总保护线：每实例 ${input.instanceLimitPps.toLocaleString()} PPS`,
-        `为什么处理：避免上游封锁节点 IP，并隔离攻击流量`,
-        `流量处理：已封锁该 MAC → 目的 IP 组合`,
+        `为什么处理：${isNetworkBlocked ? '避免上游封锁节点 IP，并隔离攻击流量' : '先保留证据并通知管理员，避免凭单一信号误封正常业务'}`,
+        `流量处理：${isNetworkBlocked ? '已封锁该 MAC → 目的 IP 组合' : '仅记录观察，未自动封锁该 MAC → 目的 IP 组合'}`,
         `封禁处理：${input.suspensionResult || '未找到实例，未执行用户封禁'}`,
         `用户通知：${input.emailResult || '未发送'}`,
-        `剩余封锁时间：约 ${Math.max(0, input.expiresInSeconds)} 秒`,
+        `${isNetworkBlocked ? '剩余封锁时间' : '观察记录剩余时间'}：约 ${Math.max(0, input.expiresInSeconds)} 秒`,
         `其他实例：未封锁，不受影响`,
     ].join('\n')
 
@@ -246,7 +248,7 @@ export async function sendSecurityIncidentNotification(input: {
         const config = typeof channel.config === 'string' ? JSON.parse(channel.config) : channel.config
         const logId = await db.createNotificationLog({
             channelId: channel.id,
-            eventType: 'security_pps_single_target_block',
+            eventType: isNetworkBlocked ? 'security_pps_single_target_block' : 'security_pps_single_target_observation',
             message,
             status: 'pending'
         })

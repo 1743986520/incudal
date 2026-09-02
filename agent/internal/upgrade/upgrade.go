@@ -137,13 +137,16 @@ func (runner *Runner) validateUpgradeURL(rawURL string) error {
 	if err != nil || upgradeURL.Scheme == "" || upgradeURL.Host == "" {
 		return fmt.Errorf("upgrade URL is invalid: %s", rawURL)
 	}
-	if upgradeURL.Scheme != "http" && upgradeURL.Scheme != "https" {
+	if upgradeURL.Scheme != "https" {
 		return fmt.Errorf("upgrade URL scheme is not allowed: %s", upgradeURL.Scheme)
 	}
 
 	baseURL, err := url.Parse(strings.TrimRight(runner.AllowedBaseURL, "/"))
 	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
 		return fmt.Errorf("panel URL is invalid: %s", runner.AllowedBaseURL)
+	}
+	if baseURL.Scheme != "https" {
+		return errors.New("panel URL must use https")
 	}
 	if !strings.EqualFold(upgradeURL.Scheme, baseURL.Scheme) || !strings.EqualFold(upgradeURL.Host, baseURL.Host) {
 		return errors.New("upgrade URL is outside panel origin")

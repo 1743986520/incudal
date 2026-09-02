@@ -63,7 +63,8 @@ openssl req -x509 -newkey rsa:2048 \
     -days 3650 -nodes \
     -subj "/CN=caddy-admin" \
     2>/dev/null
-chmod 644 /etc/caddy/cert.pem /etc/caddy/key.pem
+chmod 644 /etc/caddy/cert.pem
+chmod 600 /etc/caddy/key.pem
 
 log "Configuring Caddy..."
 

@@ -24,7 +24,7 @@ const hiddenHostingRouteNames = new Set([
 ])
 
 // 不需要布局的页面
-const noLayoutRoutes: string[] = ['login', 'register', 'landing', 'market']
+const noLayoutRoutes: string[] = ['login', 'register', 'landing', 'market', 'help', 'help-article']
 const showLayout = computed<boolean>(() => {
   return authStore.isAuthenticated && !noLayoutRoutes.includes(route.name as string)
 })
@@ -171,7 +171,7 @@ onUnmounted(() => {
     <RouterView v-slot="{ Component, route: currentRoute }">
       <template v-if="Component">
         <!-- 使用 exclude 排除不需要缓存的页面，避免 include 匹配问题 -->
-        <KeepAlive :exclude="['InstanceCreateView', 'InstanceDetailView', 'PackageFormView', 'MyHostDetailView']" :max="10">
+        <KeepAlive :exclude="['InstanceCreateView', 'InstanceDetailView', 'PackageFormView', 'MyHostDetailView', 'SystemUpdateView']" :max="10">
           <component :is="Component" :key="currentRoute.name" />
         </KeepAlive>
       </template>

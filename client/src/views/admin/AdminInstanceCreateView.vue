@@ -12,6 +12,8 @@ import PackageSelector from '@/components/instance/PackageSelector.vue'
 import ResourceSliders from '@/components/instance/ResourceSliders.vue'
 import HostSelector from '@/components/instance/HostSelector.vue'
 import ImageSelector from '@/components/instance/ImageSelector.vue'
+import SSHKeyGenerationPromptModal from '@/components/SSHKeyGenerationPromptModal.vue'
+import GeneratedSshKeyModal from '@/components/GeneratedSshKeyModal.vue'
 import type { Package, AvailableHost, PackagePlan } from '@/types/api'
 import { validateName as validateInstanceName } from '@/utils/validation'
 import { translateError } from '@/utils/errorHandler'
@@ -38,12 +40,19 @@ const loading = ref<boolean>(true)
 const packagesLoading = ref<boolean>(false)
 const submitting = ref<boolean>(false)
 const error = ref<string>('')
+const showSshKeyGenerationPrompt = ref<boolean>(false)
+const sshKeyGenerating = ref<boolean>(false)
+const showGeneratedSshKeyModal = ref<boolean>(false)
+const generatedPrivateKey = ref<string>('')
+const generatedKeyTargetUsername = ref<string>('')
 
 // 用户名搜索
 const usernameInput = ref('')
 const usernameValid = ref<boolean | null>(null)
 const usernameChecking = ref(false)
-const targetUser = ref<{ id: number; username: string; balance?: number } | null>(null)
+const targetUser = ref<{ id: number; username: string; balance?: number; hasSshKey: boolean } | null>(null)
+const checkedUsername = ref('')
+let usernameRequestSeq = 0
 
 // 实例类型选择：免费/付费
 const instanceType = ref<'free' | 'paid'>('free')
@@ -118,6 +127,11 @@ function getDistroFromName(name: string): string {
 }
 
 const canSubmit = computed<boolean>(() => {
+  const normalizedUsername = usernameInput.value.trim()
+  const usernameMatchesLookup = checkedUsername.value === normalizedUsername
+    && targetUser.value?.username === normalizedUsername
+    && usernameChecking.value === false
+
   // 基本条件
   const basic = !!form.value.name &&
          form.value.packageId !== null &&
@@ -125,7 +139,7 @@ const canSubmit = computed<boolean>(() => {
          !!form.value.image &&
          availableImages.value.length > 0 &&
          usernameValid.value === true &&
-         targetUser.value !== null &&
+         usernameMatchesLookup &&
          !submitting.value
   
   // 付费实例需要选择方案且余额充足
@@ -158,29 +172,51 @@ onMounted(async (): Promise<void> => {
 
 // 验证用户名
 async function checkUsername(): Promise<void> {
-  if (!usernameInput.value.trim()) {
+  const username = usernameInput.value.trim()
+  const requestSeq = ++usernameRequestSeq
+  checkedUsername.value = username
+
+  if (!username) {
     usernameValid.value = null
     targetUser.value = null
+    usernameChecking.value = false
     return
   }
 
   usernameChecking.value = true
   try {
     // 使用精确查找接口，按用户名绝对匹配
-    const res = await api.admin.lookupUser(usernameInput.value.trim()) as any
+    const res = await api.admin.lookupUser(username) as any
+    if (requestSeq !== usernameRequestSeq || usernameInput.value.trim() !== username) return
+
     usernameValid.value = true
     targetUser.value = { 
       id: res.user.id, 
       username: res.user.username,
-      balance: res.user.balance ?? 0
+      balance: res.user.balance ?? 0,
+      hasSshKey: res.user.hasSshKey
     }
   } catch {
+    if (requestSeq !== usernameRequestSeq || usernameInput.value.trim() !== username) return
     usernameValid.value = false
     targetUser.value = null
   } finally {
-    usernameChecking.value = false
+    if (requestSeq === usernameRequestSeq && usernameInput.value.trim() === username) {
+      usernameChecking.value = false
+    }
   }
 }
+
+watch(usernameInput, (value) => {
+  const normalizedUsername = value.trim()
+  if (normalizedUsername === checkedUsername.value) return
+
+  usernameRequestSeq += 1
+  checkedUsername.value = ''
+  usernameValid.value = null
+  targetUser.value = null
+  usernameChecking.value = false
+})
 
 function sortPackagesForCreate(items: Package[]): Package[] {
   return [...items].sort((a, b) => {
@@ -520,16 +556,18 @@ async function loadAvailableImages(pkgInstanceType?: 'container' | 'vm', memory?
   }
 }
 
-async function handleSubmit(): Promise<void> {
-  if (!canSubmit.value) return
-
+async function submitInstance(forceGenerateSshKey = false): Promise<boolean> {
   error.value = ''
   submitting.value = true
 
   try {
     if (form.value.packageId === null) throw new Error(t('instance.createPage.selectPackage'))
     if (form.value.hostId === null) throw new Error(t('instance.selector.selectHost'))
-    if (!targetUser.value) throw new Error(t('admin.instanceCreate.selectUser'))
+    const normalizedUsername = usernameInput.value.trim()
+    if (usernameChecking.value || checkedUsername.value !== normalizedUsername
+        || !targetUser.value || targetUser.value.username !== normalizedUsername) {
+      throw new Error(t('admin.instanceCreate.selectUser'))
+    }
 
     const nameValidation = validateInstanceName(form.value.name)
     if (!nameValidation.valid) {
@@ -542,7 +580,8 @@ async function handleSubmit(): Promise<void> {
       name: form.value.name,
       packageId: form.value.packageId,
       hostId: form.value.hostId,
-      image: form.value.image
+      image: form.value.image,
+      forceGenerateSshKey
     }
 
     // 付费实例参数
@@ -558,6 +597,7 @@ async function handleSubmit(): Promise<void> {
 
     const res = await api.admin.createInstance(params)
 
+    const createdForUsername = targetUser.value.username
     toast.success(t('admin.instanceCreate.success'))
 
     // 显示创建结果
@@ -568,6 +608,8 @@ async function handleSubmit(): Promise<void> {
 
     // 重置表单
     usernameInput.value = ''
+    checkedUsername.value = ''
+    usernameRequestSeq += 1
     usernameValid.value = null
     targetUser.value = null
     form.value.name = ''
@@ -577,11 +619,48 @@ async function handleSubmit(): Promise<void> {
     if (packages.value.length > 0) {
       await selectPackage(packages.value[0])
     }
+
+    if (res.instance.generatedPrivateKey) {
+      generatedPrivateKey.value = res.instance.generatedPrivateKey
+      generatedKeyTargetUsername.value = createdForUsername
+      showGeneratedSshKeyModal.value = true
+    }
+    return true
   } catch (err: any) {
     error.value = translateError(err)
+    return false
   } finally {
     submitting.value = false
   }
+}
+
+async function handleSubmit(): Promise<void> {
+  if (!canSubmit.value) return
+
+  if (targetUser.value?.hasSshKey === false) {
+    showSshKeyGenerationPrompt.value = true
+    return
+  }
+
+  await submitInstance()
+}
+
+async function confirmSshKeyGeneration(): Promise<void> {
+  if (sshKeyGenerating.value) return
+
+  sshKeyGenerating.value = true
+  try {
+    const success = await submitInstance(true)
+    if (success) showSshKeyGenerationPrompt.value = false
+  } finally {
+    sshKeyGenerating.value = false
+  }
+}
+
+function closeGeneratedSshKeyModal(): void {
+  showGeneratedSshKeyModal.value = false
+  generatedPrivateKey.value = ''
+  generatedKeyTargetUsername.value = ''
 }
 </script>
 
@@ -632,8 +711,11 @@ async function handleSubmit(): Promise<void> {
             </svg>
           </div>
         </div>
-        <p v-if="usernameValid === true && targetUser" class="text-xs text-green-500 mt-2">
-          {{ $t('admin.instanceCreate.userFound', { id: targetUser.id }) }}
+        <p v-if="usernameValid === true && targetUser" class="text-xs mt-2" :class="targetUser.hasSshKey ? 'text-green-500' : 'text-amber-500'">
+          {{ targetUser.hasSshKey ? $t('admin.instanceCreate.userFound', { id: targetUser.id }) : $t('admin.instanceCreate.noSshKey') }}
+        </p>
+        <p v-if="usernameValid === true && targetUser && !targetUser.hasSshKey" class="text-xs text-amber-500 mt-1">
+          {{ $t('admin.instanceCreate.noSshKeyHint') }}
         </p>
         <p v-else-if="usernameValid === false" class="text-xs text-red-500 mt-2">
           {{ $t('admin.instanceCreate.userNotFound') }}
@@ -830,4 +912,26 @@ async function handleSubmit(): Promise<void> {
       </div>
     </form>
   </div>
+
+  <SSHKeyGenerationPromptModal
+    :visible="showSshKeyGenerationPrompt"
+    :loading="submitting"
+    :title="$t('admin.instanceCreate.forceGenerateSshKeyTitle')"
+    :description="$t('admin.instanceCreate.forceGenerateSshKeyDesc')"
+    :confirm-label="$t('admin.instanceCreate.forceGenerateSshKeyConfirm')"
+    :cancel-label="$t('admin.instanceCreate.forceGenerateSshKeyCancel')"
+    :loading-label="$t('admin.instanceCreate.forceGenerateSshKeyGenerating')"
+    @close="showSshKeyGenerationPrompt = false"
+    @confirm="confirmSshKeyGeneration"
+  />
+
+  <GeneratedSshKeyModal
+    :visible="showGeneratedSshKeyModal"
+    :private-key="generatedPrivateKey"
+    :title="$t('admin.instanceCreate.generatedPrivateKeyTitle')"
+    :description="$t('admin.instanceCreate.generatedPrivateKeyDesc', { username: generatedKeyTargetUsername })"
+    :action-label="$t('admin.instanceCreate.generatedPrivateKeyClose')"
+    @close="closeGeneratedSshKeyModal"
+    @action="closeGeneratedSshKeyModal"
+  />
 </template>

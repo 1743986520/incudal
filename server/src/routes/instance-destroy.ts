@@ -159,7 +159,7 @@ async function claimInstanceForUserDestroy(
         userId,
         status: currentStatus
       },
-      data: { status: 'deleted' }
+      data: { status: 'deleted', version: { increment: 1 } }
     })
 
     return result.count === 1
@@ -177,7 +177,7 @@ async function restoreClaimedInstanceStatus(
       userId,
       status: 'deleted'
     },
-    data: { status: originalStatus }
+    data: { status: originalStatus, version: { increment: 1 } }
   })
 }
 

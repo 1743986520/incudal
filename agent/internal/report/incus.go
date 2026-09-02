@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ const (
 )
 
 var externalGuestInterfacePattern = regexp.MustCompile(`^(eth[0-9]+|en(?:o|p|s|x)[a-z0-9]+)$`)
+var guestMACPattern = regexp.MustCompile(`^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$`)
 
 type incusAPIResponse struct {
 	Type     string          `json:"type"`
@@ -216,24 +218,45 @@ func buildIncusInstanceReportItem(client *http.Client, instance incusInstanceSum
 		"txBytes": strconv.FormatUint(counters.tx, 10),
 	}
 
+	network := map[string]any{}
 	if ipv4, ipv6 := firstRoutableAddresses(state.Network); ipv4 != "" || ipv6 != "" {
-		network := map[string]any{}
 		if ipv4 != "" {
 			network["ipv4"] = ipv4
 		}
 		if ipv6 != "" {
 			network["ipv6"] = ipv6
 		}
-		for ifName, ifData := range state.Network {
-			if isLikelyExternalGuestInterface(ifName) && ifData.Hwaddr != "" {
-				network["mac"] = strings.ToLower(ifData.Hwaddr)
-				break
-			}
-		}
+	}
+	// A stopped or not-yet-addressed instance can still have a stable NIC
+	// MAC. Keep it in the heartbeat independently of routable addresses so the
+	// panel can resolve policy targets without waiting for an IP to appear.
+	if mac := firstExternalGuestMAC(state.Network); mac != "" {
+		network["mac"] = mac
+	}
+	if len(network) > 0 {
 		item["network"] = network
 	}
 
 	return item
+}
+
+func firstExternalGuestMAC(network map[string]incusNetworkDevice) string {
+	interfaceNames := make([]string, 0, len(network))
+	for ifName := range network {
+		interfaceNames = append(interfaceNames, ifName)
+	}
+	sort.Strings(interfaceNames)
+
+	for _, ifName := range interfaceNames {
+		if !isLikelyExternalGuestInterface(ifName) {
+			continue
+		}
+		mac := strings.ToLower(strings.TrimSpace(network[ifName].Hwaddr))
+		if guestMACPattern.MatchString(mac) {
+			return mac
+		}
+	}
+	return ""
 }
 
 func getTrafficCountersFromIncusState(instanceName string, state incusInstanceState) trafficCounters {

@@ -398,7 +398,7 @@ export async function calculateHostResourcesFromInstances(hostId: number): Promi
   const result = await prisma.instance.aggregate({
     where: {
       hostId,
-      status: { not: 'deleted' }
+      status: { notIn: ['deleted', 'error'] }
     },
     _sum: {
       cpu: true,
@@ -820,7 +820,7 @@ export async function selectAndReserveHostWithLock(
     const resourceSum = await tx.instance.aggregate({
       where: {
         hostId: host.id,
-        status: { not: 'deleted' }
+        status: { notIn: ['deleted', 'error'] }
       },
       _sum: {
         cpu: true,

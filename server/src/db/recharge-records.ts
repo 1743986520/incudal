@@ -32,6 +32,45 @@ export interface RechargeRecordWithProvider extends RechargeRecord {
   }
 }
 
+const MAX_DECIMAL_10_2 = 99999999.99
+
+export function isValidRechargeAmount(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > MAX_DECIMAL_10_2) {
+    return false
+  }
+
+  const rounded = Math.round(value * 100) / 100
+  return Math.abs(value - rounded) < 1e-9
+}
+
+/**
+ * Validate and normalize an amount that will be credited to a recharge order.
+ * The credited amount is never allowed to exceed the order's face value.
+ */
+export function validateRechargeActualAmount(value: unknown, orderAmount: unknown): number {
+  const amount = Number(orderAmount)
+
+  if (!isValidRechargeAmount(amount) || !isValidRechargeAmount(value)) {
+    throw new Error('INVALID_ACTUAL_AMOUNT')
+  }
+
+  if (value > amount + 1e-9) {
+    throw new Error('ACTUAL_AMOUNT_EXCEEDS_ORDER')
+  }
+
+  return Number(value.toFixed(2))
+}
+
+function resolveActualAmount(record: RechargeRecord, requestedAmount?: number): number {
+  const actualAmount = requestedAmount !== undefined
+    ? requestedAmount
+    : record.actualAmount !== null && record.actualAmount !== undefined
+      ? Number(record.actualAmount)
+      : Number(record.amount)
+
+  return validateRechargeActualAmount(actualAmount, record.amount)
+}
+
 // ==================== 订单号生成 ====================
 
 /**
@@ -170,6 +209,13 @@ export async function createRechargeOrder(input: CreateRechargeOrderInput): Prom
   const orderNo = input.orderNo || generateOrderNo()
   const expiredAt = input.expiredAt ?? new Date(Date.now() + 30 * 60 * 1000)
 
+  if (!isValidRechargeAmount(input.amount)) {
+    throw new Error('INVALID_RECHARGE_AMOUNT')
+  }
+  if (input.actualAmount !== undefined) {
+    validateRechargeActualAmount(input.actualAmount, input.amount)
+  }
+
   return prisma.rechargeRecord.create({
     data: {
       userId: input.userId,
@@ -198,12 +244,27 @@ export async function markRechargePaid(
   orderNo: string,
   tradeNo?: string
 ): Promise<RechargeRecord> {
-  return prisma.rechargeRecord.update({
-    where: { orderNo },
-    data: {
-      status: 'paid',
-      tradeNo
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.rechargeRecord.updateMany({
+      where: {
+        orderNo,
+        // 已完成订单保持幂等；已取消/失败订单不能被支付回调复活。
+        status: { in: ['pending', 'paid'] }
+      },
+      data: {
+        status: 'paid',
+        ...(tradeNo !== undefined ? { tradeNo } : {})
+      }
+    })
+
+    const record = await tx.rechargeRecord.findUnique({ where: { orderNo } })
+    if (!record) {
+      throw new Error('订单不存在')
     }
+    if (result.count === 0 && !['paid', 'completed'].includes(record.status)) {
+      throw new Error(`订单状态异常：${record.status}`)
+    }
+    return record
   })
 }
 
@@ -271,6 +332,8 @@ export async function completeRecharge(
   }
 
   // 使用事务确保原子性
+  const actualAmount = resolveActualAmount(record, data.actualAmount)
+
   const result = await prisma.$transaction(async (tx) => {
     // 1. 使用条件更新确保并发安全（只有 pending 或 paid 状态可以变为 completed）
     const updateResult = await tx.rechargeRecord.updateMany({
@@ -284,7 +347,7 @@ export async function completeRecharge(
         callbackData: data.callbackData as any,
         callbackAt: new Date(),
         completedAt: new Date(),
-        actualAmount: data.actualAmount ?? record.actualAmount,  // 使用 ?? 避免 0 值被误判
+        actualAmount,
         paymentDetails: (data.paymentDetails as any) ?? record.paymentDetails
       }
     })
@@ -312,7 +375,6 @@ export async function completeRecharge(
     }
 
     // 2. 增加用户余额（使用 ?? 避免 0 值被误判为 falsy）
-    const actualAmount = Number(data.actualAmount ?? record.actualAmount ?? record.amount)
     await tx.user.update({
       where: { id: record.userId },
       data: { balance: { increment: actualAmount } }
@@ -364,15 +426,29 @@ export async function failRecharge(
   callbackData?: Record<string, unknown>,
   paymentDetails?: Record<string, unknown>
 ): Promise<RechargeRecord> {
-  return prisma.rechargeRecord.update({
-    where: { orderNo },
-    data: {
-      status: 'failed',
-      failReason,
-      callbackData: callbackData as any,
-      callbackAt: new Date(),
-      paymentDetails: paymentDetails as any
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.rechargeRecord.updateMany({
+      where: {
+        orderNo,
+        status: { in: ['pending', 'paid'] }
+      },
+      data: {
+        status: 'failed',
+        failReason,
+        callbackData: callbackData as any,
+        callbackAt: new Date(),
+        paymentDetails: paymentDetails as any
+      }
+    })
+
+    const record = await tx.rechargeRecord.findUnique({ where: { orderNo } })
+    if (!record) {
+      throw new Error('订单不存在')
     }
+    if (result.count === 0 && record.status !== 'failed') {
+      throw new Error(`订单状态异常：${record.status}`)
+    }
+    return record
   })
 }
 
@@ -384,18 +460,32 @@ export async function cancelRecharge(
   callbackData?: Record<string, unknown>,
   paymentDetails?: Record<string, unknown>
 ): Promise<RechargeRecord> {
-  return prisma.rechargeRecord.update({
-    where: { orderNo },
-    data: {
-      status: 'cancelled',
-      paymentDetails: paymentDetails as any,
-      ...(callbackData
-        ? {
-            callbackData: callbackData as any,
-            callbackAt: new Date()
-          }
-        : {})
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.rechargeRecord.updateMany({
+      where: {
+        orderNo,
+        status: { in: ['pending', 'paid'] }
+      },
+      data: {
+        status: 'cancelled',
+        paymentDetails: paymentDetails as any,
+        ...(callbackData
+          ? {
+              callbackData: callbackData as any,
+              callbackAt: new Date()
+            }
+          : {})
+      }
+    })
+
+    const record = await tx.rechargeRecord.findUnique({ where: { orderNo } })
+    if (!record) {
+      throw new Error('订单不存在')
     }
+    if (result.count === 0 && record.status !== 'cancelled') {
+      throw new Error(`订单状态异常：${record.status}`)
+    }
+    return record
   })
 }
 

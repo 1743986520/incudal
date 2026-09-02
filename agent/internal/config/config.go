@@ -75,8 +75,8 @@ func (cfg Config) Validate() error {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return fmt.Errorf("panel_url is invalid: %s", cfg.PanelURL)
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("panel_url scheme must be http or https: %s", parsed.Scheme)
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("panel_url scheme must be https: %s", parsed.Scheme)
 	}
 	if cfg.AgentID == "" {
 		return errors.New("agent_id is required")

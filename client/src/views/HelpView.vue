@@ -3,17 +3,21 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
+import type { HelpArticleDetail, HelpArticleListItem } from '@/types/api'
 import { parseMarkdown } from '@/utils/markdown'
+import PublicSiteLayout from '@/components/public/PublicSiteLayout.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { locale, t } = useI18n()
+const HOSTING_TUTORIAL_SLUG = 'hosting-tutorial'
 
 // 列表视图
 interface HelpArticle {
   id: number
   title: string
   slug: string
+  summary?: string
   content: string
   category: string
   sort_order: number
@@ -53,12 +57,76 @@ const categoryConfig = ref<Category[]>([
   { id: 'getting-started', name: '', color: '#22c55e' },
   { id: 'instances', name: '', color: '#3b82f6' },
   { id: 'networking', name: '', color: '#8b5cf6' },
+  { id: 'hosting', name: '', color: '#06b6d4' },
   { id: 'billing', name: '', color: '#f59e0b' },
   { id: 'faq', name: '', color: '#ef4444' }
 ])
 
 // 计算属性：是否正在查看文章？
 const isDetailView = computed<boolean>(() => !!(route.params.slug as string | undefined))
+const builtInTopicDefinitions = [
+  { slug: 'platform-overview', category: 'general', key: 'platformOverview' },
+  { slug: 'getting-started', category: 'getting-started', key: 'gettingStarted' },
+  { slug: 'instance-management', category: 'instances', key: 'instanceManagement' },
+  { slug: 'networking-basics', category: 'networking', key: 'networkingBasics' },
+  { slug: HOSTING_TUTORIAL_SLUG, category: 'hosting', key: 'hostingTutorial' },
+  { slug: 'hosting-publish', category: 'hosting', key: 'hostingPublish' },
+  { slug: 'hosting-earnings', category: 'hosting', key: 'hostingEarnings' },
+  { slug: 'billing-basics', category: 'billing', key: 'billingBasics' },
+  { slug: 'common-issues', category: 'faq', key: 'commonIssues' }
+] as const
+
+const builtInArticles = computed<HelpArticle[]>(() => builtInTopicDefinitions.map((definition, index) => ({
+  id: -(index + 1),
+  title: t(`help.${definition.key}.title`),
+  slug: definition.slug,
+  summary: t(`help.${definition.key}.summary`),
+  content: t(`help.${definition.key}.content`),
+  category: definition.category,
+  sort_order: index,
+  published: 1,
+  created_at: '',
+  updated_at: ''
+})))
+
+const categoryCards = computed(() => categoryConfig.value.map(category => {
+  const articleCategory = categories.value.find(item => item.category === category.id)
+  const builtInCount = builtInArticles.value.filter(article => article.category === category.id).length
+  return {
+    ...category,
+    count: (articleCategory?.count || 0) + builtInCount
+  }
+}))
+
+const visibleArticles = computed<HelpArticle[]>(() => {
+  const builtIns = builtInArticles.value.filter(article => (
+    !selectedCategory.value || article.category === selectedCategory.value
+  ))
+  return page.value === 1 ? [...builtIns, ...articles.value] : articles.value
+})
+
+function mapListArticle(article: HelpArticleListItem): HelpArticle {
+  return {
+    id: article.id,
+    title: article.title,
+    slug: article.slug,
+    summary: undefined,
+    content: '',
+    category: article.category,
+    sort_order: 0,
+    published: 1,
+    created_at: article.createdAt,
+    updated_at: article.updatedAt
+  }
+}
+
+function mapDetailArticle(article: HelpArticleDetail): HelpArticle {
+  return {
+    ...article,
+    sort_order: 0,
+    published: 1
+  }
+}
 
 onMounted(async (): Promise<void> => {
   // 并行加载分类配置和分类列表
@@ -93,17 +161,18 @@ watch(() => route.params.slug, async (newSlug) => {
   }
 })
 
+watch(locale, () => {
+  const slug = route.params.slug
+  if (typeof slug === 'string') {
+    const builtInArticle = builtInArticles.value.find(article => article.slug === slug)
+    if (builtInArticle) currentArticle.value = builtInArticle
+  }
+})
+
 async function loadCategories(): Promise<void> {
   try {
     const response = await api.help.categories()
-    const cats = (response as { categories?: CategoryWithCount[] | string[] }).categories || []
-    // 处理 string[] 和 CategoryWithCount[] 两种格式
-    if (cats.length > 0 && typeof cats[0] === 'string') {
-      // 将 string[] 转换为 CategoryWithCount[]
-      categories.value = (cats as string[]).map(cat => ({ category: cat, count: 0 }))
-    } else {
-      categories.value = cats as CategoryWithCount[]
-    }
+    categories.value = response.categories
   } catch (err) {
     console.error('Failed to load categories:', err)
   }
@@ -116,11 +185,41 @@ async function loadArticles(): Promise<void> {
     if (selectedCategory.value) {
       params.category = selectedCategory.value
     }
-    const response = await api.help.list(params)
-    const data = response as { articles?: HelpArticle[]; total?: number; totalPages?: number }
-    articles.value = data.articles || []
-    total.value = data.total || 0
-    totalPages.value = data.totalPages || 1
+    const builtIns = builtInArticles.value.filter(article => (
+      !selectedCategory.value || article.category === selectedCategory.value
+    ))
+    const builtInCount = builtIns.length
+    const databaseOffset = Math.max(0, (page.value - 1) * pageSize.value - builtInCount)
+    const serverPageSize = pageSize.value
+    const serverPage = Math.floor(databaseOffset / serverPageSize) + 1
+    const offsetWithinPage = databaseOffset % serverPageSize
+    const pageSlots = page.value === 1
+      ? Math.max(0, pageSize.value - builtInCount)
+      : pageSize.value
+
+    const response = await api.help.list({
+      ...params,
+      page: serverPage,
+      pageSize: serverPageSize
+    })
+    let databaseArticles = response.articles.map(mapListArticle)
+    let pageArticles = databaseArticles.slice(offsetWithinPage, offsetWithinPage + pageSlots)
+
+    // The synthetic built-in articles shift the database window by their count.
+    // Fetch one adjacent API page when the shifted window crosses a server page.
+    if (pageArticles.length < pageSlots && response.total > serverPage * serverPageSize) {
+      const nextResponse = await api.help.list({
+        page: serverPage + 1,
+        pageSize: serverPageSize,
+        ...(selectedCategory.value ? { category: selectedCategory.value } : {})
+      })
+      databaseArticles = [...databaseArticles, ...nextResponse.articles.map(mapListArticle)]
+      pageArticles = databaseArticles.slice(offsetWithinPage, offsetWithinPage + pageSlots)
+    }
+
+    articles.value = pageArticles
+    total.value = response.total + builtInCount
+    totalPages.value = Math.max(1, Math.ceil(total.value / pageSize.value))
   } catch (err) {
     console.error('Failed to load articles:', err)
   } finally {
@@ -132,8 +231,13 @@ async function loadArticle(slug: string): Promise<void> {
   articleLoading.value = true
   articleLoaded.value = false
   try {
-    const response = await api.help.getBySlug(slug)
-    currentArticle.value = (response as { article?: HelpArticle }).article || null
+    const builtInArticle = builtInArticles.value.find(article => article.slug === slug)
+    if (builtInArticle) {
+      currentArticle.value = builtInArticle
+    } else {
+      const response = await api.help.getBySlug(slug)
+      currentArticle.value = response.article ? mapDetailArticle(response.article) : null
+    }
   } catch (err) {
     console.error('Failed to load article:', err)
     currentArticle.value = null
@@ -193,7 +297,9 @@ function formatDate(dateStr: string | null | undefined): string {
 </script>
 
 <template>
-  <div class="space-y-6 animate-fade-in">
+  <PublicSiteLayout>
+  <div class="w-full px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+    <div class="mx-auto max-w-5xl space-y-6 animate-fade-in">
     <!-- Header -->
     <div class="page-header">
       <div>
@@ -220,7 +326,7 @@ function formatDate(dateStr: string | null | undefined): string {
             </button>
           </div>
           <h1 class="page-title">{{ currentArticle.title }}</h1>
-          <p class="text-sm text-themed-muted">
+          <p v-if="currentArticle.updated_at" class="text-sm text-themed-muted">
             {{ $t('help.updatedAt', { date: formatDate(currentArticle.updated_at) }) }}
           </p>
         </template>
@@ -246,6 +352,56 @@ function formatDate(dateStr: string | null | undefined): string {
 
     <!-- Article List View -->
     <template v-if="!isDetailView">
+      <!-- Built-in hosting tutorial -->
+      <div class="card border-cyan-500/30 bg-cyan-500/5 p-5 sm:p-6">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-500">
+              {{ $t('help.hostingTutorial.badge') }}
+            </div>
+            <h2 class="mt-2 text-lg font-semibold text-themed">
+              {{ $t('help.hostingTutorial.title') }}
+            </h2>
+            <p class="mt-2 max-w-3xl text-sm leading-6 text-themed-muted">
+              {{ $t('help.hostingTutorial.description') }}
+            </p>
+          </div>
+          <button class="btn-secondary shrink-0" @click="goToArticle(HOSTING_TUTORIAL_SLUG)">
+            {{ $t('help.hostingTutorial.read') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Category overview -->
+      <section class="space-y-4">
+        <div>
+          <h2 class="text-lg font-semibold text-themed">{{ $t('help.categoryOverviewTitle') }}</h2>
+          <p class="mt-1 text-sm text-themed-muted">{{ $t('help.categoryOverviewDescription') }}</p>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <button
+            v-for="category in categoryCards"
+            :key="category.id"
+            class="card border-t-4 p-4 text-left transition-[border-color,background-color,box-shadow] hover:bg-themed-hover"
+            :class="selectedCategory === category.id ? 'ring-2 ring-accent/30' : ''"
+            :style="{ borderTopColor: category.color }"
+            @click="filterByCategory(category.id)"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="font-medium text-themed">{{ getCategoryLabel(category.id) }}</h3>
+                <p class="mt-1 text-xs text-themed-muted">
+                  {{ $t('help.categoryArticleCount', { count: category.count }) }}
+                </p>
+              </div>
+              <svg class="h-5 w-5 shrink-0 text-themed-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </button>
+        </div>
+      </section>
+
       <!-- Category Filter -->
       <div v-if="categories.length > 0" class="flex flex-wrap gap-2">
         <button
@@ -275,6 +431,15 @@ function formatDate(dateStr: string | null | undefined): string {
         </button>
       </div>
 
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-lg font-semibold text-themed">
+          {{ selectedCategory ? getCategoryLabel(selectedCategory) : $t('help.allArticles') }}
+        </h2>
+        <button v-if="selectedCategory" class="btn-ghost btn-sm" @click="filterByCategory('')">
+          {{ $t('help.allArticles') }}
+        </button>
+      </div>
+
       <!-- Loading -->
       <div v-if="loading" class="card p-8 text-center text-themed-muted">
         <svg class="w-6 h-6 animate-spin mx-auto" fill="none" viewBox="0 0 24 24">
@@ -284,14 +449,14 @@ function formatDate(dateStr: string | null | undefined): string {
       </div>
       
       <!-- Empty -->
-      <div v-else-if="articles.length === 0" class="card p-8 text-center text-themed-muted">
+      <div v-else-if="visibleArticles.length === 0" class="card p-8 text-center text-themed-muted">
         {{ $t('help.noArticles') }}
       </div>
 
       <!-- Article List -->
       <div v-else class="space-y-3">
         <div 
-          v-for="article in articles" 
+          v-for="article in visibleArticles"
           :key="article.id"
           class="card p-4 cursor-pointer hover:border-accent/50 transition-colors"
           @click="goToArticle(article.slug)"
@@ -299,6 +464,9 @@ function formatDate(dateStr: string | null | undefined): string {
           <div class="flex items-start justify-between">
             <div>
               <h3 class="text-themed font-medium hover:text-accent transition-colors">{{ article.title }}</h3>
+              <p v-if="article.summary" class="mt-1 max-w-3xl text-sm leading-5 text-themed-muted">
+                {{ article.summary }}
+              </p>
               <div class="flex items-center gap-3 mt-1 text-sm text-themed-muted">
                 <span 
                   class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-themed-tertiary rounded text-xs"
@@ -354,7 +522,9 @@ function formatDate(dateStr: string | null | undefined): string {
         <div class="markdown-body" v-html="articleHtml"></div>
       </div>
     </template>
+    </div>
   </div>
+  </PublicSiteLayout>
 </template>
 
 <style>

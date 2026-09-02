@@ -41,6 +41,20 @@ interface BatchRenewResultItem {
 
 const BATCH_HIDDEN_REASON = '实例不存在或无权操作'
 
+// 只有已完成开通的实例允许续费；因到期自动封停的实例可以通过续费解封。
+const RENEWABLE_INSTANCE_STATUSES = new Set(['running', 'stopped'])
+
+function canRenewInstance(instance: { status: string; suspendReason: string | null }): boolean {
+  return RENEWABLE_INSTANCE_STATUSES.has(instance.status) || (
+    instance.status === 'suspended' && instance.suspendReason === 'expired'
+  )
+}
+
+function canEnableAutoRenew(instance: { status: string }): boolean {
+  // 自动续费只针对尚未到期且可正常运行的实例；到期封停实例只能手动续费解封。
+  return RENEWABLE_INSTANCE_STATUSES.has(instance.status)
+}
+
 async function buildBatchRenewPreviewItem(userId: number, instanceId: number): Promise<BatchRenewPreviewItem> {
   const instance = await prisma.instance.findUnique({
     where: { id: instanceId },
@@ -48,7 +62,9 @@ async function buildBatchRenewPreviewItem(userId: number, instanceId: number): P
       id: true,
       name: true,
       userId: true,
-      packagePlanId: true
+      packagePlanId: true,
+      status: true,
+      suspendReason: true
     }
   })
 
@@ -72,6 +88,19 @@ async function buildBatchRenewPreviewItem(userId: number, instanceId: number): P
       canRenew: false,
       autoRenew: false,
       reason: BATCH_HIDDEN_REASON,
+      isHostedInstance: false,
+      daysUntilExpire: null,
+      options: []
+    }
+  }
+
+  if (!canRenewInstance(instance)) {
+    return {
+      id: instance.id,
+      name: instance.name,
+      canRenew: false,
+      autoRenew: false,
+      reason: '当前实例状态不允许续费',
       isHostedInstance: false,
       daysUntilExpire: null,
       options: []
@@ -177,6 +206,18 @@ async function executeRenewForUser(
       success: false,
       skipped: true,
       reason: BATCH_HIDDEN_REASON
+    }
+  }
+
+  // 预览与执行之间实例状态可能发生变化；performRenewal 仍会用
+  // instance.version 做最终的乐观锁校验。
+  if (!canRenewInstance(instance)) {
+    return {
+      id: instance.id,
+      name: instance.name,
+      success: false,
+      skipped: true,
+      reason: '当前实例状态不允许续费'
     }
   }
 
@@ -464,6 +505,15 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '免费实例无需续费', code: 'FREE_INSTANCE' })
     }
 
+    // 续费只能作用于已完成开通的实例，或因到期被系统封停、仍可恢复的实例。
+    // 不得让 creating/error/deleted 实例进入扣款流程。
+    if (!canRenewInstance(instance)) {
+      return reply.code(409).send({
+        error: '当前实例状态不允许续费',
+        code: 'INSTANCE_STATUS_INVALID'
+      })
+    }
+
     // 检查是否为用户托管节点的续费限制
     const host = await prisma.host.findUnique({
       where: { id: instance.hostId },
@@ -557,6 +607,12 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
         newExpiresAt: result.newExpiresAt.toISOString()
       }
     } catch (error) {
+      if (error instanceof Error && error.message.includes('实例状态已变更')) {
+        return reply.code(409).send({
+          error: '实例状态已变化，请刷新后重试',
+          code: 'INSTANCE_STATE_CHANGED'
+        })
+      }
       const errorMessage = error instanceof Error ? error.message : '续费失败'
       return reply.code(400).send({ error: errorMessage })
     }
@@ -983,7 +1039,34 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '免费实例不支持自动续费', code: 'FREE_INSTANCE' })
     }
 
-    await db.updateAutoRenew(instanceId, autoRenew)
+    if (autoRenew && !canEnableAutoRenew(instance)) {
+      return reply.code(409).send({
+        error: '当前实例状态不允许开启自动续费',
+        code: 'INSTANCE_STATUS_INVALID'
+      })
+    }
+
+    // 使用读取到的 version 做条件更新，避免到期封停或其他并发操作覆盖设置。
+    const updateResult = await prisma.instance.updateMany({
+      where: {
+        id: instanceId,
+        userId: user.id,
+        version: instance.version,
+        ...(autoRenew
+          ? { status: { in: ['running', 'stopped'] } }
+          : { status: { not: 'deleted' } })
+      },
+      data: {
+        autoRenew,
+        version: { increment: 1 }
+      }
+    })
+    if (updateResult.count !== 1) {
+      return reply.code(409).send({
+        error: '实例状态已变化，请刷新后重试',
+        code: 'INSTANCE_STATE_CHANGED'
+      })
+    }
 
     await createLog(
       user.id,
@@ -1037,7 +1120,10 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
           name: true,
           userId: true,
           packagePlanId: true,
-          autoRenew: true
+          autoRenew: true,
+          version: true,
+          status: true,
+          suspendReason: true
         }
       })
 
@@ -1056,13 +1142,35 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
         continue
       }
 
+      // 关闭自动续费允许清理旧配置；开启则只接受可正常运行的实例。
+      if (request.body.autoRenew && !canEnableAutoRenew(instance)) {
+        results.push({ id: instance.id, name: instance.name, success: false, skipped: true, reason: '当前实例状态不允许开启自动续费' })
+        continue
+      }
+
       if (instance.autoRenew === request.body.autoRenew) {
         results.push({ id: instance.id, name: instance.name, success: false, skipped: true, reason: request.body.autoRenew ? '已经开启自动续费' : '已经关闭自动续费' })
         continue
       }
 
       try {
-        await db.updateAutoRenew(instance.id, request.body.autoRenew)
+        const updateResult = await prisma.instance.updateMany({
+          where: {
+            id: instance.id,
+            userId: request.user.id,
+            version: instance.version,
+            ...(request.body.autoRenew
+              ? { status: { in: ['running', 'stopped'] } }
+              : { status: { not: 'deleted' } })
+          },
+          data: {
+            autoRenew: request.body.autoRenew,
+            version: { increment: 1 }
+          }
+        })
+        if (updateResult.count !== 1) {
+          throw new Error('INSTANCE_STATE_CHANGED')
+        }
         await createLog(
           request.user.id,
           'instance',

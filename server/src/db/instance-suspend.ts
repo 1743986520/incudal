@@ -5,6 +5,10 @@
 
 import { prisma } from './prisma.js'
 import type { Instance } from '@prisma/client'
+import {
+  INSTANCE_OPERATION_LOCK_NAMESPACE,
+  advisoryTransactionLock
+} from './advisory-locks.js'
 
 // ==================== 封停操作 ====================
 
@@ -12,16 +16,35 @@ import type { Instance } from '@prisma/client'
  * 封停实例（系统自动封停 - 到期）
  */
 export async function suspendInstanceByExpiry(
-  instanceId: number
-): Promise<Instance> {
-  return prisma.instance.update({
-    where: { id: instanceId },
-    data: {
-      status: 'suspended',
-      suspendedAt: new Date(),
-      suspendedBy: null, // null 表示系统自动
-      suspendReason: 'expired'
-    }
+  instanceId: number,
+  onSuspended?: () => Promise<void>
+): Promise<boolean> {
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const now = new Date()
+    const result = await tx.instance.updateMany({
+      where: {
+        id: instanceId,
+        packagePlanId: { not: null },
+        status: { in: ['running', 'stopped'] },
+        expiresAt: { not: null, lt: now }
+      },
+      data: {
+        status: 'suspended',
+        suspendedAt: now,
+        suspendedBy: null, // null 表示系统自动
+        suspendReason: 'expired',
+        version: { increment: 1 }
+      }
+    })
+
+    if (result.count !== 1) return false
+
+    // 外部 stop 在同一实例锁保护下执行，避免续费在标记后抢先解封，
+    // 随后又被本次过期任务停止。
+    if (onSuspended) await onSuspended()
+    return true
   })
 }
 
@@ -33,14 +56,25 @@ export async function suspendInstanceManually(
   operatorId: number,
   reason: string
 ): Promise<Instance> {
-  return prisma.instance.update({
-    where: { id: instanceId },
-    data: {
-      status: 'suspended',
-      suspendedAt: new Date(),
-      suspendedBy: operatorId,
-      suspendReason: reason
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+    const current = await tx.instance.findUnique({
+      where: { id: instanceId },
+      select: { status: true, suspendReason: true }
+    })
+    if (current?.status === 'deleted' && current.suspendReason === 'expired') {
+      throw new Error('实例正在删除，无法封停')
     }
+    return tx.instance.update({
+      where: { id: instanceId },
+      data: {
+        status: 'suspended',
+        suspendedAt: new Date(),
+        suspendedBy: operatorId,
+        suspendReason: reason,
+        version: { increment: 1 }
+      }
+    })
   })
 }
 
@@ -50,14 +84,25 @@ export async function suspendInstanceManually(
 export async function unsuspendInstance(
   instanceId: number
 ): Promise<Instance> {
-  return prisma.instance.update({
-    where: { id: instanceId },
-    data: {
-      status: 'stopped', // 解封后设为停止状态
-      suspendedAt: null,
-      suspendedBy: null,
-      suspendReason: null
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+    const current = await tx.instance.findUnique({
+      where: { id: instanceId },
+      select: { status: true }
+    })
+    if (!current || current.status !== 'suspended') {
+      throw new Error('实例未被封停或正在删除')
     }
+    return tx.instance.update({
+      where: { id: instanceId },
+      data: {
+        status: 'stopped', // 解封后设为停止状态
+        suspendedAt: null,
+        suspendedBy: null,
+        suspendReason: null,
+        version: { increment: 1 }
+      }
+    })
   })
 }
 
@@ -178,7 +223,9 @@ export async function getExpiredUnsuspendedInstances(): Promise<Instance[]> {
         not: null,
         lt: new Date()
       },
-      status: { notIn: ['suspended', 'deleted'] }  // 排除已封停和已删除
+      // 只有已经完成开通的实例才允许进入到期封停流程。
+      // creating/error 实例可能没有完整的 Incus 资源，不能被误标记为已封停。
+      status: { in: ['running', 'stopped'] }
     }
   })
 }
@@ -211,7 +258,7 @@ export async function getAutoRenewInstances(
         lte: expiryThreshold,
         gt: now // 还未到期
       },
-      status: { notIn: ['suspended', 'deleted'] } // 未封停且未删除
+      status: { in: ['running', 'stopped'] } // 只处理已完成开通的实例
     }
   })
 }
@@ -256,11 +303,90 @@ export async function getSuspendedInstancesOlderThan(days: number): Promise<Inst
 
   return prisma.instance.findMany({
     where: {
-      status: 'suspended',
+      // deleted + expired 表示删除任务已认领但尚未完成数据库清理；
+      // 纳入查询可以恢复进程崩溃或外部删除失败后的清理。
+      status: { in: ['suspended', 'deleted'] },
+      suspendReason: 'expired',
       suspendedAt: {
         not: null,
         lt: threshold
       }
     }
+  })
+}
+
+/**
+ * 认领一个到期删除候选。schema 没有 deleting 状态，因此复用
+ * `deleted + expired` 作为短暂的删除中标记，并用 version 绑定认领代次。
+ */
+export async function claimExpiredInstanceForDeletion(
+  instanceId: number,
+  expectedVersion: number,
+  expectedSuspendedAt: Date
+): Promise<Instance | null> {
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const current = await tx.instance.findUnique({ where: { id: instanceId } })
+    if (!current || current.suspendedAt?.getTime() !== expectedSuspendedAt.getTime()) {
+      return null
+    }
+
+    // 进程在外部删除或数据库清理之间崩溃时，允许下一轮继续处理同一认领。
+    if (
+      current.status === 'deleted' &&
+      current.suspendReason === 'expired' &&
+      current.version === expectedVersion
+    ) {
+      return current
+    }
+
+    if (
+      current.status !== 'suspended' ||
+      current.suspendReason !== 'expired' ||
+      current.version !== expectedVersion
+    ) {
+      return null
+    }
+
+    const claimed = await tx.instance.updateMany({
+      where: {
+        id: instanceId,
+        status: 'suspended',
+        suspendReason: 'expired',
+        version: expectedVersion,
+        suspendedAt: expectedSuspendedAt
+      },
+      data: {
+        status: 'deleted',
+        version: { increment: 1 }
+      }
+    })
+
+    if (claimed.count !== 1) return null
+    return tx.instance.findUnique({ where: { id: instanceId } })
+  })
+}
+
+/** 恢复外部删除失败的到期删除认领，使下一轮调度可以重试。 */
+export async function restoreExpiredInstanceDeletionClaim(
+  instanceId: number,
+  claimVersion: number
+): Promise<boolean> {
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+    const result = await tx.instance.updateMany({
+      where: {
+        id: instanceId,
+        status: 'deleted',
+        suspendReason: 'expired',
+        version: claimVersion
+      },
+      data: {
+        status: 'suspended',
+        version: { increment: 1 }
+      }
+    })
+    return result.count === 1
   })
 }

@@ -2,8 +2,29 @@ import { createHash } from 'crypto'
 import { isIP } from 'net'
 import { prisma } from '../db/prisma.js'
 
-export const HOST_NETWORK_POLICY_TYPES = ['ip_block', 'dns_lock', 'dns_override'] as const
+export const HOST_NETWORK_POLICY_TYPES = ['ip_block', 'dns_lock', 'dns_override', 'udp_block', 'ping_block'] as const
 export type HostNetworkPolicyType = (typeof HOST_NETWORK_POLICY_TYPES)[number]
+const macPattern = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/
+
+export interface HostAgentPolicyTarget {
+  instanceId: number
+  instanceName: string
+  incusId: string
+  mac: string | null
+}
+
+export interface HostAgentPolicy {
+  id: number
+  revision: number
+  type: string
+  config: unknown
+  targets: HostAgentPolicyTarget[]
+}
+
+export interface HostAgentPolicyBundle {
+  revision: string
+  policies: HostAgentPolicy[]
+}
 
 function stringList(value: unknown, maxItems = 256): string[] {
   if (!Array.isArray(value)) return []
@@ -44,7 +65,7 @@ export function normalizeNetworkPolicyInput(input: {
     const upstreams = stringList(raw.upstreams, 8).filter(value => isIP(value) !== 0)
     if (upstreams.length === 0) throw new Error('请填写平台 DNS 上游 IP')
     config = { upstreams, blockDot: raw.blockDot === true }
-  } else {
+  } else if (policyType === 'dns_override') {
     const domains = stringList(raw.domains).map(value => value.toLowerCase()).filter(validDomain)
     const action = ['address', 'nxdomain', 'zero'].includes(String(raw.action)) ? String(raw.action) : 'address'
     const addresses = stringList(raw.addresses, 16).filter(value => isIP(value) !== 0)
@@ -53,6 +74,8 @@ export function normalizeNetworkPolicyInput(input: {
     if (action === 'address' && addresses.length === 0) throw new Error('DNS 劫持必须填写目标 IP')
     if (upstreams.length === 0) throw new Error('请填写平台 DNS 上游 IP')
     config = { domains, action, addresses: action === 'address' ? addresses : [], upstreams }
+  } else {
+    config = {}
   }
   return { policyType, targetMode, targetInstanceIds, config }
 }
@@ -64,12 +87,19 @@ function lastReportMacMap(lastReport: unknown): Map<string, string> {
   for (const item of Array.isArray(instances?.items) ? instances.items : []) {
     const name = typeof item?.name === 'string' ? item.name : ''
     const mac = typeof item?.network?.mac === 'string' ? item.network.mac.toLowerCase() : ''
-    if (name && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) map.set(name, mac)
+    if (name && macPattern.test(mac)) map.set(name, mac)
   }
   return map
 }
 
-export async function buildHostAgentPolicyBundle(hostId: number): Promise<Record<string, unknown>> {
+export function hasMissingTargetMac(bundle: HostAgentPolicyBundle): boolean {
+  return bundle.policies.some(policy => policy.targets.some(target => {
+    const mac = typeof target.mac === 'string' ? target.mac.trim().toLowerCase() : ''
+    return !macPattern.test(mac)
+  }))
+}
+
+export async function buildHostAgentPolicyBundle(hostId: number): Promise<HostAgentPolicyBundle> {
   const [agent, policies, instances] = await Promise.all([
     prisma.hostAgent.findUnique({ where: { hostId }, select: { lastReport: true } }),
     prisma.hostNetworkPolicy.findMany({ where: { hostId, enabled: true }, orderBy: { id: 'asc' } }),
@@ -81,6 +111,17 @@ export async function buildHostAgentPolicyBundle(hostId: number): Promise<Record
     const targets = instances
       .filter(instance => policy.targetMode !== 'selected' || selected.has(instance.id))
       .map(instance => ({ instanceId: instance.id, instanceName: instance.name, incusId: instance.incusId, mac: macByIncusId.get(instance.incusId) || null }))
+    // Preserve unresolved selected targets in the bundle. The agent must see
+    // the missing MAC and report failure instead of applying a partial,
+    // fail-open policy after the instance disappeared or was not reported.
+    if (policy.targetMode === 'selected') {
+      const present = new Set(targets.map(target => target.instanceId))
+      for (const instanceId of selected) {
+        if (!present.has(instanceId)) {
+          targets.push({ instanceId, instanceName: '', incusId: '', mac: null })
+        }
+      }
+    }
     return { id: policy.id, revision: policy.revision, type: policy.policyType, config: policy.config, targets }
   })
   const revision = createHash('sha256').update(JSON.stringify(compiled)).digest('hex')

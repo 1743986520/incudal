@@ -210,6 +210,7 @@ export default {
         packages: 'Packages',
         helpManage: 'Help',
         oauth: 'OAuth',
+        updates: 'System Update',
         broadcast: 'Broadcast',
         paymentProviders: 'Payment Providers',
         billing: 'Billing',
@@ -343,12 +344,12 @@ export default {
             browseOfficial: 'Browse official',
             browseMarket: 'Browse marketplace',
             viewCatalog: 'View catalog',
+            viewHostingTutorial: 'Read hosting guide',
         },
         footer: {
             description: 'Curated global LXC and KVM plans across multiple locations, with broad configurations and tiers for high-value NAT VPS choices.',
             explore: 'Explore',
             account: 'Account',
-            purchaseHint: 'When an unauthenticated visitor opens a purchase link, they land on the public catalog first; signed-in users still continue with the existing create flow.',
         },
         seo: {
             keywords: 'Incus,NAT VPS,LXC,KVM,VPS panel,cloud server',
@@ -409,8 +410,6 @@ export default {
             badge: 'Public Catalog',
             title: 'Browse all public products',
             description: 'Filter public products by source, region, package profile, and billing plan.',
-            publicNotice: 'This page aggregates every public product and lets you filter by source, region, and resource profile.',
-            buyLinkNotice: 'You opened a purchase link while signed out. The matching product is shown here first, and after sign-in the flow still continues to the existing create page.',
             searchPlaceholder: 'Search by package name, description, or virtualization type',
             allRegions: 'All regions',
             official: 'Official',
@@ -977,6 +976,14 @@ export default {
             missingSshKeyDesc: 'An SSH key is required to create an instance. Please go to',
             profileSettings: 'Profile Settings',
             addSshKey: 'to add an SSH public key.',
+            autoGenerateSshKeyTitle: 'No SSH key configured',
+            autoGenerateSshKeyDesc: 'You do not have an SSH key yet. Would you like the system to generate one and continue creating the instance?',
+            autoGenerateSshKeyConfirm: 'Generate and continue',
+            autoGenerateSshKeyCancel: 'Cancel',
+            autoGenerateSshKeyGenerating: 'Generating SSH key...',
+            generatedSshKeyTitle: 'SSH key generated',
+            generatedSshKeyDesc: 'Copy or download the private key and save it securely. Instance creation will continue afterwards.',
+            generatedSshKeyContinue: 'I saved it, continue',
             quotaInsufficient: 'Quota Insufficient',
             quotaCpu: 'CPU: Used {used}%/{limit}%, need {need}%',
             quotaMemory: 'Memory: Used {used}/{limit} MB, need {need} MB',
@@ -2537,6 +2544,56 @@ export default {
 
     // Admin
     admin: {
+        systemUpdate: {
+            title: 'System Update',
+            description: 'Check and explicitly run panel updates. Updates never run silently in the background.',
+            sourceTitle: 'Update source',
+            sourceDescription: 'Your GitHub repository is used by default. You can also specify another public GitHub repository.',
+            sourceLabel: 'GitHub repository URL',
+            sourceHint: 'Supports https://github.com/owner/repo, a .git URL, or owner/repo.',
+            modeLabel: 'Deployment mode',
+            modes: {
+                auto: 'Auto detect',
+                docker: 'Docker Compose',
+                release: 'systemd release'
+            },
+            check: 'Check for updates',
+            checking: 'Checking...',
+            updateNow: 'Update now',
+            updating: 'Update running...',
+            versionTitle: 'Version information',
+            currentVersion: 'Current version',
+            latestVersion: 'Remote version',
+            updateAvailable: 'Update available',
+            alreadyLatest: 'Already up to date',
+            publishedAt: 'Published: {time}',
+            viewRelease: 'View GitHub Release',
+            checkHint: 'Click “Check for updates” to load the remote Release information.',
+            executionTitle: 'Execution status',
+            sourceRepository: 'Source repository',
+            executionStatus: 'Execution status',
+            startedAt: 'Started at',
+            notStarted: 'Not started',
+            executorUnavailable: 'No site update executor is available in this runtime. Clicking Update will show a copyable server command.',
+            manualTitle: 'Run manually',
+            manualDescription: 'Run the command below as root on the panel server. The site will not update silently in the background.',
+            copyCommand: 'Copy command',
+            commandCopied: 'Command copied',
+            copyFailed: 'Copy failed; select the command manually',
+            noticeTitle: 'Notice:',
+            notice: 'The update restarts the panel service. Back up the database, .env, certificates, and business data first.',
+            loadFailed: 'Failed to load update status',
+            checkFailed: 'Update check failed',
+            applyFailed: 'Failed to start update',
+            started: 'Update started; execution logs will appear here',
+            confirm: 'Run the panel update from {source}? The panel may be temporarily unavailable during the update.',
+            execution: {
+                idle: 'Not started',
+                running: 'Running',
+                succeeded: 'Completed',
+                failed: 'Failed'
+            }
+        },
         statistics: {
             title: 'Statistics',
             description: 'User, instance, and billing data',
@@ -2841,7 +2898,15 @@ export default {
             userNotFound: 'User not found',
             userNotFoundHint: 'Please check if the username is correct',
             noSshKey: 'This user has no SSH key set',
-            noSshKeyHint: 'Please ask the user to add an SSH key in their profile settings first',
+            noSshKeyHint: 'When submitting the gift, you can choose to force the system to generate an SSH key',
+            forceGenerateSshKeyTitle: 'Target user has no SSH key',
+            forceGenerateSshKeyDesc: 'Force the system to generate an SSH key for this user and continue the gift? The private key is shown only once; save it and give it to the user.',
+            forceGenerateSshKeyConfirm: 'Force generate and continue',
+            forceGenerateSshKeyCancel: 'Cancel gift',
+            forceGenerateSshKeyGenerating: 'Generating SSH key...',
+            generatedPrivateKeyTitle: 'System-generated SSH private key',
+            generatedPrivateKeyDesc: 'Safely give this private key to the target user and remind them to save it securely.',
+            generatedPrivateKeyClose: 'Close',
             orderSummary: 'Gift Summary',
             freeGift: 'Free Gift',
             freeGiftHint: 'This instance is created by admin for free, not counted in billing',
@@ -3695,6 +3760,9 @@ export default {
                 networkHint: 'Batch reconcile status, IPv4 and IPv6 records for non-deleted instances.',
                 discoverHint: 'Read all current Incus containers / KVMs from the host and reconcile with database records.',
                 selectInstanceHint: 'Select one managed instance to perform single-instance sync, restart, or dangerous actions.',
+                networkPolicyTab: 'Agent & WAF Network Policies',
+                networkPolicyUdpBlock: 'Block UDP',
+                networkPolicyPingBlock: 'Block Ping',
                 instancePanel: 'Single Instance Panel',
                 loadPreview: 'Load Precheck',
                 syncInstance: 'Sync Instance',
@@ -4780,17 +4848,463 @@ export default {
         title: 'Help Center',
         search: 'Search help...',
         description: 'View guides and FAQs',
+        categoryOverviewTitle: 'Browse by topic',
+        categoryOverviewDescription: 'Choose a category first, then open an item to read the detailed guide.',
+        categoryArticleCount: '{count} item(s)',
+        allArticles: 'All articles',
         backToHelp: 'Back to Help Center',
         updatedAt: 'Updated on {date}',
         all: 'All',
         noArticles: 'No help articles',
         articleNotFound: 'Article not found or has been deleted',
         totalArticles: '{count} articles',
+        hostingTutorial: {
+            badge: 'Hosting overview',
+            title: 'Hosted products and node operations',
+            description: 'Covers buying a hosted product, node admission, Agent connection, plan publication, after-sales support, and earnings.',
+            summary: 'The buyer flow plus the complete node-owner flow: create and verify a node, publish plans, support customers, and withdraw earnings.',
+            read: 'Read the guide',
+            content: `## Understand the hosting flow
+
+Hosted products are supplied by third-party node owners. The platform provides public listing, provisioning, billing, and instance-management entry points; the owner operates the Incus host, maintains capacity, and handles customer support. The home page / and catalog /market can show public products without sign-in. Whether the hosted-market entry is visible is controlled by the hosting setting.
+
+## A. Buy a hosted product
+
+1. On /market, switch to the Hosted source and use the region filter and search. Open a product card to review LXC/KVM type, network mode, traffic, plans, resource ranges, and owner information; switch to Official to compare.
+2. A paid product requires an available plan selected in the right-hand panel. The plan shows billing cycle, price, monthly equivalent, CPU, memory, disk, and traffic. A free product has no paid plan, but the CPU, memory, and disk controls on the create page still obey product limits and account quota.
+3. Select “Provision now” or, while signed out, “Sign in to order”. A signed-out user is sent to /login with the return address preserved; after login, the flow returns to /instances/create with source=market, package, and plan parameters. Both /instances and /instances/create require sign-in.
+4. The create page loads the region, product, plan, available host, system image, and SSH keys. The create button is disabled without an SSH public key, an available image, or an available host; add a key first in the signed-in /profile page. Paid-plan resources are fixed, hosted products do not show the official referral-code field, prerequisite products must already be satisfied, and an owner cannot provision their own paid product.
+5. Enter the instance name, host, image, and SSH key, then click “Create”. Success takes you to /instances; select the instance to open /instances/:id. A new instance may be creating until deployment finishes; start, stop, restart, terminal, and networking actions become available according to its current status.
+
+## B. Node-owner admission and node creation
+
+1. Sign in, open My Nodes at /resources/hosts, and click “Create node / Add”. Regular users go through the hosting-access check: currently they must have owned at least one instance, and hosting must be enabled; administrators can enter directly. A failed check shows the admission reason and hint in the page, and the backend checks it again.
+2. In /resources/hosts/create, enter the node name, host address, API port, country/region, instance type, and network mode. A regular user's name must start with PEER{your user ID}-; the API port defaults to 8443. Modes include NAT, NAT+IPv6, and IPv6-only; when IPv6 data is supplied, the subnet and parent interface must be supplied together. NAT settings include public and bind IPs plus a port range, defaulting to 10000–65000. CPU, memory limits, and container/VM support are configured here too.
+3. After clicking “Create node”, the page opens the generated install-command dialog. The host initialization token expires after 24 hours; if it expires, open /resources/hosts/:id and click “Reinstall” to generate a new command. A node cannot be deleted while it still has instances.
+
+## C. Install the Agent, verify the connection, and inspect status
+
+1. On your Incus host, run the generated command as root; use “Copy command” in the dialog to copy it. The script installs/initializes Incus, imports the panel certificate, and installs and starts the host Agent using the injected token. It supports Ubuntu, Debian, Rocky Linux 9/10, and Alpine 3.20+; Ubuntu versions below 22 show a prompt, while Debian below 11 and Alpine below 3.20 are rejected.
+2. Return to the dialog and click “Verify and connect”, or use the same button for an unverified node in its detail page. Success changes the node to online and makes it usable by products. For failures, check connection-refused, timeout, or certificate errors and verify the host API, HTTPS, network, and command execution.
+3. The node detail Info tab shows online/offline/maintenance, CPU/memory/disk usage, and Agent status. In the Agent card, “Agent install command” generates a one-time install/update command and “Refresh” reloads the status; its token lasts about 30 minutes and is single-use. Heartbeats default to 30 seconds and allow 5–3600 seconds. The status can be not installed, online, offline, disabled, or outdated.
+
+## D. Create products and plans, then publish
+
+1. While signed in, open My Products at /resources/packages and click “Create product” to open /resources/packages/create. Regular users can select only their own nodes, and at least one node must be bound. Enter the name, description, container/VM type, network mode, resource and traffic/port/snapshot limits; storage pools, boot settings, a prerequisite product, and per-host traffic multipliers are also available.
+2. A free product can define resources at product level. For a paid product, open /resources/packages/:id, switch to the Plans tab, and click “Add plan”. Configure name, CPU (15–10000%), memory (128–62144 MB), disk (512–104857600 MB), traffic (1–100000 GB), speed (1–10000 Mbps), port/snapshot quotas, price, and SLA. Plans on hosted nodes support monthly billing only. Plan status can be Active, Sold out, or Inactive.
+3. “Publish” is not a separate button: check “Active” and “Public access” in the product form and save; a paid product also needs an active, available plan. /resources/packages shows the active/inactive and public badges. A public product is listed in the Hosted source on /market only when it has an online host and capacity. An offline or maintenance node, insufficient capacity, or all plans sold out makes the product unavailable. The Config and Plans tabs in the detail page are shown only to the owner or an administrator.
+
+## E. After-sales support, earnings, and withdrawals
+
+1. On /tickets (sign-in required and tickets must be enabled), a buyer clicks “Create ticket”, selects the hosted instance, and enters the subject, category, priority, and content; images can be attached. Statuses are open, in_progress, resolved, and closed. The creator can reply or close; the node owner sees tickets for their nodes in the received-tickets tab and can reply, mark them in progress/resolved, or close them.
+2. When a customer purchases, renews, or upgrades an instance on your node, income is added to the node owner's hosting balance, but new income is frozen for about 30 days. The scheduler unfreezes due records hourly and also catches up shortly after service startup. Hosted-instance renewals are limited to one month and are normally allowed only within seven days of expiry; free instances do not renew, and upgrades can only move to a higher-priced plan in the same product while the instance is running or stopped. Destruction/refund flows may deduct the related frozen income before available hosting balance, so frozen funds are not immediately withdrawable.
+3. Open Hosting Wallet at /hosting-wallet (sign-in required). Overview shows available and frozen amounts, monthly and total income, customers, and node/instance counts; Logs can filter purchases, renewals, upgrades, and destruction; Withdrawals shows withdrawal status. The “Withdraw” button is enabled only when available balance reaches the current minimum. The default minimum is ¥10, but the page setting is authoritative. Withdrawals target the platform balance and apply the current 5% fee; the confirmation dialog shows the fee and net amount.
+
+## Before publishing
+
+- Confirm the node is online, the Agent is sending heartbeats, capacity and storage pools are healthy, and NAT/IPv6, port ranges, and product limits are correct.
+- Check /market from the public view to confirm the hosted product is visible; “Active” alone does not guarantee inventory.
+- The owner handles support for customers on their node. Renewals, upgrades, destruction, refunds, frozen income, and withdrawals follow the page state at submission time and the platform rules.`
+        },
+        platformOverview: {
+            title: 'Platform overview',
+            summary: 'Compare products in the public preview, sign in to provision, then manage instances from the list and detail pages.',
+            content: `## 1. Start with the public preview
+
+1. Open the home page /. It loads the public products and regions without requiring sign-in; select “Browse products” or “View catalog” to open /market.
+2. On the catalog page, switch between the Official and Hosted sources, then use the region filter or search when needed. Select a product card to see its network mode, traffic, plans, and resources.
+3. A paid product requires an available plan. The provisioning button is disabled for sold-out products or plans; free products do not require a plan.
+
+## 2. Understand official and hosted products
+
+- Official nodes are operated by the platform and are labeled “Official”.
+- Hosted products are provided by independent node owners and are labeled “Hosted” in the marketplace. You can open the owner information before provisioning. Stability, routing, availability, and support may differ from official nodes, so read the product description and hosted notice first.
+- Whether the hosted-market entry is shown is controlled by a platform setting. If it is not visible, follow the sources currently shown in the page.
+
+## 3. Sign in and open provisioning
+
+4. After choosing a product and plan, select “Provision now” or “Sign in to provision”. If you are not signed in, the app sends you to /login with a return address; after login it returns to /instances/create with the selected source, product, and plan. Opening a protected page such as /instances or /instances/create directly also redirects to login.
+5. The provisioning page loads your quota, SSH keys, available hosts, images, and product data. Before starting, open Profile ( /profile ) and create at least one SSH public key. The Create button is disabled when no SSH key is available.
+
+## 4. Complete and submit provisioning
+
+6. Select a region if available, product, plan for a paid product, resources for a free product, an available host, and a system image; then enter an instance name. A host and image must both be available. You cannot submit when the product has no bound host, no host has capacity, or no image is available.
+7. Before submitting, check the displayed price, billing cycle, resources, and network conditions. A paid product uses the selected plan’s fixed CPU, memory, and disk configuration. You cannot provision your own paid product. If affiliate codes are enabled by the platform, they can be validated for official paid products; the field is not available for hosted products.
+8. Confirm the instance name, SSH key, and plan, then select “Create”. The app calls the instance creation API; after success it shows a confirmation and navigates to /instances. If the product requires an instance from another product first, satisfy that prerequisite before submitting. Quota shortages, sold-out products, and invalid resource selections also prevent submission.
+
+## 5. Open details from the instance list
+
+9. /instances requires sign-in, lists your instances, and refreshes their status periodically. If a new instance is still provisioning, wait for its status to update; select its card or row to open /instances/:id.
+10. The detail page opens on the Info tab. Depending on permissions and instance quotas, you can switch to Network, Sites, Traffic, Snapshots, Quota, Config, and Logs. Info shows status, resources, and connection data; Network manages port mappings, while terminal access and start, stop, and restart actions are also available from the detail page. Back up data and review the confirmation text before destructive actions such as rebuild, destroy, or snapshot restore.`
+        },
+        gettingStarted: {
+            title: 'Getting started: create your first instance',
+            summary: 'Follow the public catalog, sign-in, creation form, connection, and initialization checks to create your first instance.',
+            content: `## 1. Choose a product and plan in the public catalog
+
+1. Open /market. This catalog is available before sign-in; switch between the Official and Market sources, then use the search box or region filter to narrow the list.
+2. Select a product card to review its LXC/KVM type, description, traffic, network mode, and sold-out state. For a paid product, choose an available plan in the detail panel and check its billing cycle, price, monthly equivalent, CPU, memory, disk, and traffic. A free product has no paid plan; its resources are adjusted on the creation page.
+3. After confirming the product and plan, select “Create” or “Provision now”. The catalog carries the source, product, and plan into the creation flow. The button is unavailable for a sold-out product or for a paid product without an available plan selected.
+
+## 2. Sign in and prepare an SSH key
+
+4. If you are signed in, the app opens /instances/create. Otherwise it first opens /login, then returns to /instances/create with the source, product, and plan parameters in the saved return address.
+5. The creation page loads your account quota, SSH keys, products, regions, available hosts, and images. At least one SSH key is required before creation; if none exists, open Profile at /profile, find the SSH public-key section, select “Add”, and save a key name and public key. You can also select “Generate” to create a key pair. When the private key appears in the dialog, copy or download it and store it safely before choosing the corresponding key on the creation page.
+
+## 3. Complete the instance creation form
+
+6. If a region selector is shown, choose a region or “All regions”. The region filters the available products; changing the source or region resets the previous product, plan, host, and image selections.
+7. Choose a product. For a paid product, select a plan next; the plan fixes CPU, memory, and disk, and the page also shows its billing cycle, price, traffic, port limit, and snapshot limit. For a free product, use the resource controls to adjust CPU, memory, and disk within the product limits, quota, and minimum values.
+8. Choose an available host. Hosts are loaded using the product, plan when applicable, and the requested CPU, memory, and disk; when only one host is available, the page may select it automatically. Creation cannot continue when the product has no bound host or no host has capacity.
+9. Choose a system image. The image list is loaded for the instance type, memory, and selected host, and appears only after a host is selected. Submission is unavailable when no image is available. After choosing an image, the page may show optional custom initialization commands.
+10. Review the network conditions. The creation form has no separate network-mode control; the network mode comes from the product’s network_mode. Check it in the catalog first, then verify it on the instance Info page after creation. Finally enter the required instance name. An affiliate-code field appears only for official paid products when enabled by the platform; hosted Market products do not provide that field.
+11. Confirm the SSH key, product/plan, host, image, resources, and price, then select “Create”. The request submits name, packageId, planId for a paid product, hostId, image, cpu, memory, disk, sshKeyId, and optional custom initialization commands. Sold-out products, insufficient quota, unmet product prerequisites, and your own paid product keep submission disabled.
+
+## 4. Find the instance and get connection details
+
+12. After creation succeeds, the app shows a success message and navigates to /instances. Use the search box to find the instance by name, or filter by country/region; the page refreshes its data periodically while visible. Select the instance card or row to open /instances/:id.
+13. The Info tab shows the instance status, image, instance type, network mode, host, IPv4/IPv6, SSH port when present, and Root password; the password is hidden until you select “Show”, which loads it. The Network tab shows public/private addresses and port mappings.
+14. For an IPv4 NAT connection, open the Network tab and add a mapping for internal port 22, then connect with the public IPv4 address and mapped public port. For the IPv6 direct-connection mode shown by the page, use the public IPv6 address and port 22 without a mapping. Follow the network mode and addresses displayed for the instance. When the instance is running, the detail page also provides a terminal entry.
+
+## 5. Check provisioning and initialization
+
+15. If the /instances list shows creating after submission, provisioning is still in progress; wait for the list to refresh. On the detail page, an active task with PENDING or PROCESSING status appears as a task indicator beside the title; the page reloads the instance when that task completes or fails.
+16. Once the instance is running, the detail page checks Cloud-init initialization. When the check returns ready=false, an amber initialization indicator appears in the header; it can mean initializing, stalled, or unknown status, and selecting it runs another check. While it is not ready, the page retries automatically every 10 seconds, up to 12 attempts.
+17. When the initialization check returns ready=true, the initialization indicator disappears; the returned state can be done, done_with_errors, disabled, unsupported, or manual. If the state is agent_unavailable or unknown, only users with the relevant permission see “Complete manually”. Before connecting, confirm that the instance is running and no initialization indicator still reports that it is not ready.`
+        },
+        instanceManagement: {
+            title: 'Instance management: power, rebuilds, snapshots, and backups',
+            summary: 'Follow the page controls to power instances on or off, track async tasks, rebuild systems, and protect data.',
+            content: `## Find the instance
+1. After signing in, open the Instances list (/instances). The list refreshes status periodically; click an instance card or row to open its details (/instances/:id).
+2. Detail-page controls appear or become disabled based on status, permissions, quota, and active tasks. Save databases, configuration files, and important files elsewhere before destructive operations.
+
+## Daily power operations
+
+### One instance
+
+1. In the list, click Start when the status is stopped. When it is running, click Stop or Restart.
+2. The detail page exposes the same controls for the current status. Start, Stop, and Restart do not show a confirmation dialog first; they submit a task. A “task queued” message does not mean the operation has finished.
+3. Do not submit another operation repeatedly while one is running. The detail page reloads the instance after the task completes or fails.
+
+### Batch power operations
+
+1. Select instances in the list and choose Start, Stop, or Restart from the batch action bar.
+2. Batch Start only targets stopped instances. Batch Stop and Restart only target running instances. Selected instances in any other state are skipped.
+3. Up to 5 requests run concurrently. When the batch finishes, the list refreshes and a partial result reports the successful, failed, and skipped counts.
+
+## Async tasks and queueing
+
+- The start, stop, restart, rebuild, and recreate APIs return a taskId and task status; the backend queues the work. The detail page polls the active task every 2 seconds. Its task indicator may show PENDING or PROCESSING, then polling stops and the instance reloads when the task completes or fails.
+- If the API reports TASK_IN_PROGRESS, the page attaches to the existing task instead of submitting another one. Wait for it. An active task, a pending transfer, or a suspended instance disables other controls (the page determines which node-owner controls remain available).
+- If a task has made no progress for a long time, the detail page can offer Recover Task when eligible. A regular user must wait at least 15 minutes; an administrator can run it directly. The button asks for confirmation. If recovery also fails, keep the task error for support.
+- An instance in error state can use Retry Provisioning / Retry. This calls retryProvision, changes the status back to creating, and returns to the list. The backend accepts it only while the status is error, the original package still exists, and the original host is online.
+
+## Rebuild versus recreate
+
+### Rebuild the system (rebuild)
+
+1. First make the instance stopped. Clicking Rebuild System while it is running only shows a stop-required message and does not open the submit flow.
+2. Choose an image currently allowed by the host and compatible with the instance type and memory, then choose one of your SSH keys. You can also choose custom initialization commands.
+3. Click Confirm Rebuild to create the async task. Rebuild erases data inside the instance and all snapshots, but preserves port mappings; it generates a new root password that can be viewed on the detail page. The rebuild dialog also says the instance must be started manually after completion, so use the final instance status as the source of truth.
+
+### Recreate the instance (recreate)
+
+- Recreate does not require the instance to be stopped. It creates a brand-new instance to replace the old one and preserves only billing status and quotas. It removes instance data, snapshots, port mappings, backup records and policies, proxy sites, and snapshot policies, so make an external backup first.
+- Recreate also requires an image, an SSH key, and optional custom initialization commands; track it with the returned taskId. It is not the same operation as rebuild: rebuild changes the system on the stopped original instance, while recreate replaces it with a new instance.
+- The current InstanceDetailView actually binds the Rebuild System button. Although the source defines RecreateModal and the recreate API, this page has no button wired to open that modal. If Recreate Instance is not visible, do not treat Rebuild System as a recreate operation.
+
+## Snapshots: create, restore, and delete
+
+1. Open the Snapshots tab in instance details. The tab is hidden when the snapshot quota is 0; Create is disabled when there is no quota or the quota is full. Quota can be viewed in the Quota tab or adjusted by a user with permission.
+2. Click Create, enter the required name, optionally add a description, and submit. The list reloads after success; creation does not ask for a separate confirmation.
+3. Stop the instance before restoring because only the stopped state can restore a snapshot. Clicking Restore while running shows a stop-first message. Once stopped, click Restore beside the snapshot and confirm its name before the restore API is called.
+4. To remove a snapshot, click Delete and confirm the snapshot name. If deletion fails, the page reloads the list.
+5. Auto Snapshot Settings can enable a policy with intervals of 10 minutes, 1 hour, 6 hours, or 24 hours. When the quota is full, the policy notice explains that the oldest automatic snapshot is handled by the policy.
+
+## Backups: create, export, remote upload, and restore
+
+The current InstanceDetailView mounts the snapshot manager. The backup API and BackupManager component define the following controls, but you will only see them where the Backup management area is mounted.
+1. **Create**: Confirm that a backup quota exists and is not full; otherwise Create is disabled. Click Create, enter the required name and optional description, and submit. A backup starts as creating and becomes ready when complete; creation may take several minutes.
+2. **Export / download**: Only a ready backup can be exported. Click Export to create an export task, then obtain a one-time download token so the browser can start the download. The button is disabled while preparing or downloading; an error changes it to Retry. A node owner cannot download when canManageBackups=false.
+3. **Upload to remote storage**: Click Upload beside a ready backup and choose a storage configuration in the dialog; the default configuration is selected first. If none exists, use the dialog link to open Profile and configure storage. After submission, the task shows PENDING or PROCESSING, queue position, and duration; the page polls every 3 seconds and reloads an active upload task after a refresh. Node owners cannot upload.
+4. **Restore**: Click Restore beside a ready backup and confirm in the dangerous-operation dialog. Restore stops the current instance and replaces it with the backup. All other backups and all snapshots for that instance are permanently deleted, and the name becomes “original instance name | restored:backup name”. The restore task shows status and queue position; another restore cannot be submitted while one is active.
+5. If restore fails while the original instance can still be recovered, the backup row offers Rollback. Click it to call the rollback API and restore the original instance. The page reloads after a successful restore; check SSH, IP, and port mappings again.
+6. **Delete a backup**: Click Delete and confirm the backup name. A backup in creating status or being restored cannot be deleted. Deleting a backup is not the same as deleting the instance and does not replace remote upload.
+
+## Deletion and refund details
+
+- The list’s Delete control appears only for an error instance or an instance without a package-plan billing ID. It first asks for confirmation using the instance name, then calls instances.delete. Direct deletion on the detail page also follows permissions and package settings; a paid instance normally uses the Destroy flow, not Delete-as-refund.
+- Destroy first loads eligibility and a refund preview. A paid instance must have less than 5 GB used in the current traffic cycle. The first destroy is fee-free; later fee rate, remaining value, refund cap, and actual refund are shown by the dialog at that moment. A free instance can be destroyed without a refund and does not count toward the destroy count.
+- Destroy requires more than one click: review the instance and refund information, type the full instance name, then click Confirm Destroy. On success the instance and its data—including snapshots, backups, and port mappings—are permanently deleted; a paid-instance success message shows the refund. If traffic or another condition blocks destruction, follow the reason shown in the dialog.
+- The error-state banner also provides Retry Provisioning and Destroy Now. Destroy Now asks for confirmation and uses the error fee-waiver path. Before any deletion, rebuild, recreate, or backup restore, confirm that no data still needs to be kept.`
+        },
+
+        networkingBasics: {
+            title: 'Networking: NAT and Port Mapping Guide',
+            summary: 'Check the network mode first, then create TCP/UDP mappings for one port or a contiguous range, test externally, and resolve conflicts.',
+            content: `## Identify the network mode first
+
+1. Open the instance details, check Network Mode on the Info tab, then open the Network tab to see the private IPv4, public IPv4, public IPv6, and port mappings.
+2. Choose the test address according to the mode:
+   - IPv4 NAT (nat): access instance services through the node public IPv4 and a port mapping.
+   - IPv4 NAT & IPv6 (nat_ipv6): IPv4 still uses port mappings; the instance has an independent public IPv6 that can be used directly.
+   - IPv4 NAT & IPv6 NAT (nat_ipv6_nat): IPv4 uses port mappings; when the node has a public IPv6, the mapping also uses the same external port on the node's shared IPv6.
+   - IPv6 NAT (ipv6_nat): port mappings use the node public IPv6; do not assume this mode has a public IPv4 endpoint.
+   - IPv6 Only (ipv6_only): port mappings are not supported. Use the instance public IPv6 directly; the Network tab does not offer Add Mapping.
+
+## Confirm the service inside the instance
+
+The service must listen on the internal port you plan to map, and the protocol must match: a TCP service needs a TCP mapping, and a UDP service needs a UDP mapping. Check the service inside the instance first, then test from outside; success from inside alone does not prove that the mapping is reachable externally.
+
+## Create one mapping
+
+1. In the instance details, open Network and select Add under Port Mappings. For an IPv6 Only instance, use the public IPv6 directly instead of adding a mapping.
+2. Keep Single Port selected and choose TCP, UDP, or Both. Both creates two mappings, TCP and UDP, on the same external port and uses two port-quota slots.
+3. Enter the required Private Port. You can enter one port, such as 80 or 22, or a contiguous range, such as 80-85.
+4. Public Port is optional. Leave it empty to let the system allocate an available port from the node port pool. If you specify one, use an available port within the allowed range shown by the page. If you enter a range, the private and public ranges must contain the same number of ports.
+5. Add an optional remark and select Add. After success, the list shows the protocol, external port, and internal port; use the listed external port as the client endpoint.
+
+## Create a batch mapping
+
+1. In Add Port Mapping, switch to Port Range.
+2. Choose TCP, UDP, or Both, then enter the external start/end ports and internal start/end ports. The ranges must contain the same number of ports and are paired in order; for example, external 20000-20005 maps to internal 80-85.
+3. A batch can contain at most 100 consecutive internal ports. Both creates TCP and UDP mappings for every internal port, so each port uses two quota slots.
+4. To let the system allocate an entire external range, enter an internal range in Single Port mode and leave Public Port empty; submission then uses the batch creation flow with automatic allocation.
+5. Add an optional remark and submit. Use the success count in the notification to confirm how many mappings were created.
+
+## Test SSH, HTTP, and other services
+
+- SSH: for IPv4, map internal port 22 to an available external port, then connect with the public IPv4 and that external port. For direct IPv6 access, connect to the public IPv6 on port 22 without a mapping. Use brackets around an IPv6 address in a URL.
+- HTTP: confirm the Web service's actual internal TCP port, then open the public IPv4 or public IPv6 with the external port from outside. Do not use the internal port as the external port unless you explicitly mapped it that way.
+- Other TCP/UDP services: the client must use the same protocol and external port as the mapping. If the service is not listening on the internal port, or TCP and UDP are mismatched, the external test will fail.
+
+## Handle port conflicts
+
+- If the specified public port for a single mapping is already in use, submission fails. Choose another external port within the allowed range, or clear the field for automatic allocation.
+- When a specified public range contains occupied ports, the page opens the conflict dialog. Select Use All Suggestions or enter a new external port for each conflict, then confirm the changes.
+- Each replacement external port must be within the allowed range, between 1 and 65535, and unique among the conflict entries. Both also needs the port to be available for both TCP and UDP. If the resubmission still conflicts, choose different ports.
+- If there are not enough available ports, reduce the batch range or choose other available ports. If the quota is insufficient, allocate enough port quota on the Quota tab first.
+
+## Delete mappings and understand common limits
+
+1. Find the mapping in the Port Mappings list, select its trash icon, and confirm. Deletion removes the mapping's underlying proxy devices and record, releasing its quota.
+2. You can also select multiple mappings on the current list page, choose Batch Delete, and confirm. The client deletes them one by one; if some fail, the notification reports the success/failure counts and reloads the list.
+3. Adding and deleting mappings requires instance-owner permission. Operations are also rejected while the instance is suspended or transfer-locked. If the button is missing or you receive a permission error, verify the signed-in account owns the instance.
+
+## Troubleshooting order
+
+First verify the network mode and the public address you are actually using. Then verify the mapping protocol, external port, and internal port, and finally confirm inside the instance that the service is still listening. A missing public IPv4 in IPv4 NAT, a missing public IPv6 in IPv6 NAT/IPv6 Only, or a service listening on the wrong protocol/port prevents an external connection. `
+        },
+        hostingPublish: {
+            title: 'Hosting guide: create a node and publish a package',
+            summary: 'A source-aligned walkthrough from hosting eligibility and Agent connection to package plans and public sales.',
+            content: `## Understand the three terms
+
+- **Node**: the Incus host you provide. Create it in “My Nodes”; the panel connects to Incus with host credentials while the Agent reports host state.
+- **Package**: the resource and network policy shown to users. It must bind at least one node and defines network mode, instance type, quotas, and public visibility.
+- **Plan**: a purchasable version inside a package. It defines price, billing cycle, CPU, memory, disk, traffic, speed, and sales status. A free package uses its package-level fields directly; a paid package defines these sales versions in the “Plans” tab.
+
+## 1. Check hosting eligibility
+
+In “My Nodes”, click “Add Node”. Normally, a regular user must own at least one instance; free or paid, official or hosted instances all count. If the system has disabled hosting, a user who has created a node before can still pass, while a user who has never created one is denied. Admins bypass this eligibility check, but their node fields are still validated. The create-node API checks eligibility again, so a visible button is not an authorization bypass.
+
+**Common errors:** If the page reports that hosting eligibility is not met or hosting is not yet available, confirm that the account owns at least one instance. If the button is visible but submission is rejected, the backend eligibility check failed.
+
+## 2. Fill in “Add Node”
+
+1. **Node name**: regular users enter a suffix and the panel adds PEER{user ID}-; admins can enter the complete name. It must be 2–64 characters, using only letters, numbers, underscores, and hyphens, and must be unique for that user.
+2. **Description/location and country/region**: location is limited to 100 characters and is used to identify the node.
+3. **Host address and API port**: use an IPv4 address, a raw IPv6 address, or a domain name. The API port defaults to 8443 and must be 1–65535. This is the address used by the panel to connect to Incus, not a service port exposed by an instance.
+4. **Network mode**: choose NAT, NAT + IPv6, NAT + IPv6 NAT, or IPv6 Only according to the host. Routed IPv6 modes require both an IPv6 subnet (including a slash) and an IPv6 parent interface; you may leave both blank initially and fill them in under “Settings” after running the script.
+5. **NAT settings**: for modes other than IPv6 Only, you can provide public and listening IPv4/IPv6 addresses and a port range. An IPv6 value must contain a colon, and the end port cannot be below the start port.
+6. **Resource limits**: the CPU allowance is a total CPU time-slice cap; 0 means no cap. Memory is entered in MB and, when non-zero, must be at least 256 MB. Choose Container, VM, or Both as the supported instance type.
+
+The page lists Ubuntu 22.04+, Debian 11+, Rocky Linux 10, and Alpine Linux 3.20+ as supported operating systems. After creation, use the node detail’s “Storage” tab to create a storage pool.
+
+**Common errors:** Invalid address syntax, only one of the IPv6 subnet/parent interface fields filled, a reversed NAT port range, memory below 256 MB, a duplicate name, or unsupported name characters will be rejected.
+
+## 3. Install and verify the node connection
+
+After creation, the “Install Script” dialog opens. In step 1, “Run Installation Script”, click “Copy Command” and run it on the Incus host as root or as a user with sudo. The script configures the host connection data; the initial host installation session is valid for 24 hours.
+
+After the script finishes, use step 2, “Verify and Connect”. The panel calls Incus resource and version endpoints; on success the node becomes installed and shows “Online”. If the command has expired, open the node details, click “Reinstall”, run the new command, and click “Verify and Connect” again. A node with credentials can use “Test” to check the connection; a node without credentials must be verified first.
+
+**Agent and node connectivity are separate:** In the node detail’s “Info” tab, the “Host Status” card has “Install/Reinstall Agent” and “Copy Command”. Run the one-time Agent command on the host. The Agent command requires an HTTPS panel URL; its token is valid for 30 minutes and can be used once. Reinstalling rotates credentials, so the old Agent can no longer report. “Online”, “Offline”, “Not installed”, and “Disabled” in this card describe the Agent; clicking an outdated version can request an upgrade, delivered on the next heartbeat.
+
+**Common errors:** “Verify and Connect” usually fails because the host address, API port, Incus API, or script configuration is wrong. Agent installation commonly fails when the panel URL is not HTTPS or the one-time token is expired or already used. A node can be “Online” while its Agent is not; a stale heartbeat eventually changes the Agent status to “Offline”.
+
+## 4. Review and manage the node
+
+Open the node from “My Nodes” and confirm the header status is “Online”. Use “Info” for host and Agent reports, “Settings” for address, limits, network, and notifications, and “Storage” for storage pools. A node can also be “Offline” or “Maintenance”; resolve connection and capacity issues before selling it. Only the node owner or an admin can manage it. The node must have no instances before deletion; both the UI precheck and the backend enforce this.
+
+## 5. Create a package in “My Packages”
+
+Click “Create Package” to open the package form. The package is the resource policy, not the node and not an individual plan:
+
+- With **Free Instance Package**, CPU, memory, disk, traffic, network, quotas, I/O, and boot settings come directly from the package; no separate sales plan is required.
+- With **Paid Instance Package**, the package supplies shared network and management settings, while price and sales specifications are created in the “Plans” tab. A package that already has plans cannot be switched back to free mode until all plans are deleted.
+- A package must bind at least one node. Regular users can select only their own nodes; admins can select nodes in the official or hosted scopes available to them. Each binding can specify a system-disk storage pool (blank means automatic) and a traffic multiplier from 0.001 to 100.
+
+Enter a package name (2–64 characters), description (up to 500), network mode, Container or VM, CPU/memory/disk, traffic and port/snapshot/site quotas, I/O and network limits, process count, CPU priority, and boot policy. If public access is enabled, the public package’s maximum instance count must be 1–5. Select a prerequisite package when needed. To appear publicly, the package must also be active and have public access enabled; the detail page provides “Copy Share Link”.
+
+**Common errors:** No bound node, selecting another user’s node, a public maximum outside 1–5, a duplicate or invalid name, a VM paired with an unsupported network mode, or editing as a non-owner will be rejected. Package creation itself requires login and at least one bound node; do not confuse that with the separate eligibility check for creating a hosted node.
+
+## 6. Create and publish a sales plan
+
+In the package detail, open “Plans” and click “Add Plan”. A plan is the price and specification variant inside one package. Set its name, description, price, billing cycle, CPU 15–10000%, memory 128–62144 MB, disk 512–104857600 MB, traffic 1–100000 GB, speed 1–10000 Mbps, plus port, snapshot, swap, site, sort order, and optional SLA limits. A traffic reset can have a separate reset price. Price is capped at 999999.99 with two decimal places. Regular hosted users can select monthly billing only; admins can also use quarterly, half-yearly, or yearly billing. Click “Save”.
+
+Plan status is different from node status:
+
+- **Available**: visible in the package and selectable for a new instance.
+- **Sold out**: still visible, but new instance creation and plan switching are blocked.
+- **Inactive**: hidden from the opening flow and not selectable.
+
+Use “Edit” or “Delete” on a plan card. A plan in use cannot be deleted. Updating plan quotas also checks existing instances, so do not reduce a limit below current usage.
+
+**How to publish or unpublish:** There is no standalone “Publish” button. At package level, both “Active” and public access must remain enabled for the package to be public; a paid package also needs an “Available” plan. To unpublish the package, turn off “Active” or public access. To pause one sales version, switch it to “Sold out” or “Inactive”.
+
+## 7. Final checks and permissions
+
+Confirm the node passed “Verify and Connect”, the Agent keeps heartbeating in “Host Status”, and “Settings”/“Storage” show enough CPU, memory, storage, and traffic headroom. Confirm that the package has a usable node binding, the public settings are intentional, and a paid package has an available plan. Package and plan changes or deletion are limited to the package owner or an admin; node operations are limited to the node owner or an admin. Hidden frontend controls are not permission boundaries: the backend rechecks ownership, limits, package dependencies, and existing instance usage.`
+        },
+        hostingEarnings: {
+            title: 'Hosting earnings: settlement and withdrawals',
+            summary: 'Reconcile income types, frozen and available balances, withdrawals, and refund deductions step by step.',
+            content: `## 1. Confirm where earnings come from
+
+1. Open Hosting Wallet. Hosting income is created only when a non-admin user owns the node and a user opens, renews, or upgrades a paid instance on that node.
+2. In Transactions, income action types are Purchase, Renew, and Upgrade. You may also see Destroy deductions, Withdrawals, and Admin Adjustments. The data categories also include income, unfreeze, withdrawal, and deduction; the current automatic release changes the original income record to Unfrozen instead of creating a separate unfreeze entry. Total income counts income records only; do not treat withdrawals, deductions, or AFF commissions as hosting income.
+3. A purchase credits the actual amount charged; a renewal credits the final amount after any discount; an upgrade credits only the additional price difference.
+
+## 2. Read balances and the freeze
+
+1. Available Balance is the hosting balance that can be withdrawn. Frozen is the total of income records that have not been released; frozen income is not included in Available Balance.
+2. Each purchase, renewal, or upgrade income record is frozen when created. Its release time is calculated as “now + 1 month”; the page describes this as 30 days. The server runs the release job at the start of every hour and also runs a catch-up pass about 5 seconds after startup. Once a record becomes Unfrozen, its amount enters Available Balance.
+3. The transaction list shows action type, amount, frozen status, buyer, instance, host, and time. The API data also includes the release time, related ID, and remark; if an instance was deleted, saved snapshot names and other context are used instead.
+
+## 3. Withdraw to panel balance
+
+1. Confirm that Available Balance is at least the current minimum withdrawal amount: **¥10**. The button is disabled below the threshold, and a smaller submission returns “Minimum withdrawal is ¥10”.
+2. Click Request Withdrawal and enter only the Withdrawal Amount. The current self-service endpoint supports only the Panel Balance target, so the form has no target selector. The amount cannot exceed Available Balance; otherwise the request fails with an insufficient hosting balance error.
+3. Review the amount, fee, and actual amount. The panel-balance fee is **5%**. The fee is calculated as 5% of the requested amount and rounded to two decimal places; Actual Amount equals the requested amount minus that fee.
+4. Click Confirm Withdrawal. The requested amount is deducted from Available Balance, Actual Amount is added to panel balance, and a negative Withdrawal transaction is recorded. This self-service flow completes in one transaction: a successful record is created with Completed status and a processing time, so it does not wait for manual review.
+5. For the other specified method mentioned on the page, follow the ticket instructions. The page copy states a **10%** fee for that method, and the self-service form cannot select it. Withdrawal records contain amount, actual amount, target, status, request time, and an optional rejection reason shown below the status. The status vocabulary is Pending, Approved, Rejected, or Completed; the current self-service panel-balance route creates Completed records directly.
+
+## 4. How refunds, destruction, and failed provisioning affect earnings
+
+1. If a user destroys a paid hosted instance, or a node owner deletes another user’s paid instance and a refund is due, the hosting balance is deducted by the actual refund amount. Any destruction fee taken from the buyer’s refund is not added again to the hosting deduction.
+2. The deduction order is: remove or reduce the instance’s related frozen income first, then deduct Available Balance, and finally use the node owner’s panel balance if the hosting balance is insufficient. A negative Destroy deduction record is created, so a refund can reduce frozen income, available hosting balance, and even panel balance.
+3. If provisioning fails and an automatic full refund is issued, the recorded hosting income is deducted in the same settlement. If the actual refund is zero, no hosting deduction is created.
+
+## 5. Troubleshooting
+
+- Minimum amount error: raise the amount to at least ¥10.
+- Insufficient available balance: only available income can be withdrawn; frozen income must be released first.
+- “Hosting balance is being processed, please try again later”: wait for the previous release, deduction, or withdrawal transaction to finish; the withdrawal endpoint accepts at most 5 requests per minute.
+- If the withdrawal succeeds but the page is stale, refresh Hosting Wallet and reconcile Available Balance, panel balance, and both transaction lists.`
+        },
+        billingBasics: {
+            title: 'Billing and renewals',
+            summary: 'Follow the steps for top-ups, provisioning, renewals, upgrades, and destroy refunds.',
+            content: `## 1. Top up your panel balance
+
+1. Sign in, open “Wallet”, and click “Recharge”.
+2. Under “Payment Channel”, choose a channel currently shown on the page. If it offers multiple choices, select one under “Select Payment Method”. If the currency and network are selected on the payment page, follow that page (the Heleket type lets you choose there).
+3. For a normal top-up, click ¥10, ¥50, ¥100, or ¥200, or enter a custom amount; use the displayed amount range. If a fee is shown, check “Amount Due” and “Credited” before checking the no-original-refund notice, recharge notice, and Terms of Service, then click “Pay Now”.
+4. A channel with a payment URL opens its payment page. After paying, return to “Recharge Records” in Wallet; the page verifies the order, and only “Completed” means the balance is credited. If it remains “Pending”, wait and refresh. For an amount mismatch, failure, or cancellation, follow the order’s message.
+5. For “Manual Recharge”, read the channel instructions, enter payment details such as the payment method, transaction number, or payment time under “Payment Details / Transaction Information”, and create the order; this type has no normal Pay button. For “Recharge Card”, enter the card number and password and click “Redeem Card”; the balance is credited directly, with no amount field.
+
+An unexpired “Pending” record normally has “Pay” to obtain a payment URL again and “Void” to cancel it. An expired order cannot be repaid; create a new one. Recharges cannot be refunded to the original payment method. Instance-destroy refunds are separate and go back to panel balance.
+
+## 2. Provision a paid instance
+
+1. Open “Market”, choose a region, then choose a product and an available plan. Confirm the plan cycle, resources, and price, then click “Provision now”. If you are signed out, sign in and continue to the create flow.
+2. On the create page, enter the instance name and choose the host, image, and SSH key. A paid plan supplies fixed CPU, memory, and disk values. If available, enter an AFF promo code and wait for the page to validate it.
+3. In “Order Summary”, check the plan fee, discount, and final price, then click “Create”. The backend deducts the actual price from panel balance once and creates the billing record; if the balance is insufficient, provisioning does not start, so top up in Wallet first.
+4. After creation, the instance may show “creating”, which means deployment is still running; wait for the list or details page to update. If deployment fails, the failed-provision flow returns the amount already charged. Retrying charges the previous paid amount again.
+
+## 3. Manual and automatic renewal
+
+1. From the “Instances” list, open the instance details and click “Renew” in the billing card. Free instances do not need renewal.
+2. Select one of the displayed renewal periods. Check the original price (if shown), AFF discount, amount due, new expiry date, current balance, and balance after renewal, then confirm. The fee is deducted from panel balance; if it is insufficient, click “Go to Recharge”, top up, and reopen the renewal window.
+3. Hosted instances support monthly renewal only, and only during the 7 days before expiry; the dialog prevents submission when it is too early or another period is selected. A paid instance suspended because it expired returns to stopped after successful renewal; a manually suspended instance cannot be renewed by the user.
+4. To let the system renew automatically, click “Auto Renew” in the billing card and then “Enable Auto-renew”. The system deducts the original billing-cycle amount 24 hours before expiry; keep enough balance available. Insufficient balance generates a notification and a failed record, and repeated unsuccessful attempts may disable auto-renew.
+
+If renewal still has not succeeded at expiry, the system suspends the instance; an instance suspended for expiry for more than 3 days is automatically deleted by the scheduler. This is not the manual destroy-refund flow.
+
+## 4. Upgrade a plan
+
+1. In a paid instance’s details, click “Change Plan” and choose a higher plan shown for the same package. Free instances, inactive plans, and sold-out plans cannot be changed, and downgrades are not supported.
+2. After selecting a plan, wait for the preview and check remaining days, old and new daily rates, remaining value, new-plan cost, discount, price difference to pay, new expiry date, and new configuration. An upgrade requires at least 15 days remaining and the instance must be running or stopped; the expiry date does not change.
+3. Confirm that panel balance covers the difference, then click “Upgrade”. Only the difference is deducted. If the balance is insufficient, click “Go to Recharge”, top up, and preview again. LXC configuration is normally applied immediately; KVM requires a restart, so follow any restart prompt shown.
+
+## 5. Destroy and refund
+
+1. Back up anything you need, then click “Destroy” in the instance details. The dialog loads a preview; expand “Destroy Rules” and check the instance name, remaining days, remaining value, fee, refund amount, and refund cap.
+2. A paid instance cannot be destroyed when its current monthly traffic-cycle usage is 5G or more (the backend decides the exception for an expired-suspended instance that meets its conditions). The first paid-instance destroy is fee-free; later destroys charge 10% of the refundable value. A free instance can be destroyed but has no refund and does not count toward paid destroy history.
+3. When everything is correct, type the exact instance name requested in the input and click the destroy confirmation. This permanently removes the instance, snapshots, backups, port mappings, and related data. The paid refund is returned to panel balance according to the preview; it is not sent back to the original payment method.
+
+## 6. If a top-up or deduction looks wrong
+
+- Provisioning, renewal, and upgrade all use panel balance. When “Insufficient balance” appears, top up first instead of repeatedly clicking the deduction button.
+- If a top-up still shows “Pending”, check its order number and status in “Recharge Records”; the payment callback may not have arrived. For “Payment amount does not match” or “Failed”, keep the order number and payment details when contacting an administrator.
+- In “Recharge Records”, reconcile Amount Due, Credited, channel, status, and completion time. Then use balance logs to check the debit or credit for provisioning, renewal, upgrade, or refund.`
+        },
+        commonIssues: {
+            title: 'Common issues and troubleshooting',
+            summary: 'Follow the instance, Agent, network, task, and billing states to locate the issue step by step.',
+            content: `## 1. Check the instance and provisioning state first
+
+1. Open the “Instances” list. \`creating\` means provisioning is still in progress; wait for the list state to update or re-enter the list, and do not create a duplicate instance.
+2. If the state is \`error\`, click “Retry”. Only a failed creation can be retried. If the message says the host is unavailable or the balance is insufficient, use the “Agent / host” or “Balance and expiry” section. The detail page also provides “Retry”; click “Destroy now” only when you no longer need the failed instance.
+3. If the detail page shows a \`PENDING\` or \`PROCESSING\` task, record its type, progress, error, and queue position first. Use “Release stuck task” only when that button is shown and you have confirmed that the original host operation has stopped; for regular users, the task must be older than 15 minutes. This only releases the task lock; it does not delete or modify the instance.
+4. If the create page has no available host or image, confirm the selected package, region, resources, and SSH public key. If you have no SSH public key, add one in “Profile” and return to the create page.
+
+## 2. Agent or host offline
+
+1. Open “Resources” → “My hosts”, then the “Info” tab. The host and Agent cards show whether the Agent is installed or disabled, \`online\`／\`offline\`／\`unknown\`, the last report, heartbeat IP, Incus state, and version.
+2. Click “Refresh” on the Agent card. If it is not installed, click “Install/Reinstall Agent” and copy the command generated by the page; when reinstalling is needed, click the same button to generate a new command.
+3. After the host is set up, use the page’s “Verify & Connect” or “Test Connection” action. Request an Agent upgrade only when the Agent is online and its version is outdated; restore the heartbeat first when it is offline.
+
+## 3. SSH or terminal cannot connect
+
+1. The detail-page “Terminal” is available only while the instance is \`running\`; if it is \`stopped\`, click “Start”. If the Cloud-init prompt says initialization is incomplete, click “Retry”. When the state is \`unknown\` or \`agent_unavailable\` and the page permits it, click “Mark Complete”, or click “Ignore and connect” in the terminal prompt.
+2. If the terminal shows \`disconnected\` or \`error\`, click “Reconnect”. While connecting, it shows \`connecting\`／\`reconnecting\`; check the final state and error text.
+3. For IPv4, open the “Network” tab and add a mapping for private port \`22\`, then connect with the public IPv4 address and mapped public port. In \`nat_ipv6\` mode, connect directly to the public IPv6 address on port \`22\` without a mapping.
+4. The “Info” tab shows the SSH port. The root password must be fetched with “Show” before it can be copied with “Copy”.
+
+## 4. Port-mapping conflicts
+
+1. In the detail page’s “Network” tab, check the network mode, port quota, and existing mappings. Only NAT modes can add mappings; IPv6-only instances do not need them; a host owner viewing an instance cannot manage its mappings.
+2. When adding a mapping, \`PORT_IN_USE\` means the public port is already used, \`PORT_RANGE_INVALID\` means it is outside the host range, and \`PORT_NO_AVAILABLE\` means no port is available. Adjust the public port or address the quota according to the message. If a batch request returns \`PORT_CONFLICT\`, review the suggested ports in the conflict dialog and submit the suggested resolution.
+3. If the quota is full, select mappings in the list and click “Delete”, or use batch delete, before adding the required mapping.
+
+## 5. Snapshots, backups, and queued tasks
+
+1. In “Snapshots”, creating a snapshot requires a name and remaining snapshot quota; stop the instance before restoring a snapshot. Automatic snapshots offer only 10 minutes, 1 hour, 6 hours, or 24 hours; enable the policy and save it from the policy control.
+2. If the page shows backup management, creating a backup also requires a name and backup quota. A backup must be \`ready\` before it can be exported, uploaded, or restored. Select remote storage before uploading; if none is configured, use the page’s “Go to settings” action.
+3. Backup restore displays \`PENDING\`／\`PROCESSING\`, queue position, duration, and error. Do not submit another restore while the instance already has one. When a \`FAILED\` task provides “Rollback”, save the error text first and then click it; for export or upload failures, use the displayed task state and error.
+
+## 6. Balance, package, and expiry
+
+1. Check the package, expiry time, remaining days, and auto-renew status in the instance list or detail page. For a paid instance, click “Renew” on the detail page; the dialog loads available periods, prices, and balance. Select one of the offered periods and submit. Do not resubmit when the balance is insufficient or no option is available.
+2. Open “Auto-renew” on the detail page and use the dialog’s “Enable” or “Disable” action. Hosted instances expose renewal options only within the pre-expiry window returned by billing; if the page shows a reason that renewal is unavailable, follow that reason.
+3. When the instance is \`suspended\` or suspended for expiry, many instance actions are disabled. Check the expiry time and suspension reason, renew if applicable, and reload the detail page. If it still cannot be restored, open a ticket with the state and reason.
+
+## 7. Hosted after-sales support and ticket details
+
+1. Create a ticket from “Tickets”. For a hosted instance, select the exact instance in the “Instance” field; the ticket is then routed to the node owner. Do not invent an instance for a general issue; a ticket without an instance follows the administrator notification path.
+2. Fill in the subject (2–200 characters), category, priority, and content. Without image attachments, content must be at least 10 characters and may be up to 5,000. “Add Images” accepts up to 6 JPG, PNG, WebP, GIF, or AVIF images, up to 50 MB each.
+3. Include the instance ID/name, host or node, current state, complete error text, time, and reproduction steps. If shown on screen, also include the task ID/type/progress/queue position, network mode, protocol, public-to-private mapping, and SSH port.
+4. After creation, ticket details show the ticket ID, state, category, priority, host, and instance; closed tickets cannot receive replies. Never paste an SSH private key, password, or Agent secret into the content or attachments.`
+        },
         categories: {
             general: 'General',
             gettingStarted: 'Getting Started',
             instances: 'Instances',
             networking: 'Networking',
+            hosting: 'Hosting',
             billing: 'Billing',
             faq: 'FAQ',
         },
@@ -4960,6 +5474,10 @@ export default {
         INVALID_INVITE_CODE: 'Invalid or used invite code',
         INVITE_CODE_EXPIRED: 'Invite code has expired',
         INVALID_2FA_CODE: 'Invalid verification code or recovery code',
+        AGENT_HTTPS_REQUIRED: 'The Agent installation URL must use HTTPS',
+        INVALID_AGENT_BINARY: 'Invalid Agent binary',
+        INVALID_AGENT_BINARY_NAME: 'Invalid Agent binary name',
+        INSTANCE_STATE_CHANGED: 'The instance state changed; please refresh and try again',
         TWO_FA_REQUIRED: 'Two-factor authentication required',
         TWO_FA_ALREADY_ENABLED: '2FA is already enabled, please disable it first',
         TWO_FA_NOT_ENABLED: '2FA is not enabled',
@@ -5999,6 +6517,14 @@ export default {
             giftSuccess: 'Instance has been created for {username}',
             userInactive: 'This user is not active',
             cannotGiftToSelf: 'Use the self-create mode if you want to create an instance for yourself',
+            forceGenerateSshKeyTitle: 'Target user has no SSH key',
+            forceGenerateSshKeyDesc: 'Force the system to generate an SSH key for this user and continue the gift? The private key is shown only once; save it and give it to the user.',
+            forceGenerateSshKeyConfirm: 'Force generate and continue',
+            forceGenerateSshKeyCancel: 'Cancel gift',
+            forceGenerateSshKeyGenerating: 'Generating SSH key...',
+            generatedPrivateKeyTitle: 'System-generated SSH private key',
+            generatedPrivateKeyDesc: 'Safely give this private key to the target user and remind them to save it securely.',
+            generatedPrivateKeyClose: 'Close',
         },
         // Host owner notifies instance users
         notify: {

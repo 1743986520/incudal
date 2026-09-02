@@ -10,11 +10,11 @@ import { prisma } from '../db/prisma.js'
 import { createLog } from '../db/logs.js'
 import type { UpdateUserRequest } from '../types/api.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
-import { containsDangerousChars, revokeAllUserRefreshTokens, getUserSessions, logAdminAction, validatePassword, invalidateUserAccessTokens } from '../lib/security.js'
+import { containsDangerousChars, revokeAllUserRefreshTokens, getUserSessions, logAdminAction, validatePassword, invalidateUserAccessTokens, updateUserPasswordAndInvalidateSessions } from '../lib/security.js'
 import { clearAuthCache } from '../plugins/auth-decorators.js'
 import {
     isOperationVerified,
-    consumeOperationVerification
+    claimOperationVerification
 } from '../lib/operation-verification.js'
 import { isSmtpEnabled, sendAdminCreatedUserEmail, sendBanNotificationEmail, sendVerificationEmail } from '../lib/mailer.js'
 import { sendNotification } from '../lib/notifier.js'
@@ -531,6 +531,10 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.USER_NOT_FOUND))
     }
 
+    const sshKeyCount = await prisma.sshKey.count({
+      where: { userId: user.id }
+    })
+
     return {
       user: {
         id: user.id,
@@ -538,7 +542,8 @@ export default async function userRoutes(fastify: FastifyInstance) {
         email: user.email,
         role: user.role,
         status: user.status,
-        balance: Number(user.balance)  // 返回余额（元），用于管理员创建付费实例时检查
+        balance: Number(user.balance),  // 返回余额（元），用于管理员创建付费实例时检查
+        hasSshKey: sshKeyCount > 0
       }
     }
   })
@@ -723,11 +728,16 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
 
     const { email, password, avatarStyle, currentPassword, emailCode } = request.body
+    const isChangingPassword = request.user.id === userId && Boolean(password)
+    const isChangingEmail = request.user.id === userId
+      && email !== undefined
+      && email !== user.email
+      && Boolean(user.email)
 
     // 敏感操作二次验证：修改密码或邮箱时需要验证（管理员修改他人时跳过）
     if (request.user.id === userId) {
       // 修改密码需要验证当前密码和二次验证
-      if (password) {
+      if (isChangingPassword) {
         // 验证当前密码（防止会话劫持）
         if (!currentPassword) {
           return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'Current password is required'))
@@ -750,7 +760,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       }
       // 修改邮箱需要二次验证
       if (email !== undefined && email !== user.email) {
-        if (user.email) {
+        if (isChangingEmail) {
           const verified = await isOperationVerified(request.user.id, 'change_email')
           if (!verified) {
             return reply.code(403).send({
@@ -800,11 +810,41 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
 
     if (Object.keys(updates).length > 0) {
-      await db.updateUser(userId, updates)
+      // 在真正修改前原子领取验证记录，避免并发请求复用同一份二次验证。
+      if (isChangingPassword) {
+        const claimed = await claimOperationVerification(request.user.id, 'change_password')
+        if (!claimed) {
+          return reply.code(403).send({
+            error: 'Sensitive operation requires verification',
+            code: 'VERIFICATION_REQUIRED',
+            operationType: 'change_password'
+          })
+        }
+      }
+      if (isChangingEmail) {
+        const claimed = await claimOperationVerification(request.user.id, 'change_email')
+        if (!claimed) {
+          return reply.code(403).send({
+            error: 'Sensitive operation requires verification',
+            code: 'VERIFICATION_REQUIRED',
+            operationType: 'change_email'
+          })
+        }
+      }
 
       if (password) {
-        await revokeAllUserRefreshTokens(userId)
-        await invalidateUserAccessTokens(userId)
+        // 密码、资料变更、Refresh Token 撤销和 Access Token 失效标记原子完成。
+        // 失效标记写入失败时事务回滚，旧 Access Token 不会留在可用状态。
+        await updateUserPasswordAndInvalidateSessions(userId, {
+          passwordHash: updates.passwordHash!,
+          ...(updates.email !== undefined ? { email: updates.email } : {}),
+          ...(updates.avatarStyle !== undefined ? { avatarStyle: updates.avatarStyle } : {})
+        })
+      } else {
+        await db.updateUser(userId, updates)
+      }
+
+      if (password) {
         closeUserSessions(userId, 'Password updated')
         // 清除认证缓存，确保令牌失效立即生效
         clearAuthCache(userId)
@@ -823,19 +863,13 @@ export default async function userRoutes(fastify: FastifyInstance) {
         'success'
       )
 
-      // 清理已使用的验证记录
+      // 密码/邮箱验证记录已在实际修改前原子领取。
       if (request.user.id === userId) {
         if (password) {
-          await consumeOperationVerification(request.user.id, 'change_password')
           // 发送密码修改通知
           await sendNotification(userId, 'password_changed', {
             instanceName: ''
           })
-        }
-        if (email !== undefined && email !== user.email) {
-          if (user.email) {
-            await consumeOperationVerification(request.user.id, 'change_email')
-          }
         }
       }
     }
@@ -1406,11 +1440,9 @@ export default async function userRoutes(fastify: FastifyInstance) {
     const newPassword = generateRandomPassword(12)
 
     const passwordHash = await bcrypt.hash(newPassword, 12)
-    await db.updateUser(userId, { passwordHash })
+    // 原子更新密码并撤销所有会话；任一步骤失败都会回滚密码更新。
+    await updateUserPasswordAndInvalidateSessions(userId, { passwordHash })
 
-    // 撤销用户所有会话，强制重新登录
-    await revokeAllUserRefreshTokens(userId)
-    await invalidateUserAccessTokens(userId)
     closeUserSessions(userId, 'Password reset by admin')
     // 清除认证缓存，确保令牌失效立即生效
     clearAuthCache(userId)
@@ -1913,4 +1945,3 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   })
 }
-

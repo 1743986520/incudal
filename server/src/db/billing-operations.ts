@@ -26,6 +26,7 @@ import {
   advisoryTransactionLock,
   tryAdvisoryTransactionLock
 } from './advisory-locks.js'
+import { decrementHostResourceCounters } from './quota-operations.js'
 
 // ==================== 类型定义 ====================
 
@@ -203,6 +204,43 @@ export interface FailedProvisionSettlementResult {
   refundAmount: number
 }
 
+export interface FailedProvisionResourceRollback {
+  hostId: number
+  cpu: number
+  memory: number
+  disk: number
+  portCount?: number
+}
+
+/**
+ * Atomically marks a retrying provision as failed and releases its reservation.
+ *
+ * Retry failures do not create a new charge, so they must not reuse the refund
+ * path above. Keeping the status claim and resource release in one transaction
+ * also prevents the timeout worker from releasing the same reservation twice.
+ */
+export async function failCreatingInstanceAndRollbackResources(
+  instanceId: number,
+  resourceRollback?: FailedProvisionResourceRollback
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const claimed = await tx.instance.updateMany({
+      where: { id: instanceId, status: 'creating' },
+      data: { status: 'error' }
+    })
+
+    if (claimed.count === 0) return false
+
+    if (resourceRollback) {
+      await decrementHostResourceCounters(tx, resourceRollback)
+    }
+
+    return true
+  })
+}
+
 /**
  * Atomically marks a creating instance as failed and fully reverses its charge.
  *
@@ -212,7 +250,8 @@ export interface FailedProvisionSettlementResult {
  */
 export async function failCreatingInstanceAndRefund(
   instanceId: number,
-  reason: string
+  reason: string,
+  resourceRollback?: FailedProvisionResourceRollback
 ): Promise<FailedProvisionSettlementResult> {
   return prisma.$transaction(async (tx) => {
     await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
@@ -238,6 +277,10 @@ export async function failCreatingInstanceAndRefund(
 
     if (!instance) {
       throw new Error(`Instance ${instanceId} disappeared during failed provision settlement`)
+    }
+
+    if (resourceRollback) {
+      await decrementHostResourceCounters(tx, resourceRollback)
     }
 
     const billingRecords = await tx.instanceBillingRecord.findMany({
@@ -659,9 +702,15 @@ export async function performRenewal(
     throw new Error('续费月数必须在 1-24 之间')
   }
 
-  // 手动封停的实例不允许续费
-  if (instance.status === 'suspended' && instance.suspendReason !== 'expired') {
-    throw new Error('实例已被手动封停，请联系宿主机所有者解封后再续费')
+  const isExpiredSuspension = instance.status === 'suspended' && instance.suspendReason === 'expired'
+  const isRenewableStatus = instance.status === 'running' || instance.status === 'stopped' || isExpiredSuspension
+
+  // 只有已完成开通的实例，或因到期被系统封停的实例，才允许续费。
+  if (!isRenewableStatus) {
+    if (instance.status === 'suspended') {
+      throw new Error('实例已被手动封停，请联系宿主机所有者解封后再续费')
+    }
+    throw new Error('当前实例状态不允许续费')
   }
 
   const { amount: originalAmount, newExpiresAt } = calculateRenewBilling(instance, months)
@@ -681,6 +730,20 @@ export async function performRenewal(
 
   // 执行事务（带乐观锁）
   const result = await prisma.$transaction(async (tx) => {
+    // 与到期封停/删除共用实例锁，避免外部资源操作使用过期快照。
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instance.id)
+
+    const currentInstance = await tx.instance.findUnique({
+      where: { id: instance.id },
+      select: { status: true, suspendReason: true, version: true }
+    })
+
+    const currentIsExpiredSuspension = currentInstance?.status === 'suspended' && currentInstance.suspendReason === 'expired'
+    const currentIsRenewable = currentInstance?.status === 'running' || currentInstance?.status === 'stopped' || currentIsExpiredSuspension
+    if (!currentInstance || currentInstance.version !== instance.version || !currentIsRenewable) {
+      throw new Error('实例状态已变更，请重试')
+    }
+
     // 获取用户当前余额
     const user = await tx.user.findUnique({
       where: { id: userId },
@@ -715,14 +778,19 @@ export async function performRenewal(
     const instanceUpdateResult = await tx.instance.updateMany({
       where: {
         id: instance.id,
-        version: instance.version  // 确保版本号未变
+        version: instance.version,  // 确保版本号未变
+        OR: [
+          { status: 'running' },
+          { status: 'stopped' },
+          { status: 'suspended', suspendReason: 'expired' }
+        ]
       },
       data: {
         expiresAt: newExpiresAt,
         autoRenewAttempts: 0,
         version: { increment: 1 },  // 增加版本号
         // 如果因到期被封停，续费后解除封停（恢复为 stopped）
-        ...(instance.status === 'suspended' && instance.suspendReason === 'expired' ? {
+        ...(currentIsExpiredSuspension ? {
           status: 'stopped',
           suspendedAt: null,
           suspendedBy: null,
@@ -1532,41 +1600,65 @@ export async function deductHostingBalance(
       const deductFromAvailable = Math.min(availableHostingBalance, remainingToDeduct)
 
       if (deductFromAvailable > 0) {
-        await client.user.update({
-          where: { id: hostOwnerId },
+        const availableUpdate = await client.user.updateMany({
+          where: {
+            id: hostOwnerId,
+            hostingBalance: { gte: deductFromAvailable }
+          },
           data: { hostingBalance: { decrement: deductFromAvailable } }
         })
 
-        fromAvailable = deductFromAvailable
-        remainingToDeduct -= deductFromAvailable
+        if (availableUpdate.count === 1) {
+          fromAvailable = deductFromAvailable
+          remainingToDeduct -= deductFromAvailable
+        }
       }
 
       // 第三步：如果托管余额仍不足，从面板余额扣除
       if (remainingToDeduct > 0) {
-        const availableBalance = Number(user?.balance || 0)
+        const currentUser = await client.user.findUnique({
+          where: { id: hostOwnerId },
+          select: { balance: true }
+        })
+        const availableBalance = Number(currentUser?.balance || 0)
         const deductFromBalance = Math.min(availableBalance, remainingToDeduct)
 
         if (deductFromBalance > 0) {
-          await client.user.update({
-            where: { id: hostOwnerId },
+          const balanceUpdate = await client.user.updateMany({
+            where: {
+              id: hostOwnerId,
+              balance: { gte: deductFromBalance }
+            },
             data: { balance: { decrement: deductFromBalance } }
           })
 
-          // 记录面板余额变动日志
-          await client.balanceLog.create({
-            data: {
-              userId: hostOwnerId,
-              type: 'hosting_deduction',
-              amount: -deductFromBalance,
-              balanceBefore: availableBalance,
-              balanceAfter: availableBalance - deductFromBalance,
-              instanceId,
-              remark: `托管实例销毁扣款：用户退款需从面板余额补扣`
-            }
-          })
+          if (balanceUpdate.count !== 1) {
+            // 余额已被并发支出，保留未扣部分，不得将余额扣成负数。
+            console.warn(`[HostingBalance] 面板余额并发变化，跳过本次补扣: hostOwnerId=${hostOwnerId}, instanceId=${instanceId}`)
+          } else {
+            const updatedUser = await client.user.findUnique({
+              where: { id: hostOwnerId },
+              select: { balance: true }
+            })
+            const balanceAfter = Number(updatedUser?.balance || 0)
+            const balanceBefore = Number((balanceAfter + deductFromBalance).toFixed(2))
 
-          fromBalance = deductFromBalance
-          remainingToDeduct -= deductFromBalance
+            // 记录面板余额变动日志
+            await client.balanceLog.create({
+              data: {
+                userId: hostOwnerId,
+                type: 'hosting_deduction',
+                amount: -deductFromBalance,
+                balanceBefore,
+                balanceAfter,
+                instanceId,
+                remark: `托管实例销毁扣款：用户退款需从面板余额补扣`
+              }
+            })
+
+            fromBalance = deductFromBalance
+            remainingToDeduct -= deductFromBalance
+          }
         }
       }
     }

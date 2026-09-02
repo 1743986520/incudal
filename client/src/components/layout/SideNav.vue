@@ -92,6 +92,7 @@ const adminOnlyMenuItems: MenuItem[] = [
   { name: 'tickets', path: '/tickets', icon: 'ticket', label: 'nav.tickets' },
   { name: 'admin-billing', path: '/admin/billing', icon: 'wallet', label: 'nav.billing' },
   { name: 'admin-broadcast', path: '/admin/broadcast', icon: 'bell', label: 'nav.broadcast' },
+  { name: 'admin-update', path: '/admin/update', icon: 'refresh', label: 'nav.updates' },
   { name: 'admin-logs', path: '/logs', icon: 'logs', label: 'nav.logs' },
   { name: 'admin-help', path: '/admin/help', icon: 'book', label: 'nav.helpManage' },
   { name: 'admin-entertainment', path: '/admin/entertainment', icon: 'gift', label: 'nav.entertainment' },
@@ -288,6 +289,10 @@ function handleLinkClick() {
             <path
               v-else-if="item.icon === 'transfer'" stroke-linecap="round" stroke-linejoin="round" 
               d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"
+            />
+            <path
+              v-else-if="item.icon === 'refresh'" stroke-linecap="round" stroke-linejoin="round"
+              d="M20.25 12a8.25 8.25 0 01-14.868 4.968M3.75 12A8.25 8.25 0 0118.618 7.032M3.75 16.5v-4.5h4.5m12-4.5v4.5h-4.5"
             />
             <path
               v-else-if="item.icon === 'terminal'" stroke-linecap="round" stroke-linejoin="round" 

@@ -16,6 +16,8 @@ import ResourceSliders from '@/components/instance/ResourceSliders.vue'
 import ImageSelector from '@/components/instance/ImageSelector.vue'
 import SSHKeySelector from '@/components/instance/SSHKeySelector.vue'
 import InitCommandSelector from '@/components/extensions/InitCommandSelector.vue'
+import SSHKeyGenerationPromptModal from '@/components/SSHKeyGenerationPromptModal.vue'
+import GeneratedSshKeyModal from '@/components/GeneratedSshKeyModal.vue'
 import type { Package, SshKey, UserQuota } from '@/types/api'
 import { validateName as validateInstanceName } from '@/utils/validation'
 import { translateError } from '@/utils/errorHandler'
@@ -81,6 +83,13 @@ const loading = ref(true)
 const imagesLoading = ref(false)
 const plansLoading = ref(false)
 const submitting = ref(false)
+const showSshKeyGenerationPrompt = ref(false)
+const sshKeyGenerating = ref(false)
+const showGeneratedSshKeyModal = ref(false)
+const generatedPrivateKey = ref('')
+const generatedKeyTargetUsername = ref('')
+const generatedKeyContinuation = ref<'self' | 'none'>('none')
+const sshKeyGenerationContext = ref<'self' | 'gift' | null>(null)
 
 const createMode = ref<CreateMode>(isAdmin.value ? 'gift' : 'self')
 const giftInstanceType = ref<GiftInstanceType>('free')
@@ -88,7 +97,9 @@ const giftDays = ref(30)
 
 const targetUsername = ref('')
 const targetLookupState = ref<TargetLookupState>('idle')
-const targetUser = ref<{ id: number; username: string } | null>(null)
+const targetUser = ref<{ id: number; username: string; hasSshKey: boolean } | null>(null)
+const targetLookupUsername = ref('')
+let targetLookupRequestSeq = 0
 
 const form = ref({
   name: '',
@@ -150,12 +161,15 @@ const canSubmitSelf = computed(() => {
     form.value.name.trim().length >= 2 &&
     form.value.packageId !== null &&
     !!form.value.image &&
-    form.value.sshKeyId !== null
+    (sshKeys.value.length === 0 || form.value.sshKeyId !== null)
   )
 })
 
 const canSubmitGift = computed(() => {
-  const hasTarget = targetLookupState.value === 'found' && targetUser.value !== null
+  const normalizedUsername = targetUsername.value.trim()
+  const hasTarget = ['found', 'no_ssh'].includes(targetLookupState.value)
+    && targetLookupUsername.value === normalizedUsername
+    && targetUser.value?.username === normalizedUsername
   const hasPlan = !isGiftPaid.value || (selectedPlanId.value !== null && !!selectedPlan.value && !selectedPlan.value.isSoldOut)
   return (
     form.value.name.trim().length >= 2 &&
@@ -298,6 +312,8 @@ async function loadData(): Promise<void> {
 
 async function checkTargetUser(): Promise<void> {
   const username = targetUsername.value.trim()
+  const requestSeq = ++targetLookupRequestSeq
+  targetLookupUsername.value = username
   if (!username) {
     targetLookupState.value = 'idle'
     targetUser.value = null
@@ -307,6 +323,8 @@ async function checkTargetUser(): Promise<void> {
   targetLookupState.value = 'checking'
   try {
     const res = await api.hosts.lookupGiftTargetUser(props.hostId, username)
+    if (requestSeq !== targetLookupRequestSeq || targetUsername.value.trim() !== username) return
+
     if (res.user.id === currentUserId.value && !isAdmin.value) {
       targetLookupState.value = 'self'
       targetUser.value = null
@@ -319,22 +337,28 @@ async function checkTargetUser(): Promise<void> {
       return
     }
 
-    if (!res.user.hasSshKey) {
-      targetLookupState.value = 'no_ssh'
-      targetUser.value = null
-      return
-    }
-
-    targetLookupState.value = 'found'
     targetUser.value = {
       id: res.user.id,
-      username: res.user.username
+      username: res.user.username,
+      hasSshKey: res.user.hasSshKey
     }
+    targetLookupState.value = res.user.hasSshKey ? 'found' : 'no_ssh'
   } catch {
+    if (requestSeq !== targetLookupRequestSeq || targetUsername.value.trim() !== username) return
     targetLookupState.value = 'not_found'
     targetUser.value = null
   }
 }
+
+watch(targetUsername, (value) => {
+  const normalizedUsername = value.trim()
+  if (normalizedUsername === targetLookupUsername.value) return
+
+  targetLookupRequestSeq += 1
+  targetLookupUsername.value = ''
+  targetLookupState.value = 'idle'
+  targetUser.value = null
+})
 
 const targetLookupMessage = computed(() => {
   switch (targetLookupState.value) {
@@ -354,7 +378,9 @@ const targetLookupMessage = computed(() => {
 })
 
 const targetLookupClass = computed(() => {
-  return targetLookupState.value === 'found' ? 'text-green-500' : 'text-red-500'
+  if (targetLookupState.value === 'found') return 'text-green-500'
+  if (targetLookupState.value === 'no_ssh') return 'text-amber-500'
+  return 'text-red-500'
 })
 
 watch(() => form.value.memory, (newMemory, oldMemory) => {
@@ -389,23 +415,23 @@ onMounted(async () => {
   await loadData()
 })
 
-async function handleSelfSubmit(): Promise<void> {
-  if (!canSubmitSelf.value) return
+async function handleSelfSubmit(): Promise<boolean> {
+  if (!canSubmitSelf.value) return false
 
   const nameValidation = validateInstanceName(form.value.name, t('instance.name'), 2, 64)
   if (!nameValidation.valid) {
     toast.error(nameValidation.message || t('common.error'))
-    return
+    return false
   }
 
   if (form.value.packageId === null) {
     toast.error(t('instance.createPage.selectPackage'))
-    return
+    return false
   }
 
   if (form.value.sshKeyId === null) {
     toast.error(t('instance.createPage.selectSshKey'))
-    return
+    return false
   }
 
   const result = await api.instances.create({
@@ -425,10 +451,14 @@ async function handleSelfSubmit(): Promise<void> {
   if (result?.id) {
     router.push(`/instances/${result.id}`)
   }
+
+  return true
 }
 
-async function handleGiftSubmit(): Promise<void> {
-  if (!canSubmitGift.value || !targetUser.value || form.value.packageId === null) return
+async function handleGiftSubmit(forceGenerateSshKey = false): Promise<void> {
+  const normalizedUsername = targetUsername.value.trim()
+  if (!canSubmitGift.value || targetLookupState.value === 'checking' || !targetUser.value
+      || targetUser.value.username !== normalizedUsername || form.value.packageId === null) return
 
   const nameValidation = validateInstanceName(form.value.name, t('instance.name'), 2, 64)
   if (!nameValidation.valid) {
@@ -446,11 +476,13 @@ async function handleGiftSubmit(): Promise<void> {
     disk?: number
     planId?: number
     giftDays?: number
+    forceGenerateSshKey?: boolean
   } = {
     username: targetUser.value.username,
     name: form.value.name.trim(),
     packageId: form.value.packageId,
-    image: form.value.image
+    image: form.value.image,
+    forceGenerateSshKey
   }
 
   if (isGiftPaid.value && selectedPlanId.value) {
@@ -462,20 +494,42 @@ async function handleGiftSubmit(): Promise<void> {
     payload.disk = form.value.disk
   }
 
-  await api.hosts.createInstanceForUser(props.hostId, payload)
+  const result = await api.hosts.createInstanceForUser(props.hostId, payload)
+  const createdForUsername = targetUser.value.username
 
-  toast.success(t('host.createInstance.giftSuccess', { username: targetUser.value.username }))
+  toast.success(t('host.createInstance.giftSuccess', { username: createdForUsername }))
 
   targetUsername.value = ''
+  targetLookupUsername.value = ''
+  targetLookupRequestSeq += 1
   targetLookupState.value = 'idle'
   targetUser.value = null
   giftInstanceType.value = 'free'
   giftDays.value = 30
   form.value.name = ''
+
+  if (result.instance.generatedPrivateKey) {
+    generatedPrivateKey.value = result.instance.generatedPrivateKey
+    generatedKeyTargetUsername.value = createdForUsername
+    generatedKeyContinuation.value = 'none'
+    showGeneratedSshKeyModal.value = true
+  }
 }
 
 async function handleSubmit(): Promise<void> {
   if (submitting.value || !canSubmit.value) return
+
+  if (createMode.value === 'self' && sshKeys.value.length === 0) {
+    sshKeyGenerationContext.value = 'self'
+    showSshKeyGenerationPrompt.value = true
+    return
+  }
+
+  if (createMode.value === 'gift' && targetUser.value?.hasSshKey === false) {
+    sshKeyGenerationContext.value = 'gift'
+    showSshKeyGenerationPrompt.value = true
+    return
+  }
 
   submitting.value = true
   try {
@@ -486,6 +540,67 @@ async function handleSubmit(): Promise<void> {
     }
   } catch (err: any) {
     toast.error(translateError(err))
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function confirmSshKeyGeneration(): Promise<void> {
+  const context = sshKeyGenerationContext.value
+  if (!context || sshKeyGenerating.value) return
+
+  sshKeyGenerating.value = true
+  try {
+    if (context === 'self') {
+      const result = await api.sshKeys.generate()
+      sshKeys.value = [...sshKeys.value, result.key]
+      form.value.sshKeyId = result.key.id
+      showSshKeyGenerationPrompt.value = false
+      generatedPrivateKey.value = result.privateKey
+      generatedKeyContinuation.value = 'self'
+      showGeneratedSshKeyModal.value = true
+    } else {
+      submitting.value = true
+      await handleGiftSubmit(true)
+      showSshKeyGenerationPrompt.value = false
+    }
+  } catch (err: any) {
+    toast.error(translateError(err))
+  } finally {
+    sshKeyGenerating.value = false
+    submitting.value = false
+  }
+}
+
+function closeSshKeyGenerationPrompt(): void {
+  if (sshKeyGenerating.value) return
+  showSshKeyGenerationPrompt.value = false
+  sshKeyGenerationContext.value = null
+}
+
+function closeGeneratedSshKeyModal(): void {
+  showGeneratedSshKeyModal.value = false
+  generatedPrivateKey.value = ''
+  generatedKeyTargetUsername.value = ''
+  generatedKeyContinuation.value = 'none'
+}
+
+async function continueAfterGeneratedSshKey(): Promise<void> {
+  const shouldContinueSelf = generatedKeyContinuation.value === 'self'
+  showGeneratedSshKeyModal.value = false
+  if (!shouldContinueSelf) return
+
+  submitting.value = true
+  try {
+    const submitted = await handleSelfSubmit()
+    if (submitted) {
+      closeGeneratedSshKeyModal()
+    } else {
+      showGeneratedSshKeyModal.value = true
+    }
+  } catch (err: any) {
+    toast.error(translateError(err))
+    showGeneratedSshKeyModal.value = true
   } finally {
     submitting.value = false
   }
@@ -711,4 +826,26 @@ async function handleSubmit(): Promise<void> {
       </form>
     </div>
   </div>
+
+  <SSHKeyGenerationPromptModal
+    :visible="showSshKeyGenerationPrompt"
+    :loading="sshKeyGenerating"
+    :title="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyTitle') : t('host.createInstance.forceGenerateSshKeyTitle')"
+    :description="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyDesc') : t('host.createInstance.forceGenerateSshKeyDesc')"
+    :confirm-label="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyConfirm') : t('host.createInstance.forceGenerateSshKeyConfirm')"
+    :cancel-label="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyCancel') : t('host.createInstance.forceGenerateSshKeyCancel')"
+    :loading-label="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyGenerating') : t('host.createInstance.forceGenerateSshKeyGenerating')"
+    @close="closeSshKeyGenerationPrompt"
+    @confirm="confirmSshKeyGeneration"
+  />
+
+  <GeneratedSshKeyModal
+    :visible="showGeneratedSshKeyModal"
+    :private-key="generatedPrivateKey"
+    :title="generatedKeyContinuation === 'self' ? t('instance.createPage.generatedSshKeyTitle') : t('host.createInstance.generatedPrivateKeyTitle')"
+    :description="generatedKeyContinuation === 'self' ? t('instance.createPage.generatedSshKeyDesc') : t('host.createInstance.generatedPrivateKeyDesc')"
+    :action-label="generatedKeyContinuation === 'self' ? t('instance.createPage.generatedSshKeyContinue') : t('host.createInstance.generatedPrivateKeyClose')"
+    @close="closeGeneratedSshKeyModal"
+    @action="generatedKeyContinuation === 'self' ? continueAfterGeneratedSshKey() : closeGeneratedSshKeyModal()"
+  />
 </template>

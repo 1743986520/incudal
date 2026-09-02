@@ -158,7 +158,9 @@ export {
   getHostOwnerId,
   recordHostingIncome,
   processHostingIncome,
-  deductHostingBalance
+  deductHostingBalance,
+  failCreatingInstanceAndRollbackResources,
+  failCreatingInstanceAndRefund
 } from './billing-operations.js'
 
 // 导出支付渠道相关操作

@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Rebuild native build tools
+        run: pnpm rebuild esbuild
+
       - name: Generate Prisma Client
         run: pnpm --filter server exec prisma generate
         env:

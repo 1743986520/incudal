@@ -70,6 +70,8 @@ import {
 import { provisionManagedInstanceAsync } from '../lib/managed-instance-provision.js'
 import crypto from 'crypto'
 import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
+import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
+import { checkInstanceOwnerOrAdminPermission } from '../lib/permission.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1269,6 +1271,11 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         const agentBinaryUrl = process.env.INCUDAL_AGENT_BINARY_URL?.trim()
         if (agentBinaryUrl) {
           script = injectInstallVariable(script, 'INJECT_AGENT_BINARY_URL', agentBinaryUrl)
+          script = injectInstallVariable(
+            script,
+            'INJECT_AGENT_BINARY_SHA256',
+            process.env.INCUDAL_AGENT_BINARY_SHA256?.trim() || ''
+          )
         }
 
         request.log.info(
@@ -1696,6 +1703,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         serverInfo.environment?.kernel_architecture ||
         serverInfo.environment?.architectures?.[0]
       )
+
+      // 手动测试连接成功即代表节点当前在线，及时同步状态，避免仍显示为离线。
+      await db.updateHostStatus(hostId, 'online')
 
       await db.updateHostResources(hostId, {
         architecture: hostArchitecture
@@ -5732,6 +5742,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       cpu?: number
       memory?: number
       disk?: number
+      forceGenerateSshKey?: boolean
     }
   }>('/:id/instances/create-for-user', {
     onRequest: [fastify.authenticate],
@@ -5749,7 +5760,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           image: { type: 'string', minLength: 1 },
           cpu: { type: 'integer', minimum: 15, maximum: 10000 },
           memory: { type: 'integer', minimum: 128, maximum: 524288 },
-          disk: { type: 'integer', minimum: 512, maximum: 104857600 }
+          disk: { type: 'integer', minimum: 512, maximum: 104857600 },
+          forceGenerateSshKey: { type: 'boolean' }
         }
       }
     }
@@ -5765,7 +5777,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       image,
       cpu,
       memory,
-      disk
+      disk,
+      forceGenerateSshKey = false
     } = request.body
 
     if (isNaN(hostId)) {
@@ -5811,11 +5824,13 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     }
 
     const targetUserSshKeys = await db.getSSHKeysByUserId(targetUser.id)
-    if (targetUserSshKeys.length === 0) {
+    if (targetUserSshKeys.length === 0 && !forceGenerateSshKey) {
       return reply.code(400).send({ error: `用户 "${username}" 没有 SSH 密钥，请先让用户添加 SSH 密钥` })
     }
 
-    const sshKey = targetUserSshKeys[0].public_key
+    let sshKey = targetUserSshKeys[0]?.public_key
+    let generatedPrivateKey: string | null = null
+    let generatedSshKey: ReturnType<typeof generateSshKeyPair> | null = null
     const pkg = await db.getPackageById(packageId)
     if (!pkg || !pkg.active) {
       return reply.code(400).send({ error: '套餐不存在或已禁用' })
@@ -5940,6 +5955,13 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     if (pkgInstanceType === 'vm' && ['nat_ipv6_nat', 'ipv6_nat'].includes(networkMode)) {
       return reply.code(400).send({ error: 'KVM packages do not support IPv4 NAT & IPv6 NAT or IPv6 NAT network modes' })
     }
+
+    if (!sshKey) {
+      generatedSshKey = generateSshKeyPair()
+      sshKey = generatedSshKey.publicKey
+      generatedPrivateKey = generatedSshKey.privateKey
+    }
+
     const autoPassword = randomUUID().replace(/-/g, '').slice(0, 16)
     const { configPayload, metaData } = generateIncusConfig({
       instanceName: name,
@@ -6077,9 +6099,23 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           })
         }
 
+        let generatedSshKeyId: number | null = null
+        if (generatedSshKey) {
+          const createdSshKey = await tx.sshKey.create({
+            data: {
+              userId: targetUser.id,
+              name: generatedSshKey.name,
+              publicKey: generatedSshKey.publicKey,
+              fingerprint: generatedSshKey.fingerprint
+            }
+          })
+          generatedSshKeyId = createdSshKey.id
+        }
+
         return {
           instanceId: instance.id,
-          reservedHost
+          reservedHost,
+          generatedSshKeyId
         }
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -6090,6 +6126,16 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       lockedHost = txResult.reservedHost
       if (!lockedHost) {
         throw new Error('HOST_NOT_FOUND')
+      }
+
+      if (generatedSshKey && txResult.generatedSshKeyId) {
+        await createLog(
+          operator.id,
+          'ssh_key',
+          'ssh_key.generate_for_user',
+          `Generated SSH key "${generatedSshKey.name}" for user "${targetUser.username}" [keyId: ${txResult.generatedSshKeyId}, fingerprint: ${generatedSshKey.fingerprint}]`,
+          'success'
+        )
       }
 
       let staticIPv4: string | null = null
@@ -6317,7 +6363,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           charged: false,
           amount: 0,
           expiresAt: paidGiftExpiresAt?.toISOString() ?? null,
-          giftDays: paidGiftDays ?? null
+          giftDays: paidGiftDays ?? null,
+          generatedPrivateKey
         }
       })
     } catch (error: any) {
@@ -8135,6 +8182,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
 
     if (instance.host_id !== hostId) {
       return reply.code(400).send({ error: '实例不属于该节点' })
+    }
+
+    // 节点所有者不能对其他租户执行重装/重建；管理员才是明确的跨租户维护路径。
+    const dangerousActionPermission = checkInstanceOwnerOrAdminPermission(user, instance)
+    if (!dangerousActionPermission.allowed) {
+      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
     if (!riskConfirmed) {

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"incudal-agent/internal/panel"
 )
@@ -48,8 +49,20 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		return err
 	}
+	// Do not install a partially effective bundle. The panel includes every
+	// selected target even when its MAC is not currently known; treating that
+	// as success would make the policy silently fail open for that instance.
+	for _, item := range bundle.Policies {
+		for _, target := range item.Targets {
+			mac := strings.ToLower(strings.TrimSpace(target.MAC))
+			if !macPattern.MatchString(mac) {
+				return fmt.Errorf("network policy %d target %q is missing a valid MAC", item.ID, target.IncusID)
+			}
+		}
+	}
 	profiles := map[string]*dnsProfile{}
 	ipv4Blocks, ipv6Blocks := []string{}, []string{}
+	transportBlocks, pingBlocks := []string{}, []string{}
 	for _, item := range bundle.Policies {
 		for _, target := range item.Targets {
 			mac := strings.ToLower(strings.TrimSpace(target.MAC))
@@ -68,6 +81,18 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 						}
 					}
 				}
+			case "udp_block":
+				transportBlocks = append(transportBlocks,
+					fmt.Sprintf("ether saddr %s udp counter drop", mac),
+					fmt.Sprintf("ether daddr %s udp counter drop", mac),
+				)
+			case "ping_block":
+				pingBlocks = append(pingBlocks,
+					fmt.Sprintf("ether saddr %s icmp type echo-request counter drop", mac),
+					fmt.Sprintf("ether daddr %s icmp type echo-request counter drop", mac),
+					fmt.Sprintf("ether saddr %s icmpv6 type echo-request counter drop", mac),
+					fmt.Sprintf("ether daddr %s icmpv6 type echo-request counter drop", mac),
+				)
 			case "dns_lock", "dns_override":
 				profile := profiles[mac]
 				if profile == nil {
@@ -140,10 +165,13 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 			return err
 		}
 		pidPath := filepath.Join(stateDir, fmt.Sprintf("dns-%d.pid", index))
-		command := exec.CommandContext(ctx, "dnsmasq", "--conf-file="+path, "--pid-file="+pidPath)
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		command := exec.CommandContext(commandCtx, "dnsmasq", "--conf-file="+path, "--pid-file="+pidPath)
 		if output, err := command.CombinedOutput(); err != nil {
+			cancel()
 			return fmt.Errorf("start dnsmasq profile: %v: %s", err, strings.TrimSpace(string(output)))
 		}
+		cancel()
 		dnsRules = append(dnsRules, fmt.Sprintf("ether saddr %s udp dport 53 redirect to :%d", mac, profile.Port), fmt.Sprintf("ether saddr %s tcp dport 53 redirect to :%d", mac, profile.Port))
 		if profile.BlockDoT {
 			dotRules = append(dotRules, fmt.Sprintf("ether saddr %s tcp dport 853 counter reject", mac))
@@ -152,6 +180,8 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 	lines := []string{"table inet incudal_managed_policy {", " chain forward { type filter hook forward priority -10; policy accept;"}
 	lines = append(lines, ipv4Blocks...)
 	lines = append(lines, ipv6Blocks...)
+	lines = append(lines, transportBlocks...)
+	lines = append(lines, pingBlocks...)
 	lines = append(lines, dotRules...)
 	lines = append(lines, " }", " chain prerouting { type nat hook prerouting priority -105; policy accept;")
 	lines = append(lines, dnsRules...)
@@ -163,10 +193,15 @@ func replaceNftTable(ctx context.Context, rules string) error {
 	// nft -f applies the whole document as one transaction. Keeping deletion in
 	// the same document means a syntax/validation failure preserves the previous
 	// working table instead of leaving the host unprotected.
-	if exec.CommandContext(ctx, "nft", "list", "table", "inet", "incudal_managed_policy").Run() == nil {
+	checkCtx, cancelCheck := context.WithTimeout(ctx, 10*time.Second)
+	tableExists := exec.CommandContext(checkCtx, "nft", "list", "table", "inet", "incudal_managed_policy").Run() == nil
+	cancelCheck()
+	if tableExists {
 		rules = "delete table inet incudal_managed_policy\n" + rules
 	}
-	cmd := exec.CommandContext(ctx, "nft", "-f", "-")
+	commandCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(commandCtx, "nft", "-f", "-")
 	cmd.Stdin = strings.NewReader(rules)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -181,7 +216,9 @@ func stopOldDNS(ctx context.Context) error {
 		data, _ := os.ReadFile(path)
 		pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
 		if pid > 1 {
-			exec.CommandContext(ctx, "kill", strconv.Itoa(pid)).Run()
+			killCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_ = exec.CommandContext(killCtx, "kill", strconv.Itoa(pid)).Run()
+			cancel()
 		}
 		os.Remove(path)
 	}

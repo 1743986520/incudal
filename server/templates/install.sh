@@ -23,6 +23,7 @@ INJECT_AGENT_ID=""
 INJECT_AGENT_SECRET=""
 INJECT_AGENT_INSTALL_TOKEN=""
 INJECT_AGENT_BINARY_URL=""
+INJECT_AGENT_BINARY_SHA256=""
 INJECT_AGENT_ENABLED="true"
 INJECT_PPS_LIMIT=""
 # ==============================
@@ -39,14 +40,16 @@ readonly AGENT_ID="${INJECT_AGENT_ID:-}"
 readonly AGENT_SECRET="${INJECT_AGENT_SECRET:-}"
 readonly AGENT_INSTALL_TOKEN="${INJECT_AGENT_INSTALL_TOKEN:-}"
 readonly AGENT_BINARY_URL="${INJECT_AGENT_BINARY_URL:-}"
+readonly AGENT_BINARY_SHA256="${INJECT_AGENT_BINARY_SHA256:-}"
 readonly AGENT_ENABLED="${INJECT_AGENT_ENABLED:-true}"
 readonly AGENT_SERVICE_NAME="incudal-agent"
 readonly AGENT_CONFIG_FILE="${INCUDAL_AGENT_CONFIG_FILE:-/etc/incudal-agent/config.yaml}"
 readonly AGENT_BIN_PATH="${INCUDAL_AGENT_BIN:-/usr/local/bin/incudal-agent}"
 
-# ZFS 预编译模块下载地址（GitHub Release）
-# 格式: ${ZFS_PREBUILT_URL}/zfs-modules-<内核版本>.tar.gz
-readonly ZFS_PREBUILT_URL="https://github.com/IncuShlii/IncuShlii-Debian-ZFS/releases/download/Debian-ZFS"
+if [[ -n "$PANEL_URL" && ! "$PANEL_URL" =~ ^https://[^[:space:]]+$ ]]; then
+    echo "[✗] PANEL_URL must use https" >&2
+    exit 1
+fi
 
 # ========================== 颜色定义 ==========================
 readonly RED='\033[1;31m'
@@ -75,9 +78,11 @@ PPS_OPTION_EXPLICIT="false"
 # nftables 的 limit 是 token bucket；这里保留原有突发余量，仅用于实例级
 # 网络层保护。单目标安全事件不会再把普通 TCP 下载流量当成异常发包。
 readonly PPS_BURST_PACKETS="5000"
-readonly PPS_SINGLE_TARGET_LIMIT="10000"
+readonly PPS_MIN_LIMIT="20000"
+readonly PPS_SINGLE_TARGET_LIMIT="20000"
 readonly PPS_SINGLE_TARGET_BURST="2500"
 readonly PPS_BLOCK_SECONDS="3600"
+readonly PPS_OBSERVE_SECONDS="120"
 
 # ========================== 工具函数 ==========================
 log()   { echo -e "${GREEN}[✓]${NC} $1"; }
@@ -111,9 +116,9 @@ mask_value() {
     fi
 }
 
-is_http_url() {
+is_https_url() {
     local value="${1:-}"
-    [[ "$value" =~ ^https?://[^[:space:]]+$ ]]
+    [[ "$value" =~ ^https://[^[:space:]]+$ ]]
 }
 
 read_agent_config_value() {
@@ -563,7 +568,7 @@ confirm_install() {
     echo -e "  通信端口  :  ${GREEN}[::]:${LISTEN_PORT}${NC}"
     if [[ "$PPS_PROTECTION_ENABLED" == "true" ]]; then
         echo -e "  PPS 防护  :  ${GREEN}每实例 ${PPS_LIMIT} 包/秒${NC}（突发 ${PPS_BURST_PACKETS} 包）"
-        echo -e "  单 IP 封锁:  ${GREEN}${PPS_SINGLE_TARGET_LIMIT} 包/秒，封锁 ${PPS_BLOCK_SECONDS} 秒${NC}"
+        echo -e "  单 IP 检测:  ${GREEN}${PPS_SINGLE_TARGET_LIMIT} 包/秒；TCP SYN 封锁 ${PPS_BLOCK_SECONDS} 秒，UDP 仅观察${NC}"
     else
         echo -e "  PPS 防护  :  ${YELLOW}关闭${NC}"
     fi
@@ -902,19 +907,30 @@ setup_warp_v4() {
         warn "架构不受支持，跳过 WARP 安装"
         return 0
     fi
-    
+
+    local wgcf_sha256=""
+    case "$ARCH" in
+        amd64|x86_64)
+            wgcf_sha256="268d187e649870b603ad2e5c1b74a696251f6c2f6f075c726a174a0039b0b1e2"
+            ;;
+        arm64|aarch64)
+            wgcf_sha256="e5ff08d3aae5374935211053b2d64d96daaa3f1aec8e9a1dab7418125585a011"
+            ;;
+    esac
+
     info "拉取核心组件 wgcf..."
     # 纯 IPv6 下 GitHub 可能不可达，多次重试
     local retry=0
     local max_retry=3
+    local wgcf_tmp="/tmp/wgcf-$$"
+    rm -f /usr/local/bin/wgcf "$wgcf_tmp" 2>/dev/null || true
     while [[ $retry -lt $max_retry ]]; do
-        if curl -sL --connect-timeout 30 --max-time 120 "$wgcf_url" -o /usr/local/bin/wgcf 2>/dev/null; then
-            # 验证下载是否成功（文件大于 1MB）
-            local fsize
-            fsize=$(stat -c%s /usr/local/bin/wgcf 2>/dev/null || echo "0")
-            if [[ "$fsize" -gt 1048576 ]]; then
+        if curl -fsSL --connect-timeout 30 --max-time 120 "$wgcf_url" -o "$wgcf_tmp" 2>/dev/null; then
+            if printf '%s  %s\n' "$wgcf_sha256" "$wgcf_tmp" | sha256sum -c - >/dev/null 2>&1; then
+                install -m 0755 "$wgcf_tmp" /usr/local/bin/wgcf
                 break
             fi
+            warn "wgcf SHA-256 校验失败，拒绝执行下载文件"
         fi
         retry=$((retry + 1))
         if [[ $retry -lt $max_retry ]]; then
@@ -923,6 +939,7 @@ setup_warp_v4() {
         fi
     done
 
+    rm -f "$wgcf_tmp" 2>/dev/null || true
     if [[ ! -f /usr/local/bin/wgcf ]] || [[ $(stat -c%s /usr/local/bin/wgcf 2>/dev/null || echo "0") -lt 1048576 ]]; then
         warn "wgcf 下载失败（纯 IPv6 环境无法访问 GitHub CDN）"
         warn "跳过 WARP 配置，容器将仅使用 IPv6 出站"
@@ -1272,9 +1289,25 @@ install_deps() {
 # ========================== 每实例 PPS 防护 ==========================
 # 在 Linux bridge 转发层按来源 MAC 独立计数。攻击实例超过阈值时只丢弃
 # 该实例的流量，不会限制宿主机管理流量，也不会连带影响其他实例。
+disable_pps_guard() {
+    if command -v systemctl &>/dev/null; then
+        systemctl disable --now incudal-pps-guard 2>/dev/null || true
+        rm -f /etc/systemd/system/incudal-pps-guard.service
+        systemctl daemon-reload 2>/dev/null || true
+    elif command -v rc-service &>/dev/null; then
+        rc-service incudal-pps-guard stop 2>/dev/null || true
+        rc-update del incudal-pps-guard default 2>/dev/null || true
+        rm -f /etc/init.d/incudal-pps-guard
+    fi
+    nft delete table inet incudal_pps_guard 2>/dev/null || true
+    rm -f /usr/local/sbin/incudal-pps-guard /etc/incudal/pps-guard.conf
+    PPS_PROTECTION_ENABLED="false"
+    log "每实例 PPS 防护已关闭"
+}
+
 install_pps_guard() {
     if [[ "$PPS_PROTECTION_ENABLED" != "true" ]]; then
-        warn "已按配置跳过每实例 PPS 防护"
+        disable_pps_guard
         return 0
     fi
 
@@ -1285,28 +1318,37 @@ install_pps_guard() {
         return 1
     fi
 
-    if ! [[ "$PPS_LIMIT" =~ ^[0-9]+$ ]] || (( PPS_LIMIT < 1000 || PPS_LIMIT > 500000 )); then
+    if ! [[ "$PPS_LIMIT" =~ ^[0-9]+$ ]] || (( PPS_LIMIT < PPS_MIN_LIMIT || PPS_LIMIT > 500000 )); then
         warn "PPS 阈值 ${PPS_LIMIT} 无效，已回退为 20000"
-        PPS_LIMIT="20000"
+        PPS_LIMIT="$PPS_MIN_LIMIT"
     fi
 
     mkdir -p /etc/incudal
     cat > /etc/incudal/pps-guard.conf <<EOF
 PPS_LIMIT=${PPS_LIMIT}
+PPS_MIN_LIMIT=${PPS_MIN_LIMIT}
 PPS_BURST_PACKETS=${PPS_BURST_PACKETS}
 PPS_SINGLE_TARGET_LIMIT=${PPS_SINGLE_TARGET_LIMIT}
 PPS_SINGLE_TARGET_BURST=${PPS_SINGLE_TARGET_BURST}
 PPS_BLOCK_SECONDS=${PPS_BLOCK_SECONDS}
+PPS_OBSERVE_SECONDS=${PPS_OBSERVE_SECONDS}
 BRIDGE_NAME=${BRIDGE_NAME}
 EOF
+    chmod 0600 /etc/incudal/pps-guard.conf
 
     cat > /usr/local/sbin/incudal-pps-guard <<'GUARD'
 #!/usr/bin/env bash
 set -euo pipefail
 source /etc/incudal/pps-guard.conf
 
-nft delete table inet incudal_pps_guard 2>/dev/null || true
-nft -f - <<EOF
+install_pps_guard() {
+  local minimum_limit="${PPS_MIN_LIMIT:-20000}"
+  if ! [[ "$PPS_LIMIT" =~ ^[0-9]+$ ]] || (( PPS_LIMIT < minimum_limit || PPS_LIMIT > 500000 )); then
+    PPS_LIMIT="$minimum_limit"
+    sed -i -E "s/^PPS_LIMIT=[0-9]+$/PPS_LIMIT=${PPS_LIMIT}/" /etc/incudal/pps-guard.conf 2>/dev/null || true
+  fi
+  nft delete table inet incudal_pps_guard 2>/dev/null || true
+  nft -f - <<EOF
 table inet incudal_pps_guard {
   set blocked_v4 {
     type ether_addr . ipv4_addr
@@ -1318,18 +1360,54 @@ table inet incudal_pps_guard {
     flags timeout
     timeout ${PPS_BLOCK_SECONDS}s
   }
+  set observed_v4 {
+    type ether_addr . ipv4_addr
+    flags timeout
+    timeout ${PPS_OBSERVE_SECONDS}s
+  }
+  set observed_v6 {
+    type ether_addr . ipv6_addr
+    flags timeout
+    timeout ${PPS_OBSERVE_SECONDS}s
+  }
+  chain instance_pps_limit {
+    meter per_instance_pps { ether saddr limit rate over ${PPS_LIMIT}/second burst ${PPS_BURST_PACKETS} packets } counter drop
+  }
   chain forward {
     type filter hook forward priority -200; policy accept;
     iifname "${BRIDGE_NAME}" ether saddr . ip daddr @blocked_v4 counter drop
     iifname "${BRIDGE_NAME}" ether saddr . ip6 daddr @blocked_v6 counter drop
-    # Established TCP download packets are normal high-rate traffic, not PPS abuse.
-    # Only UDP and TCP SYN packets can create a single-target security event.
-    iifname "${BRIDGE_NAME}" meta l4proto udp meter per_target_udp_v4 { ether saddr . ip daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v4 { ether saddr . ip daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V4 " counter drop
+    # Established TCP traffic is normal high-rate traffic and is not counted here.
+    # UDP single-target spikes are observed and reported, but not persistently
+    # blocked automatically; the per-instance UDP limiter remains the guardrail.
+    iifname "${BRIDGE_NAME}" meta l4proto udp meter per_target_udp_v4 { ether saddr . ip daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @observed_v4 { ether saddr . ip daddr timeout ${PPS_OBSERVE_SECONDS}s } counter
     iifname "${BRIDGE_NAME}" meta l4proto tcp tcp flags & (syn | ack) == syn meter per_target_syn_v4 { ether saddr . ip daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v4 { ether saddr . ip daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V4 " counter drop
-    iifname "${BRIDGE_NAME}" meta l4proto udp meter per_target_udp_v6 { ether saddr . ip6 daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v6 { ether saddr . ip6 daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V6 " counter drop
+    iifname "${BRIDGE_NAME}" meta l4proto udp meter per_target_udp_v6 { ether saddr . ip6 daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @observed_v6 { ether saddr . ip6 daddr timeout ${PPS_OBSERVE_SECONDS}s } counter
     iifname "${BRIDGE_NAME}" meta l4proto tcp tcp flags & (syn | ack) == syn meter per_target_syn_v6 { ether saddr . ip6 daddr limit rate over ${PPS_SINGLE_TARGET_LIMIT}/second burst ${PPS_SINGLE_TARGET_BURST} packets } update @blocked_v6 { ether saddr . ip6 daddr timeout ${PPS_BLOCK_SECONDS}s } log prefix "INCUDAL_PPS_V6 " counter drop
-    iifname "${BRIDGE_NAME}" meter per_instance_pps { ether saddr limit rate over ${PPS_LIMIT}/second burst ${PPS_BURST_PACKETS} packets } counter drop
+    # Keep one combined per-instance budget for UDP and TCP SYN, while
+    # established TCP data packets bypass this limiter.
+    iifname "${BRIDGE_NAME}" meta l4proto udp jump instance_pps_limit
+    iifname "${BRIDGE_NAME}" meta l4proto tcp tcp flags & (syn | ack) == syn jump instance_pps_limit
   }
+}
+EOF
+}
+
+install_pps_guard
+
+disable_pps_guard() {
+    if command -v systemctl &>/dev/null; then
+        systemctl disable --now incudal-pps-guard 2>/dev/null || true
+        rm -f /etc/systemd/system/incudal-pps-guard.service
+        systemctl daemon-reload 2>/dev/null || true
+    elif command -v rc-service &>/dev/null; then
+        rc-service incudal-pps-guard stop 2>/dev/null || true
+        rc-update del incudal-pps-guard default 2>/dev/null || true
+        rm -f /etc/init.d/incudal-pps-guard
+    fi
+    nft delete table inet incudal_pps_guard 2>/dev/null || true
+    rm -f /usr/local/sbin/incudal-pps-guard /etc/incudal/pps-guard.conf
+    echo "[✓] 每实例 PPS 防护已关闭"
 }
 
 manage_pps_guard() {
@@ -1362,31 +1440,26 @@ manage_pps_guard() {
             local requested=""
             read -r requested
             if [[ -n "$requested" ]]; then
-                if [[ "$requested" =~ ^[0-9]+$ ]] && (( requested >= 1000 && requested <= 500000 )); then
+                if [[ "$requested" =~ ^[0-9]+$ ]] && (( requested >= PPS_MIN_LIMIT && requested <= 500000 )); then
                     PPS_LIMIT="$requested"
                 else
                     warn "无效阈值，继续使用 ${PPS_LIMIT}"
                 fi
             fi
             PPS_PROTECTION_ENABLED="true"
+            if [[ -f /etc/incudal/pps-guard.conf ]]; then
+                sed -i -E "s/^PPS_LIMIT=[0-9]+$/PPS_LIMIT=${PPS_LIMIT}/" /etc/incudal/pps-guard.conf
+            fi
             install_pps_guard
             ;;
         2)
-            if command -v systemctl &>/dev/null; then
-                systemctl disable --now incudal-pps-guard 2>/dev/null || true
-            elif command -v rc-service &>/dev/null; then
-                rc-service incudal-pps-guard stop 2>/dev/null || true
-                rc-update del incudal-pps-guard default 2>/dev/null || true
-            fi
-            nft delete table inet incudal_pps_guard 2>/dev/null || true
-            log "每实例 PPS 防护已关闭"
+            disable_pps_guard
             ;;
         0) return 0 ;;
         *) warn "无效选项" ;;
     esac
     pause_return
 }
-EOF
 GUARD
     chmod 0755 /usr/local/sbin/incudal-pps-guard
 
@@ -1427,7 +1500,7 @@ EOF
 
     if nft list table inet incudal_pps_guard >/dev/null 2>&1; then
         log "每实例 PPS 防护已启用：${PPS_LIMIT} 包/秒，突发 ${PPS_BURST_PACKETS} 包"
-        log "单一目的 IP 超过 ${PPS_SINGLE_TARGET_LIMIT} 包/秒时，将对该实例封锁目标 ${PPS_BLOCK_SECONDS} 秒"
+        log "TCP SYN 单一目的 IP 超过 ${PPS_SINGLE_TARGET_LIMIT} 包/秒时，将对该实例封锁目标 ${PPS_BLOCK_SECONDS} 秒；UDP 仅观察告警"
     else
         error "PPS 防护规则未能加载"
         return 1
@@ -1458,98 +1531,10 @@ persist_zfs_module() {
 # ---- Debian ZFS 策略 1: 预编译模块安装 ----
 install_zfs_prebuilt() {
     local kernel_ver="$1"
-    local prebuilt_url="${ZFS_PREBUILT_URL}/zfs-modules-${kernel_ver}.tar.gz"
-    local tmp_tar="/tmp/zfs-prebuilt-$$.tar.gz"
-    local tmp_dir="/tmp/zfs-prebuilt-$$"
-
-    info "尝试下载预编译 ZFS 模块 (${kernel_ver})..."
-    info "下载地址: ${prebuilt_url}"
-
-    # 下载预编译包
-    if ! curl -sSfL --connect-timeout 10 --max-time 60 \
-        "$prebuilt_url" -o "$tmp_tar" 2>/dev/null; then
-        info "未找到内核 ${kernel_ver} 的预编译包"
-        rm -f "$tmp_tar" 2>/dev/null || true
-        return 1
-    fi
-
-    info "预编译包下载成功，开始安装..."
-
-    # 解压
-    mkdir -p "$tmp_dir"
-    if ! tar -xzf "$tmp_tar" -C "$tmp_dir" 2>/dev/null; then
-        error "预编译包解压失败"
-        rm -rf "$tmp_tar" "$tmp_dir" 2>/dev/null || true
-        return 1
-    fi
-
-    # 读取元数据，获取模块安装路径
-    local pack_dir
-    pack_dir=$(find "$tmp_dir" -name "metadata.txt" -printf '%h\n' 2>/dev/null | head -n1)
-    if [[ -z "$pack_dir" ]]; then
-        error "预编译包格式无效（缺少 metadata.txt）"
-        rm -rf "$tmp_tar" "$tmp_dir" 2>/dev/null || true
-        return 1
-    fi
-
-    # 验证内核版本匹配
-    local pkg_kernel
-    pkg_kernel=$(awk -F= '/^kernel_version=/{print $2}' "$pack_dir/metadata.txt" 2>/dev/null)
-    if [[ "$pkg_kernel" != "$kernel_ver" ]]; then
-        warn "预编译包内核版本不匹配 (包: ${pkg_kernel}, 本机: ${kernel_ver})"
-        rm -rf "$tmp_tar" "$tmp_dir" 2>/dev/null || true
-        return 1
-    fi
-
-    # 获取模块安装路径
-    local module_path
-    module_path=$(awk -F= '/^module_path=/{print $2}' "$pack_dir/metadata.txt" 2>/dev/null)
-    if [[ -z "$module_path" ]]; then
-        module_path="updates/dkms"  # 默认路径
-    fi
-
-    # 复制模块文件到正确位置
-    local target_dir="/lib/modules/${kernel_ver}/${module_path}"
-    mkdir -p "$target_dir"
-    cp "$pack_dir/modules/"*.ko* "$target_dir/" 2>/dev/null
-
-    local ko_count
-    ko_count=$(find "$target_dir" -name "*.ko*" -type f 2>/dev/null | wc -l)
-    info "已安装 ${ko_count} 个内核模块 → ${target_dir}"
-
-    # 更新模块依赖关系
-    depmod -a 2>/dev/null || true
-
-    # 加载 ZFS 模块验证
-    if ! modprobe zfs 2>/dev/null; then
-        error "预编译模块加载失败"
-        rm -rf "$tmp_tar" "$tmp_dir" 2>/dev/null || true
-        return 1
-    fi
-
-    info "ZFS 内核模块加载成功 ✓"
-    persist_zfs_module || true
-
-    # 安装 ZFS 用户空间工具（不拉取 DKMS，避免触发编译）
-    info "安装 ZFS 用户空间工具..."
-    apt-get install -y -qq --no-install-recommends zfsutils-linux >/dev/null 2>&1 || {
-        # 如果 --no-install-recommends 不够，强制跳过 dkms
-        apt-get install -y -qq zfsutils-linux >/dev/null 2>&1 || true
-    }
-
-    # 锁定内核版本
-    local kernel_pkg
-    kernel_pkg=$(dpkg -l | awk '/^ii.*linux-image-[0-9]/ {print $2}' | head -n1 || true)
-    if [[ -n "$kernel_pkg" ]]; then
-        apt-mark hold "$kernel_pkg" >/dev/null 2>&1 || true
-        info "已锁定内核版本: ${kernel_pkg}"
-    fi
-
-    # 清理临时文件
-    rm -rf "$tmp_tar" "$tmp_dir" 2>/dev/null || true
-
-    log "ZFS 预编译模块安装成功（内核: ${kernel_ver}）"
-    return 0
+    # 预编译包没有随脚本提供独立、固定的校验清单，不能直接以 root 解压并安装。
+    # 返回失败后由调用方使用 Debian APT/DKMS 的签名包流程。
+    info "跳过未提供独立 SHA-256 清单的预编译 ZFS 模块 (${kernel_ver})"
+    return 1
 }
 
 # ---- Debian ZFS 策略 2: DKMS 即时编译（回退方案）----
@@ -1880,6 +1865,7 @@ install_incudal_agent() {
         INCUDAL_AGENT_ID="$AGENT_ID" \
         INCUDAL_AGENT_SECRET="$AGENT_SECRET" \
         INCUDAL_AGENT_BINARY_URL="$AGENT_BINARY_URL" \
+        INCUDAL_AGENT_BINARY_SHA256="$AGENT_BINARY_SHA256" \
         INCUDAL_HEARTBEAT_INTERVAL_SECONDS="$AGENT_HEARTBEAT_INTERVAL_SECONDS" \
         bash; then
         AGENT_INSTALL_STATUS="已安装"
@@ -1900,12 +1886,13 @@ run_incudal_agent_installer() {
     local agent_secret="${4:-}"
     local heartbeat_interval="${5:-30}"
     local binary_url="${6:-}"
+    local binary_sha256="${7:-}"
 
     if [[ -z "$panel_url" ]]; then
         error "面板地址不能为空"
         return 1
     fi
-    if ! is_http_url "$panel_url"; then
+    if ! is_https_url "$panel_url"; then
         error "面板地址格式无效: ${panel_url}"
         return 1
     fi
@@ -1931,6 +1918,7 @@ run_incudal_agent_installer() {
         INCUDAL_AGENT_ID="$agent_id" \
         INCUDAL_AGENT_SECRET="$agent_secret" \
         INCUDAL_AGENT_BINARY_URL="$binary_url" \
+        INCUDAL_AGENT_BINARY_SHA256="$binary_sha256" \
         INCUDAL_HEARTBEAT_INTERVAL_SECONDS="$heartbeat_interval" \
         bash; then
         log "宿主机 Agent 安装 / 更新完成"
@@ -2011,7 +1999,7 @@ prompt_agent_panel_url() {
         echo -e "${RED}[✗]${NC} 无法确定面板地址，请输入完整 https:// 地址" >&2
         return 1
     fi
-    if ! is_http_url "$panel_url"; then
+    if ! is_https_url "$panel_url"; then
         echo -e "${RED}[✗]${NC} 面板地址格式无效: ${panel_url}" >&2
         return 1
     fi
@@ -2038,7 +2026,7 @@ update_incudal_agent_from_config() {
     fi
 
     prompt_agent_heartbeat_interval "$heartbeat_interval"
-    run_incudal_agent_installer "$panel_url" "" "$agent_id" "$agent_secret" "$AGENT_HEARTBEAT_INTERVAL_SECONDS" "$AGENT_BINARY_URL"
+    run_incudal_agent_installer "$panel_url" "" "$agent_id" "$agent_secret" "$AGENT_HEARTBEAT_INTERVAL_SECONDS" "$AGENT_BINARY_URL" "$AGENT_BINARY_SHA256"
 }
 
 install_incudal_agent_with_token() {
@@ -2071,7 +2059,7 @@ install_incudal_agent_with_token() {
     current_interval=$(read_agent_config_value "heartbeat_interval_seconds" || true)
     prompt_agent_heartbeat_interval "${current_interval:-30}"
 
-    run_incudal_agent_installer "$panel_url" "$install_token" "" "" "$AGENT_HEARTBEAT_INTERVAL_SECONDS" "$AGENT_BINARY_URL"
+    run_incudal_agent_installer "$panel_url" "$install_token" "" "" "$AGENT_HEARTBEAT_INTERVAL_SECONDS" "$AGENT_BINARY_URL" "$AGENT_BINARY_SHA256"
 }
 
 show_incudal_agent_logs() {
@@ -2133,12 +2121,12 @@ show_result() {
         cp -f /root/incudal.sh /usr/local/bin/incudal 2>/dev/null || true
         chmod +x /usr/local/bin/incudal 2>/dev/null || true
     else
-        # 回退方案 2：创建自下载包装器，运行时从面板拉取最新脚本
+        # 回退方案 2：创建自下载包装器，运行时从默认 GitHub 仓库拉取最新脚本
         cat > /usr/local/bin/incudal <<'SHORTCUT'
 #!/bin/bash
 # Incudal 节点管理快捷入口 - 自动下载最新版本
 SCRIPT_CACHE="/root/incudal.sh"
-SCRIPT_URL="https://raw.githubusercontent.com/0xdabiaoge/incudal/main/server/templates/install.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/1743986520/incudal/main/server/templates/install.sh"
 echo "正在获取最新的节点管理脚本..."
 if curl -sSfL "$SCRIPT_URL" -o "$SCRIPT_CACHE" 2>/dev/null; then
     chmod +x "$SCRIPT_CACHE"
@@ -3088,7 +3076,7 @@ main() {
                 echo "  --ipv6-subnet <CIDR>    IPv6 子网段（例如 2001:db8::/64）"
                 echo "  --ipv6-iface <IFACE>    IPv6 路由父网卡（例如 eth0）"
                 echo "  --port <PORT>           自定义 Incus 运行端口 (默认 8443)"
-                echo "  --pps-limit <PPS>       每实例 PPS 上限（默认 20000，范围 1000-500000）"
+                echo "  --pps-limit <PPS>       每实例 PPS 上限（默认 20000，范围 20000-500000）"
                 echo "  --disable-pps-protection 关闭每实例 PPS 防护（不建议）"
                 echo "  --uninstall             卸载 Incus 节点并还原系统"
                 echo "  --agent                 打开 Agent 安装 / 更新菜单"
@@ -3229,16 +3217,16 @@ main() {
     # 每实例 PPS 防护默认开启；交互安装允许调整，面板/管道安装直接采用安全默认值。
     if [[ -t 0 && -z "${INJECT_PPS_LIMIT:-}" && "$PPS_OPTION_EXPLICIT" != "true" ]]; then
         echo -e "\n${CYAN}==> 每实例 PPS 发包保护${NC}"
-        echo -e "  ${DIM}默认开启并限制每台实例 20000 包/秒，低于约 29000 PPS 的上游封锁线${NC}"
+        echo -e "  ${DIM}默认开启并限制每台实例 20000 包/秒；最低阈值为 20000，避免过低配置误伤正常流量${NC}"
         echo -ne "  ${BOLD}启用 PPS 防护？[Y/n]: ${NC}"
         read -r PPS_CHOICE
         if [[ "${PPS_CHOICE:-Y}" =~ ^[nN]$ ]]; then
             PPS_PROTECTION_ENABLED="false"
         else
-            echo -ne "  ${BOLD}每实例 PPS 上限 [默认 ${PPS_LIMIT}，范围 1000-500000]: ${NC}"
+            echo -ne "  ${BOLD}每实例 PPS 上限 [默认 ${PPS_LIMIT}，范围 ${PPS_MIN_LIMIT}-500000]: ${NC}"
             read -r USER_PPS_LIMIT
             if [[ -n "${USER_PPS_LIMIT:-}" ]]; then
-                if [[ "$USER_PPS_LIMIT" =~ ^[0-9]+$ ]] && (( USER_PPS_LIMIT >= 1000 && USER_PPS_LIMIT <= 500000 )); then
+                if [[ "$USER_PPS_LIMIT" =~ ^[0-9]+$ ]] && (( USER_PPS_LIMIT >= PPS_MIN_LIMIT && USER_PPS_LIMIT <= 500000 )); then
                     PPS_LIMIT="$USER_PPS_LIMIT"
                 else
                     warn "PPS 阈值无效，继续使用 ${PPS_LIMIT}"

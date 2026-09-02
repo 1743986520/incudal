@@ -16,6 +16,10 @@
 
 import { prisma } from './prisma.js'
 import { Prisma } from '@prisma/client'
+import {
+  INSTANCE_OPERATION_LOCK_NAMESPACE,
+  advisoryTransactionLock
+} from './advisory-locks.js'
 
 // 事务隔离级别配置
 // 使用 Serializable 隔离级别确保配额操作的一致性
@@ -23,6 +27,65 @@ const QUOTA_TRANSACTION_OPTIONS = {
   isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   timeout: 10000, // 10秒超时
 } as const
+
+export interface HostResourceRollback {
+  hostId: number
+  cpu: number
+  memory: number
+  disk: number
+  portCount?: number
+}
+
+/**
+ * Atomically releases host counters without reading them into application
+ * memory first. The lower-bound predicates make the decrement non-negative;
+ * the database performs the whole update as one row operation, so concurrent
+ * reservations/releases cannot overwrite one another with stale values.
+ */
+export async function decrementHostResourceCounters(
+  tx: Prisma.TransactionClient,
+  options: HostResourceRollback
+): Promise<void> {
+  const { hostId, cpu, memory, disk, portCount = 0 } = options
+
+  for (const [name, value] of Object.entries({ cpu, memory, disk, portCount })) {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`Invalid ${name} resource rollback amount: ${value}`)
+    }
+  }
+
+  const where: Prisma.HostWhereInput = {
+    id: hostId,
+    cpuUsed: { gte: cpu },
+    memoryUsed: { gte: memory },
+    diskUsed: { gte: disk }
+  }
+  if (portCount > 0) {
+    where.natPortsUsedCount = { gte: portCount }
+  }
+
+  const data: Prisma.HostUpdateManyMutationInput = {
+    cpuUsed: { decrement: cpu },
+    memoryUsed: { decrement: memory },
+    diskUsed: { decrement: disk }
+  }
+  if (portCount > 0) {
+    data.natPortsUsedCount = { decrement: portCount }
+  }
+
+  const result = await tx.host.updateMany({ where, data })
+  if (result.count === 1) return
+
+  const host = await tx.host.findUnique({
+    where: { id: hostId },
+    select: { id: true }
+  })
+  if (!host) {
+    throw new Error(`Host ${hostId} not found while releasing resources`)
+  }
+
+  throw new Error(`Host ${hostId} counters are lower than the requested resource rollback`)
+}
 
 /**
  * 直接设置用户配额使用量（覆盖原值）
@@ -123,6 +186,74 @@ export async function decrementUserQuotaUsed(userId: number, type: 'host' | 'fri
  * - 显式指定 Serializable 隔离级别
  * - 预占前检查配额边界
  */
+async function reserveHostResources(
+  tx: Prisma.TransactionClient,
+  options: {
+    hostId: number
+    cpu: number
+    memory: number
+    disk: number
+    portCount?: number
+  }
+): Promise<void> {
+  const { hostId, cpu, memory, disk, portCount = 0 } = options
+
+  // 注意：不再限制用户的实例配额，只检查宿主机资源
+
+  // 检查并更新宿主机资源使用量
+  // 注意：使用 cpuAllowanceMax/memoryMax/storageSize（用户配置的配额上限）
+  // 而不是 cpuTotal/memoryTotal/diskTotal（物理资源，可能未同步）
+  const host = await tx.host.findUnique({
+    where: { id: hostId },
+    select: {
+      cpuAllowanceMax: true,  // CPU 配额上限
+      memoryMax: true,        // 内存配额上限
+      storageSize: true,      // 存储池大小 (GB)
+      cpuUsed: true,
+      memoryUsed: true,
+      diskUsed: true,
+      natPortStart: true,
+      natPortEnd: true,
+      natPortsUsedCount: true
+    }
+  })
+
+  if (!host) {
+    throw new Error('Host not found')
+  }
+
+  // 检查资源是否超限（与 selectAvailableHost 逻辑保持一致）
+  const cpuLimit = host.cpuAllowanceMax || 0
+  const memoryLimit = host.memoryMax || 0
+
+  if (cpuLimit > 0 && host.cpuUsed + cpu > cpuLimit) {
+    throw new Error(`Host CPU exceeded: ${host.cpuUsed + cpu}/${cpuLimit}`)
+  }
+  if (memoryLimit > 0 && host.memoryUsed + memory > memoryLimit) {
+    throw new Error(`Host memory exceeded: ${host.memoryUsed + memory}/${memoryLimit}`)
+  }
+  // 磁盘配额检查已移除：不再限制磁盘空间
+  // 计算端口总数
+  const natPortsTotal = (host.natPortStart && host.natPortEnd)
+    ? (host.natPortEnd - host.natPortStart + 1)
+    : 0
+  if (portCount > 0 && host.natPortsUsedCount + portCount > natPortsTotal) {
+    throw new Error(`Host ports exceeded: ${host.natPortsUsedCount + portCount}/${natPortsTotal}`)
+  }
+
+  await tx.host.update({
+    where: { id: hostId },
+    data: {
+      cpuUsed: host.cpuUsed + cpu,
+      memoryUsed: host.memoryUsed + memory,
+      diskUsed: host.diskUsed + disk,
+      ...(portCount > 0 ? {
+        natPortsUsedCount: host.natPortsUsedCount + portCount
+      } : {})
+    }
+  })
+}
+
 export async function reserveResources(options: {
   hostId: number
   cpu: number
@@ -130,64 +261,50 @@ export async function reserveResources(options: {
   disk: number
   portCount?: number
 }): Promise<void> {
-  const { hostId, cpu, memory, disk, portCount = 0 } = options
-
   // 使用交互式事务 + Serializable 隔离级别确保一致性
-  await prisma.$transaction(async (tx) => {
-    // 注意：不再限制用户的实例配额，只检查宿主机资源
+  await prisma.$transaction(
+    tx => reserveHostResources(tx, options),
+    QUOTA_TRANSACTION_OPTIONS
+  )
+}
 
-    // 检查并更新宿主机资源使用量
-    // 注意：使用 cpuAllowanceMax/memoryMax/storageSize（用户配置的配额上限）
-    // 而不是 cpuTotal/memoryTotal/diskTotal（物理资源，可能未同步）
-    const host = await tx.host.findUnique({
-      where: { id: hostId },
-      select: {
-        cpuAllowanceMax: true,  // CPU 配额上限
-        memoryMax: true,        // 内存配额上限
-        storageSize: true,      // 存储池大小 (GB)
-        cpuUsed: true,
-        memoryUsed: true,
-        diskUsed: true,
-        natPortStart: true,
-        natPortEnd: true,
-        natPortsUsedCount: true
-      }
-    })
+/**
+ * Atomically claims a failed instance and reserves its host resources.
+ *
+ * Keeping the state transition and reservation in one transaction means a
+ * process crash cannot leave a `creating` instance without a reservation.
+ * The timeout reconciler can therefore safely release every stuck creator.
+ */
+export async function claimInstanceAndReserveResources(options: {
+  instanceId: number
+  userId: number
+  hostId: number
+  cpu: number
+  memory: number
+  disk: number
+  portCount?: number
+}): Promise<boolean> {
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, options.instanceId)
 
-    if (!host) {
-      throw new Error('Host not found')
-    }
-
-    // 检查资源是否超限（与 selectAvailableHost 逻辑保持一致）
-    const cpuLimit = host.cpuAllowanceMax || 0
-    const memoryLimit = host.memoryMax || 0
-
-    if (cpuLimit > 0 && host.cpuUsed + cpu > cpuLimit) {
-      throw new Error(`Host CPU exceeded: ${host.cpuUsed + cpu}/${cpuLimit}`)
-    }
-    if (memoryLimit > 0 && host.memoryUsed + memory > memoryLimit) {
-      throw new Error(`Host memory exceeded: ${host.memoryUsed + memory}/${memoryLimit}`)
-    }
-    // 磁盘配额检查已移除：不再限制磁盘空间
-    // 计算端口总数
-    const natPortsTotal = (host.natPortStart && host.natPortEnd) 
-      ? (host.natPortEnd - host.natPortStart + 1) 
-      : 0
-    if (portCount > 0 && host.natPortsUsedCount + portCount > natPortsTotal) {
-      throw new Error(`Host ports exceeded: ${host.natPortsUsedCount + portCount}/${natPortsTotal}`)
-    }
-
-    await tx.host.update({
-      where: { id: hostId },
+    const claimed = await tx.instance.updateMany({
+      where: {
+        id: options.instanceId,
+        userId: options.userId,
+        status: 'error'
+      },
       data: {
-        cpuUsed: host.cpuUsed + cpu,
-        memoryUsed: host.memoryUsed + memory,
-        diskUsed: host.diskUsed + disk,
-        ...(portCount > 0 ? {
-          natPortsUsedCount: host.natPortsUsedCount + portCount
-        } : {})
+        status: 'creating',
+        ipv4: null,
+        ipv6: null,
+        version: { increment: 1 }
       }
     })
+
+    if (claimed.count === 0) return false
+
+    await reserveHostResources(tx, options)
+    return true
   }, QUOTA_TRANSACTION_OPTIONS)
 }
 
@@ -211,30 +328,60 @@ export async function rollbackResources(options: {
   await prisma.$transaction(async (tx) => {
     // 注意：不再限制用户的实例配额，只回滚宿主机资源
 
-    // 回滚宿主机资源使用量
-    const host = await tx.host.findUnique({
-      where: { id: hostId },
-      select: {
-        cpuUsed: true,
-        memoryUsed: true,
-        diskUsed: true,
-        natPortsUsedCount: true
+    // 使用带下界条件的数据库原子 decrement，避免读改写丢失更新。
+    await decrementHostResourceCounters(tx, { hostId, cpu, memory, disk, portCount })
+  }, QUOTA_TRANSACTION_OPTIONS)
+}
+
+/**
+ * 删除已确认过期的实例，并在同一事务内释放预占资源。
+ *
+ * 删除和资源回滚必须是一个原子操作，否则在删除成功、回滚失败后，
+ * 调度器无法再次定位实例，宿主机资源会永久泄漏；反过来也会有重复释放的风险。
+ */
+export async function deleteExpiredInstanceAndRollbackResources(options: {
+  instanceId: number
+  hostId: number
+  cpu: number
+  memory: number
+  disk: number
+  portCount?: number
+  expectedVersion: number
+  expectedSuspendedAt: Date
+}): Promise<boolean> {
+  const {
+    instanceId,
+    hostId,
+    cpu,
+    memory,
+    disk,
+    portCount = 0,
+    expectedVersion,
+    expectedSuspendedAt
+  } = options
+
+  return prisma.$transaction(async (tx) => {
+    // 与续费共用实例锁；续费若先完成，下面的版本/状态检查会阻止外部删除。
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const deleted = await tx.instance.deleteMany({
+      where: {
+        id: instanceId,
+        status: 'deleted',
+        suspendReason: 'expired',
+        version: expectedVersion,
+        suspendedAt: expectedSuspendedAt
       }
     })
 
-    if (host) {
-      await tx.host.update({
-        where: { id: hostId },
-        data: {
-          cpuUsed: Math.max(0, host.cpuUsed - cpu),
-          memoryUsed: Math.max(0, host.memoryUsed - memory),
-          diskUsed: Math.max(0, host.diskUsed - disk),
-          ...(portCount > 0 ? {
-            natPortsUsedCount: Math.max(0, host.natPortsUsedCount - portCount)
-          } : {})
-        }
-      })
+    if (deleted.count === 0) {
+      return false
     }
+
+    // 删除记录与资源回滚同事务；计数释放采用原子 decrement。
+    await decrementHostResourceCounters(tx, { hostId, cpu, memory, disk, portCount })
+
+    return true
   }, QUOTA_TRANSACTION_OPTIONS)
 }
 

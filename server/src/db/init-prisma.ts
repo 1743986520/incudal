@@ -15,13 +15,11 @@ import { seedDefaultBadges } from './badges.js'
 function getInitialAdminPassword(): string {
   const configuredPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD
 
-  if (process.env.NODE_ENV === 'production') {
-    if (!configuredPassword || configuredPassword === 'admin123') {
-      throw new Error('ADMIN_PASSWORD must be configured to a non-default value in production')
-    }
+  if (!configuredPassword || configuredPassword === 'admin123') {
+    throw new Error('ADMIN_PASSWORD must be configured to a non-default value before initializing the admin account')
   }
 
-  return configuredPassword || 'admin123'
+  return configuredPassword
 }
 
 /**
@@ -66,7 +64,7 @@ async function createDefaultAdmin() {
   })
 
   if (!existing) {
-    // 从环境变量读取管理员密码，默认值为 'admin123'（开发环境）
+    // 管理员初始密码必须显式通过环境变量提供，不使用任何默认密码
     const adminPassword = getInitialAdminPassword()
     const passwordHash = await bcrypt.hash(adminPassword, 12)
 
@@ -90,11 +88,20 @@ async function createDefaultAdmin() {
     })
 
     console.log('✅ 默认管理员账户已创建: admin / ********')
-    if (adminPassword === 'admin123') {
-      console.log('⚠️  正在使用默认密码，请尽快通过 ADMIN_PASSWORD 环境变量修改！')
-    }
     console.log('   配额配置: 宿主机=1000, 好友=1000, 套餐=1000（实例无限制）')
   } else {
+    // 兼容旧部署：如果数据库中的管理员仍使用历史默认密码，必须用显式
+    // 配置的强密码替换；没有配置时直接中止初始化，避免继续暴露默认凭据。
+    if (await bcrypt.compare('admin123', existing.passwordHash)) {
+      const replacementPassword = getInitialAdminPassword()
+      const passwordHash = await bcrypt.hash(replacementPassword, 12)
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: { passwordHash }
+      })
+      console.log('✅ 已将管理员账户从历史默认密码迁移为 ADMIN_PASSWORD')
+    }
+
     // 如果管理员已存在，检查并更新配额（如果配额不存在或需要更新）
     if (!existing.quota) {
       await prisma.userQuota.create({

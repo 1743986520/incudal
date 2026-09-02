@@ -23,11 +23,13 @@ import {
   getExpiredUnsuspendedInstances,
   getSuspendedInstancesOlderThan,
   suspendInstanceByExpiry,
+  claimExpiredInstanceForDeletion,
+  restoreExpiredInstanceDeletionClaim,
   updateAutoRenewAttempt,
   updateExpiryNotifiedAt
 } from '../db/instance-suspend.js'
 import { deleteInstance as deleteIncusInstance, getIncusClient } from '../lib/incus/index.js'
-import { rollbackResources } from '../db/index.js'
+import { deleteExpiredInstanceAndRollbackResources } from '../db/quota-operations.js'
 import { sendReleaseNotification } from '../lib/release-notifier.js'
 
 // 并发限制
@@ -282,19 +284,23 @@ async function executeExpirySuspend(): Promise<void> {
 async function processExpirySuspend(instance: any): Promise<void> {
   try {
     // 封停实例
-    await suspendInstanceByExpiry(instance.id)
-
-    // 尝试停止 Incus 实例
-    try {
-      const host = await db.getHostById(instance.hostId)
-      if (host) {
-        const client = await getIncusClient(host)
-        const { stopInstance } = await import('../lib/incus/index.js')
-        await stopInstance(client, instance.incusId, true) // force stop
+    const suspended = await suspendInstanceByExpiry(instance.id, async () => {
+      // 在实例锁仍持有时停止外部实例，避免续费解封后又被旧任务停止。
+      try {
+        const host = await db.getHostById(instance.hostId)
+        if (host) {
+          const client = await getIncusClient(host)
+          const { stopInstance } = await import('../lib/incus/index.js')
+          await stopInstance(client, instance.incusId, true) // force stop
+        }
+      } catch (stopError) {
+        // 停止失败不影响数据库封停逻辑
+        console.log(`[Billing] Failed to stop Incus instance ${instance.incusId}:`, stopError)
       }
-    } catch (stopError) {
-      // 停止失败不影响封停逻辑
-      console.log(`[Billing] Failed to stop Incus instance ${instance.incusId}:`, stopError)
+    })
+    if (!suspended) {
+      console.log(`[Billing] Skipped expiry suspension for instance ${instance.id}: status changed or not provisioned`)
+      return
     }
 
     // 发送封停通知
@@ -354,60 +360,100 @@ async function executeExpiryDelete(): Promise<void> {
  * 处理单个实例的到期删除
  */
 async function processExpiryDelete(instance: any): Promise<void> {
+  let claimVersion: number | null = null
   try {
-    const host = await db.getHostById(instance.hostId)
+    if (!instance.suspendedAt) return
+
+    // 先在数据库中认领，再执行外部删除；续费必须通过同一实例锁和版本
+    // 检查，因此不会在本任务拿到旧快照后误删刚续费的 Incus 实例。
+    const claimed = await claimExpiredInstanceForDeletion(
+      instance.id,
+      instance.version,
+      instance.suspendedAt
+    )
+    if (!claimed) {
+      console.log(`[Billing] Skipped expired instance ${instance.id}: state changed or already claimed`)
+      return
+    }
+    claimVersion = claimed.version
+
+    const host = await db.getHostById(claimed.hostId)
+    if (!host) {
+      throw new Error(`Host ${claimed.hostId} not found while deleting expired instance ${claimed.id}`)
+    }
+    const client = await getIncusClient(host)
 
     // 尝试删除 Incus 实例
-    if (host) {
-      try {
-        const client = await getIncusClient(host)
-        await deleteIncusInstance(client, instance.incusId)
-      } catch (incusError) {
-        // Incus 删除失败不影响数据库记录的清理
-        console.log(`[Billing] Failed to delete Incus instance ${instance.incusId}:`, incusError)
+    try {
+      await deleteIncusInstance(client, claimed.incusId)
+    } catch (incusError) {
+      const message = incusError instanceof Error ? incusError.message : String(incusError)
+      // 删除接口幂等：实例已经不存在时可以继续清理数据库；其他错误必须保留记录，
+      // 让下一轮调度重试，避免外部资源和数据库状态分叉。
+      if (!message.toLowerCase().includes('not found')) {
+        throw incusError
       }
+      console.log(`[Billing] Incus instance ${claimed.incusId} already absent, continuing cleanup`)
     }
 
-    // 回滚实例资源
-    await rollbackResources({
-      hostId: instance.hostId,
-      cpu: instance.cpu,
-      memory: instance.memory,
-      disk: instance.disk,
-      portCount: instance.portLimit || 0
+    const isNatNetwork = ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only']
+      .includes(claimed.networkMode)
+
+    // 删除数据库记录和回滚资源必须是同一个事务，防止删除成功后资源回滚失败导致永久泄漏。
+    const deleted = await deleteExpiredInstanceAndRollbackResources({
+      instanceId: claimed.id,
+      hostId: claimed.hostId,
+      cpu: claimed.cpu,
+      memory: claimed.memory,
+      disk: claimed.disk,
+      // 释放创建时按实例 portLimit 预占的数量，而不是实际映射数量。
+      portCount: isNatNetwork ? (claimed.portLimit || 0) : 0,
+      expectedVersion: claimed.version,
+      expectedSuspendedAt: claimed.suspendedAt!
     })
 
-    // 删除数据库记录（级联删除关联数据）
-    await prisma.instance.delete({
-      where: { id: instance.id }
-    })
+    if (!deleted) {
+      console.log(`[Billing] Skipped expired instance ${claimed.id}: record was already handled`)
+      return
+    }
+    // 数据库清理已成功，后续通知失败不能把已删除实例恢复成候选。
+    claimVersion = null
 
     // 发送删除通知
-    await sendNotification(instance.userId, 'instance_deleted', {
-      instanceName: instance.name
+    await sendNotification(claimed.userId, 'instance_deleted', {
+      instanceName: claimed.name
     })
 
     await createLog(
-      instance.userId,
+      claimed.userId,
       'instance',
       'instance.deleted_expired',
-      `Instance "${instance.name}" automatically deleted after ${SUSPEND_AFTER_DELETE_DAYS} days of suspension`,
+      `Instance "${claimed.name}" automatically deleted after ${SUSPEND_AFTER_DELETE_DAYS} days of suspension`,
       'success'
     )
 
-    console.log(`[Billing] Deleted expired instance ${instance.id}`)
+    console.log(`[Billing] Deleted expired instance ${claimed.id}`)
 
     // 向套餐绑定的通知渠道发送"资源释放"通知
-    if (instance.packageId) {
+    if (claimed.packageId) {
       sendReleaseNotification({
-        packageId: instance.packageId,
-        cpu: instance.cpu,
-        memory: instance.memory,
+        packageId: claimed.packageId,
+        cpu: claimed.cpu,
+        memory: claimed.memory,
         source: '实例过期自动删除'
       }).catch(() => {})
     }
 
   } catch (error) {
+    if (claimVersion !== null) {
+      const restored = await restoreExpiredInstanceDeletionClaim(instance.id, claimVersion).catch(restoreError => {
+        console.error(`[Billing] Failed to restore expired deletion claim for instance ${instance.id}:`, restoreError)
+        return false
+      })
+      if (!restored) {
+        console.error(`[Billing] Expired deletion claim for instance ${instance.id} was not restored`)
+      }
+    }
     console.error(`[Billing] Failed to delete instance ${instance.id}:`, error)
   }
 }

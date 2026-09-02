@@ -4,6 +4,7 @@
  */
 
 import { createLog, LogModule } from '../db/logs.js'
+import { Prisma } from '@prisma/client'
 
 // ==================== 安全事件类型 ====================
 
@@ -211,7 +212,8 @@ export async function logSecurityEvent(
  * 禁止: ' " \ / ? ] [ = + . < > ` ; : | ! @ # $ % ^ & * { } ~
  * 允许: ( ) 空格 , 
  */
-const DANGEROUS_CHARS_REGEX = /['"\\\/?[\]=+.<>`;\:|!@#$%^&*\{\}~]/g
+const DANGEROUS_CHARS_REGEX = /['"\\\/?[\]=+.<>`;\:|!@#$%^&*\{\}~]/
+const DANGEROUS_CHARS_REPLACE_REGEX = /['"\\\/?[\]=+.<>`;\:|!@#$%^&*\{\}~]/g
 
 /**
  * 安全名称正则（只允许字母、数字、连字符、下划线、空格、逗号、圆括号和中文）
@@ -243,7 +245,7 @@ export function containsDangerousChars(input: string): boolean {
  * 移除危险字符
  */
 export function removeDangerousChars(input: string): string {
-    return input.replace(DANGEROUS_CHARS_REGEX, '')
+    return input.replace(DANGEROUS_CHARS_REPLACE_REGEX, '')
 }
 
 /**
@@ -757,8 +759,15 @@ export async function revokeRefreshToken(token: string): Promise<boolean> {
             where: { token }
         })
         return true
-    } catch {
-        return false
+    } catch (error) {
+        // 并发登出时记录已被删除等同于已撤销；其他数据库错误必须向调用方抛出，
+        // 防止登出接口在 Refresh Token 仍有效时假报成功。
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            return true
+        }
+
+        console.error('Failed to revoke refresh token:', error)
+        throw error
     }
 }
 
@@ -849,6 +858,8 @@ export async function updateSessionActivity(token: string): Promise<{ expiresAt:
 
 // ==================== Access Token 失效机制 (数据库) ====================
 
+const USER_LEVEL_SESSION_ID = '__USER_LEVEL__'
+
 /**
  * 使用户的所有 Access Token 失效
  * 通过记录一个时间戳，所有在此时间戳之前签发的 token 都将被视为无效
@@ -856,7 +867,6 @@ export async function updateSessionActivity(token: string): Promise<{ expiresAt:
 export async function invalidateUserAccessTokens(userId: number): Promise<void> {
     try {
         const now = Math.floor(Date.now() / 1000)  // 使用秒级时间戳，与 JWT iat 一致
-        const USER_LEVEL_SESSION_ID = '__USER_LEVEL__'  // 特殊标记表示用户级别失效
         
         // 使用 upsert 确保每个用户只有一条记录
         await prisma.tokenInvalidation.upsert({
@@ -876,9 +886,59 @@ export async function invalidateUserAccessTokens(userId: number): Promise<void> 
             }
         })
     } catch (error) {
-        // 记录错误但不抛出，避免影响其他功能
+        // 失效记录写入失败时必须让调用方感知，否则旧 Token 仍可继续使用。
         console.error('Failed to invalidate user tokens:', error)
+        throw error
     }
+}
+
+/**
+ * 原子更新密码并撤销所有会话。
+ *
+ * 密码更新、Refresh Token 删除和 Access Token 失效标记必须在同一事务中完成；
+ * 任一操作失败时全部回滚，避免密码已经改变但旧 Access Token 仍可使用。
+ */
+export async function updateUserPasswordAndInvalidateSessions(
+    userId: number,
+    data: {
+        passwordHash: string
+        email?: string
+        avatarStyle?: string
+    }
+): Promise<void> {
+    const invalidatedAt = Math.floor(Date.now() / 1000)
+
+    await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+            where: { id: userId },
+            data: {
+                passwordHash: data.passwordHash,
+                ...(data.email !== undefined ? { email: data.email } : {}),
+                ...(data.avatarStyle !== undefined ? { avatarStyle: data.avatarStyle } : {})
+            }
+        })
+
+        await tx.refreshToken.deleteMany({
+            where: { userId }
+        })
+
+        await tx.tokenInvalidation.upsert({
+            where: {
+                userId_sessionId: {
+                    userId,
+                    sessionId: USER_LEVEL_SESSION_ID
+                }
+            },
+            create: {
+                userId,
+                sessionId: USER_LEVEL_SESSION_ID,
+                invalidatedAt
+            },
+            update: {
+                invalidatedAt
+            }
+        })
+    })
 }
 
 /**
@@ -906,8 +966,9 @@ export async function invalidateSessionAccessToken(userId: number, sessionId: st
             }
         })
     } catch (error) {
-        // 记录错误但不抛出，避免影响其他功能
+        // 失效记录写入失败时必须让调用方感知，否则旧 Token 仍可继续使用。
         console.error('Failed to invalidate session token:', error)
+        throw error
     }
 }
 
@@ -918,7 +979,7 @@ export async function invalidateSessionAccessToken(userId: number, sessionId: st
  * @param sessionId 可选的会话标识
  * @returns true 表示 token 已失效，false 表示有效
  * 
- * 注意：如果数据库查询失败，返回 false（允许 token 通过），避免 Redis 不可用导致频繁登出
+ * 注意：如果数据库查询失败会抛出异常，让认证调用方 fail closed，避免旧 Token 被放行。
  */
 export async function isAccessTokenInvalidated(userId: number, tokenIssuedAt: number, sessionId?: string): Promise<boolean> {
     try {
@@ -939,7 +1000,6 @@ export async function isAccessTokenInvalidated(userId: number, tokenIssuedAt: nu
         }
 
         // 检查用户级别的失效
-        const USER_LEVEL_SESSION_ID = '__USER_LEVEL__'  // 特殊标记表示用户级别失效
         const userInvalidation = await prisma.tokenInvalidation.findUnique({
             where: {
                 userId_sessionId: {
@@ -955,9 +1015,8 @@ export async function isAccessTokenInvalidated(userId: number, tokenIssuedAt: nu
 
         return false
     } catch (error) {
-        // 数据库查询失败时，返回 false（允许 token 通过），避免 Redis 不可用导致频繁登出
-        console.error('Failed to check token invalidation, allowing token:', error)
-        return false
+        console.error('Failed to check token invalidation, rejecting token:', error)
+        throw error
     }
 }
 

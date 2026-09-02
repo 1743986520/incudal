@@ -59,6 +59,7 @@ const detailCardStyle = ref<Record<string, string>>({})
 
 let searchTimer: number | null = null
 let detailCardFrame: number | null = null
+let marketRequestSeq = 0
 
 function getRegionLabel(code: string): string {
   return getLocalizedCountryName(code, locale.value, (key, fallback) => t(key, fallback))
@@ -137,7 +138,6 @@ const ui = computed(() => themeStore.isDark
       title: 'text-[#f3f4f6]',
       badge: 'border-[#1f2937] bg-[#111827] text-[#f3f4f6]',
       badgeDot: 'bg-[#ffffff]',
-      infoBanner: 'bg-[#111827] text-[#f3f4f6]',
       summaryCard: 'border-[#1f2937] bg-[#030712]',
       summaryLabel: 'text-[#6b7280]',
       summaryValue: 'text-[#f3f4f6]',
@@ -180,7 +180,6 @@ const ui = computed(() => themeStore.isDark
       title: 'text-[#111827]',
       badge: 'border-[#aac7fa]/60 bg-[#f3f4f6] text-[#111827]',
       badgeDot: 'bg-[#111827]',
-      infoBanner: 'bg-[#f3f4f6] text-[#111827]',
       summaryCard: 'bg-white shadow-[0_1px_2px_rgba(15,23,42,0.08),0_1px_3px_1px_rgba(15,23,42,0.06)]',
       summaryLabel: 'text-[#6b7280]',
       summaryValue: 'text-[#111827]',
@@ -255,14 +254,6 @@ usePageSeo(() => {
     canonical,
     keywords: t('publicSite.seo.keywords').replace(/Incudal/g, brand.brandName)
   }
-})
-
-const infoBannerText = computed(() => {
-  if (!authStore.isAuthenticated && parsePackageIdQuery(route.query.package)) {
-    return t('publicSite.market.buyLinkNotice')
-  }
-
-  return t('publicSite.market.publicNotice')
 })
 
 function formatTraffic(bytes: string | null): string {
@@ -446,14 +437,18 @@ async function loadData(
   preferredPackageId: number | null = selectedPackageId.value,
   preferredPlanId: number | null = selectedPlanId.value
 ): Promise<void> {
+  const requestSeq = ++marketRequestSeq
+  const requestSource = packageSource.value
   loading.value = true
   loadError.value = ''
 
   try {
     const [packagesResponse, regionsResponse] = await Promise.all([
-      api.packages.listPublic({ source: packageSource.value }),
-      api.packages.getPublicRegions({ source: packageSource.value })
+      api.packages.listPublic({ source: requestSource }),
+      api.packages.getPublicRegions({ source: requestSource })
     ])
+
+    if (requestSeq !== marketRequestSeq) return
 
     packages.value = (packagesResponse.packages || []) as unknown as PublicPackage[]
     regions.value = regionsResponse.regions || []
@@ -462,12 +457,15 @@ async function loadData(
     ensureSelectedPlan(preferredPlanId)
     syncRouteQuery()
   } catch (error) {
+    if (requestSeq !== marketRequestSeq) return
     console.error('Failed to load public market:', error)
     packages.value = []
     regions.value = []
     loadError.value = t('common.loadFailed')
   } finally {
-    loading.value = false
+    if (requestSeq === marketRequestSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -724,12 +722,6 @@ onUnmounted(() => {
               {{ t('publicSite.market.description') }}
             </p>
 
-            <div class="mt-8 flex items-start gap-3 rounded-lg px-4 py-3.5 text-sm leading-6" :class="ui.infoBanner">
-              <svg class="mt-0.5 h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{{ infoBannerText }}</span>
-            </div>
           </div>
 
           <div class="grid grid-cols-2 gap-3">

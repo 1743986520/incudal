@@ -57,7 +57,7 @@ export async function createInstanceAsync(
     bootHostShutdownTimeout?: number | null
   },
   userId: number,
-  resources: { cpu: number; memory: number; disk: number }
+  resources: { cpu: number; memory: number; disk: number; portCount?: number }
 ): Promise<void> {
   try {
     console.log(`\n[Provisioning] ===== 开始创建实例流程 =====`)
@@ -268,21 +268,18 @@ export async function createInstanceAsync(
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.error(`[Provisioning] ✘ 实例 ${instanceId} 创建失败:`, errorMessage)
 
-    const settlement = await failCreatingInstanceAndRefund(instanceId, errorMessage)
+    const settlement = await failCreatingInstanceAndRefund(instanceId, errorMessage, resources ? {
+      hostId: host.id,
+      cpu: resources.cpu,
+      memory: resources.memory,
+      disk: resources.disk,
+      portCount: resources.portCount ?? (['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(config.networkMode)
+        ? (config.portLimit || 0)
+        : 0)
+    } : undefined)
 
     if (settlement.claimed && userId && resources) {
-      try {
-        await db.rollbackResources({
-          hostId: host.id,
-          cpu: resources.cpu,
-          memory: resources.memory,
-          disk: resources.disk,
-          portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(config.networkMode) ? (config.portLimit || 0) : 0
-        })
-        console.log(`[Provisioning] 用户 ${userId} 资源已回滚 (CPU=${resources.cpu}, Mem=${resources.memory}MB, Disk=${resources.disk}MB)`)
-      } catch (rollbackErr) {
-        console.error(`[Provisioning] 资源回滚失败:`, rollbackErr)
-      }
+      console.log(`[Provisioning] 用户 ${userId} 资源已回滚 (CPU=${resources.cpu}, Mem=${resources.memory}MB, Disk=${resources.disk}MB)`)
     } else if (!settlement.claimed) {
       console.log(`[Provisioning] 实例 ${instanceId} 已被超时清理任务处理，跳过资源回滚`)
     }

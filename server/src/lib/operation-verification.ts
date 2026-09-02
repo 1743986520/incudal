@@ -6,7 +6,7 @@
  */
 
 import { prisma } from '../db/prisma.js'
-import { OperationType, VerificationChannel } from '@prisma/client'
+import { Prisma, OperationType, VerificationChannel } from '@prisma/client'
 import { sendOperationVerificationEmail } from './mailer.js'
 import { sendVerificationNotification } from './notifier.js'
 import crypto from 'crypto'
@@ -33,6 +33,31 @@ const VERIFICATION_CONFIG = {
     codeLength: 6,
     expiresInMinutes: 10,
     maxAttempts: 5
+} as const
+
+// 当前 schema 没有失败次数列。将次数编码在验证码记录自身中，避免进程重启或
+// 多副本部署后重置计数；该内部后缀不会被发送给用户。
+const FAILED_ATTEMPTS_SUFFIX = ':attempts:'
+
+function decodeVerificationCode(storedCode: string): { code: string; attempts: number } {
+    const suffixIndex = storedCode.lastIndexOf(FAILED_ATTEMPTS_SUFFIX)
+    if (suffixIndex === -1) {
+        return { code: storedCode, attempts: 0 }
+    }
+
+    const attempts = Number(storedCode.slice(suffixIndex + FAILED_ATTEMPTS_SUFFIX.length))
+    if (!Number.isInteger(attempts) || attempts < 0 || attempts > VERIFICATION_CONFIG.maxAttempts) {
+        return { code: storedCode, attempts: 0 }
+    }
+
+    return {
+        code: storedCode.slice(0, suffixIndex),
+        attempts
+    }
+}
+
+function encodeVerificationCode(code: string, attempts: number): string {
+    return `${code}${FAILED_ATTEMPTS_SUFFIX}${attempts}`
 }
 
 // 操作类型显示名称（用于通知）
@@ -291,37 +316,100 @@ export async function verifyOperationCode(
     code: string,
     resourceId?: number
 ): Promise<VerifyOperationResult> {
-    // 查找匹配的验证记录
-    const verification = await prisma.operationVerification.findFirst({
-        where: {
-            userId,
-            operationType,
-            code,
-            resourceId: resourceId || null,
+    return prisma.$transaction(async (tx) => {
+        const now = new Date()
+        const invalidResult: VerifyOperationResult = {
+            success: false,
             verified: false,
-            expiresAt: { gt: new Date() }
-        }
-    })
-
-    if (!verification) {
-        return { 
-            success: false, 
-            verified: false, 
             error: 'Invalid or expired verification code',
             errorCode: 'INVALID_CODE'
         }
-    }
 
-    // 标记为已验证
-    await prisma.operationVerification.update({
-        where: { id: verification.id },
-        data: { 
-            verified: true,
-            verifiedAt: new Date()
+        const verification = await tx.operationVerification.findFirst({
+            where: {
+                userId,
+                operationType,
+                resourceId: resourceId || null,
+                verified: false,
+                expiresAt: { gt: now }
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, code: true, expiresAt: true }
+        })
+
+        if (!verification) {
+            return invalidResult
         }
-    })
 
-    return { success: true, verified: true }
+        // Prisma 的普通查询不会锁行；用 FOR UPDATE 串行化多副本下对同一验证码的计数。
+        await tx.$queryRaw(Prisma.sql`
+            SELECT id
+            FROM "operation_verifications"
+            WHERE id = ${verification.id} AND verified = false
+            FOR UPDATE
+        `)
+
+        const lockedVerification = await tx.operationVerification.findUnique({
+            where: { id: verification.id },
+            select: { code: true, expiresAt: true, verified: true }
+        })
+
+        if (
+            !lockedVerification
+            || lockedVerification.verified
+            || lockedVerification.expiresAt <= now
+        ) {
+            return invalidResult
+        }
+
+        const storedCode = decodeVerificationCode(lockedVerification.code)
+        const attempts = storedCode.attempts
+
+        // 达到上限后立即删除验证码；删除失败则保留计数并向上抛错，避免恢复为可猜测状态。
+        if (attempts >= VERIFICATION_CONFIG.maxAttempts) {
+            await tx.operationVerification.deleteMany({
+                where: {
+                    userId,
+                    operationType,
+                    resourceId: resourceId || null,
+                    verified: false
+                }
+            })
+            return invalidResult
+        }
+
+        if (storedCode.code !== code) {
+            const nextAttempts = attempts + 1
+
+            if (nextAttempts >= VERIFICATION_CONFIG.maxAttempts) {
+                await tx.operationVerification.deleteMany({
+                    where: {
+                        userId,
+                        operationType,
+                        resourceId: resourceId || null,
+                        verified: false
+                    }
+                })
+            } else {
+                await tx.operationVerification.update({
+                    where: { id: verification.id },
+                    data: { code: encodeVerificationCode(storedCode.code, nextAttempts) }
+                })
+            }
+
+            return invalidResult
+        }
+
+        await tx.operationVerification.update({
+            where: { id: verification.id },
+            data: {
+                verified: true,
+                verifiedAt: now
+            }
+        })
+
+        return { success: true, verified: true }
+    })
 }
 
 /**
@@ -364,6 +452,64 @@ export async function consumeOperationVerification(
             verified: true
         }
     })
+}
+
+/**
+ * 原子领取一次已通过的二次验证。
+ *
+ * `isOperationVerified` 仅用于页面状态查询，不能作为敏感操作的授权闸门，
+ * 因为多个并发请求可能同时读到同一条已验证记录。实际执行敏感操作前，
+ * 必须调用此函数；成功后记录立即删除，失败请求不能继续执行操作。
+ */
+export async function claimOperationVerification(
+    userId: number,
+    operationType: OperationType,
+    resourceId?: number
+): Promise<boolean> {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000)
+
+    return prisma.$transaction(async (tx) => {
+        const verification = await tx.operationVerification.findFirst({
+            where: {
+                userId,
+                operationType,
+                resourceId: resourceId || null,
+                verified: true,
+                verifiedAt: { gt: tenMinutesAgo }
+            },
+            orderBy: { verifiedAt: 'asc' },
+            select: { id: true }
+        })
+
+        if (!verification) {
+            return false
+        }
+
+        const result = await tx.operationVerification.deleteMany({
+            where: {
+                id: verification.id,
+                verified: true,
+                verifiedAt: { gt: tenMinutesAgo }
+            }
+        })
+
+        return result.count === 1
+    })
+}
+
+/**
+ * 按操作类型领取二次验证；没有配置通知渠道的资源操作沿用“不要求验证”的策略。
+ */
+export async function claimOperationVerificationIfRequired(
+    userId: number,
+    operationType: OperationType,
+    resourceId?: number
+): Promise<boolean> {
+    if (isResourceOperation(operationType) && !(await isResourceVerificationRequired(userId))) {
+        return true
+    }
+
+    return claimOperationVerification(userId, operationType, resourceId)
 }
 
 /**

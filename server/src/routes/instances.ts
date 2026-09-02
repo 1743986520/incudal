@@ -24,7 +24,7 @@ import { deleteSnapshot } from '../lib/incus/incus-snapshots.js'
 import { generateIncusConfig, generateRandomPassword } from '../lib/incus-config-generator.js'
 import { encryptSensitiveData, decryptSensitiveData, validateName } from '../lib/security.js'
 import {
-  consumeOperationVerification
+  claimOperationVerificationIfRequired
 } from '../lib/operation-verification.js'
 import {
   detectCloudInitStatus,
@@ -1078,6 +1078,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'KVM instances do not support IPv4 NAT & IPv6 NAT or IPv6 NAT package network modes'))
     }
 
+    // 付费实例的实际端口配额来自所选方案；免费实例才回退到套餐字段。
+    // 资源预占、实例记录和失败回滚必须使用同一个值。
+    const effectivePortLimit = selectedPlan?.portLimit ?? pkgWithExtras.port_limit ?? 20
+    const reservedNatPortCount = ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode)
+      ? Math.max(0, effectivePortLimit)
+      : 0
+
     // ==================== 阶段 2.5: 验证用户自定义初始化命令 =====================
     let extraShellCommands: string | undefined
     if (customInitCommandIds && customInitCommandIds.length > 0) {
@@ -1128,7 +1135,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       memoryMax: pkg.memory_max,
       diskMax: pkg.disk_max,
       networkMode,
-      portLimit: pkgWithExtras.port_limit || 20,
+      portLimit: effectivePortLimit,
       nested: Boolean(pkg.nested),
       privileged: Boolean(pkg.privileged),
       nodeSelectors: JSON.parse(pkgWithExtras.node_selectors || '[]'),
@@ -1161,7 +1168,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           disk: requestedDisk,
           hostId: hostId,
           ownerId: pkg.user_id!,
-          portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode) ? (pkgWithExtras.port_limit || 0) : 0
+          portCount: reservedNatPortCount
         })
 
         if (!lockedHost) {
@@ -1656,7 +1663,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       networkMode,
       nested: Boolean(pkg.nested),
       privileged: Boolean(pkg.privileged),
-      portLimit: pkgWithExtras.port_limit || 20,
+       portLimit: effectivePortLimit,
       // 实例类型：根据套餐的实例类型决定创建容器还是虚拟机
       instanceType: effectiveInstanceType,
       // SSH 端口（固定 22）
@@ -1681,7 +1688,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       bootAutostartPriority: pkgConfig.boot_autostart_priority,
       bootAutostartDelay: pkgConfig.boot_autostart_delay,
       bootHostShutdownTimeout: pkgConfig.boot_host_shutdown_timeout
-    }, user.id, { cpu: requestedCpu, memory: requestedMemory, disk: requestedDisk }).catch(err => {
+    }, user.id, {
+      cpu: requestedCpu,
+      memory: requestedMemory,
+      disk: requestedDisk,
+       portCount: reservedNatPortCount
+    }).catch(err => {
       const errorMessage = err instanceof Error ? err.message : String(err)
       fastify.log.error({ err: errorMessage }, `实例 ${instanceId} 创建失败`)
     })
@@ -1767,21 +1779,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const portCount = ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode)
       ? (instance.portLimit || 0) : 0
-    const claimed = await prisma.instance.updateMany({
-      where: { id: instanceId, userId: request.user.id, status: 'error' },
-      data: { status: 'creating', ipv4: null, ipv6: null, version: { increment: 1 } }
-    })
-    if (claimed.count !== 1) {
-      return reply.code(409).send({ error: '实例状态已变化，请刷新后重试', code: 'INSTANCE_STATE_CHANGED' })
-    }
-
     let resourcesReserved = false
     try {
-      await db.reserveResources({
+      // 状态认领与资源预占必须在同一事务中完成；否则进程若在两者之间
+      // 崩溃，超时清理会把从未预占的资源再次回滚。
+      resourcesReserved = await db.claimInstanceAndReserveResources({
+        instanceId,
+        userId: request.user.id,
         hostId: instance.hostId, cpu: instance.cpu, memory: instance.memory,
         disk: instance.disk, portCount
       })
-      resourcesReserved = true
+      if (!resourcesReserved) {
+        return reply.code(409).send({ error: '实例状态已变化，请刷新后重试', code: 'INSTANCE_STATE_CHANGED' })
+      }
 
       const lastPurchase = await prisma.instanceBillingRecord.findFirst({
         where: { instanceId, type: 'newPurchase' }, orderBy: { createdAt: 'desc' }
@@ -1809,9 +1819,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     } catch (error) {
       if (resourcesReserved) {
-        await db.rollbackResources({ hostId: instance.hostId, cpu: instance.cpu, memory: instance.memory, disk: instance.disk, portCount }).catch(() => {})
+        const settled = await db.failCreatingInstanceAndRollbackResources(instanceId, {
+          hostId: instance.hostId,
+          cpu: instance.cpu,
+          memory: instance.memory,
+          disk: instance.disk,
+          portCount
+        })
+        if (!settled) {
+          return reply.code(409).send({ error: '实例状态已变化，请刷新后重试', code: 'INSTANCE_STATE_CHANGED' })
+        }
       }
-      await prisma.instance.updateMany({ where: { id: instanceId, status: 'creating' }, data: { status: 'error' } })
       const message = error instanceof Error && error.message === 'BALANCE_INSUFFICIENT' ? '余额不足，无法重试创建' : (error instanceof Error ? error.message : String(error))
       return reply.code(error instanceof Error && error.message === 'BALANCE_INSUFFICIENT' ? 400 : 503).send({ error: message })
     }
@@ -1848,7 +1866,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       bootAutostartPriority: instance.bootAutostartPriority,
       bootAutostartDelay: instance.bootAutostartDelay,
       bootHostShutdownTimeout: instance.bootHostShutdownTimeout
-    }, request.user.id, { cpu: instance.cpu, memory: instance.memory, disk: instance.disk }).catch(err => {
+    }, request.user.id, {
+      cpu: instance.cpu,
+      memory: instance.memory,
+      disk: instance.disk,
+      portCount
+    }).catch(err => {
       fastify.log.error({ err }, `实例 ${instanceId} 重试创建失败`)
     })
 
@@ -3246,6 +3269,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const claimedVerification = await claimOperationVerificationIfRequired(
+      user.id,
+      'reinstall_instance',
+      instanceId
+    )
+    if (!claimedVerification) {
+      return reply.code(403).send({
+        error: 'Sensitive operation requires verification',
+        code: 'VERIFICATION_REQUIRED',
+        operationType: 'reinstall_instance'
+      })
+    }
+
     // 创建异步任务
     const task = await createInstanceTask({
       instanceId,
@@ -3258,9 +3294,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     })
 
     await createLog(user.id, 'instance', 'instance.rebuild', `Queued rebuild task for instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
-
-    // 清理已使用的验证记录（在任务中会重新验证）
-    await consumeOperationVerification(user.id, 'reinstall_instance', instanceId)
 
     reply.code(202).send({
       message: 'Instance rebuild task queued',
@@ -3393,6 +3426,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const claimedVerification = await claimOperationVerificationIfRequired(
+      user.id,
+      'recreate_instance',
+      instanceId
+    )
+    if (!claimedVerification) {
+      return reply.code(403).send({
+        error: 'Sensitive operation requires verification',
+        code: 'VERIFICATION_REQUIRED',
+        operationType: 'recreate_instance'
+      })
+    }
+
     // 创建异步任务
     const task = await createInstanceTask({
       instanceId,
@@ -3405,9 +3451,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     })
 
     await createLog(user.id, 'instance', 'instance.recreate', `Queued recreate task for instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
-
-    // 清理已使用的验证记录
-    await consumeOperationVerification(user.id, 'recreate_instance', instanceId)
 
     reply.code(202).send({
       message: 'Instance recreate task queued',
@@ -3487,6 +3530,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     // 检查转移锁定
     if (await checkTransferLock(instanceId, reply)) return
+
+    const claimedVerification = await claimOperationVerificationIfRequired(
+      user.id,
+      'delete_instance',
+      instanceId
+    )
+    if (!claimedVerification) {
+      return reply.code(403).send({
+        error: 'Sensitive operation requires verification',
+        code: 'VERIFICATION_REQUIRED',
+        operationType: 'delete_instance'
+      })
+    }
 
 
 
@@ -3863,9 +3919,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         'success',
         { instanceId }
       )
-
-      // 清理已使用的验证记录
-      await consumeOperationVerification(user.id, 'delete_instance', instanceId)
 
       return {
         message: 'Instance deleted',
@@ -4526,12 +4579,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
     }
 
-    // 权限检查：管理员或宿主机所有者可以修改实例配额
+    // 配额会影响租户资源边界；节点所有者不能修改其他租户实例的配额。
+    // 该管理接口仅保留给管理员，避免通过宿主机所有权越过租户边界。
     const host = await db.getHostById(instance.host_id)
     if (!host) {
       return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
     }
-    if (user.role !== 'admin' && host.user_id !== user.id) {
+    if (user.role !== 'admin') {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 

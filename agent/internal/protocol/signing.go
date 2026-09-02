@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,10 +13,18 @@ import (
 	"time"
 )
 
-// CanonicalJSON 使用 Go 标准库的 JSON 编码。
-// map key 会按字典序输出，必须与面板端 stableStringify 规则保持一致。
+// CanonicalJSON matches the server's stableStringifyAgentBody: recursively
+// sorted object keys, compact JSON, and no HTML escaping. The default
+// json.Marshal behavior escapes <, >, and &, which would change the body hash.
 func CanonicalJSON(value any) ([]byte, error) {
-	return json.Marshal(value)
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	// Node's JSON.stringify does not HTML-escape <, >, or &.
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'}), nil
 }
 
 func BodySHA256(body []byte) string {

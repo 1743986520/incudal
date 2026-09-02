@@ -841,6 +841,44 @@ export interface HostAgentBulkUpgradeResponse {
   latestVersion: string
 }
 
+export type SystemUpdateMode = 'auto' | 'docker' | 'release'
+
+export interface SystemUpdateExecution {
+  id: string
+  status: 'idle' | 'running' | 'succeeded' | 'failed'
+  sourceRepository: string
+  mode: SystemUpdateMode
+  startedAt: string
+  finishedAt: string | null
+  exitCode: number | null
+  signal: string | null
+  output: string
+  error: string | null
+}
+
+export interface SystemUpdateStatusResponse {
+  currentVersion: string
+  sourceRepository: string
+  sourceUrl: string
+  execution: SystemUpdateExecution | null
+  executorAvailable: boolean
+  installDirectory: string
+}
+
+export interface SystemUpdateCheckResponse {
+  currentVersion: string
+  sourceRepository: string
+  sourceUrl: string
+  latest: {
+    version: string
+    name: string
+    url: string
+    publishedAt: string | null
+    notes: string
+  }
+  updateAvailable: boolean
+}
+
 export interface HostAgentInstallCommandResponse {
   host: {
     id: number
@@ -1408,6 +1446,78 @@ export interface HelpArticle {
   created_by: number | null
   created_at: string
   updated_at: string
+}
+
+/** Public list response uses camelCase timestamps and omits article content. */
+export interface HelpArticleListItem {
+  id: number
+  title: string
+  slug: string
+  category: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HelpArticleListResponse {
+  articles: HelpArticleListItem[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface HelpCategoriesResponse {
+  categories: Array<{
+    category: string
+    count: number
+  }>
+}
+
+export interface HelpArticleDetail {
+  id: number
+  title: string
+  slug: string
+  content: string
+  category: string
+  created_at: string
+  updated_at: string
+}
+
+export interface HelpArticleResponse {
+  article: HelpArticleDetail
+}
+
+export interface HelpAdminArticleListItem {
+  id: number
+  title: string
+  slug: string
+  category: string
+  sort_order: number
+  published: number
+  pinned: number
+  created_at: string
+  updated_at: string
+}
+
+export interface HelpAdminArticleListResponse {
+  articles: Array<HelpAdminArticleListItem | HelpArticle>
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface HelpAdminArticleResponse {
+  article: HelpArticle
+}
+
+export interface HelpArticleCreateResponse {
+  message: string
+  article: Pick<HelpArticle, 'id' | 'title' | 'slug'>
+}
+
+export interface HelpArticleUpdateResponse {
+  message: string
 }
 
 export interface CreateHelpArticleRequest {

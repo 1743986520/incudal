@@ -654,61 +654,87 @@ export default async function mailRoutes(fastify: FastifyInstance) {
     }
 
     // 事务：扣费 + 创建订阅 + 处理AFF
-    const subscription = await prisma.$transaction(async (tx) => {
-      // 扣除余额
-      await tx.user.update({
-        where: { id: userId },
-        data: { balance: { decrement: finalPrice } }
-      })
-
-      // 记录余额日志
-      const userBalance = Number(user.balance)
-      await tx.balanceLog.create({
-        data: {
-          userId,
-          type: 'consume',
-          amount: -finalPrice,
-          balanceBefore: userBalance,
-          balanceAfter: Number((userBalance - finalPrice).toFixed(2)),
-          remark: validatedAffCode 
-            ? `购买域名邮箱 - ${plan.name} (折扣 ¥${discountAmount.toFixed(2)})`
-            : `购买域名邮箱 - ${plan.name} (${source.name})`
+    let subscription
+    try {
+      subscription = await prisma.$transaction(async (tx) => {
+        // 在事务内按余额条件扣款，避免并发购买造成负余额。
+        const balanceUpdate = await tx.user.updateMany({
+          where: { id: userId, balance: { gte: finalPrice } },
+          data: { balance: { decrement: finalPrice } }
+        })
+        if (balanceUpdate.count !== 1) {
+          throw new Error('MAIL_INSUFFICIENT_BALANCE')
         }
-      })
 
-      // 创建订阅
-      const newSubscription = await tx.mailSubscription.create({
-        data: {
-          userId,
-          sourceId: source.id,
-          planId: plan.id,
-          domainLimit: plan.domainLimit,
-          diskLimitGb: plan.diskLimitGb,
-          expiresAt
-        },
-        include: {
-          source: true,
-          plan: true
+        const updatedUser = await tx.user.findUnique({
+          where: { id: userId },
+          select: { balance: true }
+        })
+        if (!updatedUser) {
+          throw new Error('MAIL_USER_NOT_FOUND')
         }
-      })
 
-      // 如果使用了优惠码，创建 AFF 绑定并处理返利
-      if (validatedAffCode) {
-        const { createMailAffBinding, processMailAffCommission } = await import('../db/aff.js')
-        // 创建订阅与优惠码的永久绑定
-        await createMailAffBinding(newSubscription.id, validatedAffCode.id, tx as any)
-        // 给优惠码创建者返利（基于原价，不是折扣后价格）
-        await processMailAffCommission(
-          validatedAffCode.id,
-          newSubscription.id,
-          originalPrice,
-          'new_purchase',
-          tx as any
-        )
+        // 记录余额日志，使用事务内实际扣款后的余额。
+        const balanceAfter = Number(updatedUser.balance)
+        await tx.balanceLog.create({
+          data: {
+            userId,
+            type: 'consume',
+            amount: -finalPrice,
+            balanceBefore: Number((balanceAfter + finalPrice).toFixed(2)),
+            balanceAfter,
+            remark: validatedAffCode
+              ? `购买域名邮箱 - ${plan.name} (折扣 ¥${discountAmount.toFixed(2)})`
+              : `购买域名邮箱 - ${plan.name} (${source.name})`
+          }
+        })
+
+        // 创建订阅
+        const newSubscription = await tx.mailSubscription.create({
+          data: {
+            userId,
+            sourceId: source.id,
+            planId: plan.id,
+            domainLimit: plan.domainLimit,
+            diskLimitGb: plan.diskLimitGb,
+            expiresAt
+          },
+          include: {
+            source: true,
+            plan: true
+          }
+        })
+
+        // 如果使用了优惠码，创建 AFF 绑定并处理返利
+        if (validatedAffCode) {
+          const { createMailAffBinding, processMailAffCommission } = await import('../db/aff.js')
+          // 创建订阅与优惠码的永久绑定
+          await createMailAffBinding(newSubscription.id, validatedAffCode.id, tx as any)
+          // 给优惠码创建者返利（基于原价，不是折扣后价格）
+          await processMailAffCommission(
+            validatedAffCode.id,
+            newSubscription.id,
+            originalPrice,
+            'new_purchase',
+            tx as any
+          )
+        }
+
+        return newSubscription
+      })
+    } catch (error) {
+      if (error instanceof Error && error.message === 'MAIL_INSUFFICIENT_BALANCE') {
+        const latestBalance = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { balance: true }
+        })
+        return reply.code(400).send(apiError(
+          ErrorCode.INSUFFICIENT_BALANCE,
+          `余额不足，需要 ¥${finalPrice.toFixed(2)}，当前余额 ¥${Number(latestBalance?.balance || 0).toFixed(2)}`
+        ))
       }
-
-      return newSubscription
-    })
+      throw error
+    }
 
     await createLog(
       userId,
@@ -786,30 +812,54 @@ export default async function mailRoutes(fastify: FastifyInstance) {
     }
 
     // 事务：扣费 + 续费 + 返利
-    const updated = await prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: { balance: { decrement: finalPrice } }
-      })
-
-      const userBalance = Number(user.balance)
-      const remarkText = discountAmount > 0
-        ? `续费域名邮箱 ${months} 个月（优惠码折扣 -¥${discountAmount.toFixed(2)}）`
-        : `续费域名邮箱 ${months} 个月`
-      
-      await tx.balanceLog.create({
-        data: {
-          userId,
-          type: 'consume',
-          amount: -finalPrice,
-          balanceBefore: userBalance,
-          balanceAfter: Number((userBalance - finalPrice).toFixed(2)),
-          remark: remarkText
+    let updated
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const balanceUpdate = await tx.user.updateMany({
+          where: { id: userId, balance: { gte: finalPrice } },
+          data: { balance: { decrement: finalPrice } }
+        })
+        if (balanceUpdate.count !== 1) {
+          throw new Error('MAIL_INSUFFICIENT_BALANCE')
         }
+
+        const updatedUser = await tx.user.findUnique({
+          where: { id: userId },
+          select: { balance: true }
+        })
+        if (!updatedUser) {
+          throw new Error('MAIL_USER_NOT_FOUND')
+        }
+
+        const balanceAfter = Number(updatedUser.balance)
+        const remarkText = discountAmount > 0
+          ? `续费域名邮箱 ${months} 个月（优惠码折扣 -¥${discountAmount.toFixed(2)}）`
+          : `续费域名邮箱 ${months} 个月`
+
+        await tx.balanceLog.create({
+          data: {
+            userId,
+            type: 'consume',
+            amount: -finalPrice,
+            balanceBefore: Number((balanceAfter + finalPrice).toFixed(2)),
+            balanceAfter,
+            remark: remarkText
+          }
+        })
+
+      // 在同一事务内重新读取订阅，避免并发续费都基于事务外的旧过期时间，
+      // 导致余额扣了两次但服务期只增加一次。
+      const currentSubscription = await tx.mailSubscription.findUnique({
+        where: { id: subscription.id },
+        select: { expiresAt: true }
       })
+      if (!currentSubscription) {
+        throw new Error('MAIL_SUBSCRIPTION_NOT_FOUND')
+      }
 
       // 计算新的过期时间
-      const currentExpiry = subscription.expiresAt > new Date() ? subscription.expiresAt : new Date()
+      const now = new Date()
+      const currentExpiry = currentSubscription.expiresAt > now ? currentSubscription.expiresAt : now
       const newExpiry = new Date(currentExpiry)
       newExpiry.setMonth(newExpiry.getMonth() + months)
 
@@ -830,8 +880,21 @@ export default async function mailRoutes(fastify: FastifyInstance) {
         )
       }
 
-      return result
-    })
+        return result
+      })
+    } catch (error) {
+      if (error instanceof Error && error.message === 'MAIL_INSUFFICIENT_BALANCE') {
+        const latestBalance = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { balance: true }
+        })
+        return reply.code(400).send(apiError(
+          ErrorCode.INSUFFICIENT_BALANCE,
+          `余额不足，需要 ¥${finalPrice.toFixed(2)}，当前余额 ¥${Number(latestBalance?.balance || 0).toFixed(2)}`
+        ))
+      }
+      throw error
+    }
 
     await createLog(
       userId,

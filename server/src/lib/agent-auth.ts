@@ -49,8 +49,10 @@ function normalizeJsonValue(value: unknown): unknown {
   }
 
   const objectValue = value as Record<string, unknown>
-  const normalizedObject: Record<string, unknown> = {}
-  for (const key of Object.keys(objectValue).sort()) {
+  const normalizedObject: Record<string, unknown> = Object.create(null) as Record<string, unknown>
+  // Go's encoding/json sorts map keys by UTF-8 string order. Buffer.compare
+  // keeps Unicode key ordering identical instead of using JS's UTF-16 order.
+  for (const key of Object.keys(objectValue).sort((a, b) => Buffer.from(a).compare(Buffer.from(b)))) {
     const normalized = normalizeJsonValue(objectValue[key])
     if (normalized !== undefined) {
       normalizedObject[key] = normalized
@@ -90,7 +92,44 @@ export function hashAgentSecret(secret: string): string {
 
 export function stableStringifyAgentBody(body: unknown): string {
   const normalized = normalizeJsonValue(body)
-  return JSON.stringify(normalized === undefined ? null : normalized)
+  return stringifyNormalizedJson(normalized === undefined ? null : normalized)
+}
+
+function stringifyJsonString(value: string): string {
+  const serialized = JSON.stringify(value)
+  // Go's encoding/json escapes U+2028/U+2029 even with SetEscapeHTML(false),
+  // while JSON.stringify can emit them literally. Keep the signed bytes equal.
+  return (serialized ?? '""').replace(/[\u2028\u2029]/g, value => value === '\u2028' ? '\\u2028' : '\\u2029')
+}
+
+function stringifyNormalizedJson(value: unknown): string {
+  if (value === null) return 'null'
+
+  switch (typeof value) {
+    case 'string':
+      return stringifyJsonString(value)
+    case 'boolean':
+      return value ? 'true' : 'false'
+    case 'number': {
+      const serialized = JSON.stringify(value)
+      return serialized ?? 'null'
+    }
+    case 'object':
+      if (Array.isArray(value)) {
+        return `[${value.map(item => stringifyNormalizedJson(item)).join(',')}]`
+      }
+
+      // JSON.stringify always emits integer-index property names in numeric
+      // order, even when they were inserted in another order. Serialize the
+      // sorted keys ourselves so Go's UTF-8 lexical map ordering is retained.
+      const objectValue = value as Record<string, unknown>
+      const entries = Object.keys(objectValue)
+        .sort((a, b) => Buffer.from(a).compare(Buffer.from(b)))
+        .map(key => `${stringifyJsonString(key)}:${stringifyNormalizedJson(objectValue[key])}`)
+      return `{${entries.join(',')}}`
+    default:
+      return 'null'
+  }
 }
 
 export function createAgentBodyHash(body: unknown): string {

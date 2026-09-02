@@ -1,19 +1,21 @@
-name: Docker Build & Push
+name: Docker Manual Build
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Release tag 镜像只由 release.yml 发布，避免覆盖多架构 manifest。
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag (e.g., latest, v1.0.0)'
-        required: false
-        default: 'latest'
+        description: 'Docker-only tag（edge 或 manual-*；不能使用 latest/v*）'
+        required: true
+        default: 'edge'
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+
+concurrency:
+  group: docker-manual-publish
+  cancel-in-progress: false
 
 jobs:
   build-and-push:
@@ -24,6 +26,16 @@ jobs:
       packages: write
 
     steps:
+      - name: Validate Docker-only tag
+        env:
+          IMAGE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_TAG" =~ ^(edge|manual-[A-Za-z0-9][A-Za-z0-9._-]{0,63})$ ]]; then
+            echo "tag must be edge or manual-*; release/latest tags are published by release.yml" >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -43,14 +55,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # For tags: v1.0.0 -> 1.0.0, latest
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            # For manual trigger
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            # Always tag latest for version tags
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ inputs.tag }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
