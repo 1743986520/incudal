@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { getImageDisplayNames } from './images.js'
 import type { Host, User, Instance } from '../types/database.js'
+import { getSafeHttpUrl } from '../lib/external-url.js'
 
 export const USER_SEARCH_FIELDS = ['username', 'id', 'email'] as const
 export type UserSearchField = (typeof USER_SEARCH_FIELDS)[number]
@@ -721,7 +722,7 @@ export async function getAvailableHosts(
       disk_used: h.diskUsedCalculated,
       instance_type: h.instanceType,
       storage_size: h.storageSize,
-      probe_url: h.probeUrl || null
+      probe_url: getSafeHttpUrl(h.probeUrl)
     }
 
     // 如果是自己的节点，返回完整信息

@@ -23,6 +23,7 @@ import { listStoragePools, getStoragePoolResources, createStoragePool, deleteSto
 import type { CreateHostRequest, UpdateHostRequest } from '../types/api.js'
 import type { Host } from '../types/database.js'
 import { validateName, validateUrl, validateIpAddress, validateIdentifier, validateIpOrDomain, encryptSensitiveData } from '../lib/security.js'
+import { getSafeHttpUrl, validateOptionalHttpUrl } from '../lib/external-url.js'
 import { parseStringArray } from '../lib/json-validation.js'
 import { sendNotification } from '../lib/notifier.js'
 import { sendReleaseNotification } from '../lib/release-notifier.js'
@@ -1845,7 +1846,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         notifyDestroy: host.notify_destroy !== undefined ? host.notify_destroy : false,
         enableResourcePool: host.enable_resource_pool !== undefined ? host.enable_resource_pool : true,
         announcement: host.announcement || null,
-        probeUrl: host.probe_url || null,
+        probeUrl: getSafeHttpUrl(host.probe_url),
         instances: instances.map((i: unknown) => {
           const instance = i as { id: number; name: string; status: string }
           return {
@@ -2113,6 +2114,15 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       }
     }
 
+    let normalizedProbeUrl: string | null | undefined
+    if (updates.probeUrl !== undefined) {
+      const probeUrlValidation = validateOptionalHttpUrl(updates.probeUrl, 'Probe URL')
+      if (!probeUrlValidation.valid) {
+        return reply.code(400).send({ error: probeUrlValidation.message })
+      }
+      normalizedProbeUrl = probeUrlValidation.value
+    }
+
     if (updates.location !== undefined && updates.location) {
       const locationValidation = validateName(updates.location, 'Location', 1, 100)
       if (!locationValidation.valid) {
@@ -2283,7 +2293,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
             if (updates.probeUrl !== undefined) {
               await tx.host.update({
                 where: { id: hostId },
-                data: { probeUrl: updates.probeUrl || null }
+                data: { probeUrl: normalizedProbeUrl }
               })
             }
 
@@ -2361,7 +2371,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           if (updates.probeUrl !== undefined) {
             await tx.host.update({
               where: { id: hostId },
-              data: { probeUrl: updates.probeUrl || null }
+              data: { probeUrl: normalizedProbeUrl }
             })
           }
 

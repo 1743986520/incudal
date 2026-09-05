@@ -9,6 +9,7 @@ import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { isSmtpEnabled, testSmtpConnection, sendTestEmail, clearTransporterCache } from '../lib/mailer.js'
 import { logAdminAction } from '../lib/security.js'
+import { getSafeTelegramUrl, validateOptionalTelegramUrl } from '../lib/external-url.js'
 import { isSupportedInviteCostResource, serializeInviteCostOptions, type InviteCostOption } from '../lib/invite-pricing.js'
 
 interface UpdateConfigsBody {
@@ -183,7 +184,7 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             balanceTransferEnabled,
             balanceTransferFee,
             footerContactEmail,
-            footerTelegramLink,
+            footerTelegramLink: getSafeTelegramUrl(footerTelegramLink),
             hostingMarketEntryEnabled,
             hostingNotice,
             brandName: brandName || 'Incudal',
@@ -374,6 +375,17 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             }
             // 字符串类型配置（允许空值）
             if (stringKeys.includes(config.key)) {
+                if (config.key === 'footer_telegram_link') {
+                    const telegramLinkValidation = validateOptionalTelegramUrl(config.value, 'Telegram group link')
+                    if (!telegramLinkValidation.valid) {
+                        return reply.code(400).send({
+                            error: telegramLinkValidation.message,
+                            code: ErrorCode.CONFIG_INVALID_VALUE,
+                            details: config.key
+                        })
+                    }
+                    config.value = telegramLinkValidation.value || ''
+                }
                 if (config.key === 'popup_announcement' && config.value.length > 5000) {
                     return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
                 }

@@ -59,6 +59,7 @@ import { calculateCreateBilling } from '../db/billing-operations.js'
 import { getUserBalance } from '../db/balance.js'
 import { normalizeIpv4Address, selectBindableIpv4ListenAddress } from '../lib/network-address.js'
 import { applyTrafficMultiplier, normalizeTrafficMultiplier, resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
+import { getSafeHttpUrl } from '../lib/external-url.js'
 import {
   persistResolvedInstanceNetworkAddresses,
   resolveInstanceNetworkAddresses
@@ -719,7 +720,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           },
           trafficMultiplier: normalizeTrafficMultiplier(hostTrafficMultipliers[String(host.id)] ?? 1),
           effectiveTrafficLimit: applyTrafficMultiplier(baseTrafficLimit, hostTrafficMultipliers[String(host.id)] ?? 1)?.toString() ?? null,
-          probeUrl: host.probe_url || null
+          probeUrl: getSafeHttpUrl(host.probe_url)
         }
       })
     }

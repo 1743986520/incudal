@@ -19,6 +19,7 @@ import {
   applyTrafficMultiplier,
   normalizeTrafficMultiplier
 } from '../../lib/traffic-multiplier.js'
+import { getSafeHttpUrl } from '../../lib/external-url.js'
 
 // 检查实例是否被转移锁定
 export async function checkTransferLock(instanceId: number, reply: FastifyReply): Promise<boolean> {
@@ -282,7 +283,7 @@ export async function buildChangeHostOptions(instance: {
       countryCode: host.countryCode || 'us',
       architecture: host.architecture || 'x86_64',
       status: host.status,
-      probeUrl: host.probeUrl || null,
+      probeUrl: getSafeHttpUrl(host.probeUrl),
       isCurrent,
       canChange: unavailableReason === null,
       unavailableReason,

@@ -6,6 +6,7 @@
 import { prisma } from './prisma.js'
 import type { Prisma } from '@prisma/client'
 import type { Host } from '../types/database.js'
+import { getSafeHttpUrl } from '../lib/external-url.js'
 
 type DbClient = Prisma.TransactionClient | typeof prisma
 
@@ -122,7 +123,7 @@ export async function getHostById(id: number): Promise<Host | null> {
     // 节点公告
     announcement: host.announcement,
     // 探针地址
-    probe_url: host.probeUrl,
+    probe_url: getSafeHttpUrl(host.probeUrl),
     created_at: host.createdAt.toISOString(),
     updated_at: host.updatedAt.toISOString()
   }

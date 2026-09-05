@@ -22,6 +22,7 @@
     "test:app": "tsx scripts/test-app-start.ts",
     "test:agent-auth": "tsx scripts/test-agent-auth.ts",
     "test:security-config": "tsx scripts/test-security-config.ts",
+    "test:external-url": "tsx scripts/test-external-url.ts",
     "test:api": "tsx scripts/test-api.ts",
     "analyze:queries": "tsx scripts/analyze-queries.ts"
   },

@@ -30,6 +30,7 @@ import { createLog } from '../db/logs.js'
 import { prisma } from '../db/prisma.js'
 import { createInboxMessage } from '../db/inbox.js'
 import { sendRechargeSuccessEmail } from '../lib/mailer.js'
+import { validateHttpUrl } from '../lib/external-url.js'
 import {
   buildRechargeCardExportCsv,
   createRechargeCards,
@@ -290,6 +291,19 @@ function resolveRechargePaymentMethod(
   return normalizedRequested || undefined
 }
 
+function validatePaymentUrl(value: unknown): string | null {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+    return null
+  }
+
+  const validation = validateHttpUrl(value, 'Payment URL')
+  if (!validation.valid || validation.value === null) {
+    throw new Error('Payment provider returned an invalid payment URL')
+  }
+
+  return validation.value
+}
+
 function normalizePublicBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '')
 }
@@ -442,14 +456,14 @@ async function createRechargePayUrl(
     }
 
     const epay = createEpayClient(epayConfig)
-    return epay.getPayLink({
+    return validatePaymentUrl(epay.getPayLink({
       type: paymentMethod || 'alipay',
       out_trade_no: orderNo,
       name: '账户充值',
       money: amount.toFixed(2),
       notify_url: urls.notifyUrl,
       return_url: urls.successUrl
-    })
+    }))
   }
 
   if (provider.type === 'heleket') {
@@ -469,7 +483,7 @@ async function createRechargePayUrl(
       url_callback: urls.notifyUrl
     })
 
-    return typeof invoice.url === 'string' && invoice.url.trim() ? invoice.url : null
+    return validatePaymentUrl(invoice.url)
   }
 
   return null
