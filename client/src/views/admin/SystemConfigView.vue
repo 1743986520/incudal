@@ -63,6 +63,7 @@ const form = ref({
   default_quota_package: 0,
   registration_enabled: true,
   require_invite_code: true,
+  admin_registration_emails: '',
   invite_generation_costs: [
     { resource: 'balance', amount: 0, enabled: false },
     { resource: 'points', amount: 0, enabled: false }
@@ -151,7 +152,7 @@ const floatConfigKeys = ['transfer_fee', 'balance_transfer_fee', 'free_site_regi
 const booleanConfigKeys = ['registration_enabled', 'require_invite_code', 'hosting_feature_enabled', 'hosting_market_entry_enabled', 'aff_rebate_enabled', 'ticket_enabled', 'free_site_mode', 'free_site_register_gift_enabled', 'turnstile_enabled', 'smtp_enabled', 'smtp_secure', 'email_domain_whitelist_enabled', 'balance_transfer_enabled']
 
 // 字符串类型的配置键
-const stringConfigKeys = ['turnstile_site_key', 'turnstile_secret_key', 'avatar_api_base', 'smtp_host', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name', 'email_allowed_domains', 'footer_contact_email', 'brand_name', 'brand_subtitle', 'brand_logo_url', 'hosting_notice']
+const stringConfigKeys = ['turnstile_site_key', 'turnstile_secret_key', 'avatar_api_base', 'smtp_host', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name', 'email_allowed_domains', 'admin_registration_emails', 'footer_contact_email', 'brand_name', 'brand_subtitle', 'brand_logo_url', 'hosting_notice']
 stringConfigKeys.push('popup_announcement', 'popup_promo_image_url', 'popup_promo_package_id', 'ticket_image_lsky_base_url', 'ticket_image_lsky_token', 'ticket_image_lsky_api_version', 'ticket_image_lsky_target_id')
 
 const jsonConfigKeys = ['invite_generation_costs']
@@ -313,7 +314,7 @@ async function saveConfigGroup(keys: string[], savingRef: { value: boolean }) {
 }
 
 // 注册设置保存
-const registrationKeys = ['registration_enabled', 'require_invite_code']
+const registrationKeys = ['registration_enabled', 'require_invite_code', 'admin_registration_emails']
 async function saveRegistration() {
   await saveConfigGroup(registrationKeys, savingRegistration)
 }
@@ -859,6 +860,20 @@ async function sendTestEmail() {
                 {{ t('admin.system.inviteOnly') }}
               </span>
             </div>
+          </div>
+
+          <div class="mt-4 space-y-2">
+            <label class="block text-sm font-medium text-themed">
+              {{ t('admin.system.adminRegistrationEmails') }}
+            </label>
+            <textarea
+              v-model="form.admin_registration_emails"
+              class="input min-h-[110px] font-mono text-sm"
+              :placeholder="t('admin.system.adminRegistrationEmailsPlaceholder')"
+            />
+            <p class="text-xs text-themed-muted">
+              {{ t('admin.system.adminRegistrationEmailsDesc') }}
+            </p>
           </div>
         </div>
 
