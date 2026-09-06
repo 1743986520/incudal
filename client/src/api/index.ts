@@ -430,9 +430,8 @@ async function proactiveRefreshToken(): Promise<string | null> {
     const refreshResponse = await fetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'include', // 重要：发送 Cookie（包含 refreshToken）
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
     })
 
     if (!refreshResponse.ok) {
@@ -616,9 +615,8 @@ http.interceptors.response.use(
         const refreshResponse = await fetch('/api/auth/refresh', {
           method: 'POST',
           credentials: 'include', // 重要：发送 Cookie（包含 refreshToken）
-          headers: {
-            'Content-Type': 'application/json'
-          }
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
         })
 
         if (!refreshResponse.ok) {

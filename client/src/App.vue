@@ -119,7 +119,8 @@ onMounted(() => {
         const response = await fetch('/api/auth/refresh', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
         })
         if (response.ok) {
           const data = await response.json()
