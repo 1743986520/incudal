@@ -44,6 +44,7 @@ const maxRegisterGiftBalance = 99999999.99
 const maxRegisterGiftPoints = 2147483647
 const maxTransferFee = 100
 const decimalMoneyPattern = /^\d+(?:\.\d{1,2})?$/
+const emailAddressPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function isHttpImageUrl(value: string): boolean {
     try {
@@ -260,6 +261,7 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             'default_quota_package',
             'registration_enabled',
             'require_invite_code',
+            'admin_registration_emails',
             'invite_generation_costs',
             'invite_default_expire_days',
             'hosting_feature_enabled',
@@ -312,6 +314,7 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             // Email domain whitelist
             'email_domain_whitelist_enabled',
             'email_allowed_domains',
+            'admin_registration_emails',
             // Transfer fee
             'transfer_fee',
             'balance_transfer_enabled',
@@ -385,6 +388,18 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
                         })
                     }
                     config.value = telegramLinkValidation.value || ''
+                }
+                if (config.key === 'admin_registration_emails') {
+                    const emails = config.value
+                        .split(/[\s,;]+/)
+                        .map(email => email.trim().toLowerCase())
+                        .filter(Boolean)
+
+                    if (emails.length > 50 || emails.some(email => email.length > 254 || !emailAddressPattern.test(email))) {
+                        return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
+                    }
+
+                    config.value = [...new Set(emails)].join(',')
                 }
                 if (config.key === 'popup_announcement' && config.value.length > 5000) {
                     return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))

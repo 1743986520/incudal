@@ -384,11 +384,15 @@ export async function createRegisteredUser(
     inviteCode?: string
   }
 ): Promise<CreateRegisteredUserResult> {
-  const { getDefaultQuotaConfig } = await import('./system-config.js')
+  const { getDefaultQuotaConfig, isAdminRegistrationEmail } = await import('./system-config.js')
   const [defaultQuota, giftConfig] = await Promise.all([
     getDefaultQuotaConfig(),
     getFreeSiteRegisterGiftConfig()
   ])
+  const shouldCreateAsAdmin = input.email
+    ? await isAdminRegistrationEmail(input.email)
+    : false
+  const role = shouldCreateAsAdmin ? 'admin' : 'user'
   const avatarStyle = AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)]
 
   return prisma.$transaction(async (tx) => {
@@ -397,7 +401,7 @@ export async function createRegisteredUser(
         username: input.username,
         email: input.email,
         passwordHash: input.passwordHash,
-        role: 'user',
+        role,
         avatarStyle,
         quota: {
           create: {

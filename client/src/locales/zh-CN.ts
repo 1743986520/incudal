@@ -3040,6 +3040,9 @@ export default {
             requireInviteCodeDesc: '开启后，用户注册时需要填写邀请码',
             openRegistration: '开放注册',
             inviteOnly: '仅邀请',
+            adminRegistrationEmails: '注册自动成为管理员的邮箱',
+            adminRegistrationEmailsPlaceholder: '例如：111@abc.com\n222@abc.com',
+            adminRegistrationEmailsDesc: '填写完整邮箱地址，多个邮箱可用逗号、分号或换行分隔。匹配的邮箱注册成功后会直接成为管理员；仅支持精确邮箱匹配，不支持域名通配。',
             affRebate: {
                 title: 'AFF 返利',
                 description: '控制用户是否可以创建、使用 AFF 优惠码并获得返利收益。',
