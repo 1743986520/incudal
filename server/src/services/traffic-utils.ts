@@ -4,13 +4,15 @@
  */
 
 /**
- * 计算流量增量
- * 计数器归零或统计口径变化时只重建基线，不追补当前原始值。
- * 这样会少计一次采样窗口，但能避免把历史累计值误算进本期配额。
+ * 计算流量增量。
+ *
+ * 当实例重启、网卡重建或内核计数器归零时，current 会小于 last。
+ * current 此时就是归零后已经产生的流量，必须计入本次增量；若仅返回 0，
+ * 每次网卡重建到下一次采样之间的流量（高流量出站尤其明显）都会永久漏计。
  */
 export function calculateIncrement(current: bigint, last: bigint): bigint {
     if (current < last) {
-        return 0n
+        return current
     }
     return current - last
 }
