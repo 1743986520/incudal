@@ -285,11 +285,52 @@ fetch_agent_install_config() {
 
   command -v curl >/dev/null 2>&1 || fail "curl is required"
   INSTALL_CONFIG_PATH="$(mktemp)"
-  curl -fsSL "${config_url}" -o "${INSTALL_CONFIG_PATH}"
-  # shellcheck disable=SC1090
-  . "${INSTALL_CONFIG_PATH}"
+  if ! curl -fsSL --connect-timeout 15 --max-time 60 "${config_url}" -o "${INSTALL_CONFIG_PATH}"; then
+    rm -f "${INSTALL_CONFIG_PATH}"
+    INSTALL_CONFIG_PATH=""
+    fail "failed to fetch Agent install configuration"
+  fi
+
+  # Do not source a network response as root. The endpoint is intentionally a
+  # tiny data-only format; accept only the two expected keys and safe token
+  # characters, rejecting every other line.
+  local config_line config_key config_value
+  local config_id_seen=0
+  local config_secret_seen=0
+  while IFS= read -r config_line || [ -n "${config_line}" ]; do
+    case "${config_line}" in
+      ''|[[:space:]]*|\#*) continue ;;
+      INCUDAL_AGENT_ID=*|INCUDAL_AGENT_SECRET=*) ;;
+      *) rm -f "${INSTALL_CONFIG_PATH}"; INSTALL_CONFIG_PATH=""; fail "invalid Agent install configuration" ;;
+    esac
+
+    config_key="${config_line%%=*}"
+    config_value="${config_line#*=}"
+    if [[ ! "${config_value}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      rm -f "${INSTALL_CONFIG_PATH}"
+      INSTALL_CONFIG_PATH=""
+      fail "invalid Agent credential format"
+    fi
+    case "${config_key}" in
+      INCUDAL_AGENT_ID)
+        [ "${config_id_seen}" -eq 0 ] || fail "duplicate Agent ID"
+        INCUDAL_AGENT_ID="${config_value}"
+        config_id_seen=1
+        ;;
+      INCUDAL_AGENT_SECRET)
+        [ "${config_secret_seen}" -eq 0 ] || fail "duplicate Agent secret"
+        INCUDAL_AGENT_SECRET="${config_value}"
+        config_secret_seen=1
+        ;;
+    esac
+  done < "${INSTALL_CONFIG_PATH}"
   rm -f "${INSTALL_CONFIG_PATH}"
   INSTALL_CONFIG_PATH=""
+
+  [ "${config_id_seen}" -eq 1 ] || fail "Agent ID missing from install configuration"
+  [ "${config_secret_seen}" -eq 1 ] || fail "Agent secret missing from install configuration"
+  [[ "${INCUDAL_AGENT_ID:-}" =~ ^agt_[A-Za-z0-9_-]{24,64}$ ]] || fail "invalid Agent ID"
+  [[ "${INCUDAL_AGENT_SECRET:-}" =~ ^ias_[A-Za-z0-9_-]{32,96}$ ]] || fail "invalid Agent secret"
 }
 
 need_env INCUDAL_PANEL_URL
