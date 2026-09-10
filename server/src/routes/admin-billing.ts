@@ -1421,7 +1421,36 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(409).send({ error: '实例正在删除或已删除' })
       }
 
-      // 先完成账务结算；如果账务失败，恢复实例状态，避免已删除但未退款。
+      let incusDeleted = false
+      if (!databaseOnly) {
+        const host = await db.getHostById(instance.hostId)
+        if (!host) {
+          await prisma.instance.updateMany({
+            where: { id: instanceId, status: 'deleted' },
+            data: { status: instance.status, version: { increment: 1 } }
+          })
+          throw new Error('Host not found')
+        }
+
+        try {
+          const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
+          const client = await getIncusClient(host)
+          if (instance.status === 'running') {
+            await stopInstance(client, instance.incusId, true)
+          }
+          await deleteInstance(client, instance.incusId)
+          incusDeleted = true
+        } catch (incusError) {
+          await prisma.instance.updateMany({
+            where: { id: instanceId, status: 'deleted' },
+            data: { status: instance.status, version: { increment: 1 } }
+          })
+          request.log.error(incusError, 'Incus 删除实例失败')
+          throw incusError
+        }
+      }
+
+      // 远端删除确认后再完成账务结算。
       if (refundAmount > 0) {
         try {
           const requestedRefundAmount = refundAmount
@@ -1476,29 +1505,18 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             return settledRefundAmount
           })
         } catch (refundError) {
-          await prisma.instance.updateMany({
-            where: { id: instanceId, status: 'deleted' },
-            data: { status: instance.status, version: { increment: 1 } }
-          })
+          // 远端已经删除时必须保留 deleted，避免数据库恢复成可操作状态。
+          if (!incusDeleted) {
+            await prisma.instance.updateMany({
+              where: { id: instanceId, status: 'deleted' },
+              data: { status: instance.status, version: { increment: 1 } }
+            })
+          }
           throw refundError
         }
       }
 
-      // 4. 删除实例（复用现有逻辑）
-      // 4.1 停止实例（databaseOnly 模式下跳过）
-      if (instance.status === 'running' && !databaseOnly) {
-        try {
-          const host = await db.getHostById(instance.hostId)
-          if (host) {
-            const { getIncusClient, stopInstance } = await import('../lib/incus/index.js')
-            const client = await getIncusClient(host)
-            await stopInstance(client, instance.incusId, true)
-          }
-        } catch (err) {
-          request.log.warn(err, '停止实例失败')
-        }
-      }
-
+      // 4. 远端实例已经确认删除，现在清理本地关联数据
       // 4.2 删除端口映射
       const portMappings = await prisma.portMapping.findMany({ where: { instanceId } })
 
@@ -1520,21 +1538,6 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         })
       } catch (cleanupErr) {
         request.log.warn(cleanupErr, '清理关联数据失败')
-      }
-
-      // 4.4 从 Incus 删除实例（databaseOnly 模式下跳过）
-      if (!databaseOnly) {
-        try {
-          const host = await db.getHostById(instance.hostId)
-          if (host) {
-            const { getIncusClient, deleteInstance } = await import('../lib/incus/index.js')
-            const client = await getIncusClient(host)
-            await deleteInstance(client, instance.incusId)
-          }
-        } catch (incusErr) {
-          request.log.error(incusErr, 'Incus 删除实例失败')
-          // 继续执行，即使 Incus 删除失败也要更新数据库状态
-        }
       }
 
       // 4.6 释放宿主机资源

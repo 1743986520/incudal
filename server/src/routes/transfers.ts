@@ -3,12 +3,13 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { Prisma } from '@prisma/client'
 import { customAlphabet } from 'nanoid'
 import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import type { TransferSnapshot } from '../db/transfers.js'
-import { createTransferWithFee, getTransferByIdWithFee, refundTransferFee } from '../db/transfers.js'
+import { createTransferWithFee, getTransferByIdWithFee } from '../db/transfers.js'
 import { sendNotification } from '../lib/notifier.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
 import { removeDevice } from '../lib/incus/incus-instances.js'
@@ -18,9 +19,16 @@ import { renameInstance as renameIncusInstance } from '../lib/incus/incus-restor
 import { getProxySitesByInstanceId, deleteProxySite } from '../db/proxy-sites.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
 import { prisma } from '../db/prisma.js'
+import { claimTransferTransaction, markTransferPhase, rollbackProcessingTransfer, settleTransferWithRefund } from '../db/transfer-safety.js'
 
 // 自定义 nanoid，只使用小写字母和数字（Incus 不允许下划线）
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8)
+const claimToken = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 32)
+const TRANSFER_CLAIM_LEASE_MS = 30 * 60 * 1000
+const TRANSFER_TRANSACTION_OPTIONS = {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    timeout: 10000
+} as const
 
 export default async function transferRoutes(fastify: FastifyInstance) {
     // 搜索用户（用于转移时选择接收方）
@@ -360,57 +368,52 @@ export default async function transferRoutes(fastify: FastifyInstance) {
             return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
         }
 
-        // ===== 并发安全：使用乐观锁，原子性地检查并更新状态 =====
-        // 使用 updateMany 原子操作，只有 status='pending' 时才更新为 'processing'
-        const lockResult = await prisma.instanceTransfer.updateMany({
-            where: {
-                id: transferId,
-                status: 'pending',
-                toUserId: user.id  // 同时验证权限
-            },
-            data: {
-                status: 'processing'  // 临时锁定状态
-            }
-        })
-
-        // 如果没有更新任何记录，说明状态已变化或权限不足
-        if (lockResult.count === 0) {
-            // 需要区分是不存在、权限不足还是状态已变化
-            const transfer = await db.getTransferById(transferId)
-            if (!transfer) {
-                return reply.code(404).send(apiError(ErrorCode.TRANSFER_NOT_FOUND))
-            }
-            if (transfer.toUserId !== user.id) {
-                return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-            }
-            // 状态已不是 pending（可能是 processing 或其他）
-            return reply.code(400).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
-        }
-
-        // 重新获取完整的转移信息
         const transfer = await db.getTransferById(transferId)
         if (!transfer) {
             return reply.code(404).send(apiError(ErrorCode.TRANSFER_NOT_FOUND))
         }
+        if (transfer.toUserId !== user.id) {
+            return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+        }
+        if (transfer.status !== 'pending') {
+            return reply.code(400).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
+        }
 
-        // ===== 失败时的回滚函数 =====
+        const instance = await db.getInstanceById(transfer.instanceId)
+        if (!instance || instance.status === 'deleted') {
+            return reply.code(400).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+        }
+
+        const token = claimToken()
+        const newIncusId = `u${user.id}-${nanoid()}`
+        let claim: Awaited<ReturnType<typeof claimTransferTransaction>>
+        try {
+            claim = await prisma.$transaction(async (tx) => claimTransferTransaction(tx, {
+                transferId,
+                instanceId: transfer.instanceId,
+                actorUserId: user.id,
+                actorRole: 'receiver',
+                claimToken: token,
+                newIncusId,
+                leaseUntil: new Date(Date.now() + TRANSFER_CLAIM_LEASE_MS)
+            }), TRANSFER_TRANSACTION_OPTIONS)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : ''
+            if (message === 'TRANSFER_INSTANCE_OWNER_CHANGED') {
+                return reply.code(400).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+            }
+            return reply.code(400).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
+        }
+
+        // ===== 失败时的回滚函数：只能释放本次不可复用 token 对应的认领 =====
         const rollbackToPending = async () => {
             try {
-                await prisma.instanceTransfer.update({
-                    where: { id: transferId },
-                    data: { status: 'pending' }
-                })
+                await rollbackProcessingTransfer(prisma, transferId, token)
             } catch (err) {
                 console.error('[Transfer] Failed to rollback status:', err)
             }
         }
 
-        // 检查实例是否还存在
-        const instance = await db.getInstanceById(transfer.instanceId)
-        if (!instance || instance.status === 'deleted') {
-            await db.cancelTransfer(transferId)
-            return reply.code(400).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-        }
 
         // ===== 检查实例状态：必须是停止状态才能重命名 =====
         if (instance.status === 'running') {
@@ -444,8 +447,12 @@ export default async function transferRoutes(fastify: FastifyInstance) {
         }
 
         // ===== 1. 先重命名实例（最关键的操作，失败则不影响任何附属资源）=====
-        const oldIncusId = instance.incus_id
-        const newIncusId = `u${user.id}-${nanoid()}`
+        const oldIncusId = claim.oldIncusId
+        const instanceVersion = claim.instanceVersion
+        if (!await markTransferPhase(prisma, transferId, token, 'renaming')) {
+            await rollbackToPending()
+            return reply.code(409).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
+        }
         
         try {
             await renameIncusInstance(client, oldIncusId, newIncusId)
@@ -486,7 +493,10 @@ export default async function transferRoutes(fastify: FastifyInstance) {
                 transfer.fromUserId,
                 transfer.toUserId,
                 newName,
-                newIncusId
+                newIncusId,
+                token,
+                oldIncusId,
+                instanceVersion
             )
         } catch (dbErr) {
             console.error('[Transfer] Database update failed:', dbErr)
@@ -658,22 +668,14 @@ export default async function transferRoutes(fastify: FastifyInstance) {
             return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
         }
 
-        // ===== 并发安全：使用乐观锁，原子性地检查并更新状态 =====
-        const rejectResult = await prisma.instanceTransfer.updateMany({
-            where: {
-                id: transferId,
-                status: 'pending',
-                toUserId: user.id  // 同时验证权限
-            },
-            data: {
-                status: 'rejected',
-                rejectReason: reason || null,
-                rejectedAt: new Date()
-            }
-        })
+        const rejectResult = await prisma.$transaction(async (tx) => settleTransferWithRefund(tx, {
+            transferId,
+            actorUserId: user.id,
+            outcome: 'rejected',
+            reason
+        }), TRANSFER_TRANSACTION_OPTIONS)
 
-        // 如果没有更新任何记录，需要区分原因
-        if (rejectResult.count === 0) {
+        if (!rejectResult) {
             const transfer = await db.getTransferById(transferId)
             if (!transfer) {
                 return reply.code(404).send(apiError(ErrorCode.TRANSFER_NOT_FOUND))
@@ -690,22 +692,6 @@ export default async function transferRoutes(fastify: FastifyInstance) {
         if (!transfer) {
             // 已更新成功但查询失败，直接返回成功
             return { message: 'Transfer rejected' }
-        }
-
-        // 退还手续费（如果有）
-        if (transfer.fee && Number(transfer.fee) > 0) {
-            const refundResult = await refundTransferFee({
-                transferId: transfer.id,
-                fromUserId: transfer.fromUserId,
-                fee: Number(transfer.fee),
-                instanceId: transfer.instanceId,
-                instanceName: transfer.instance?.name || 'Unknown',
-                reason: 'rejected'
-            })
-            
-            if (!refundResult.success) {
-                console.error('[Transfer] Failed to refund transfer fee:', refundResult.error)
-            }
         }
 
         await createLog(
@@ -737,21 +723,13 @@ export default async function transferRoutes(fastify: FastifyInstance) {
             return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
         }
 
-        // ===== 并发安全：使用乐观锁，原子性地检查并更新状态 =====
-        const cancelResult = await prisma.instanceTransfer.updateMany({
-            where: {
-                id: transferId,
-                status: 'pending',
-                fromUserId: user.id  // 同时验证权限（只有发起方可以取消）
-            },
-            data: {
-                status: 'cancelled',
-                cancelledAt: new Date()
-            }
-        })
+        const cancelResult = await prisma.$transaction(async (tx) => settleTransferWithRefund(tx, {
+            transferId,
+            actorUserId: user.id,
+            outcome: 'cancelled'
+        }), TRANSFER_TRANSACTION_OPTIONS)
 
-        // 如果没有更新任何记录，需要区分原因
-        if (cancelResult.count === 0) {
+        if (!cancelResult) {
             const transfer = await db.getTransferById(transferId)
             if (!transfer) {
                 return reply.code(404).send(apiError(ErrorCode.TRANSFER_NOT_FOUND))
@@ -768,22 +746,6 @@ export default async function transferRoutes(fastify: FastifyInstance) {
         if (!transfer) {
             // 已更新成功但查询失败，直接返回成功
             return { message: 'Transfer cancelled' }
-        }
-
-        // 退还手续费（如果有）
-        if (transfer.fee && Number(transfer.fee) > 0) {
-            const refundResult = await refundTransferFee({
-                transferId: transfer.id,
-                fromUserId: transfer.fromUserId,
-                fee: Number(transfer.fee),
-                instanceId: transfer.instanceId,
-                instanceName: transfer.instance?.name || 'Unknown',
-                reason: 'cancelled'
-            })
-            
-            if (!refundResult.success) {
-                console.error('[Transfer] Failed to refund transfer fee on cancel:', refundResult.error)
-            }
         }
 
         await createLog(
@@ -815,55 +777,50 @@ export default async function transferRoutes(fastify: FastifyInstance) {
             return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
         }
 
-        // ===== 并发安全：使用乐观锁，原子性地检查并更新状态 =====
-        // 使用 updateMany 原子操作，只有 status='pending' 且 fromUserId=user.id 时才更新为 'processing'
-        const lockResult = await prisma.instanceTransfer.updateMany({
-            where: {
-                id: transferId,
-                status: 'pending',
-                fromUserId: user.id  // 同时验证权限（只有发起方可以推送）
-            },
-            data: {
-                status: 'processing'  // 临时锁定状态
-            }
-        })
-
-        // 如果没有更新任何记录，说明状态已变化或权限不足
-        if (lockResult.count === 0) {
-            const transfer = await db.getTransferById(transferId)
-            if (!transfer) {
-                return reply.code(404).send(apiError(ErrorCode.TRANSFER_NOT_FOUND))
-            }
-            if (transfer.fromUserId !== user.id) {
-                return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-            }
-            // 状态已不是 pending
-            return reply.code(400).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
-        }
-
-        // 重新获取完整的转移信息
         const transfer = await db.getTransferById(transferId)
         if (!transfer) {
             return reply.code(404).send(apiError(ErrorCode.TRANSFER_NOT_FOUND))
         }
+        if (transfer.fromUserId !== user.id) {
+            return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+        }
+        if (transfer.status !== 'pending') {
+            return reply.code(400).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
+        }
 
-        // ===== 失败时的回滚函数 =====
+        const instance = await db.getInstanceById(transfer.instanceId)
+        if (!instance || instance.status === 'deleted') {
+            return reply.code(400).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+        }
+
+        const token = claimToken()
+        const newIncusId = `u${transfer.toUserId}-${nanoid()}`
+        let claim: Awaited<ReturnType<typeof claimTransferTransaction>>
+        try {
+            claim = await prisma.$transaction(async (tx) => claimTransferTransaction(tx, {
+                transferId,
+                instanceId: transfer.instanceId,
+                actorUserId: user.id,
+                actorRole: 'sender',
+                claimToken: token,
+                newIncusId,
+                leaseUntil: new Date(Date.now() + TRANSFER_CLAIM_LEASE_MS)
+            }), TRANSFER_TRANSACTION_OPTIONS)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : ''
+            if (message === 'TRANSFER_INSTANCE_OWNER_CHANGED') {
+                return reply.code(400).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+            }
+            return reply.code(400).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
+        }
+
+        // ===== 失败时的回滚函数：只能释放本次不可复用 token 对应的认领 =====
         const rollbackToPending = async () => {
             try {
-                await prisma.instanceTransfer.update({
-                    where: { id: transferId },
-                    data: { status: 'pending' }
-                })
+                await rollbackProcessingTransfer(prisma, transferId, token)
             } catch (err) {
                 console.error('[Transfer] Failed to rollback status:', err)
             }
-        }
-
-        // ===== 检查实例和宿主机 =====
-        const instance = await db.getInstanceById(transfer.instanceId)
-        if (!instance || instance.status === 'deleted') {
-            await db.cancelTransfer(transferId)
-            return reply.code(400).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
         }
 
         const host = await db.getHostById(instance.host_id)
@@ -900,8 +857,12 @@ export default async function transferRoutes(fastify: FastifyInstance) {
         }
 
         // ===== 1. 先重命名实例 =====
-        const oldIncusId = instance.incus_id
-        const newIncusId = `u${transfer.toUserId}-${nanoid()}`
+        const oldIncusId = claim.oldIncusId
+        const instanceVersion = claim.instanceVersion
+        if (!await markTransferPhase(prisma, transferId, token, 'renaming')) {
+            await rollbackToPending()
+            return reply.code(409).send(apiError(ErrorCode.TRANSFER_NOT_PENDING))
+        }
         
         try {
             await renameIncusInstance(client, oldIncusId, newIncusId)
@@ -940,7 +901,10 @@ export default async function transferRoutes(fastify: FastifyInstance) {
                 transfer.fromUserId,
                 transfer.toUserId,
                 newName,
-                newIncusId
+                newIncusId,
+                token,
+                oldIncusId,
+                instanceVersion
             )
         } catch (dbErr) {
             console.error('[Transfer] Database update failed:', dbErr)

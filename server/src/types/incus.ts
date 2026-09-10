@@ -6,6 +6,10 @@ export interface IncusClientOptions {
   url: string
   certPath: string | null
   keyPath: string | null
+  caPath?: string | null
+  serverCertificate?: string | null
+  serverFingerprint?: string | null
+  allowPrivateNetwork?: boolean
 }
 
 export interface IncusApiResponse<T = unknown> {

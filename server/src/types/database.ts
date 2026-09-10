@@ -72,6 +72,9 @@ export interface Host {
   status: 'online' | 'offline' | 'maintenance'
   cert_path: string | null
   key_path: string | null
+  server_certificate?: string | null
+  server_fingerprint?: string | null
+  allow_private_network?: boolean
   nat_public_ip: string | null
   nat_public_ipv6?: string | null
   nat_bind_ip?: string | null
@@ -180,6 +183,7 @@ export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'suspended' | 
 
 export interface Instance {
   id: number
+  version?: number
   incus_id: string
   name: string
   user_id: number

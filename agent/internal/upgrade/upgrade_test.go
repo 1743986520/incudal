@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"incudal-agent/internal/panel"
@@ -23,7 +24,7 @@ func TestApplyUpgradeReplacesBinaryAndRestarts(t *testing.T) {
 		t.Fatalf("write current binary: %v", err)
 	}
 
-	nextBinary := []byte("new-binary")
+	nextBinary := currentTestExecutable(t)
 	packageBytes := gzipBytes(t, nextBinary)
 	sha := sha256Hex(packageBytes)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -40,7 +41,8 @@ func TestApplyUpgradeReplacesBinaryAndRestarts(t *testing.T) {
 		ServiceName:      "incudal-agent",
 		AllowedBaseURL:   server.URL,
 		HTTPClient:       server.Client(),
-		MaxDownloadBytes: 1024 * 1024,
+		MaxDownloadBytes: int64(len(packageBytes) + 1),
+		MaxBinaryBytes:   int64(len(nextBinary) + 1),
 		Restart: func(_ context.Context, serviceName string) error {
 			if serviceName != "incudal-agent" {
 				t.Fatalf("unexpected service name: %s", serviceName)
@@ -101,7 +103,7 @@ func TestApplyUpgradeRejectsBadSHA(t *testing.T) {
 		LockPath:         filepath.Join(tempDir, "upgrade.lock"),
 		AllowedBaseURL:   server.URL,
 		HTTPClient:       server.Client(),
-		MaxDownloadBytes: 1024 * 1024,
+		MaxDownloadBytes: int64(len([]byte("payload")) + 1),
 		Restart: func(context.Context, string) error {
 			restarted = true
 			return nil
@@ -131,14 +133,14 @@ func TestApplyUpgradeRejectsBadSHA(t *testing.T) {
 	}
 }
 
-func TestApplyUpgradeDoesNotRollbackWhenSelfRestartIsInterrupted(t *testing.T) {
+func TestApplyUpgradeRollsBackWhenRestartFails(t *testing.T) {
 	tempDir := t.TempDir()
 	binaryPath := filepath.Join(tempDir, "incudal-agent")
 	if err := os.WriteFile(binaryPath, []byte("old-binary"), 0755); err != nil {
 		t.Fatalf("write current binary: %v", err)
 	}
 
-	nextBinary := []byte("new-binary")
+	nextBinary := currentTestExecutable(t)
 	packageBytes := gzipBytes(t, nextBinary)
 	sha := sha256Hex(packageBytes)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -147,6 +149,7 @@ func TestApplyUpgradeDoesNotRollbackWhenSelfRestartIsInterrupted(t *testing.T) {
 	}))
 	defer server.Close()
 
+	restartCalls := 0
 	runner := Runner{
 		BinaryPath:       binaryPath,
 		BackupPath:       binaryPath + ".bak",
@@ -154,9 +157,14 @@ func TestApplyUpgradeDoesNotRollbackWhenSelfRestartIsInterrupted(t *testing.T) {
 		ServiceName:      "incudal-agent",
 		AllowedBaseURL:   server.URL,
 		HTTPClient:       server.Client(),
-		MaxDownloadBytes: 1024 * 1024,
+		MaxDownloadBytes: int64(len(packageBytes) + 1),
+		MaxBinaryBytes:   int64(len(nextBinary) + 1),
 		Restart: func(context.Context, string) error {
-			return errors.New("signal: terminated")
+			restartCalls++
+			if restartCalls == 1 {
+				return errors.New("restart failed")
+			}
+			return nil
 		},
 	}
 
@@ -175,9 +183,71 @@ func TestApplyUpgradeDoesNotRollbackWhenSelfRestartIsInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read replaced binary: %v", err)
 	}
-	if string(actual) != string(nextBinary) {
-		t.Fatalf("binary should stay replaced after restart interruption: %q", string(actual))
+	if string(actual) != "old-binary" {
+		t.Fatalf("binary should be rolled back after restart failure: %q", string(actual))
 	}
+	if restartCalls != 2 {
+		t.Fatalf("expected two restart attempts, got %d", restartCalls)
+	}
+}
+
+func TestApplyUpgradeRejectsOversizedDecompressedBinary(t *testing.T) {
+	nextBinary := currentTestExecutable(t)
+	testUpgradeRejected(t, gzipBytes(t, nextBinary), true, int64(len(nextBinary)-1), "decompressed")
+}
+
+func TestApplyUpgradeRejectsInvalidBinaryFormat(t *testing.T) {
+	testUpgradeRejected(t, []byte("not-an-executable"), false, 1024, "executable format")
+}
+
+func TestApplyUpgradeRejectsWrongArchitecture(t *testing.T) {
+	binary := currentTestExecutable(t)
+	if len(binary) < 20 || string(binary[:4]) != "\x7fELF" {
+		t.Skip("test executable is not ELF")
+	}
+	foreignMachine := byte(183)
+	if runtime.GOARCH == "arm64" {
+		foreignMachine = 62
+	}
+	binary[18], binary[19] = foreignMachine, 0
+	testUpgradeRejected(t, binary, false, int64(len(binary)+1), "architecture")
+}
+
+func testUpgradeRejected(t *testing.T, packageBytes []byte, compressed bool, maxBinaryBytes int64, expected string) {
+	t.Helper()
+	tempDir := t.TempDir()
+	binaryPath := filepath.Join(tempDir, "incudal-agent")
+	if err := os.WriteFile(binaryPath, []byte("old-binary"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write(packageBytes)
+	}))
+	defer server.Close()
+	runner := Runner{
+		BinaryPath: binaryPath, BackupPath: binaryPath + ".bak", LockPath: filepath.Join(tempDir, "upgrade.lock"),
+		AllowedBaseURL: server.URL, HTTPClient: server.Client(), MaxDownloadBytes: int64(len(packageBytes) + 1),
+		MaxBinaryBytes: maxBinaryBytes,
+	}
+	err := runner.Apply(context.Background(), panel.UpgradeInstruction{
+		Available: true, Version: "v2", URL: server.URL + "/agent", SHA256: sha256Hex(packageBytes), Gzip: compressed,
+	}, "v1")
+	if err == nil || !bytes.Contains([]byte(err.Error()), []byte(expected)) {
+		t.Fatalf("expected %q error, got %v", expected, err)
+	}
+}
+
+func currentTestExecutable(t *testing.T) []byte {
+	t.Helper()
+	path, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return payload
 }
 
 func TestApplyUpgradeRejectsDifferentOrigin(t *testing.T) {

@@ -5,6 +5,7 @@
 import { request } from 'undici'
 import type { IncusClient } from './incus-client.js'
 import type { IncusApiResponse, IncusOperation } from '../../types/incus.js'
+import { getIncusExecutionGuard, throwIfIncusExecutionAborted } from './incus-execution-guard.js'
 
 /**
  * 等待异步操作完成
@@ -18,6 +19,7 @@ export async function waitForOperation(
   const startTime = Date.now()
 
   while (Date.now() - startTime < timeout) {
+    throwIfIncusExecutionAborted()
     const op = await client.request<IncusOperation>('GET', `${operationUrl}/wait?timeout=10`)
 
     if (op.status === 'Success') {
@@ -43,6 +45,7 @@ export async function waitForOperationLong(
   const startTime = Date.now()
 
   while (Date.now() - startTime < timeout) {
+    throwIfIncusExecutionAborted()
     // Wait up to 30 seconds per poll
     const waitTimeout = Math.min(30, Math.floor((timeout - (Date.now() - startTime)) / 1000))
     if (waitTimeout <= 0) break
@@ -54,7 +57,8 @@ export async function waitForOperationLong(
       const response = await request(waitUrl, {
         method: 'GET',
         dispatcher: client.agent!,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        signal: getIncusExecutionGuard()?.signal
       })
 
       const text = await response.body.text()

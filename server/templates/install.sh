@@ -1819,6 +1819,25 @@ YAML
 }
 
 # 步骤 5: 导入面板证书
+report_server_certificate() {
+    [[ -n "$PANEL_URL" && -n "$TOKEN" ]] || return 0
+    local server_cert="/var/lib/incus/server.crt"
+    [[ -f "$server_cert" ]] || server_cert="/var/snap/lxd/common/lxd/server.crt"
+    if [[ ! -f "$server_cert" ]]; then
+        error "无法找到 Incus 服务端证书，不能建立面板 TLS 信任锚"
+        exit 1
+    fi
+    local certificate_b64
+    certificate_b64=$(base64 < "$server_cert" | tr -d '\r\n')
+    if ! curl -sSf -X POST -H 'Content-Type: application/json' \
+        --data "{\"certificate\":\"${certificate_b64}\"}" \
+        "${PANEL_URL}/api/hosts/tls-bootstrap/${TOKEN}" >/dev/null; then
+        error "服务端证书回传失败，安装会话不会被标记为完成"
+        exit 1
+    fi
+    log "Incus 服务端证书已通过一次性安装通道回传"
+}
+
 import_cert() {
     step "步骤 [5/5]  导入面板信任证书..."
 
@@ -3286,6 +3305,7 @@ main() {
     install_incus     # 3/5 安装 Incus
     init_incus        # 4/5 初始化 Incus
     import_cert       # 5/5 导入证书
+    report_server_certificate # 一次性通道回传并固定 Incus 服务端证书
     install_pps_guard # 默认启用：按实例限制异常 PPS
     
     # 仅当启用了 IPv6 相关功能时，挂载 IPv6 双栈同步守护神

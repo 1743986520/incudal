@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"debug/elf"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -27,6 +29,7 @@ import (
 const (
 	defaultServiceName      = "incudal-agent"
 	defaultMaxDownloadBytes = 64 * 1024 * 1024
+	defaultMaxBinaryBytes   = 128 * 1024 * 1024
 )
 
 var ErrUpgradeInProgress = errors.New("agent upgrade already in progress")
@@ -43,6 +46,7 @@ type Runner struct {
 	HTTPClient       *http.Client
 	Restart          RestartFunc
 	MaxDownloadBytes int64
+	MaxBinaryBytes   int64
 }
 
 func DefaultRunner(cfg config.Config) *Runner {
@@ -60,6 +64,7 @@ func DefaultRunner(cfg config.Config) *Runner {
 		HTTPClient:       &http.Client{Timeout: cfg.RequestTimeout},
 		Restart:          restartSystemdService,
 		MaxDownloadBytes: defaultMaxDownloadBytes,
+		MaxBinaryBytes:   defaultMaxBinaryBytes,
 	}
 }
 
@@ -111,10 +116,15 @@ func (runner *Runner) Apply(ctx context.Context, instruction panel.UpgradeInstru
 
 	binaryBytes := packageBytes
 	if instruction.Gzip {
-		binaryBytes, err = gunzip(packageBytes)
+		binaryBytes, err = gunzip(packageBytes, runner.maxBinaryBytes())
 		if err != nil {
 			return err
 		}
+	} else if int64(len(binaryBytes)) > runner.maxBinaryBytes() {
+		return fmt.Errorf("upgrade binary exceeds %d bytes", runner.maxBinaryBytes())
+	}
+	if err := validateExecutable(binaryBytes); err != nil {
+		return err
 	}
 
 	tempPath, err := runner.writeTempBinary(binaryBytes)
@@ -127,7 +137,14 @@ func (runner *Runner) Apply(ctx context.Context, instruction panel.UpgradeInstru
 	}
 
 	if err := runner.restart(ctx); err != nil {
-		return fmt.Errorf("restart agent after upgrade: %w", err)
+		restartErr := err
+		if rollbackErr := runner.rollback(); rollbackErr != nil {
+			return fmt.Errorf("restart agent after upgrade: %w; rollback failed: %v", restartErr, rollbackErr)
+		}
+		if rollbackRestartErr := runner.restart(ctx); rollbackRestartErr != nil {
+			return fmt.Errorf("restart agent after upgrade: %w; rolled back but restart failed: %v", restartErr, rollbackRestartErr)
+		}
+		return fmt.Errorf("restart agent after upgrade: %w; rolled back successfully", restartErr)
 	}
 	return nil
 }
@@ -266,6 +283,13 @@ func (runner *Runner) lockPath() string {
 	return defaultLockPath()
 }
 
+func (runner *Runner) maxBinaryBytes() int64 {
+	if runner.MaxBinaryBytes > 0 {
+		return runner.MaxBinaryBytes
+	}
+	return defaultMaxBinaryBytes
+}
+
 func defaultLockPath() string {
 	if info, err := os.Stat("/run"); err == nil && info.IsDir() {
 		return "/run/incudal-agent-upgrade.lock"
@@ -298,13 +322,45 @@ func verifySHA256(payload []byte, expected string) error {
 	return nil
 }
 
-func gunzip(payload []byte) ([]byte, error) {
+func gunzip(payload []byte, limit int64) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	return io.ReadAll(reader)
+	binary, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(binary)) > limit {
+		return nil, fmt.Errorf("decompressed upgrade binary exceeds %d bytes", limit)
+	}
+	return binary, nil
+}
+
+func validateExecutable(payload []byte) error {
+	file, err := elf.NewFile(bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("upgrade executable format is invalid: %w", err)
+	}
+	defer file.Close()
+
+	expectedMachine := elf.EM_NONE
+	switch runtime.GOARCH {
+	case "amd64":
+		expectedMachine = elf.EM_X86_64
+	case "arm64":
+		expectedMachine = elf.EM_AARCH64
+	default:
+		return fmt.Errorf("upgrade architecture is unsupported: %s", runtime.GOARCH)
+	}
+	if file.Machine != expectedMachine {
+		return fmt.Errorf("upgrade binary architecture mismatch: expected %s, got %s", expectedMachine, file.Machine)
+	}
+	if file.Type != elf.ET_EXEC && file.Type != elf.ET_DYN {
+		return fmt.Errorf("upgrade executable format has invalid ELF type: %s", file.Type)
+	}
+	return nil
 }
 
 func copyFile(source string, target string) error {

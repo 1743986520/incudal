@@ -201,6 +201,9 @@ export async function collectTrafficForRunningInstance(
           url: true,
           certPath: true,
           keyPath: true,
+          serverCertificate: true,
+          serverFingerprint: true,
+          allowPrivateNetwork: true,
           status: true
         }
       }
@@ -251,7 +254,10 @@ export async function collectTrafficForRunningInstance(
       id: instance.host.id,
       url: instance.host.url,
       certPath: instance.host.certPath,
-      keyPath: instance.host.keyPath
+      keyPath: instance.host.keyPath,
+      serverCertificate: instance.host.serverCertificate,
+      serverFingerprint: instance.host.serverFingerprint,
+      allowPrivateNetwork: instance.host.allowPrivateNetwork
     })
 
     return collectTrafficForInstanceWithClient({

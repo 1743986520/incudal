@@ -5,7 +5,8 @@
 import { prisma } from './prisma.js'
 import { Prisma } from '@prisma/client'
 import type { TransferStatus } from '@prisma/client'
-import { TRANSFER_CREATE_LOCK_NAMESPACE, tryAdvisoryTransactionLock } from './advisory-locks.js'
+import { INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
+import { assertCurrentInstanceOwner, debitTransferFee, executeTransferTransaction } from './transfer-safety.js'
 
 // 事务隔离级别配置
 const TRANSFER_TRANSACTION_OPTIONS = {
@@ -25,11 +26,7 @@ function sleep(ms: number): Promise<void> {
  * 将所有 processing 状态回滚为 pending，让用户可以重新操作
  */
 export async function cleanupStaleTransfers(): Promise<number> {
-    const result = await prisma.instanceTransfer.updateMany({
-        where: { status: 'processing' },
-        data: { status: 'pending' }
-    })
-    return result.count
+    return 0
 }
 
 /**
@@ -41,11 +38,10 @@ export async function cleanupTimeoutTransfers(): Promise<number> {
     const result = await prisma.instanceTransfer.updateMany({
         where: {
             status: 'processing',
-            updatedAt: {
-                lt: new Date(Date.now() - 30 * 60 * 1000) // 30分钟
-            }
+            claimExpiresAt: { lt: new Date() },
+            claimToken: { not: null }
         },
-        data: { status: 'pending' }
+        data: { status: 'pending', claimToken: null, claimExpiresAt: null, phase: null }
     })
     return result.count
 }
@@ -82,8 +78,9 @@ export async function createTransferWithFee(data: {
 }): Promise<{ transferId: number; feeDeducted: boolean }> {
     for (let attempt = 0; attempt < TRANSFER_CREATE_LOCK_RETRY_LIMIT; attempt++) {
         const result = await prisma.$transaction(async (tx) => {
-            const locked = await tryAdvisoryTransactionLock(tx, TRANSFER_CREATE_LOCK_NAMESPACE, data.instanceId)
-            if (!locked) return null
+            await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, data.instanceId)
+
+            await assertCurrentInstanceOwner(tx, data.instanceId, data.fromUserId)
 
             // 0. 在事务内检查是否已有 pending/processing 转移
             const existingTransfer = await tx.instanceTransfer.findFirst({
@@ -96,42 +93,8 @@ export async function createTransferWithFee(data: {
                 throw new Error('TRANSFER_ALREADY_PENDING')
             }
 
-            // 1. 如果有手续费，先扣费
-            if (data.fee > 0) {
-                const user = await tx.user.findUnique({
-                    where: { id: data.fromUserId },
-                    select: { balance: true }
-                })
-
-                if (!user) {
-                    throw new Error('USER_NOT_FOUND')
-                }
-
-                const balanceBefore = Number(user.balance)
-                if (balanceBefore < data.fee) {
-                    throw new Error('INSUFFICIENT_BALANCE')
-                }
-
-                const balanceAfter = balanceBefore - data.fee
-
-                await tx.user.update({
-                    where: { id: data.fromUserId },
-                    data: { balance: balanceAfter }
-                })
-
-                await tx.balanceLog.create({
-                    data: {
-                        userId: data.fromUserId,
-                        type: 'transfer_fee',
-                        amount: -data.fee,
-                        balanceBefore,
-                        balanceAfter,
-                        instanceId: data.instanceId,
-                        remark: `转移实例 "${data.instanceName}" 手续费`
-                    }
-                })
-            }
-
+            // Revalidate immediately before creating the charge-bearing transfer.
+            await assertCurrentInstanceOwner(tx, data.instanceId, data.fromUserId)
             const transfer = await tx.instanceTransfer.create({
                 data: {
                     instanceId: data.instanceId,
@@ -143,9 +106,17 @@ export async function createTransferWithFee(data: {
                     status: 'pending'
                 }
             })
-
+            if (data.fee > 0) {
+                await debitTransferFee(tx, {
+                    transferId: transfer.id,
+                    userId: data.fromUserId,
+                    instanceId: data.instanceId,
+                    instanceName: data.instanceName,
+                    fee: new Prisma.Decimal(data.fee)
+                })
+            }
             return { transferId: transfer.id, feeDeducted: data.fee > 0 }
-        })
+        }, TRANSFER_TRANSACTION_OPTIONS)
 
         if (result) {
             return result
@@ -168,8 +139,9 @@ export async function createTransfer(data: {
 }): Promise<number> {
     for (let attempt = 0; attempt < TRANSFER_CREATE_LOCK_RETRY_LIMIT; attempt++) {
         const transferId = await prisma.$transaction(async (tx) => {
-            const locked = await tryAdvisoryTransactionLock(tx, TRANSFER_CREATE_LOCK_NAMESPACE, data.instanceId)
-            if (!locked) return null
+            await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, data.instanceId)
+
+            await assertCurrentInstanceOwner(tx, data.instanceId, data.fromUserId)
 
             const existingTransfer = await tx.instanceTransfer.findFirst({
                 where: {
@@ -188,13 +160,13 @@ export async function createTransfer(data: {
                     toUserId: data.toUserId,
                     snapshot: data.snapshot as any,
                     remark: data.remark,
-                    fee: data.fee,
+                    fee: null,
                     status: 'pending'
                 }
             })
 
             return transfer.id
-        })
+        }, TRANSFER_TRANSACTION_OPTIONS)
 
         if (transferId !== null) {
             return transferId
@@ -502,55 +474,25 @@ export async function cancelTransfer(id: number): Promise<void> {
 export async function executeTransfer(
     transferId: number,
     instanceId: number,
-    _fromUserId: number,  // 保留参数以保持接口兼容性，但不再使用（不再更新实例配额）
+    fromUserId: number,
     toUserId: number,
     newInstanceName: string,
-    newIncusId: string
+    newIncusId: string,
+    claimToken: string,
+    oldIncusId: string,
+    instanceVersion: number
 ): Promise<void> {
     await prisma.$transaction(async (tx) => {
-        // 获取转移记录，获取 fee 和 fromUserId
-        const transfer = await tx.instanceTransfer.findUnique({
-            where: { id: transferId },
-            select: { fee: true, fromUserId: true }
+        await executeTransferTransaction(tx, {
+            transferId,
+            instanceId,
+            fromUserId,
+            toUserId,
+            newInstanceName,
+            newIncusId,
+            claimToken,
+            oldIncusId,
+            instanceVersion
         })
-
-        // 注意：不再更新实例配额，实例转移只更新实例的所有者、名称和 Incus ID
-
-        // 更新实例所有者、名称和 Incus ID
-        await tx.instance.update({
-            where: { id: instanceId },
-            data: {
-                userId: toUserId,
-                name: newInstanceName,
-                incusId: newIncusId,
-                displayOrder: 0
-            }
-        })
-
-        // 更新转移状态
-        const now = new Date()
-        await tx.instanceTransfer.update({
-            where: { id: transferId },
-            data: {
-                status: 'accepted',
-                acceptedAt: now
-            }
-        })
-
-        // 如果有手续费，创建计费记录（用于收入统计和记录展示）
-        if (transfer?.fee && Number(transfer.fee) > 0) {
-            await tx.instanceBillingRecord.create({
-                data: {
-                    instanceId,
-                    userId: transfer.fromUserId,  // 发起方支付手续费
-                    type: 'transfer_fee',
-                    amount: transfer.fee,
-                    months: 0,  // 手续费不涉及月数
-                    periodStart: now,
-                    periodEnd: now,
-                    remark: `转移实例手续费`
-                }
-            })
-        }
     }, TRANSFER_TRANSACTION_OPTIONS)
 }

@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs'
 import { resetDatabaseFast } from './reset-database.js'
 import { initSystemConfig } from './system-config.js'
 import { seedDefaultBadges } from './badges.js'
+import { assertDatabaseResetAllowed } from '../lib/database-reset-guard.js'
 
 function getInitialAdminPassword(): string {
   const configuredPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD
@@ -36,6 +37,12 @@ export async function initPrismaDatabase(options: {
   // 如果配置了清空数据库，先清空
   const shouldReset = options.resetDatabase ??
     (process.env.RESET_DATABASE === 'true' || process.env.RESET_DATABASE === '1')
+
+  assertDatabaseResetAllowed({
+    shouldReset,
+    nodeEnv: process.env.NODE_ENV,
+    confirmation: process.env.RESET_DATABASE_CONFIRMATION
+  })
 
   if (shouldReset) {
     console.log('⚠️  检测到 RESET_DATABASE=true，将清空数据库...')

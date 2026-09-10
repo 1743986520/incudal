@@ -101,7 +101,7 @@ export async function getBackupExportStream(
       connect: {
         cert,
         key,
-        rejectUnauthorized: false,
+        ...client.tlsConnectOptions,
         timeout: 60000 // 连接超时 60 秒
       },
       bodyTimeout: 0, // 禁用 body 超时，允许长时间传输

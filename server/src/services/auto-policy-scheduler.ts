@@ -34,6 +34,9 @@ async function getIncusClient(host: {
     url: string
     certPath: string | null
     keyPath: string | null
+    serverCertificate: string | null
+    serverFingerprint: string | null
+    allowPrivateNetwork: boolean
 }): Promise<IncusClient | null> {
     if (!host.certPath || !host.keyPath) {
         return null
@@ -42,7 +45,10 @@ async function getIncusClient(host: {
     const client = new IncusClient({
         url: host.url,
         certPath: host.certPath,
-        keyPath: host.keyPath
+        keyPath: host.keyPath,
+        serverCertificate: host.serverCertificate,
+        serverFingerprint: host.serverFingerprint,
+        allowPrivateNetwork: host.allowPrivateNetwork
     })
 
     try {
@@ -84,6 +90,9 @@ async function executeAutoSnapshot(
                 name: string
                 certPath: string | null
                 keyPath: string | null
+                serverCertificate: string | null
+                serverFingerprint: string | null
+                allowPrivateNetwork: boolean
             }
         }
     }
@@ -268,7 +277,10 @@ export async function runAutoSnapshotJob(): Promise<void> {
                             url: policy.instance.host.url,
                             name: policy.instance.host.name,
                             certPath: policy.instance.host.certPath,
-                            keyPath: policy.instance.host.keyPath
+                            keyPath: policy.instance.host.keyPath,
+                            serverCertificate: policy.instance.host.serverCertificate,
+                            serverFingerprint: policy.instance.host.serverFingerprint,
+                            allowPrivateNetwork: policy.instance.host.allowPrivateNetwork
                         }
                     }
                 }))

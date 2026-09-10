@@ -382,17 +382,21 @@ export async function createRegisteredUser(
     email: string | null
     passwordHash: string
     inviteCode?: string
+    emailVerified?: boolean
   }
 ): Promise<CreateRegisteredUserResult> {
-  const { getDefaultQuotaConfig, isAdminRegistrationEmail } = await import('./system-config.js')
-  const [defaultQuota, giftConfig] = await Promise.all([
+  const { getDefaultQuotaConfig, getSystemConfig } = await import('./system-config.js')
+  const [defaultQuota, giftConfig, adminRegistrationEmails] = await Promise.all([
     getDefaultQuotaConfig(),
-    getFreeSiteRegisterGiftConfig()
+    getFreeSiteRegisterGiftConfig(),
+    getSystemConfig('admin_registration_emails')
   ])
-  const shouldCreateAsAdmin = input.email
-    ? await isAdminRegistrationEmail(input.email)
-    : false
-  const role = shouldCreateAsAdmin ? 'admin' : 'user'
+  const { resolveRegistrationRole } = await import('../lib/registration-role.js')
+  const role = resolveRegistrationRole({
+    email: input.email,
+    adminRegistrationEmails,
+    emailVerified: input.emailVerified === true
+  })
   const avatarStyle = AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)]
 
   return prisma.$transaction(async (tx) => {

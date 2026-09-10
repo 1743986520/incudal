@@ -23,7 +23,6 @@ import { listSnapshots, deleteSnapshot as deleteIncusSnapshot } from '../lib/inc
 import { sendNotification } from '../lib/notifier.js'
 import { createLog } from '../db/logs.js'
 import * as db from '../db/index.js'
-import { updateInstanceTaskProgress, updateInstanceTaskStatus } from '../db/instance-tasks.js'
 import { closeInstanceSessions } from '../lib/terminal-proxy.js'
 import { generateIncusConfig, generateRandomPassword } from '../lib/incus-config-generator.js'
 import { encryptSensitiveData, decryptSensitiveData } from '../lib/security.js'
@@ -49,10 +48,18 @@ import { createCaddyClient } from '../lib/caddy-client.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
 import { ProxyStrategyFactory } from '../lib/proxy/index.js'
-
-// 任务超时时间：轻量任务保持短超时，重建/克隆/改节点等重任务允许更长执行窗口
-const LIGHT_TASK_TIMEOUT = 5 * 60 * 1000
-const HEAVY_TASK_TIMEOUT = 30 * 60 * 1000
+import {
+  INSTANCE_TASK_HEARTBEAT_MS,
+  INSTANCE_TASK_LEASE_MS,
+  INSTANCE_TASK_ORPHANED_PROGRESS,
+  InstanceTaskLeaseLostError,
+  finishInstanceTaskExecution,
+  hasActiveInstanceTaskLease,
+  renewInstanceTaskLease,
+  updateInstanceTaskExecutionData,
+  updateInstanceTaskExecutionProgress
+} from './instance-task-lease.js'
+import { runWithIncusExecutionGuard, throwIfIncusExecutionAborted } from '../lib/incus/incus-execution-guard.js'
 
 // Worker 轮询间隔 (3 秒)
 const POLL_INTERVAL = 3000
@@ -126,16 +133,26 @@ function extractIPv6(state: { network?: Record<string, { addresses?: Array<{ fam
  * 服务启动时清理僵尸任务
  */
 export async function cleanupStaleTasks(): Promise<void> {
+  const now = new Date()
   const result = await prisma.instanceTask.updateMany({
-    where: { status: 'PROCESSING' },
+    where: {
+      status: 'PROCESSING',
+      OR: [
+        { progress: null },
+        { progress: { not: INSTANCE_TASK_ORPHANED_PROGRESS } }
+      ],
+      AND: [{ OR: [
+        { leaseExpiresAt: null },
+        { leaseExpiresAt: { lte: now } }
+      ] }]
+    },
     data: {
-      status: 'FAILED',
-      error: '系统重启，任务中断',
-      finishedAt: new Date()
+      progress: INSTANCE_TASK_ORPHANED_PROGRESS,
+      error: '任务执行租约已过期；已隔离，等待确认旧执行终止'
     }
   })
   if (result.count > 0) {
-    console.log(`[InstanceTaskWorker] 清理了 ${result.count} 个僵尸任务`)
+    console.log(`[InstanceTaskWorker] 隔离了 ${result.count} 个租约过期任务`)
   }
 }
 
@@ -144,32 +161,24 @@ export async function cleanupStaleTasks(): Promise<void> {
  */
 async function cleanupTimeoutTasks(): Promise<void> {
   if (dbBackoff.shouldSkip()) return
-  const lightTimeoutThreshold = new Date(Date.now() - LIGHT_TASK_TIMEOUT)
-  const heavyTimeoutThreshold = new Date(Date.now() - HEAVY_TASK_TIMEOUT)
-
+  const now = new Date()
   const result = await prisma.instanceTask.updateMany({
     where: {
       status: 'PROCESSING',
       OR: [
-        {
-          taskType: { in: HEAVY_TASK_TYPES },
-          startedAt: { lt: heavyTimeoutThreshold }
-        },
-        {
-          taskType: { notIn: HEAVY_TASK_TYPES },
-          startedAt: { lt: lightTimeoutThreshold }
-        }
-      ]
+        { progress: null },
+        { progress: { not: INSTANCE_TASK_ORPHANED_PROGRESS } }
+      ],
+      leaseExpiresAt: { lte: now }
     },
     data: {
-      status: 'FAILED',
-      error: '任务执行超时',
-      finishedAt: new Date()
+      progress: INSTANCE_TASK_ORPHANED_PROGRESS,
+      error: '任务执行租约已过期；已隔离，等待确认旧执行终止'
     }
   })
 
   if (result.count > 0) {
-    console.log(`[InstanceTaskWorker] 清理了 ${result.count} 个超时任务`)
+    console.log(`[InstanceTaskWorker] 隔离了 ${result.count} 个租约过期任务`)
   }
 }
 
@@ -333,10 +342,16 @@ async function claimLightTask(hostId: number, taskId: number) {
     })
     if (!instance || instance.status === 'deleted') return null
 
-    // 标记为 PROCESSING
+    // 标记为 PROCESSING，并分配仅属于本次执行代次的数据库 lease。
+    const now = new Date()
     return await tx.instanceTask.update({
       where: { id: taskId },
-      data: { status: 'PROCESSING', startedAt: new Date() }
+      data: {
+        status: 'PROCESSING',
+        startedAt: now,
+        executionToken: crypto.randomUUID(),
+        leaseExpiresAt: new Date(now.getTime() + INSTANCE_TASK_LEASE_MS)
+      }
     })
   })
 }
@@ -383,10 +398,16 @@ async function claimNextTask(hostId: number) {
     })
     if (!instance || instance.status === 'deleted') return null
 
-    // 原子标记为 PROCESSING
+    // 原子标记为 PROCESSING，并分配仅属于本次执行代次的数据库 lease。
+    const now = new Date()
     const claimedTask = await tx.instanceTask.update({
       where: { id: taskToRun.id },
-      data: { status: 'PROCESSING', startedAt: new Date() }
+      data: {
+        status: 'PROCESSING',
+        startedAt: now,
+        executionToken: crypto.randomUUID(),
+        leaseExpiresAt: new Date(now.getTime() + INSTANCE_TASK_LEASE_MS)
+      }
     })
 
     return claimedTask
@@ -403,10 +424,59 @@ async function executeTask(taskId: number): Promise<void> {
     where: { id: taskId }
   })
 
-  if (!task) {
-    console.error(`[InstanceTaskWorker] Task ${taskId} not found`)
+  if (!task || task.status !== 'PROCESSING' || !task.executionToken) {
+    console.error(`[InstanceTaskWorker] Task ${taskId} is not claimed for execution`)
     return
   }
+
+  const executionToken = task.executionToken
+  const abortController = new AbortController()
+  let leaseInvalid = false
+  const invalidateLease = (cause?: unknown): void => {
+    if (leaseInvalid) return
+    leaseInvalid = true
+    abortController.abort(cause instanceof Error ? cause : new InstanceTaskLeaseLostError())
+  }
+  const assertActive = async (): Promise<void> => {
+    if (leaseInvalid || abortController.signal.aborted) throw new InstanceTaskLeaseLostError()
+    try {
+      if (!await hasActiveInstanceTaskLease(prisma, taskId, executionToken)) {
+        invalidateLease()
+        throw new InstanceTaskLeaseLostError()
+      }
+    } catch (err) {
+      invalidateLease(err)
+      throw err
+    }
+  }
+  const updateProgress = async (progress: string): Promise<void> => {
+    await assertActive()
+    const updated = await updateInstanceTaskExecutionProgress(prisma, taskId, executionToken, progress)
+    if (!updated) {
+      invalidateLease()
+      throw new InstanceTaskLeaseLostError()
+    }
+  }
+  const updateExecutionData = async (data: Parameters<typeof updateInstanceTaskExecutionData>[3]): Promise<void> => {
+    await assertActive()
+    const updated = await updateInstanceTaskExecutionData(prisma, taskId, executionToken, data)
+    if (!updated) {
+      invalidateLease()
+      throw new InstanceTaskLeaseLostError()
+    }
+  }
+  const heartbeat = setInterval(() => {
+    void renewInstanceTaskLease(prisma, taskId, executionToken).then(renewed => {
+      if (!renewed) {
+        invalidateLease()
+        console.warn(`[InstanceTaskWorker] Task ${taskId} execution lease is no longer owned`)
+      }
+    }).catch(err => {
+      invalidateLease(err)
+      console.error(`[InstanceTaskWorker] Task ${taskId} lease heartbeat failed:`, err)
+    })
+  }, INSTANCE_TASK_HEARTBEAT_MS)
+  heartbeat.unref?.()
 
   console.log(`[InstanceTaskWorker] 开始执行任务 ${taskId} (${task.taskType})`)
 
@@ -441,36 +511,49 @@ async function executeTask(taskId: number): Promise<void> {
     // 记录连接池响应时间
     updateClientResponseTime(host.id, clientDuration)
 
-    switch (task.taskType) {
-      case 'start':
-        await executeStartTask(task, instance, host, client)
-        break
-      case 'stop':
-        await executeStopTask(task, instance, host, client)
-        break
-      case 'restart':
-        await executeRestartTask(task, instance, host, client)
-        break
-      case 'rebuild':
-        await executeRebuildTask(task, instance, host, client)
-        break
-      case 'clone':
-        await executeCloneTask(task, instance, host, client)
-        break
-      case 'recreate':
-        await executeRecreateTask(task, instance, host, client)
-        break
-      case 'change_host':
-        await executeChangeHostTask(task, instance, host, client)
-        break
-      default:
-        throw new Error(`未知任务类型: ${task.taskType}`)
-    }
+    await runWithIncusExecutionGuard({ signal: abortController.signal, assertActive }, async () => {
+      await assertActive()
+      switch (task.taskType) {
+        case 'start':
+          await executeStartTask(task, instance, host, client, updateProgress)
+          break
+        case 'stop':
+          await executeStopTask(task, instance, host, client, updateProgress)
+          break
+        case 'restart':
+          await executeRestartTask(task, instance, host, client, updateProgress)
+          break
+        case 'rebuild':
+          await executeRebuildTask(task, instance, host, client, updateProgress)
+          break
+        case 'clone':
+          await executeCloneTask(task, instance, host, client, updateProgress, updateExecutionData)
+          break
+        case 'recreate':
+          await executeRecreateTask(task, instance, host, client, updateProgress)
+          break
+        case 'change_host':
+          await executeChangeHostTask(task, instance, host, client, updateProgress)
+          break
+        default:
+          throw new Error(`未知任务类型: ${task.taskType}`)
+      }
+      await assertActive()
+    })
 
-    // 任务完成
-    await updateInstanceTaskStatus(taskId, 'COMPLETED', {
+    // Any lease loss detected while a task performs non-Incus work must fence
+    // the final database transition as well. AsyncLocalStorage scope has ended
+    // here, so assert against the worker-owned lease state directly.
+    await assertActive()
+
+    // 仅本次 execution token 仍拥有 PROCESSING 状态时才能完成任务。
+    const completed = await finishInstanceTaskExecution(prisma, taskId, executionToken, 'COMPLETED', {
       finishedAt: new Date()
     })
+    if (!completed) {
+      console.warn(`[InstanceTaskWorker] Task ${taskId} completed after its execution lease was revoked; state left unchanged`)
+      return
+    }
 
     const taskDuration = Date.now() - taskStartTime
     console.log(`[InstanceTaskWorker] 任务 ${taskId} (${task.taskType}) 完成，耗时 ${taskDuration}ms`)
@@ -479,10 +562,26 @@ async function executeTask(taskId: number): Promise<void> {
     const errorMessage = err instanceof Error ? err.message : String(err)
     console.error(`[InstanceTaskWorker] 任务 ${taskId} 失败:`, errorMessage)
 
-    await updateInstanceTaskStatus(taskId, 'FAILED', {
+    if (leaseInvalid || err instanceof InstanceTaskLeaseLostError) {
+      await prisma.instanceTask.updateMany({
+        where: { id: taskId, status: 'PROCESSING', executionToken },
+        data: {
+          progress: INSTANCE_TASK_ORPHANED_PROGRESS,
+          error: '任务执行租约已失效；已隔离，需确认旧执行终止后解除隔离'
+        }
+      }).catch(() => {})
+      console.warn(`[InstanceTaskWorker] Task ${taskId} stopped after losing its execution lease; task remains quarantined`)
+      return
+    }
+
+    const failed = await finishInstanceTaskExecution(prisma, taskId, executionToken, 'FAILED', {
       error: errorMessage,
       finishedAt: new Date()
     })
+    if (!failed) {
+      console.warn(`[InstanceTaskWorker] Task ${taskId} failed after its execution lease was revoked; state left unchanged`)
+      return
+    }
 
     // 记录连接池错误
     recordClientError(task.hostId)
@@ -514,6 +613,8 @@ async function executeTask(taskId: number): Promise<void> {
     } catch (notifyErr) {
       console.error('[InstanceTaskWorker] 发送失败通知/记录日志失败:', notifyErr)
     }
+  } finally {
+    clearInterval(heartbeat)
   }
 }
 
@@ -544,9 +645,10 @@ async function executeStartTask(
   task: { id: number; userId: number; instanceId: number },
   instance: { incus_id: string; name: string; network_mode: string },
   host: { name: string },
-  client: Awaited<ReturnType<typeof getIncusClient>>
+  client: Awaited<ReturnType<typeof getIncusClient>>,
+  updateProgress: (progress: string) => Promise<void>
 ): Promise<void> {
-  await updateInstanceTaskProgress(task.id, 'starting')
+  await updateProgress('starting')
 
   try {
     await startInstance(client, instance.incus_id)
@@ -652,9 +754,10 @@ async function executeStopTask(
   task: { id: number; userId: number; instanceId: number },
   instance: { incus_id: string; name: string; image?: string | null },
   host: { name: string },
-  client: Awaited<ReturnType<typeof getIncusClient>>
+  client: Awaited<ReturnType<typeof getIncusClient>>,
+  updateProgress: (progress: string) => Promise<void>
 ): Promise<void> {
-  await updateInstanceTaskProgress(task.id, 'stopping')
+  await updateProgress('stopping')
 
   const collectResult = await collectTrafficForRunningInstance(task.instanceId)
   if (!collectResult.success) {
@@ -707,9 +810,10 @@ async function executeRestartTask(
   task: { id: number; userId: number; instanceId: number },
   instance: { incus_id: string; name: string; network_mode: string },
   host: { name: string },
-  client: Awaited<ReturnType<typeof getIncusClient>>
+  client: Awaited<ReturnType<typeof getIncusClient>>,
+  updateProgress: (progress: string) => Promise<void>
 ): Promise<void> {
-  await updateInstanceTaskProgress(task.id, 'restarting')
+  await updateProgress('restarting')
 
   const collectResult = await collectTrafficForRunningInstance(task.instanceId)
   if (!collectResult.success) {
@@ -823,7 +927,8 @@ async function executeRebuildTask(
   task: { id: number; userId: number; instanceId: number; imageAlias: string | null; sshKeyId: number | null; customInitCommandIds?: string | null },
   instance: { incus_id: string; name: string; user_id: number; image: string; network_mode: string; ipv4?: string | null; ipv6?: string | null; host_id: number; swap_enabled?: boolean; swap_size?: number | null },
   host: { name: string },
-  client: Awaited<ReturnType<typeof getIncusClient>>
+  client: Awaited<ReturnType<typeof getIncusClient>>,
+  updateProgress: (progress: string) => Promise<void>
 ): Promise<void> {
   const imageAlias = task.imageAlias
   if (!imageAlias) throw new Error('未指定重装镜像')
@@ -841,7 +946,7 @@ async function executeRebuildTask(
   }
 
   // 确保实例已停止
-  await updateInstanceTaskProgress(task.id, 'stopping')
+  await updateProgress('stopping')
   try {
     const incusState = await getInstanceState(client, instance.incus_id) as { status?: string }
     if (incusState.status === 'Running') {
@@ -851,6 +956,7 @@ async function executeRebuildTask(
       })
     }
   } catch (_err) {
+    throwIfIncusExecutionAborted()
     // 继续执行
   }
 
@@ -858,7 +964,7 @@ async function executeRebuildTask(
   await resetInstanceCloudInitState(task.instanceId)
 
   // 删除所有快照
-  await updateInstanceTaskProgress(task.id, 'deleting_snapshots')
+  await updateProgress('deleting_snapshots')
   try {
     const snapshots = await listSnapshots(client, instance.incus_id) as unknown[]
     if (snapshots && snapshots.length > 0) {
@@ -874,11 +980,12 @@ async function executeRebuildTask(
     // 清理数据库中的快照记录
     await prisma.snapshot.deleteMany({ where: { instanceId: task.instanceId } })
   } catch (_err) {
+    throwIfIncusExecutionAborted()
     console.warn('[InstanceTaskWorker] 删除快照失败，继续执行')
   }
 
   // 执行重装
-  await updateInstanceTaskProgress(task.id, 'rebuilding')
+  await updateProgress('rebuilding')
 
   // 获取 SSH 密钥：优先使用任务指定的 sshKeyId，否则取用户第一个密钥
   let sshKey: string | undefined
@@ -1082,7 +1189,7 @@ async function executeRebuildTask(
   })
 
   // 启动实例（带 IPv6 路由冲突自动回退：stop 后内核路由可能残留）
-  await updateInstanceTaskProgress(task.id, 'starting')
+  await updateProgress('starting')
   try {
     await startInstance(client, instance.incus_id)
   } catch (startErr) {
@@ -1172,7 +1279,8 @@ async function executeRecreateTask(
     boot_host_shutdown_timeout?: number | null;
   },
   host: { id: number; name: string; nat_public_ip?: string | null; ip_address?: string | null; ipv6_gateway?: string | null; ipv6_parent_interface?: string | null },
-  client: Awaited<ReturnType<typeof getIncusClient>>
+  client: Awaited<ReturnType<typeof getIncusClient>>,
+  updateProgress: (progress: string) => Promise<void>
 ): Promise<void> {
   const imageAlias = task.imageAlias || instance.image
   const oldIncusId = instance.incus_id
@@ -1184,7 +1292,7 @@ async function executeRecreateTask(
   }
 
   // 1. 强制停止旧实例（如果正在运行）
-  await updateInstanceTaskProgress(task.id, 'stopping')
+  await updateProgress('stopping')
   console.log(`[Recreate] 停止旧实例 ${oldIncusId}...`)
   try {
     await stopInstance(client, oldIncusId, false, {
@@ -1200,6 +1308,7 @@ async function executeRecreateTask(
       } catch { /* ignore */ }
     }
   } catch (err) {
+    throwIfIncusExecutionAborted()
     // 实例可能已经停止或不存在，继续执行
     console.warn(`[Recreate] 停止旧实例异常，继续执行:`, err)
   }
@@ -1208,7 +1317,7 @@ async function executeRecreateTask(
   await resetInstanceCloudInitState(task.instanceId)
 
   // 2. 删除旧实例的快照
-  await updateInstanceTaskProgress(task.id, 'cleaning_snapshots')
+  await updateProgress('cleaning_snapshots')
   try {
     const snapshots = await listSnapshots(client, oldIncusId) as unknown[]
     if (snapshots && snapshots.length > 0) {
@@ -1224,6 +1333,7 @@ async function executeRecreateTask(
     }
     await prisma.snapshot.deleteMany({ where: { instanceId: task.instanceId } })
   } catch (_err) {
+    throwIfIncusExecutionAborted()
     console.warn('[Recreate] 删除快照失败，继续执行')
   }
 
@@ -1310,7 +1420,7 @@ async function executeRecreateTask(
   }
 
   // 7. 分配新的随机内网 IPv4 地址（避免 IP 冲突）
-  await updateInstanceTaskProgress(task.id, 'creating')
+  await updateProgress('creating')
   const { generateRandomIPv4 } = await import('../lib/ip-calculator.js')
   let newIPv4: string | null = null
   try {
@@ -1429,7 +1539,7 @@ async function executeRecreateTask(
   })
 
   // 12. 删除旧 Incus 实例（如果还存在）
-  await updateInstanceTaskProgress(task.id, 'deleting_old')
+  await updateProgress('deleting_old')
   console.log(`[Recreate] 删除旧实例 ${oldIncusId}（如果存在）...`)
   try {
     await deleteInstance(client, oldIncusId)
@@ -1459,7 +1569,7 @@ async function executeRecreateTask(
   }
 
   // 13. 启动新实例
-  await updateInstanceTaskProgress(task.id, 'starting')
+  await updateProgress('starting')
   console.log(`[Recreate] 启动新实例 ${newIncusId}...`)
   await startInstance(client, newIncusId)
 
@@ -1489,7 +1599,7 @@ async function executeRecreateTask(
   }
 
   // 15. 更新数据库（使用新分配的 IP）
-  await updateInstanceTaskProgress(task.id, 'updating_database')
+  await updateProgress('updating_database')
 
   // 更新 IpAddress 表（删除旧的 IPv4 记录，创建新的）
   if (instance.ipv4 && instance.ipv4 !== newIPv4) {
@@ -1561,7 +1671,8 @@ async function executeChangeHostTask(
     boot_host_shutdown_timeout?: number | null;
   },
   targetHost: NonNullable<Awaited<ReturnType<typeof db.getHostById>>>,
-  targetClient: Awaited<ReturnType<typeof getIncusClient>>
+  targetClient: Awaited<ReturnType<typeof getIncusClient>>,
+  updateProgress: (progress: string) => Promise<void>
 ): Promise<void> {
   const targetHostId = task.targetHostId || targetHost.id
   const sourceHostId = instance.host_id
@@ -1635,7 +1746,7 @@ async function executeChangeHostTask(
   }
 
   try {
-    await updateInstanceTaskProgress(task.id, 'checking_capacity')
+    await updateProgress('checking_capacity')
     const reservedHost = await prisma.$transaction(async (tx) => {
       return db.selectAndReserveHostWithLock(tx, {
         packageHostIds,
@@ -1666,7 +1777,7 @@ async function executeChangeHostTask(
       console.log(`[ChangeHost] Closed ${closedSessions} terminal session(s) for instance ${task.instanceId}`)
     }
 
-    await updateInstanceTaskProgress(task.id, 'allocating_network')
+    await updateProgress('allocating_network')
     let staticIPv4: string | null = null
     for (let attempts = 0; attempts < 50; attempts++) {
       staticIPv4 = generateRandomIPv4()
@@ -1773,11 +1884,11 @@ async function executeChangeHostTask(
       bootHostShutdownTimeout: instance.boot_host_shutdown_timeout
     })
 
-    await updateInstanceTaskProgress(task.id, 'creating_on_target')
+    await updateProgress('creating_on_target')
     console.log(`[ChangeHost] 在目标节点 ${targetHost.name} 创建实例 ${newIncusId}...`)
     await createInstance(targetClient, incusConfig)
 
-    await updateInstanceTaskProgress(task.id, 'starting_target')
+    await updateProgress('starting_target')
     await startInstance(targetClient, newIncusId)
 
     let actualIpv4: string | null = staticIPv4
@@ -1804,7 +1915,7 @@ async function executeChangeHostTask(
       }
     }
 
-    await updateInstanceTaskProgress(task.id, 'switching_database')
+    await updateProgress('switching_database')
 
     const proxySites = await prisma.proxySite.findMany({
       where: { instanceId: task.instanceId }
@@ -1922,7 +2033,7 @@ async function executeChangeHostTask(
       }
     }
 
-    await updateInstanceTaskProgress(task.id, 'deleting_old')
+    await updateProgress('deleting_old')
     let sourceClient: Awaited<ReturnType<typeof getIncusClient>> | null = null
     let sourceInstanceReleased = false
     try {
@@ -1934,12 +2045,14 @@ async function executeChangeHostTask(
           busyUpdateCancelAfterMs: allowCancelBusyUpdate ? ALPINE_BUSY_UPDATE_CANCEL_AFTER_MS : undefined
         })
       } catch (err) {
+        throwIfIncusExecutionAborted()
         console.warn(`[ChangeHost] 停止源实例 ${oldIncusId} 失败，继续尝试删除:`, err)
       }
       await deleteInstance(sourceClient, oldIncusId)
       console.log(`[ChangeHost] 源实例 ${oldIncusId} 已删除`)
       sourceInstanceReleased = true
     } catch (err) {
+      throwIfIncusExecutionAborted()
       const errMsg = err instanceof Error ? err.message : String(err)
       if (errMsg.includes('not found') || errMsg.includes('Instance not found')) {
         console.log(`[ChangeHost] 源实例 ${oldIncusId} 已不存在`)
@@ -2055,6 +2168,9 @@ async function executeChangeHostTask(
       { instanceId: task.instanceId }
     )
   } catch (err) {
+    // On lease loss, do not run compensating external/DB mutations from an
+    // execution generation that no longer owns the task.
+    throwIfIncusExecutionAborted()
     if (!dbSwitched) {
       let targetInstanceReleased = !newIncusId
       if (newIncusId) {
@@ -2062,7 +2178,8 @@ async function executeChangeHostTask(
         try {
           try {
             await stopInstance(targetClient, newIncusId, true)
-          } catch {
+          } catch (cleanupErr) {
+            throwIfIncusExecutionAborted()
             // Instance may not have reached running state; deletion can still proceed.
           }
           await deleteInstance(targetClient, newIncusId)
@@ -2106,9 +2223,11 @@ async function executeCloneTask(
   task: { id: number; userId: number; instanceId: number },
   sourceInstance: { incus_id: string; name: string; user_id: number; image: string; cpu: number; memory: number; disk: number; network_mode: string; ssh_port: number | null; root_password: string | null; package_id: number | null; package_plan_id?: number | null; host_id: number; port_limit: number | null; snapshot_limit: number | null; backup_limit: number | null; site_limit: number | null; swap_enabled?: boolean; swap_size?: number | null; storage_pool_name?: string | null },
   host: { id: number; name: string; nat_public_ip?: string | null; ip_address?: string | null; caddy_enabled?: boolean; caddy_username?: string | null; caddy_password?: string | null; caddy_port?: number | null; nat_port_start: number | null; nat_port_end: number | null; nat_ports_used_count?: number; ipv6_subnet?: string | null; ipv6_gateway?: string | null; ipv6_parent_interface?: string | null; cpu_allowance_max?: number; memory_max?: number; instance_type?: 'container' | 'vm' | 'both' },
-  client: Awaited<ReturnType<typeof getIncusClient>>
+  client: Awaited<ReturnType<typeof getIncusClient>>,
+  updateProgress: (progress: string) => Promise<void>,
+  updateExecutionData: (data: Parameters<typeof updateInstanceTaskExecutionData>[3]) => Promise<void>
 ): Promise<void> {
-  await updateInstanceTaskProgress(task.id, 'cloning')
+  await updateProgress('cloning')
 
   // 生成新实例名称（原名称 + -clone）
   const newInstanceName = `${sourceInstance.name}-clone`
@@ -2351,6 +2470,7 @@ async function executeCloneTask(
           console.log(`[Clone] 生成 network-config: IPv4=${newIPv4}, IPv6=${newIPv6}`)
         }
       } catch (err) {
+        throwIfIncusExecutionAborted()
         console.warn(`[Clone] IPv6 计算失败:`, err)
         // 如果 IPv6 计算失败，继续执行但不设置 newIPv6
         newIPv6 = null
@@ -2501,10 +2621,7 @@ async function executeCloneTask(
     await db.updateInstanceStatus(newInstanceId, 'stopped')
 
     // 更新任务记录，记录新实例ID
-    await prisma.instanceTask.update({
-      where: { id: task.id },
-      data: { newInstanceId }
-    })
+    await updateExecutionData({ newInstanceId })
 
     await sendNotification(task.userId, 'instance_cloned', {
       instanceName: sourceInstance.name,
@@ -2521,6 +2638,9 @@ async function executeCloneTask(
       { instanceId: newInstanceId }
     )
   } catch (error) {
+    // Quarantine preserves the partially-created resources for reconciliation;
+    // a fenced worker must not race an operator or a later recovery generation.
+    throwIfIncusExecutionAborted()
     // 如果创建失败，尝试清理已创建的资源
 
     // 1. 清理 Incus 中的实例

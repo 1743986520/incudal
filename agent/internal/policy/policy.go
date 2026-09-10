@@ -35,6 +35,17 @@ type dnsProfile struct {
 	Port             int
 }
 
+type stagedDNSProfile struct {
+	MAC, configPath, pidPath string
+	Port                     int
+	BlockDoT                 bool
+}
+
+type dnsRollout struct {
+	dir      string
+	profiles []stagedDNSProfile
+}
+
 func Apply(ctx context.Context, bundle panel.NetworkPolicyBundle) Status {
 	status := Status{Revision: bundle.Revision}
 	if err := apply(ctx, bundle); err != nil {
@@ -138,43 +149,21 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 			return fmt.Errorf("dnsmasq is required for enabled DNS policies")
 		}
 	}
-	if err := stopOldDNS(ctx); err != nil {
+	rollout, err := prepareDNSRollout(stateDir, profiles)
+	if err != nil {
 		return err
 	}
-	macs := make([]string, 0, len(profiles))
-	for mac := range profiles {
-		macs = append(macs, mac)
+	if err := startDNSRollout(ctx, rollout); err != nil {
+		stopDNSRollout(ctx, rollout)
+		os.RemoveAll(rollout.dir)
+		return err
 	}
-	sort.Strings(macs)
 	dnsRules := []string{}
 	dotRules := []string{}
-	for index, mac := range macs {
-		profile := profiles[mac]
-		profile.Port = 5353 + index
-		profile.Upstreams = unique(profile.Upstreams)
-		if len(profile.Upstreams) == 0 {
-			return fmt.Errorf("DNS policy for %s has no configured upstream", mac)
-		}
-		config := []string{"no-resolv", "no-hosts", "bind-dynamic", "listen-address=0.0.0.0", "port=" + strconv.Itoa(profile.Port), "cache-size=1000", "domain-needed", "bogus-priv"}
-		for _, upstream := range profile.Upstreams {
-			config = append(config, "server="+upstream)
-		}
-		config = append(config, unique(profile.Lines)...)
-		path := filepath.Join(stateDir, fmt.Sprintf("dns-%d.conf", index))
-		if err := os.WriteFile(path, []byte(strings.Join(config, "\n")+"\n"), 0600); err != nil {
-			return err
-		}
-		pidPath := filepath.Join(stateDir, fmt.Sprintf("dns-%d.pid", index))
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		command := exec.CommandContext(commandCtx, "dnsmasq", "--conf-file="+path, "--pid-file="+pidPath)
-		if output, err := command.CombinedOutput(); err != nil {
-			cancel()
-			return fmt.Errorf("start dnsmasq profile: %v: %s", err, strings.TrimSpace(string(output)))
-		}
-		cancel()
-		dnsRules = append(dnsRules, fmt.Sprintf("ether saddr %s udp dport 53 redirect to :%d", mac, profile.Port), fmt.Sprintf("ether saddr %s tcp dport 53 redirect to :%d", mac, profile.Port))
+	for _, profile := range rollout.profiles {
+		dnsRules = append(dnsRules, fmt.Sprintf("ether saddr %s udp dport 53 redirect to :%d", profile.MAC, profile.Port), fmt.Sprintf("ether saddr %s tcp dport 53 redirect to :%d", profile.MAC, profile.Port))
 		if profile.BlockDoT {
-			dotRules = append(dotRules, fmt.Sprintf("ether saddr %s tcp dport 853 counter reject", mac))
+			dotRules = append(dotRules, fmt.Sprintf("ether saddr %s tcp dport 853 counter reject", profile.MAC))
 		}
 	}
 	lines := []string{"table inet incudal_managed_policy {", " chain forward { type filter hook forward priority -10; policy accept;"}
@@ -186,7 +175,81 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 	lines = append(lines, " }", " chain prerouting { type nat hook prerouting priority -105; policy accept;")
 	lines = append(lines, dnsRules...)
 	lines = append(lines, " }", "}")
-	return replaceNftTable(ctx, strings.Join(lines, "\n")+"\n")
+	if err := replaceNftTable(ctx, strings.Join(lines, "\n")+"\n"); err != nil {
+		stopDNSRollout(ctx, rollout)
+		os.RemoveAll(rollout.dir)
+		return err
+	}
+	return stopOldDNSExcept(ctx, rollout.dir)
+}
+
+func prepareDNSRollout(root string, profiles map[string]*dnsProfile) (dnsRollout, error) {
+	rollout := dnsRollout{}
+	macs := make([]string, 0, len(profiles))
+	for mac := range profiles {
+		macs = append(macs, mac)
+	}
+	sort.Strings(macs)
+	for _, mac := range macs {
+		if len(unique(profiles[mac].Upstreams)) == 0 {
+			return rollout, fmt.Errorf("DNS policy for %s has no configured upstream", mac)
+		}
+	}
+	dir, err := os.MkdirTemp(root, "generation-")
+	if err != nil {
+		return rollout, err
+	}
+	rollout.dir = dir
+	basePort := 10000 + int(time.Now().UnixNano()%40000)
+	if basePort+len(macs) >= 65535 {
+		basePort = 10000
+	}
+	for index, mac := range macs {
+		profile := profiles[mac]
+		port := basePort + index
+		config := []string{"no-resolv", "no-hosts", "bind-dynamic", "listen-address=0.0.0.0", "port=" + strconv.Itoa(port), "cache-size=1000", "domain-needed", "bogus-priv"}
+		for _, upstream := range unique(profile.Upstreams) {
+			config = append(config, "server="+upstream)
+		}
+		config = append(config, unique(profile.Lines)...)
+		configPath := filepath.Join(dir, fmt.Sprintf("dns-%d.conf", index))
+		pidPath := filepath.Join(dir, fmt.Sprintf("dns-%d.pid", index))
+		if err := os.WriteFile(configPath, []byte(strings.Join(config, "\n")+"\n"), 0600); err != nil {
+			os.RemoveAll(dir)
+			return dnsRollout{}, err
+		}
+		rollout.profiles = append(rollout.profiles, stagedDNSProfile{MAC: mac, configPath: configPath, pidPath: pidPath, Port: port, BlockDoT: profile.BlockDoT})
+	}
+	return rollout, nil
+}
+
+func startDNSRollout(ctx context.Context, rollout dnsRollout) error {
+	for _, profile := range rollout.profiles {
+		checkCtx, cancelCheck := context.WithTimeout(ctx, 10*time.Second)
+		check := exec.CommandContext(checkCtx, "dnsmasq", "--test", "--conf-file="+profile.configPath)
+		if output, err := check.CombinedOutput(); err != nil {
+			cancelCheck()
+			return fmt.Errorf("validate dnsmasq profile: %v: %s", err, strings.TrimSpace(string(output)))
+		}
+		cancelCheck()
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		command := exec.CommandContext(commandCtx, "dnsmasq", "--conf-file="+profile.configPath, "--pid-file="+profile.pidPath)
+		if output, err := command.CombinedOutput(); err != nil {
+			cancel()
+			return fmt.Errorf("start dnsmasq profile: %v: %s", err, strings.TrimSpace(string(output)))
+		}
+		cancel()
+		if _, err := os.Stat(profile.pidPath); err != nil {
+			return fmt.Errorf("dnsmasq profile did not create pid file: %w", err)
+		}
+	}
+	return nil
+}
+
+func stopDNSRollout(ctx context.Context, rollout dnsRollout) {
+	for _, profile := range rollout.profiles {
+		stopDNSPid(ctx, profile.pidPath)
+	}
 }
 
 func replaceNftTable(ctx context.Context, rules string) error {
@@ -210,21 +273,35 @@ func replaceNftTable(ctx context.Context, rules string) error {
 	}
 	return nil
 }
-func stopOldDNS(ctx context.Context) error {
+func stopDNSPid(ctx context.Context, path string) {
+	data, _ := os.ReadFile(path)
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	if pid > 1 {
+		killCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_ = exec.CommandContext(killCtx, "kill", strconv.Itoa(pid)).Run()
+		cancel()
+	}
+	os.Remove(path)
+}
+
+func stopOldDNSExcept(ctx context.Context, keepDir string) error {
 	entries, _ := filepath.Glob(filepath.Join(stateDir, "dns-*.pid"))
+	generationEntries, _ := filepath.Glob(filepath.Join(stateDir, "generation-*", "dns-*.pid"))
+	entries = append(entries, generationEntries...)
 	for _, path := range entries {
-		data, _ := os.ReadFile(path)
-		pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
-		if pid > 1 {
-			killCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			_ = exec.CommandContext(killCtx, "kill", strconv.Itoa(pid)).Run()
-			cancel()
+		if filepath.Dir(path) != keepDir {
+			stopDNSPid(ctx, path)
 		}
-		os.Remove(path)
 	}
 	configs, _ := filepath.Glob(filepath.Join(stateDir, "dns-*.conf"))
 	for _, path := range configs {
 		os.Remove(path)
+	}
+	generations, _ := filepath.Glob(filepath.Join(stateDir, "generation-*"))
+	for _, dir := range generations {
+		if dir != keepDir {
+			os.RemoveAll(dir)
+		}
 	}
 	return nil
 }

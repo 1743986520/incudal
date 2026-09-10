@@ -51,6 +51,7 @@ import { ProxyStrategyFactory } from '../lib/proxy/index.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
 import { sendHostManagedInstanceNotification, sendNotification } from '../lib/notifier.js'
 import { createInstanceTask, getInstanceTaskById, getActiveTaskForInstance, getTaskQueuePosition, cancelInstanceTask } from '../db/instance-tasks.js'
+import { canRecoverInstanceTask } from '../workers/instance-task-lease.js'
 import { closeInstanceSessions } from '../lib/terminal-proxy.js'
 import { calculateDiscountAmount } from '../lib/billing-calc.js'
 import { validateCommandsOwnership, mergeCommandContents, getImageDistroFromAlias } from '../db/custom-init-commands.js'
@@ -3547,6 +3548,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
 
 
+    let incusDeleted = false
     try {
       // 复用上面已获取的host
       if (!host) {
@@ -3611,7 +3613,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // ===== 0.1 处理退款（节点所有者/管理员删除他人的付费实例时）=====
+      // ===== 0.1 先确认 Incus 实例已删除，之后才允许退款和本地清理 =====
+      const client = await getIncusClient(host)
+      if (instance.status === 'running') {
+        await stopInstance(client, instance.incus_id, true)
+      }
+      await deleteInstance(client, instance.incus_id)
+      incusDeleted = true
+
+      // ===== 0.2 处理退款（节点所有者/管理员删除他人的付费实例时）=====
       let hostOwnerRefundAmount = 0
       if (isPrivilegedDeleter && instance.user_id !== user.id) {
         const instanceBilling = await prisma.instance.findUnique({
@@ -3637,56 +3647,40 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         if (refundInfo.isPaid && refundInfo.refundAmount > 0) {
           hostOwnerRefundAmount = refundInfo.refundAmount
 
-          try {
-            await prisma.$transaction(async (tx) => {
-              const instanceOwner = await tx.user.findUnique({
-                where: { id: instance.user_id },
-                select: { balance: true }
-              })
-              const oldBalance = Number(instanceOwner?.balance || 0)
-              const newBalance = oldBalance + hostOwnerRefundAmount
-
-              await tx.user.update({
-                where: { id: instance.user_id },
-                data: { balance: { increment: hostOwnerRefundAmount } }
-              })
-
-              await tx.balanceLog.create({
-                data: {
-                  userId: instance.user_id,
-                  type: 'refund',
-                  amount: hostOwnerRefundAmount,
-                  balanceBefore: oldBalance,
-                  balanceAfter: newBalance,
-                  instanceId: instance.id,
-                  remark: `托管实例被删除退款：${instance.name}`
-                }
-              })
-
-              await db.deductHostingBalance(
-                instance.host_id,
-                hostOwnerRefundAmount,
-                instance.id,
-                `删除托管实例退款扣除：${instance.name}`,
-                tx
-              )
+          await prisma.$transaction(async (tx) => {
+            const instanceOwner = await tx.user.findUnique({
+              where: { id: instance.user_id },
+              select: { balance: true }
             })
-          } catch (refundError) {
-            await prisma.instance.updateMany({
-              where: { id: instanceId, status: 'deleted' },
-              data: { status: instance.status as InstanceStatus }
+            const oldBalance = Number(instanceOwner?.balance || 0)
+            const newBalance = oldBalance + hostOwnerRefundAmount
+
+            await tx.user.update({
+              where: { id: instance.user_id },
+              data: { balance: { increment: hostOwnerRefundAmount } }
             })
-            throw refundError
-          }
+
+            await tx.balanceLog.create({
+              data: {
+                userId: instance.user_id,
+                type: 'refund',
+                amount: hostOwnerRefundAmount,
+                balanceBefore: oldBalance,
+                balanceAfter: newBalance,
+                instanceId: instance.id,
+                remark: `托管实例被删除退款：${instance.name}`
+              }
+            })
+
+            await db.deductHostingBalance(
+              instance.host_id,
+              hostOwnerRefundAmount,
+              instance.id,
+              `删除托管实例退款扣除：${instance.name}`,
+              tx
+            )
+          })
         }
-      }
-
-      let client = null
-      try {
-        client = await getIncusClient(host)
-      } catch (clientError) {
-        const errorMessage = clientError instanceof Error ? clientError.message : String(clientError)
-        console.error('获取 Incus 客户端失败:', errorMessage)
       }
 
       // ===== 1. 删除反代站点（Caddy 远程 + 数据库）=====
@@ -3829,19 +3823,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         console.error('取消转移请求失败:', errorMessage)
       }
 
-      // ===== 6. 停止并删除 Incus 实例 =====
-      if (client) {
-        try {
-          if (instance.status === 'running') {
-            await stopInstance(client, instance.incus_id, true)
-          }
-          await deleteInstance(client, instance.incus_id)
-        } catch (incusError) {
-          const errorMessage = incusError instanceof Error ? incusError.message : String(incusError)
-          console.error('Incus 删除实例失败:', errorMessage)
-        }
-      }
-
       // ===== 8. 释放用户配额和宿主机资源 =====
       const portMappingsCount = portMappings?.length || 0
       await db.rollbackResources({
@@ -3926,6 +3907,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         refundAmount: hostOwnerRefundAmount > 0 ? hostOwnerRefundAmount : undefined
       }
     } catch (error) {
+      if (!incusDeleted) {
+        await prisma.instance.updateMany({
+          where: { id: instanceId, status: 'deleted' },
+          data: { status: instance.status as InstanceStatus }
+        })
+      }
       const errorMessage = error instanceof Error ? error.message : String(error)
       return reply.code(500).send({ error: errorMessage })
     }
@@ -5724,23 +5711,47 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(409).send({ error: 'Task is not active', code: 'TASK_NOT_ACTIVE', currentStatus: task.status })
     }
 
-    const ageMs = Date.now() - (task.startedAt || task.createdAt).getTime()
-    const staleAfterMs = 15 * 60 * 1000
-    if (ageMs < staleAfterMs && !(isAdmin && request.body?.force === true)) {
+    const now = new Date()
+    const force = isAdmin && request.body?.force === true
+    const activeTask = task as typeof task & { status: 'PENDING' | 'PROCESSING' }
+    if (!canRecoverInstanceTask(activeTask, now, force)) {
+      if (task.status === 'PROCESSING') {
+        return reply.code(409).send({
+          error: task.leaseExpiresAt && task.leaseExpiresAt > now
+            ? 'Task execution lease is still active'
+            : 'Task execution is quarantined; an administrator must confirm the old worker has stopped and use force recovery',
+          code: task.leaseExpiresAt && task.leaseExpiresAt > now
+            ? 'TASK_LEASE_ACTIVE'
+            : 'TASK_EXECUTION_QUARANTINED',
+          recoverableAt: task.leaseExpiresAt?.toISOString() ?? null
+        })
+      }
+
+      const staleAfterMs = 15 * 60 * 1000
       return reply.code(409).send({
         error: 'Task is still within the normal execution window',
         code: 'TASK_NOT_STALE',
-        recoverableAt: new Date((task.startedAt || task.createdAt).getTime() + staleAfterMs).toISOString()
+        recoverableAt: new Date(task.createdAt.getTime() + staleAfterMs).toISOString()
       })
     }
 
+    const recoveryWhere = task.status === 'PROCESSING'
+      ? {
+          id: taskId,
+          status: 'PROCESSING' as const,
+          executionToken: task.executionToken,
+          ...(task.leaseExpiresAt ? { leaseExpiresAt: { lte: now } } : { leaseExpiresAt: null })
+        }
+      : { id: taskId, status: 'PENDING' as const }
     const recovered = await prisma.instanceTask.updateMany({
-      where: { id: taskId, status: { in: ['PENDING', 'PROCESSING'] } },
+      where: recoveryWhere,
       data: {
         status: 'FAILED',
         progress: 'recovered',
         error: `任务异常，由 ${isAdmin ? '管理员' : '用户'} 手动解除`,
-        finishedAt: new Date()
+        finishedAt: now,
+        executionToken: null,
+        leaseExpiresAt: null
       }
     })
     if (recovered.count !== 1) {

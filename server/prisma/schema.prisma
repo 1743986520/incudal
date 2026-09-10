@@ -198,15 +198,18 @@ model InstanceTask {
   snapshotName         String? @map("snapshot_name") // 克隆时的快照名称
   newInstanceId        Int?    @map("new_instance_id") // 克隆后的新实例 ID
 
-  error      String?
-  createdAt  DateTime  @default(now()) @map("created_at")
-  startedAt  DateTime? @map("started_at")
-  finishedAt DateTime? @map("finished_at")
+  error          String?
+  executionToken String?   @unique @map("execution_token")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  startedAt      DateTime? @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
 
   instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@index([hostId, status])
   @@index([instanceId])
+  @@index([instanceId, status, leaseExpiresAt])
   @@index([userId])
   @@map("instance_tasks")
 }
@@ -602,6 +605,9 @@ model Host {
   status              HostStatus   @default(offline)
   certPath            String?      @map("cert_path")
   keyPath             String?      @map("key_path")
+  serverCertificate   String?      @map("server_certificate") @db.Text
+  serverFingerprint   String?      @map("server_fingerprint")
+  allowPrivateNetwork Boolean      @default(false) @map("allow_private_network")
   natPublicIp         String?      @map("nat_public_ip")
   natPublicIpv6       String?      @map("nat_public_ipv6") // 宿主机公网 IPv6（用于 nat_ipv6_nat / ipv6_nat 模式）
   natBindIp           String?      @map("nat_bind_ip") // 端口映射实际监听的 IPv4 地址
@@ -1656,15 +1662,24 @@ model InstanceTransfer {
   remark       String? // 转移备注
   rejectReason String?        @map("reject_reason")
   fee          Decimal?       @db.Decimal(10, 2) // 转移手续费（元），拒绝时退还
+  claimToken       String?   @unique @map("claim_token")
+  claimExpiresAt   DateTime? @map("claim_expires_at")
+  phase            String?
+  oldIncusId       String?   @map("old_incus_id")
+  newIncusId       String?   @map("new_incus_id")
+  instanceVersion  Int?      @map("instance_version")
+  cleanupSnapshot  Json?     @map("cleanup_snapshot")
+  refundedAt       DateTime? @map("refunded_at")
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at") // 状态变更时自动更新，用于超时检测
   acceptedAt   DateTime?      @map("accepted_at")
   rejectedAt   DateTime?      @map("rejected_at")
   cancelledAt  DateTime?      @map("cancelled_at")
 
-  instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  fromUser User     @relation("TransferFrom", fields: [fromUserId], references: [id])
-  toUser   User     @relation("TransferTo", fields: [toUserId], references: [id])
+  instance      Instance               @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  fromUser      User                   @relation("TransferFrom", fields: [fromUserId], references: [id])
+  toUser        User                   @relation("TransferTo", fields: [toUserId], references: [id])
+  billingRecord InstanceBillingRecord?
 
   @@index([fromUserId, status])
   @@index([toUserId, status])
@@ -2130,6 +2145,7 @@ model BalanceLog {
   // 关联信息
   orderId    String? @map("order_id")    // 充值订单号
   instanceId Int?    @map("instance_id") // 关联实例
+  transferId Int?    @unique @map("transfer_id")
   remark     String?                      // 备注
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -2393,11 +2409,13 @@ model InstanceBillingRecord {
 
   // 关联
   balanceLogId Int? @map("balance_log_id") // 关联余额日志
+  transferId   Int? @unique @map("transfer_id") // 转移手续费账单幂等键
 
   remark    String?
   createdAt DateTime @default(now()) @map("created_at")
 
-  instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  instance Instance          @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  transfer InstanceTransfer? @relation(fields: [transferId], references: [id], onDelete: SetNull)
 
   @@index([instanceId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])

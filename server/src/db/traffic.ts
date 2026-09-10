@@ -582,6 +582,9 @@ export async function getRunningInstancesForTraffic() {
                     url: true,
                     certPath: true,
                     keyPath: true,
+                    serverCertificate: true,
+                    serverFingerprint: true,
+                    allowPrivateNetwork: true,
                     status: true
                 }
             },
@@ -629,6 +632,9 @@ export async function getRunningInstancesForTrafficByIds(instanceIds: number[]) 
                     url: true,
                     certPath: true,
                     keyPath: true,
+                    serverCertificate: true,
+                    serverFingerprint: true,
+                    allowPrivateNetwork: true,
                     status: true
                 }
             },
@@ -672,6 +678,9 @@ export async function getRunningInstancesForTrafficByUserId(userId: number) {
                     url: true,
                     certPath: true,
                     keyPath: true,
+                    serverCertificate: true,
+                    serverFingerprint: true,
+                    allowPrivateNetwork: true,
                     status: true
                 }
             },

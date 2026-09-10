@@ -8,11 +8,17 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { spawn, type ChildProcess } from 'child_process'
 import { randomUUID } from 'crypto'
 import { existsSync, readFileSync } from 'fs'
-import { chmod, mkdtemp, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
 import { join } from 'path'
 import { createLog } from '../db/logs.js'
 import { logAdminAction } from '../lib/security.js'
+import {
+  DEFAULT_GITHUB_REPOSITORY,
+  buildManualCommand,
+  getAllowedRepositories,
+  getPinnedUpdate,
+  isAllowedRepository,
+  normalizeGitHubRepository
+} from '../lib/system-update-security.js'
 
 type UpdateMode = 'auto' | 'docker' | 'release'
 type UpdateExecutionStatus = 'idle' | 'running' | 'succeeded' | 'failed'
@@ -56,50 +62,13 @@ interface UpdateExecution {
   error: string | null
 }
 
-const DEFAULT_GITHUB_REPOSITORY = '1743986520/incudal'
 const GITHUB_API_BASE_URL = 'https://api.github.com'
-const MAX_SCRIPT_BYTES = 1024 * 1024
 const MAX_OUTPUT_CHARS = 16000
-const updateScriptPath = 'scripts/remote-update.sh'
 let activeUpdateProcess: ChildProcess | null = null
 let lastUpdate: UpdateExecution | null = null
 
-function normalizeGitHubRepository(value: string): string | null {
-  let candidate = value.trim().replace(/\/+$/, '').replace(/\.git$/, '')
-  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(candidate)) {
-    return candidate
-  }
-
-  try {
-    const parsed = new URL(candidate)
-    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com') {
-      return null
-    }
-    const parts = parsed.pathname.split('/').filter(Boolean)
-    if (parts.length !== 2 || !parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part))) {
-      return null
-    }
-    return `${parts[0]}/${parts[1]}`
-  } catch {
-    return null
-  }
-}
-
 function getDefaultRepository(): string {
-  const candidates = [
-    process.env.INCUDAL_UPDATE_SOURCE,
-    process.env.INCUDAL_GITHUB_REPO,
-    process.env.GITHUB_REPOSITORY,
-    process.env.INCUDAL_AGENT_RELEASE_URL,
-    process.env.INCUDAL_AGENT_RELEASE_REPOSITORY,
-    DEFAULT_GITHUB_REPOSITORY
-  ]
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    const repository = normalizeGitHubRepository(candidate)
-    if (repository) return repository
-  }
-  return DEFAULT_GITHUB_REPOSITORY
+  return getAllowedRepositories()[0] || DEFAULT_GITHUB_REPOSITORY
 }
 
 function getCurrentVersion(): string {
@@ -135,11 +104,8 @@ function compareVersions(left: string, right: string): number | null {
   return 0
 }
 
-function getSourceUrls(repository: string): { repositoryUrl: string; scriptUrl: string } {
-  return {
-    repositoryUrl: `https://github.com/${repository}`,
-    scriptUrl: `https://raw.githubusercontent.com/${repository}/main/${updateScriptPath}`
-  }
+function getSourceUrls(repository: string): { repositoryUrl: string } {
+  return { repositoryUrl: `https://github.com/${repository}` }
 }
 
 async function fetchLatestRelease(repository: string): Promise<UpdateRelease> {
@@ -181,11 +147,6 @@ function getInstallDirectory(): string {
   return process.env.INCUDAL_INSTALL_DIR?.trim() || '/opt/incudal'
 }
 
-function buildManualCommand(repository: string, mode: UpdateMode): string {
-  const { scriptUrl } = getSourceUrls(repository)
-  return `curl -fsSL ${scriptUrl} | sudo bash -s -- --source https://github.com/${repository} --mode ${mode}`
-}
-
 function getUpdateExecutor(): { command: string; prefixArgs: string[]; label: string } | null {
   const uid = typeof process.getuid === 'function' ? process.getuid() : 0
   const configuredCommand = process.env.INCUDAL_WEB_UPDATE_COMMAND?.trim()
@@ -207,33 +168,7 @@ function getUpdateExecutor(): { command: string; prefixArgs: string[]; label: st
     }
   }
 
-  if (uid === 0 && existsSync('/bin/bash')) {
-    return { command: '/bin/bash', prefixArgs: [], label: '/bin/bash' }
-  }
   return null
-}
-
-async function downloadUpdateScript(repository: string): Promise<string> {
-  const { scriptUrl } = getSourceUrls(repository)
-  const response = await fetch(scriptUrl, {
-    headers: { 'User-Agent': 'Incudal-System-Update' },
-    signal: AbortSignal.timeout(15000)
-  })
-  if (!response.ok) throw new Error(`更新脚本下载失败（HTTP ${response.status}）`)
-
-  const contentLength = Number(response.headers.get('content-length') || 0)
-  if (contentLength > MAX_SCRIPT_BYTES) throw new Error('更新脚本超过大小限制')
-
-  const script = await response.text()
-  if (!script.startsWith('#!') || script.length > MAX_SCRIPT_BYTES) {
-    throw new Error('远程更新脚本格式无效或超过大小限制')
-  }
-
-  const directory = await mkdtemp(join(tmpdir(), 'incudal-web-update-'))
-  const scriptPath = join(directory, 'remote-update.sh')
-  await writeFile(scriptPath, script, { encoding: 'utf8', mode: 0o700 })
-  await chmod(scriptPath, 0o700)
-  return scriptPath
 }
 
 function currentExecution(): UpdateExecution | null {
@@ -264,6 +199,9 @@ export default async function systemUpdateRoutes(fastify: FastifyInstance) {
     const sourceRepository = body.source ? normalizeGitHubRepository(body.source) : getDefaultRepository()
     if (!sourceRepository) {
       return reply.code(400).send({ error: '仅支持 HTTPS GitHub 仓库地址或 owner/repo', code: 'UPDATE_SOURCE_INVALID' })
+    }
+    if (!isAllowedRepository(sourceRepository)) {
+      return reply.code(403).send({ error: '更新来源不在服务器配置的白名单中', code: 'UPDATE_SOURCE_NOT_ALLOWED' })
     }
 
     try {
@@ -299,9 +237,20 @@ export default async function systemUpdateRoutes(fastify: FastifyInstance) {
     if (!sourceRepository) {
       return reply.code(400).send({ error: '仅支持 HTTPS GitHub 仓库地址或 owner/repo', code: 'UPDATE_SOURCE_INVALID' })
     }
+    if (!isAllowedRepository(sourceRepository)) {
+      return reply.code(403).send({ error: '更新来源不在服务器配置的白名单中', code: 'UPDATE_SOURCE_NOT_ALLOWED' })
+    }
     const mode: UpdateMode = body.mode || 'auto'
     if (!['auto', 'docker', 'release'].includes(mode)) {
       return reply.code(400).send({ error: '更新模式必须是 auto、docker 或 release', code: 'UPDATE_MODE_INVALID' })
+    }
+    const pinnedUpdate = getPinnedUpdate()
+    if (!pinnedUpdate) {
+      return reply.code(409).send({
+        error: '站点更新未配置固定 commit 与脚本 SHA256，请按手工更新提示完成配置',
+        code: 'UPDATE_TRUST_CONFIG_REQUIRED',
+        command: buildManualCommand(sourceRepository, mode)
+      })
     }
 
     const executor = getUpdateExecutor()
@@ -311,16 +260,6 @@ export default async function systemUpdateRoutes(fastify: FastifyInstance) {
         code: 'UPDATE_EXECUTOR_UNAVAILABLE',
         command: buildManualCommand(sourceRepository, mode)
       })
-    }
-
-    let scriptPath = ''
-    try {
-      if (executor.label === '/bin/bash') {
-        scriptPath = await downloadUpdateScript(sourceRepository)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '无法下载更新脚本'
-      return reply.code(502).send({ error: message, code: 'UPDATE_SCRIPT_DOWNLOAD_FAILED' })
     }
 
     const execution: UpdateExecution = {
@@ -337,9 +276,7 @@ export default async function systemUpdateRoutes(fastify: FastifyInstance) {
     }
     lastUpdate = execution
 
-    const args = executor.label === '/bin/bash'
-      ? [scriptPath, '--source', `https://github.com/${sourceRepository}`, '--mode', mode, '--install-dir', getInstallDirectory()]
-      : [...executor.prefixArgs, '--source', `https://github.com/${sourceRepository}`, '--mode', mode]
+    const args = [...executor.prefixArgs, '--source', `https://github.com/${sourceRepository}`, '--ref', pinnedUpdate.ref, '--script-sha256', pinnedUpdate.scriptSHA256, '--mode', mode]
     const child = spawn(executor.command, args, {
       cwd: process.cwd(),
       detached: true,
@@ -348,6 +285,8 @@ export default async function systemUpdateRoutes(fastify: FastifyInstance) {
         ...process.env,
         INCUDAL_GITHUB_REPO: sourceRepository,
         INCUDAL_UPDATE_SOURCE: `https://github.com/${sourceRepository}`,
+        INCUDAL_UPDATE_REF: pinnedUpdate.ref,
+        INCUDAL_UPDATE_SCRIPT_SHA256: pinnedUpdate.scriptSHA256,
         INCUDAL_INSTALL_DIR: getInstallDirectory()
       }
     })
@@ -367,9 +306,6 @@ export default async function systemUpdateRoutes(fastify: FastifyInstance) {
       execution.finishedAt = new Date().toISOString()
       activeUpdateProcess = null
       if (code !== 0) execution.error = `更新脚本退出码：${code ?? 'unknown'}`
-      if (scriptPath) {
-        void rm(join(scriptPath, '..'), { recursive: true, force: true }).catch(() => undefined)
-      }
     })
     child.unref()
 

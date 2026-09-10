@@ -215,6 +215,9 @@ readonly INSTALL_DIR="${INSTALL_DIR}"
 readonly ALLOWED_SOURCE="https://github.com/${DEFAULT_GITHUB_REPO}"
 
 args=("\$@")
+update_ref=""
+script_sha256=""
+update_mode=""
 for ((index = 0; index < \${#args[@]}; index += 1)); do
     case "\${args[index]}" in
         --install-dir|--install-dir=*)
@@ -232,10 +235,23 @@ for ((index = 0; index < \${#args[@]}; index += 1)); do
             ;;
         --mode)
             ((index + 1 < \${#args[@]})) || { echo "--mode 缺少参数" >&2; exit 2; }
-            case "\${args[index + 1]}" in
+            update_mode="\${args[index + 1]}"
+            case "\$update_mode" in
                 auto|docker|release) ;;
                 *) echo "更新模式无效" >&2; exit 2 ;;
             esac
+            ((index += 1))
+            ;;
+        --ref)
+            ((index + 1 < \${#args[@]})) || { echo "--ref 缺少参数" >&2; exit 2; }
+            update_ref="\${args[index + 1]}"
+            [[ "\$update_ref" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "--ref 必须是 40 位 commit" >&2; exit 2; }
+            ((index += 1))
+            ;;
+        --script-sha256)
+            ((index + 1 < \${#args[@]})) || { echo "--script-sha256 缺少参数" >&2; exit 2; }
+            script_sha256="\${args[index + 1]}"
+            [[ "\$script_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "--script-sha256 必须是 SHA256" >&2; exit 2; }
             ((index += 1))
             ;;
         *)
@@ -245,7 +261,16 @@ for ((index = 0; index < \${#args[@]}; index += 1)); do
     esac
 done
 
-exec /usr/bin/bash "\$BUNDLED_SCRIPT" "\${args[@]}" --install-dir "\$INSTALL_DIR"
+[[ -n "\$update_ref" && -n "\$script_sha256" ]] || { echo "必须同时提供 --ref 和 --script-sha256" >&2; exit 2; }
+[[ -n "\$update_mode" ]] || update_mode="auto"
+install -d -o root -g root -m 0700 /var/lib/incudal/web-updates
+tmp_script="\$(mktemp /var/lib/incudal/web-updates/remote-update.XXXXXX.sh)"
+trap 'rm -f "\$tmp_script"' EXIT
+script_url="https://raw.githubusercontent.com/${DEFAULT_GITHUB_REPO}/\${update_ref}/scripts/remote-update.sh"
+/usr/bin/curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 15 --max-time 120 "\$script_url" -o "\$tmp_script"
+printf '%s  %s\n' "\$script_sha256" "\$tmp_script" | /usr/bin/sha256sum -c -
+/bin/chmod 0700 "\$tmp_script"
+exec /usr/bin/bash "\$tmp_script" --source "\$ALLOWED_SOURCE" --ref "\$update_ref" --mode "\$update_mode" --install-dir "\$INSTALL_DIR"
 EOF
     chmod 0755 "$helper_path"
     chown root:root "$helper_path"

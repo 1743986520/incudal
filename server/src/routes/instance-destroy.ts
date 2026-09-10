@@ -585,35 +585,31 @@ async function executeDestroyForUser(
     return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例正在销毁或已删除' }
   }
 
+  let incusDeleted = false
   try {
-    if (!isFreeInstance) {
-      try {
-        const billingResult = await settleUserDestroyBilling({
-          requestUserId: user.id,
-          instance,
-          refundableValue,
-          feeWaiver
-        })
-        refundAmount = billingResult.refundAmount
-        feeAmount = billingResult.feeAmount
-        isFirstTime = billingResult.isFirstTime
-      } catch (settleError) {
-        await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
-        throw settleError
-      }
+    const host = await db.getHostById(instance.hostId)
+    if (!host) {
+      throw new Error('Host not found')
     }
 
+    const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
+    const client = await getIncusClient(host)
     if (instance.status === 'running') {
-      try {
-        const host = await db.getHostById(instance.hostId)
-        if (host) {
-          const { getIncusClient, stopInstance } = await import('../lib/incus/index.js')
-          const client = await getIncusClient(host)
-          await stopInstance(client, instance.incusId, true)
-        }
-      } catch (err) {
-        logger.warn(err, '停止实例失败')
-      }
+      await stopInstance(client, instance.incusId, true)
+    }
+    await deleteInstance(client, instance.incusId)
+    incusDeleted = true
+
+    if (!isFreeInstance) {
+      const billingResult = await settleUserDestroyBilling({
+        requestUserId: user.id,
+        instance,
+        refundableValue,
+        feeWaiver
+      })
+      refundAmount = billingResult.refundAmount
+      feeAmount = billingResult.feeAmount
+      isFirstTime = billingResult.isFirstTime
     }
 
     const portMappings = await prisma.portMapping.findMany({ where: { instanceId } })
@@ -635,17 +631,6 @@ async function executeDestroyForUser(
       })
     } catch (cleanupErr) {
       logger.warn(cleanupErr, '清理关联数据失败')
-    }
-
-    try {
-      const host = await db.getHostById(instance.hostId)
-      if (host) {
-        const { getIncusClient, deleteInstance } = await import('../lib/incus/index.js')
-        const client = await getIncusClient(host)
-        await deleteInstance(client, instance.incusId)
-      }
-    } catch (incusErr) {
-      logger.error(incusErr, 'Incus 删除实例失败')
     }
 
     const portMappingsCount = portMappings?.length || 0
@@ -738,6 +723,9 @@ async function executeDestroyForUser(
       isFreeInstance
     }
   } catch (error) {
+    if (!incusDeleted) {
+      await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
+    }
     logger.error(error, '销毁实例失败')
     return {
       id: instance.id,
@@ -1103,36 +1091,31 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       })
     }
 
+    let incusDeleted = false
     try {
-      if (!isFreeInstance) {
-        try {
-          const billingResult = await settleUserDestroyBilling({
-            requestUserId: user.id,
-            instance,
-            refundableValue,
-            feeWaiver
-          })
-          refundAmount = billingResult.refundAmount
-          feeAmount = billingResult.feeAmount
-          isFirstTime = billingResult.isFirstTime
-        } catch (settleError) {
-          await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
-          throw settleError
-        }
+      const host = await db.getHostById(instance.hostId)
+      if (!host) {
+        throw new Error('Host not found')
       }
 
-      // 1. 停止实例
+      const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
+      const client = await getIncusClient(host)
       if (instance.status === 'running') {
-        try {
-          const host = await db.getHostById(instance.hostId)
-          if (host) {
-            const { getIncusClient, stopInstance } = await import('../lib/incus/index.js')
-            const client = await getIncusClient(host)
-            await stopInstance(client, instance.incusId, true)
-          }
-        } catch (err) {
-          request.log.warn(err, '停止实例失败')
-        }
+        await stopInstance(client, instance.incusId, true)
+      }
+      await deleteInstance(client, instance.incusId)
+      incusDeleted = true
+
+      if (!isFreeInstance) {
+        const billingResult = await settleUserDestroyBilling({
+          requestUserId: user.id,
+          instance,
+          refundableValue,
+          feeWaiver
+        })
+        refundAmount = billingResult.refundAmount
+        feeAmount = billingResult.feeAmount
+        isFirstTime = billingResult.isFirstTime
       }
 
       // 2. 获取端口映射数量（用于释放资源）
@@ -1156,18 +1139,6 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
         })
       } catch (cleanupErr) {
         request.log.warn(cleanupErr, '清理关联数据失败')
-      }
-
-      // 4. 从 Incus 删除实例
-      try {
-        const host = await db.getHostById(instance.hostId)
-        if (host) {
-          const { getIncusClient, deleteInstance } = await import('../lib/incus/index.js')
-          const client = await getIncusClient(host)
-          await deleteInstance(client, instance.incusId)
-        }
-      } catch (incusErr) {
-        request.log.error(incusErr, 'Incus 删除实例失败')
       }
 
       // 6. 释放宿主机资源
@@ -1266,6 +1237,9 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
         isFreeInstance
       }
     } catch (error) {
+      if (!incusDeleted) {
+        await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
+      }
       request.log.error(error, '销毁实例失败')
       return reply.code(500).send({ error: '销毁实例失败' })
     }

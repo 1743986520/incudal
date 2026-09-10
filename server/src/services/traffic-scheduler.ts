@@ -58,6 +58,9 @@ async function getHostClient(host: {
     url: string
     certPath: string | null
     keyPath: string | null
+    serverCertificate: string | null
+    serverFingerprint: string | null
+    allowPrivateNetwork: boolean
 }): Promise<IncusClient | null> {
     if (!host.certPath || !host.keyPath) {
         return null
@@ -69,7 +72,10 @@ async function getHostClient(host: {
             id: host.id,
             url: host.url,
             certPath: host.certPath,
-            keyPath: host.keyPath
+            keyPath: host.keyPath,
+            serverCertificate: host.serverCertificate,
+            serverFingerprint: host.serverFingerprint,
+            allowPrivateNetwork: host.allowPrivateNetwork
         })
         const duration = Date.now() - startTime
         updateClientResponseTime(host.id, duration)
@@ -248,7 +254,10 @@ async function reconcileTrafficState(instances: RunningTrafficInstance[]): Promi
             id: hostId,
             url: host.url,
             certPath: host.certPath,
-            keyPath: host.keyPath
+            keyPath: host.keyPath,
+            serverCertificate: host.serverCertificate,
+            serverFingerprint: host.serverFingerprint,
+            allowPrivateNetwork: host.allowPrivateNetwork
         })
 
         if (!client) continue
@@ -364,7 +373,10 @@ async function executeTrafficJob(startTime: number): Promise<void> {
             id: hostId,
             url: host.url,
             certPath: host.certPath,
-            keyPath: host.keyPath
+            keyPath: host.keyPath,
+            serverCertificate: host.serverCertificate,
+            serverFingerprint: host.serverFingerprint,
+            allowPrivateNetwork: host.allowPrivateNetwork
         })
 
         if (!client) {

@@ -19,6 +19,12 @@ interface Host {
   key_path?: string | null
   certPath?: string | null
   keyPath?: string | null
+  server_certificate?: string | null
+  server_fingerprint?: string | null
+  allow_private_network?: boolean
+  serverCertificate?: string | null
+  serverFingerprint?: string | null
+  allowPrivateNetwork?: boolean
 }
 
 interface PooledClient {
@@ -118,7 +124,10 @@ export async function getIncusClient(host: Host): Promise<IncusClient> {
       const client = new Client({
         url: host.url,
         certPath: host.cert_path || host.certPath || null,
-        keyPath: host.key_path || host.keyPath || null
+        keyPath: host.key_path || host.keyPath || null,
+        serverCertificate: host.server_certificate || host.serverCertificate || null,
+        serverFingerprint: host.server_fingerprint || host.serverFingerprint || null,
+        allowPrivateNetwork: host.allow_private_network ?? host.allowPrivateNetwork ?? false
       })
 
       await client.connect()

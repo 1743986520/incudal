@@ -73,6 +73,7 @@ import crypto from 'crypto'
 import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { checkInstanceOwnerOrAdminPermission } from '../lib/permission.js'
+import { assertAllowedHostUrl, captureIncusServerCertificate, panelCertificatePaths, resolveIncusTarget } from '../lib/incus/incus-tls.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -760,6 +761,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           tags: { type: 'array', items: { type: 'string' } },
           certPath: { type: 'string' },
           keyPath: { type: 'string' },
+          serverCertificate: { type: 'string' },
+          serverFingerprint: { type: 'string' },
           natConfig: {
             type: 'object',
             properties: {
@@ -810,6 +813,10 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       cpuAllowanceMax, memoryMax, instanceType
     } = request.body
 
+    if (request.user.role !== 'admin' && (certPath !== undefined || keyPath !== undefined)) {
+      return reply.code(400).send({ error: 'Certificate paths are server-managed; ordinary hosts must use initialization', code: 'HOST_CERT_PATH_FORBIDDEN' })
+    }
+
     // Validate input (prevent dangerous character injection)
     // 使用 validateIdentifier 确保主机名只包含安全字符 [a-zA-Z0-9_-]
     const nameValidation = validateIdentifier(name, 'Host name', 2, 64)
@@ -854,6 +861,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     const hostAddressValidation = validateIpOrDomain(new URL(urlValidation.sanitized || url).hostname, 'Host address')
     if (!hostAddressValidation.valid) {
       return reply.code(400).send({ error: hostAddressValidation.message })
+    }
+
+    try {
+      await assertAllowedHostUrl(urlValidation.sanitized || url, request.user.role === 'admin')
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error), code: 'HOST_URL_NOT_PUBLIC' })
     }
 
     if (location) {
@@ -907,8 +920,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
 
 
 
-    // 判断是否需要初始化：如果没有提供证书路径，则需要运行安装脚本
-    const needsInitialization = !certPath || !keyPath
+    // 普通节点创建者始终走服务端初始化；只有管理员可导入已安装节点。
+    const needsInitialization = request.user.role !== 'admin' || !certPath || !keyPath
 
     // 验证资源上限配置（如果提供）
     if (cpuAllowanceMax !== undefined && cpuAllowanceMax < 0) {
@@ -988,8 +1001,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
             location,
             countryCode: countryCode || 'us',
             tags: tags || [],
-            certPath: certPath || null,
-            keyPath: keyPath || null,
+            certPath: request.user.role === 'admin' ? certPath || null : null,
+            keyPath: request.user.role === 'admin' ? keyPath || null : null,
             natPublicIp: normalizedNatPublicIp,
             natPublicIpv6: normalizedNatPublicIpv6,
             natBindIp: normalizedNatBindIp,
@@ -1050,7 +1063,10 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         const client = new IncusClient({
           url,
           certPath,
-          keyPath
+          keyPath,
+          serverCertificate: null,
+          serverFingerprint: null,
+          allowPrivateNetwork: request.user.role === 'admin'
         })
 
         const serverInfo = await client.connect() as {
@@ -1368,6 +1384,31 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     }
   })
 
+  // 安装脚本的一次性回传通道：token 只在未完成且未过期的安装会话中有效。
+  fastify.post<{ Params: { token: string }; Body: { certificate?: string } }>('/tls-bootstrap/:token', async (request, reply) => {
+    const { token } = request.params
+    if (!token || token.length < 16 || !request.body?.certificate) {
+      return reply.code(400).send({ error: 'Invalid TLS bootstrap payload' })
+    }
+    const host = await prisma.host.findUnique({ where: { installToken: token } })
+    if (!host || host.isInstalled || !host.installTokenExpire || host.installTokenExpire < new Date()) {
+      return reply.code(403).send({ error: 'Invalid or expired install session' })
+    }
+    try {
+      const certificate = Buffer.from(request.body.certificate, 'base64').toString('utf8')
+      const { certificateFingerprint, normalizeCertificatePem } = await import('../lib/incus/incus-tls.js')
+      const normalized = normalizeCertificatePem(certificate)
+      const fingerprint = certificateFingerprint(normalized)
+      await prisma.host.update({
+        where: { id: host.id },
+        data: { serverCertificate: normalized, serverFingerprint: fingerprint }
+      })
+      return { success: true, fingerprint }
+    } catch {
+      return reply.code(400).send({ error: 'Invalid Incus server certificate' })
+    }
+  })
+
   // 验证并连接宿主机（Trust Password 握手）
   fastify.post<{ Params: { id: string } }>('/:id/verify', {
     onRequest: [fastify.authenticate]
@@ -1395,7 +1436,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     // 检查是否有待验证的安装会话（证书模式不再需要 installToken，但保留过期检查）
     const fullHost = await prisma.host.findUnique({
       where: { id: hostId },
-      select: { installTokenExpire: true, url: true, isInstalled: true }
+      select: { installTokenExpire: true, url: true, isInstalled: true, serverCertificate: true, serverFingerprint: true }
     })
 
     if (fullHost?.isInstalled) {
@@ -1412,9 +1453,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     const hostPort = urlObj.port || '8443'
     const baseUrl = `${urlObj.protocol}//${urlObj.host}`
 
-    // 准备证书路径
-    const certPath = process.env.PANEL_CRT_PATH || join(__dirname, '../../certs/client.crt')
-    const keyPath = process.env.PANEL_KEY_PATH || join(__dirname, '../../certs/client.key')
+    // 证书路径由服务端配置生成，不能来自 host 记录或请求体。
+    const { certPath, keyPath } = panelCertificatePaths()
 
     let cert: Buffer
     let key: Buffer
@@ -1427,22 +1467,29 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: '面板证书文件读取失败，请检查服务器配置' })
     }
 
-    // 创建 undici Agent（携带面板的 Client 证书）
-    const panelAgent = new Agent({
-      connect: {
-        cert,
-        key,
-        rejectUnauthorized: false  // 首次连接必须忽略宿主机的自签名证书错误
-      }
-    })
-
+    let panelAgent: Agent | null = null
     try {
+      // Prefer the certificate returned over the one-time install channel. A manual
+      // verify performs explicit TOFU only when the installer did not return it.
+      const target = await resolveIncusTarget(host.url, user.role === 'admin')
+      const captured = fullHost?.serverCertificate
+        ? { certificate: fullHost.serverCertificate, fingerprint: fullHost.serverFingerprint!, target }
+        : await captureIncusServerCertificate(host.url, user.role === 'admin')
+      panelAgent = new Agent({
+        connect: {
+          cert,
+          key,
+          ca: captured.certificate,
+          rejectUnauthorized: true,
+          ...(captured.target.servername ? { servername: captured.target.servername } : {})
+        }
+      })
       // 证书模式：证书已在安装脚本中导入，直接测试连接
-      request.log.info(`Attempting to verify host at ${baseUrl}`)
+      request.log.info(`Attempting to verify host at ${captured.target.url}`)
 
       // 直接获取资源信息（测试连接）
-      const resourcesUrl = `${baseUrl}/1.0/resources`
-      const serverInfoUrl = `${baseUrl}/1.0`
+      const resourcesUrl = `${captured.target.url}/1.0/resources`
+      const serverInfoUrl = `${captured.target.url}/1.0`
       
       const resourcesRes = await undiciRequest(resourcesUrl, {
         method: 'GET',
@@ -1519,6 +1566,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         certDownloadExpire: null,  // 清空证书下载有效期
         certPath: certPath,
         keyPath: keyPath,
+        serverCertificate: captured.certificate,
+        serverFingerprint: captured.fingerprint,
+        allowPrivateNetwork: user.role === 'admin',
         architecture: hostArchitecture
       }
       // 仅在检测到 IPv6 且当前未手动配置时自动填入
@@ -1553,9 +1603,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           memoryTotalGB: Math.round(memoryTotalMB / 1024),
           diskTotalGB: Math.round(diskTotalMB / 1024)
         },
-        architecture: hostArchitecture
+        architecture: hostArchitecture,
+        serverFingerprint: captured.fingerprint
       }
-
     } catch (err: any) {
       const errorMessage = err.message || String(err)
       request.log.error({ err, baseUrl }, 'Host verification failed')
@@ -1581,8 +1631,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         error: `连接失败：${errorMessage}`
       })
     } finally {
-      // 关闭 agent
-      await panelAgent.close()
+      await panelAgent?.close().catch(() => {})
     }
   })
 
@@ -1684,10 +1733,37 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     }
 
     try {
+      let serverCertificate = host.server_certificate || null
+      let serverFingerprint = host.server_fingerprint || null
+      if (!serverCertificate) {
+        if (user.role !== 'admin') {
+          return reply.code(409).send({
+            success: false,
+            error: '该节点尚未建立 TLS 信任锚，请联系管理员执行受控迁移',
+            code: 'HOST_TLS_TRUST_MIGRATION_REQUIRED'
+          })
+        }
+        const captured = await captureIncusServerCertificate(host.url, true)
+        serverCertificate = captured.certificate
+        serverFingerprint = captured.fingerprint
+        await prisma.host.update({
+          where: { id: hostId },
+          data: {
+            serverCertificate,
+            serverFingerprint,
+            allowPrivateNetwork: true
+          }
+        })
+        await removeIncusClient(hostId).catch(() => {})
+      }
+
       const client = new IncusClient({
         url: host.url,
         certPath: host.cert_path,
-        keyPath: host.key_path
+        keyPath: host.key_path,
+        serverCertificate,
+        serverFingerprint,
+        allowPrivateNetwork: host.allow_private_network === true || user.role === 'admin'
       })
 
       // 仅测试连通性：尝试连接并获取服务器信息
@@ -2069,6 +2145,10 @@ export default async function hostRoutes(fastify: FastifyInstance) {
 
     const updates = request.body
 
+    if (request.user.role !== 'admin' && (updates.certPath !== undefined || updates.keyPath !== undefined)) {
+      return reply.code(400).send({ error: 'Certificate paths are server-managed', code: 'HOST_CERT_PATH_FORBIDDEN' })
+    }
+
     const host = await db.getHostById(hostId)
     if (!host) {
       return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
@@ -2111,6 +2191,11 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       const hostAddressValidation = validateIpOrDomain(new URL(urlValidation.sanitized || updates.url).hostname, 'Host address')
       if (!hostAddressValidation.valid) {
         return reply.code(400).send({ error: hostAddressValidation.message })
+      }
+      try {
+        await assertAllowedHostUrl(urlValidation.sanitized || updates.url, request.user.role === 'admin')
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : String(error), code: 'HOST_URL_NOT_PUBLIC' })
       }
     }
 
@@ -2246,8 +2331,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
               url: updates.url,
               location: updates.location,
               countryCode: updates.countryCode,
-              certPath: updates.certPath,
-              keyPath: updates.keyPath,
+              certPath: request.user.role === 'admin' ? updates.certPath : undefined,
+              keyPath: request.user.role === 'admin' ? updates.keyPath : undefined,
               natPublicIp: normalizedNatPublicIp,
               natBindIp: normalizedNatBindIp,
               natBindIpv6: normalizedNatBindIpv6,
@@ -2324,8 +2409,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
             url: updates.url,
             location: updates.location,
             countryCode: updates.countryCode,
-            certPath: updates.certPath,
-            keyPath: updates.keyPath,
+            certPath: request.user.role === 'admin' ? updates.certPath : undefined,
+            keyPath: request.user.role === 'admin' ? updates.keyPath : undefined,
             natPublicIp: normalizedNatPublicIp,
             natBindIp: normalizedNatBindIp,
             natBindIpv6: normalizedNatBindIpv6,
@@ -2796,6 +2881,16 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           continue
         }
 
+        if (!databaseOnly) {
+          if (!client || !incusInstanceOperations) {
+            throw new Error('Incus client unavailable')
+          }
+          if (instance.status === 'running') {
+            await incusInstanceOperations.stopInstance(client, instance.incusId, true)
+          }
+          await incusInstanceOperations.deleteInstance(client, instance.incusId)
+        }
+
         // ===== 1. 删除反代站点（完整删除清 Caddy，DB-only 只清数据库）=====
         const proxySites = await getProxySitesByInstanceId(instance.id)
         if (proxySites.length > 0) {
@@ -2921,19 +3016,6 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           })
         } catch (transferError) {
           // 忽略转移请求取消错误
-        }
-
-        // ===== 6. 停止并删除 Incus 实例（完整删除模式专属）=====
-        if (client && incusInstanceOperations) {
-          try {
-            if (instance.status === 'running') {
-              await incusInstanceOperations.stopInstance(client, instance.incusId, true)
-            }
-            await incusInstanceOperations.deleteInstance(client, instance.incusId)
-          } catch (incusError) {
-            const errorMessage = incusError instanceof Error ? incusError.message : String(incusError)
-            fastify.log.warn(`Incus 删除实例失败 (${instance.name}): ${errorMessage}`)
-          }
         }
 
         // ===== 7. 更新实例状态为 deleted =====

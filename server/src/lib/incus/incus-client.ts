@@ -10,6 +10,8 @@ import type {
   IncusApiResponse
 } from '../../types/incus.js'
 import { waitForOperation } from './incus-utils.js'
+import { assertServerManagedCertificatePaths, buildIncusTlsConnectOptions, resolveIncusTarget, trustFromEnvironment, type IncusTlsConnectOptions } from './incus-tls.js'
+import { getIncusExecutionGuard, throwIfIncusExecutionAborted } from './incus-execution-guard.js'
 
 export class IncusClient {
   baseUrl: string
@@ -17,11 +19,26 @@ export class IncusClient {
   keyPath: string | null
   agent: Agent | null = null
   connected: boolean = false
+  tlsConnectOptions: IncusTlsConnectOptions
+  originalUrl: string
+  allowPrivateNetwork: boolean
+  servername?: string
 
   constructor(options: IncusClientOptions) {
-    this.baseUrl = IncusClient.normalizeUrl(options.url)
+    this.originalUrl = IncusClient.normalizeUrl(options.url)
+    this.baseUrl = this.originalUrl
     this.certPath = options.certPath
     this.keyPath = options.keyPath
+    this.allowPrivateNetwork = options.allowPrivateNetwork === true
+    const environmentTrust = trustFromEnvironment()
+    const trust = options.serverCertificate
+      ? { ca: options.serverCertificate, fingerprint: options.serverFingerprint }
+      : options.caPath
+      ? { ca: readFileSync(options.caPath) }
+      : environmentTrust.ca && typeof environmentTrust.ca === 'string'
+        ? { ca: readFileSync(environmentTrust.ca) }
+        : environmentTrust
+    this.tlsConnectOptions = buildIncusTlsConnectOptions(trust)
   }
 
   /**
@@ -67,6 +84,10 @@ export class IncusClient {
         throw new Error('Certificate or key path is missing')
       }
 
+      assertServerManagedCertificatePaths(this.certPath, this.keyPath)
+      const target = await resolveIncusTarget(this.originalUrl, this.allowPrivateNetwork)
+      this.baseUrl = target.url
+      this.servername = target.servername
       const cert = readFileSync(this.certPath)
       const key = readFileSync(this.keyPath)
 
@@ -74,7 +95,8 @@ export class IncusClient {
         connect: {
           cert,
           key,
-          rejectUnauthorized: false // Incus 使用自签名证书
+          ...(this.servername ? { servername: this.servername } : {}),
+          ...this.tlsConnectOptions
         },
         // 超时配置，防止 Headers Timeout Error
         headersTimeout: 120000, // 2分钟
@@ -101,12 +123,20 @@ export class IncusClient {
       throw new Error('Incus 客户端未连接')
     }
 
+    const guard = getIncusExecutionGuard()
+    throwIfIncusExecutionAborted()
+    if (method !== 'GET' && guard) {
+      await guard.assertActive()
+      throwIfIncusExecutionAborted()
+    }
+
     const url = `${this.baseUrl}${path}`
     const options: {
       method: string
       dispatcher: Agent
       headers: Record<string, string>
       body?: string
+      signal?: AbortSignal
     } = {
       method,
       dispatcher: this.agent,
@@ -117,6 +147,9 @@ export class IncusClient {
 
     if (body) {
       options.body = JSON.stringify(body)
+    }
+    if (guard) {
+      options.signal = guard.signal
     }
 
     const response = await request(url, options)
@@ -151,9 +184,14 @@ export class IncusClient {
 
     // 异步操作需要等待完成
     if (data.type === 'async' && data.operation) {
-      return await waitForOperation(this, data.operation, timeout) as T
+      const result = await waitForOperation(this, data.operation, timeout) as T
+      throwIfIncusExecutionAborted()
+      if (method !== 'GET' && guard) await guard.assertActive()
+      return result
     }
 
+    throwIfIncusExecutionAborted()
+    if (method !== 'GET' && guard) await guard.assertActive()
     return (data.metadata || data) as T
   }
 

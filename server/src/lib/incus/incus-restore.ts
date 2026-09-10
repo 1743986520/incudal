@@ -108,7 +108,7 @@ export async function restoreFromStream({
         connect: {
             cert,
             key,
-            rejectUnauthorized: false,
+            ...client.tlsConnectOptions,
             timeout: 60000
         },
         bodyTimeout: 0, // 禁用 body 超时

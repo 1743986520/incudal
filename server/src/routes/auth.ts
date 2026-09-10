@@ -598,7 +598,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         username,
         email: normalizedEmail,
         passwordHash,
-        inviteCode: invite && inviteCode ? inviteCode : undefined
+        inviteCode: invite && inviteCode ? inviteCode : undefined,
+        emailVerified: smtpEnabled
       })
       userId = created.userId
       registerGift = created.registerGift

@@ -38,6 +38,8 @@ export interface InstanceTaskWithDetails {
   createdAt: Date
   startedAt: Date | null
   finishedAt: Date | null
+  executionToken: string | null
+  leaseExpiresAt: Date | null
 }
 
 /**

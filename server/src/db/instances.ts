@@ -210,6 +210,7 @@ export async function getInstanceById(id: number): Promise<(Instance & {
 
   return {
     id: inst.id,
+    version: inst.version,
     incus_id: inst.incusId,
     name: inst.name,
     user_id: inst.userId,
