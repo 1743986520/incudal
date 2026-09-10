@@ -216,7 +216,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         if (!host) {
           return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
         }
-        await db.updateHostResources(instance.host_id, { cpuUsed: host.cpu_used + actualAdded })
+        await db.adjustHostResources(instance.host_id, { cpuUsed: actualAdded })
         const client = await getIncusClient(host)
         await patchInstanceResources(client, instance.incus_id, { cpu: newCpu })
         await db.updateInstanceResources(instanceId, { cpu: newCpu })
@@ -226,7 +226,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         if (!host) {
           return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
         }
-        await db.updateHostResources(instance.host_id, { memoryUsed: host.memory_used + actualAdded })
+        await db.adjustHostResources(instance.host_id, { memoryUsed: actualAdded })
         const client = await getIncusClient(host)
         await patchInstanceResources(client, instance.incus_id, { memory: newMemory })
         await db.updateInstanceResources(instanceId, { memory: newMemory })
@@ -236,7 +236,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         if (!host) {
           return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
         }
-        await db.updateHostResources(instance.host_id, { diskUsed: host.disk_used + actualAdded })
+        await db.adjustHostResources(instance.host_id, { diskUsed: actualAdded })
         const client = await getIncusClient(host)
         await patchInstanceResources(client, instance.incus_id, { disk: newDisk })
         await db.updateInstanceResources(instanceId, { disk: newDisk })
