@@ -29,6 +29,13 @@ const showLayout = computed<boolean>(() => {
   return authStore.isAuthenticated && !noLayoutRoutes.includes(route.name as string)
 })
 
+// 公告面向访客和普通用户。管理员需要能够直接进入系统设置修改公告，
+// 不能再被自己配置的全局弹窗遮挡；认证信息加载期间也先不显示，避免闪现。
+const showPopupAnnouncement = computed<boolean>(() => {
+  if (!authStore.isAuthenticated) return true
+  return authStore.user !== null && !authStore.isAdmin
+})
+
 watchEffect(() => {
   locale.value
   configStore.brandName
@@ -183,6 +190,6 @@ onUnmounted(() => {
       <component :is="Component" :key="currentRoute.name" />
     </template>
   </RouterView>
-  <PopupAnnouncementModal />
+  <PopupAnnouncementModal v-if="showPopupAnnouncement" />
   <ToastContainer />
 </template>
