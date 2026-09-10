@@ -125,24 +125,17 @@ export async function upsertDailyTraffic(
     // 标准化日期为当天 00:00:00
     const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
 
-    const existing = await prisma.dailyTraffic.findUnique({
+    // Use database-side increments so concurrent collectors cannot overwrite
+    // each other's read-modify-write result.
+    return prisma.dailyTraffic.upsert({
         where: {
             instanceId_date: { instanceId, date: normalizedDate }
-        }
-    })
-
-    if (existing) {
-        return prisma.dailyTraffic.update({
-            where: { id: existing.id },
-            data: {
-                rxTotal: existing.rxTotal + rxIncrement,
-                txTotal: existing.txTotal + txIncrement
-            }
-        })
-    }
-
-    return prisma.dailyTraffic.create({
-        data: {
+        },
+        update: {
+            rxTotal: { increment: rxIncrement },
+            txTotal: { increment: txIncrement }
+        },
+        create: {
             instanceId,
             date: normalizedDate,
             rxTotal: rxIncrement,
