@@ -925,10 +925,10 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0) {
         const host = await db.getHostById(instance.hostId)
         if (host) {
-          await db.updateHostResources(instance.hostId, {
-            cpuUsed: host.cpu_used + cpuDelta,
-            memoryUsed: host.memory_used + memoryDelta,
-            diskUsed: host.disk_used + diskDelta
+          await db.adjustHostResources(instance.hostId, {
+            cpuUsed: cpuDelta,
+            memoryUsed: memoryDelta,
+            diskUsed: diskDelta
           })
           console.log(`[ChangePlan] 实例 ${instance.name} 资源变化: CPU ${cpuDelta > 0 ? '+' : ''}${cpuDelta}%, Memory ${memoryDelta > 0 ? '+' : ''}${memoryDelta}MB, Disk ${diskDelta > 0 ? '+' : ''}${diskDelta}MB`)
         }
