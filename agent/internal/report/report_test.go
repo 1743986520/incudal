@@ -156,6 +156,29 @@ func TestTrafficCountersFromIncusStateFallsBackToExternalInterfaces(t *testing.T
 	}
 }
 
+func TestTrafficCountersFromIncusStateIncludesMixedExternalInterfaces(t *testing.T) {
+	state := incusInstanceState{
+		Network: map[string]incusNetworkDevice{
+			"eth0": {
+				Counters: incusNetworkCounters{BytesReceived: "100", BytesSent: "200"},
+			},
+			// A second Incus NIC may be reported using its guest OS name. This
+			// interface carries IPv6 traffic on dual-stack NAT nodes.
+			"enp6s0": {
+				Counters: incusNetworkCounters{BytesReceived: "300", BytesSent: "400"},
+			},
+			"docker0": {
+				Counters: incusNetworkCounters{BytesReceived: "500", BytesSent: "600"},
+			},
+		},
+	}
+
+	counters := getTrafficCountersFromIncusState("vm-test", state)
+	if counters.rx != 400 || counters.tx != 600 {
+		t.Fatalf("mixed-interface traffic counters mismatch: got=%+v", counters)
+	}
+}
+
 func containsCapability(capabilities []any, expected string) bool {
 	for _, capability := range capabilities {
 		if capability == expected {

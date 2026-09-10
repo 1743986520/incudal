@@ -113,13 +113,16 @@ export function getTrafficCountersFromState(
     const billableVmMacs = getBillableVmMacs(instanceName)
 
     const totals: NetworkCounters = { rxBytes: 0n, txBytes: 0n }
-    const fallbackInterfaces: Array<[string, InstanceStateNetwork]> = []
-    let hasStrictBillableInterface = false
-
     if (state.network) {
         for (const [ifName, ifData] of Object.entries(state.network)) {
-            if (isBillableNetworkInterface(ifName, ifData, billableVmMacs)) {
-                hasStrictBillableInterface = true
+            // A state response can mix Incus device names (eth0/eth1) with
+            // distro-assigned guest names (for example enp5s0/enp6s0).  Do
+            // not make the fallback all-or-nothing: seeing eth0 must not make
+            // us discard a second external NIC carrying IPv6 NAT traffic.
+            if (
+                isBillableNetworkInterface(ifName, ifData, billableVmMacs)
+                || isLikelyExternalGuestInterface(ifName)
+            ) {
                 addCounters(totals, ifData.counters)
 
                 if (process.env.DEBUG_TRAFFIC === 'true' && ifData.counters) {
@@ -128,23 +131,8 @@ export function getTrafficCountersFromState(
                 continue
             }
 
-            if (isLikelyExternalGuestInterface(ifName)) {
-                fallbackInterfaces.push([ifName, ifData])
-                continue
-            }
-
             if (process.env.DEBUG_TRAFFIC === 'true' && ifData.counters) {
                 console.log(`[Traffic Debug] ${instanceName} - ${ifName}: skipped non-billable interface`)
-            }
-        }
-
-        if (!hasStrictBillableInterface && fallbackInterfaces.length > 0) {
-            for (const [ifName, ifData] of fallbackInterfaces) {
-                addCounters(totals, ifData.counters)
-
-                if (process.env.DEBUG_TRAFFIC === 'true') {
-                    console.log(`[Traffic Debug] ${instanceName} - ${ifName}: fallback rx=${ifData.counters?.bytes_received || 0}, tx=${ifData.counters?.bytes_sent || 0}`)
-                }
             }
         }
     }
