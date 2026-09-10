@@ -3862,10 +3862,10 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         const memoryDelta = newPlan.memory - currentPlan.memory
         const diskDelta = newPlan.disk - currentPlan.disk
         if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0) {
-          await db.updateHostResources(instance.hostId, {
-            cpuUsed: instance.host.cpuUsed + cpuDelta,
-            memoryUsed: instance.host.memoryUsed + memoryDelta,
-            diskUsed: instance.host.diskUsed + diskDelta
+          await db.adjustHostResources(instance.hostId, {
+            cpuUsed: cpuDelta,
+            memoryUsed: memoryDelta,
+            diskUsed: diskDelta
           })
         }
       }
