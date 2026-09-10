@@ -704,7 +704,12 @@ http.interceptors.response.use(
 // 仅影响真正并发的相同请求（如父子组件同时调用同一接口），串行/轮询请求不受影响（请求完成后即从 Map 移除）
 
 function getRequestKey(url: string, params?: unknown): string {
-  return params ? `${url}?${JSON.stringify(params)}` : url
+  // Never share an in-flight authenticated response between sessions. This
+  // matters when a user logs out and another user logs in while a GET is still
+  // pending. The token is already held by the client for authentication; it is
+  // only used here as an in-memory request-scope discriminator.
+  const authContext = localStorage.getItem('token') || 'anonymous'
+  return `${authContext}:${url}${params ? `?${JSON.stringify(params)}` : ''}`
 }
 
 const _originalGet = http.get.bind(http)
@@ -714,11 +719,18 @@ const _originalGet = http.get.bind(http)
   if (existing) {
     return existing
   }
-  const promise = _originalGet(url, config).finally(() => {
-    pendingGetRequests.delete(key)
+  const promise = _originalGet(url, config)
+  let trackedPromise: Promise<unknown>
+  trackedPromise = promise.finally(() => {
+    // cancelAllPendingRequests() can clear the map while the request is still
+    // running. Do not let that old request delete a newer request with the
+    // same key after the user/session has changed.
+    if (pendingGetRequests.get(key) === trackedPromise) {
+      pendingGetRequests.delete(key)
+    }
   })
-  pendingGetRequests.set(key, promise)
-  return promise
+  pendingGetRequests.set(key, trackedPromise)
+  return trackedPromise
 }
 
 // API 模块
