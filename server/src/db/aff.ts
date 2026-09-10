@@ -4,9 +4,10 @@
  */
 
 import { prisma } from './prisma.js'
-import type { AffCode, AffLog, AffLogType, AffWithdrawal, AffWithdrawalStatus, Prisma, PrismaClient } from '@prisma/client'
+import { Prisma, type AffCode, type AffLog, type AffLogType, type AffWithdrawal, type AffWithdrawalStatus } from '@prisma/client'
 import { nanoid } from 'nanoid'
 import { getSystemConfigBoolean } from './system-config.js'
+import { USER_BALANCE_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
 
 const AFF_REBATE_DISABLED_ERROR = 'AFF 返利暂未开启，暂时无法使用优惠码'
 
@@ -75,56 +76,70 @@ export async function changeAffBalance(
   input: AffBalanceChangeInput,
   tx?: Prisma.TransactionClient
 ): Promise<AffBalanceChangeResult> {
-  const { userId, type, amount, affCodeId, instanceId, mailSubscriptionId, originalAmount, remark } = input
-  const client = tx || prisma
-
   try {
-    // 1. 获取当前 AFF 余额
-    const user = await client.user.findUnique({
-      where: { id: userId },
-      select: { affBalance: true }
-    })
-
-    if (!user) {
-      throw new Error('用户不存在')
+    if (!Number.isFinite(input.amount)) {
+      throw new Error('AFF 余额变动金额无效')
     }
+    const run = async (client: Prisma.TransactionClient): Promise<AffBalanceChangeResult> => {
+      const { userId, type, amount, affCodeId, instanceId, mailSubscriptionId, originalAmount, remark } = input
+      // Serialize AFF and main-balance operations for the same user before
+      // taking the balance snapshot used by the ledger entry.
+      await advisoryTransactionLock(client, USER_BALANCE_LOCK_NAMESPACE, userId)
+      const user = await client.user.findUnique({
+        where: { id: userId },
+        select: { affBalance: true }
+      })
 
-    const balanceBefore = Number(user.affBalance)
-    const balanceAfter = balanceBefore + amount
-
-    // 2. 检查余额是否足够（如果是扣款）
-    if (amount < 0 && balanceAfter < 0) {
-      throw new Error('AFF 余额不足')
-    }
-
-    // 3. 更新用户 AFF 余额
-    await client.user.update({
-      where: { id: userId },
-      data: { affBalance: balanceAfter }
-    })
-
-    // 4. 创建 AFF 余额变动日志
-    const affLog = await client.affLog.create({
-      data: {
-        userId,
-        type,
-        amount,
-        affCodeId,
-        instanceId,
-        mailSubscriptionId,
-        originalAmount,
-        balanceBefore,
-        balanceAfter,
-        remark
+      if (!user) {
+        throw new Error('用户不存在')
       }
-    })
 
-    return {
-      success: true,
-      affLog,
-      newBalance: balanceAfter
+      const balanceBefore = user.affBalance
+      const balanceAfter = balanceBefore.plus(amount)
+      if (amount < 0 && balanceAfter.lessThan(0)) {
+        throw new Error('AFF 余额不足')
+      }
+
+      await client.user.update({
+        where: { id: userId },
+        data: { affBalance: { increment: amount } }
+      })
+
+      const affLog = await client.affLog.create({
+        data: {
+          userId,
+          type,
+          amount,
+          affCodeId,
+          instanceId,
+          mailSubscriptionId,
+          originalAmount,
+          balanceBefore,
+          balanceAfter,
+          remark
+        }
+      })
+
+      return {
+        success: true,
+        affLog,
+        newBalance: Number(balanceAfter)
+      }
     }
+
+    if (tx) {
+      return await run(tx)
+    }
+    return await prisma.$transaction(run, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+    })
   } catch (error) {
+    // A caller-provided transaction must see the error so Prisma rolls back
+    // any earlier writes in that transaction. Swallowing it here could commit
+    // a balance update without its ledger row.
+    if (tx) {
+      throw error
+    }
     return {
       success: false,
       error: error instanceof Error ? error.message : 'AFF 余额变动失败'
@@ -482,7 +497,13 @@ export async function processAffCommission(
   type: 'new_purchase' | 'renew',
   tx?: Prisma.TransactionClient
 ): Promise<void> {
-  const client = tx || prisma
+  if (!tx) {
+    await prisma.$transaction(async transaction => {
+      await processAffCommission(affCodeId, instanceId, originalAmount, type, transaction)
+    })
+    return
+  }
+  const client = tx
 
   // 1. 获取优惠码信息
   const affCode = await client.affCode.findUnique({
@@ -498,7 +519,7 @@ export async function processAffCommission(
   if (commission <= 0) return
 
   // 3. 给优惠码创建者增加 AFF 余额
-  await changeAffBalance({
+  const balanceChange = {
     userId: affCode.userId,
     type,
     amount: commission,
@@ -506,7 +527,11 @@ export async function processAffCommission(
     instanceId,
     originalAmount,
     remark: type === 'new_purchase' ? '新购返利' : '续费返利'
-  }, client as PrismaClient)
+  }
+  const balanceResult = await changeAffBalance(balanceChange, tx)
+  if (!balanceResult.success) {
+    throw new Error(balanceResult.error || 'AFF 返利入账失败')
+  }
 
   // 4. 更新优惠码统计
   await client.affCode.update({
@@ -624,12 +649,13 @@ export async function createAffWithdrawal(
 ): Promise<{ success: boolean; withdrawal?: AffWithdrawal; error?: string }> {
   try {
     // 1. 检查最低转化金额（0.1 元起）
-    if (amount < 0.1) {
+    if (!Number.isFinite(amount) || amount < 0.1) {
       return { success: false, error: '最低转化金额为 0.1 元' }
     }
 
     // 2. 在事务中完成：创建申请 + 自动审批
     const withdrawal = await prisma.$transaction(async (tx) => {
+      await advisoryTransactionLock(tx, USER_BALANCE_LOCK_NAMESPACE, userId)
       // 2.1 获取用户当前余额
       const user = await tx.user.findUnique({
         where: { id: userId },
@@ -640,11 +666,11 @@ export async function createAffWithdrawal(
         throw new Error('用户不存在')
       }
 
-      const affBalanceBefore = Number(user.affBalance)
-      const balanceBefore = Number(user.balance)
+      const affBalanceBefore = user.affBalance
+      const balanceBefore = user.balance
 
       // 2.2 检查 AFF 余额
-      if (affBalanceBefore < amount) {
+      if (affBalanceBefore.lessThan(amount)) {
         throw new Error('AFF 余额不足')
       }
 
@@ -660,10 +686,10 @@ export async function createAffWithdrawal(
       })
 
       // 2.4 扣除 AFF 余额
-      const affBalanceAfter = affBalanceBefore - amount
+      const affBalanceAfter = affBalanceBefore.minus(amount)
       await tx.user.update({
         where: { id: userId },
-        data: { affBalance: affBalanceAfter }
+        data: { affBalance: { decrement: amount } }
       })
 
       // 2.5 记录 AFF 日志
@@ -679,10 +705,10 @@ export async function createAffWithdrawal(
       })
 
       // 2.6 增加用户主余额
-      const balanceAfter = balanceBefore + amount
+      const balanceAfter = balanceBefore.plus(amount)
       await tx.user.update({
         where: { id: userId },
-        data: { balance: balanceAfter }
+        data: { balance: { increment: amount } }
       })
 
       // 2.7 记录余额日志
@@ -810,7 +836,18 @@ export async function approveAffWithdrawal(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await prisma.$transaction(async (tx) => {
-      // 1. 获取申请信息
+      // Read the owner first, then serialize all AFF withdrawals for that user
+      // before taking the balance snapshot. Re-read the withdrawal after the
+      // lock so a concurrent approval cannot pass the pending check twice.
+      const target = await tx.affWithdrawal.findUnique({
+        where: { id: withdrawalId },
+        select: { userId: true }
+      })
+      if (!target) {
+        throw new Error('申请不存在')
+      }
+      await advisoryTransactionLock(tx, USER_BALANCE_LOCK_NAMESPACE, target.userId)
+
       const withdrawal = await tx.affWithdrawal.findUnique({
         where: { id: withdrawalId },
         include: { user: { select: { affBalance: true, balance: true } } }
@@ -824,18 +861,18 @@ export async function approveAffWithdrawal(
       }
 
       const amount = Number(withdrawal.amount)
-      const affBalanceBefore = Number(withdrawal.user.affBalance)
-      const balanceBefore = Number(withdrawal.user.balance)
+      const affBalanceBefore = withdrawal.user.affBalance
+      const balanceBefore = withdrawal.user.balance
 
-      if (affBalanceBefore < amount) {
+      if (affBalanceBefore.lessThan(amount)) {
         throw new Error('AFF 余额不足')
       }
 
       // 2. 扣除 AFF 余额
-      const affBalanceAfter = affBalanceBefore - amount
+      const affBalanceAfter = affBalanceBefore.minus(amount)
       await tx.user.update({
         where: { id: withdrawal.userId },
-        data: { affBalance: affBalanceAfter }
+        data: { affBalance: { decrement: amount } }
       })
 
       // 3. 记录 AFF 日志
@@ -851,10 +888,10 @@ export async function approveAffWithdrawal(
       })
 
       // 4. 增加用户主余额
-      const balanceAfter = balanceBefore + amount
+      const balanceAfter = balanceBefore.plus(amount)
       await tx.user.update({
         where: { id: withdrawal.userId },
-        data: { balance: balanceAfter }
+        data: { balance: { increment: amount } }
       })
 
       // 5. 记录余额日志
@@ -870,14 +907,17 @@ export async function approveAffWithdrawal(
       })
 
       // 6. 更新申请状态
-      await tx.affWithdrawal.update({
-        where: { id: withdrawalId },
+      const statusResult = await tx.affWithdrawal.updateMany({
+        where: { id: withdrawalId, status: 'pending' },
         data: {
           status: 'approved',
           reviewedBy: adminId,
           reviewedAt: new Date()
         }
       })
+      if (statusResult.count !== 1) {
+        throw new Error('申请已处理')
+      }
     })
 
     return { success: true }
@@ -898,19 +938,8 @@ export async function rejectAffWithdrawal(
   reason: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const withdrawal = await prisma.affWithdrawal.findUnique({
-      where: { id: withdrawalId }
-    })
-
-    if (!withdrawal) {
-      return { success: false, error: '申请不存在' }
-    }
-    if (withdrawal.status !== 'pending') {
-      return { success: false, error: '申请已处理' }
-    }
-
-    await prisma.affWithdrawal.update({
-      where: { id: withdrawalId },
+    const result = await prisma.affWithdrawal.updateMany({
+      where: { id: withdrawalId, status: 'pending' },
       data: {
         status: 'rejected',
         rejectReason: reason,
@@ -918,6 +947,10 @@ export async function rejectAffWithdrawal(
         reviewedAt: new Date()
       }
     })
+    if (result.count !== 1) {
+      const withdrawal = await prisma.affWithdrawal.findUnique({ where: { id: withdrawalId }, select: { id: true } })
+      return withdrawal ? { success: false, error: '申请已处理' } : { success: false, error: '申请不存在' }
+    }
 
     return { success: true }
   } catch (error) {
@@ -1078,7 +1111,13 @@ export async function processMailAffCommission(
   type: 'new_purchase' | 'renew',
   tx?: Prisma.TransactionClient
 ): Promise<void> {
-  const client = tx || prisma
+  if (!tx) {
+    await prisma.$transaction(async transaction => {
+      await processMailAffCommission(affCodeId, mailSubscriptionId, originalAmount, type, transaction)
+    })
+    return
+  }
+  const client = tx
 
   // 1. 获取优惠码信息
   const affCode = await client.affCode.findUnique({
@@ -1094,7 +1133,7 @@ export async function processMailAffCommission(
   if (commission <= 0) return
 
   // 3. 给优惠码创建者增加 AFF 余额
-  await changeAffBalance({
+  const balanceChange = {
     userId: affCode.userId,
     type,
     amount: commission,
@@ -1102,7 +1141,11 @@ export async function processMailAffCommission(
     mailSubscriptionId,
     originalAmount,
     remark: type === 'new_purchase' ? '邮箱新购返利' : '邮箱续费返利'
-  }, client as PrismaClient)
+  }
+  const balanceResult = await changeAffBalance(balanceChange, tx)
+  if (!balanceResult.success) {
+    throw new Error(balanceResult.error || 'AFF 返利入账失败')
+  }
 
   // 4. 更新优惠码统计
   await client.affCode.update({
