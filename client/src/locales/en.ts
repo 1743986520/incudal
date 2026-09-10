@@ -3044,7 +3044,7 @@ export default {
             openRegistration: 'Open',
             inviteOnly: 'Invite Only',
             adminRegistrationEmails: 'Emails that become admins on registration',
-            adminRegistrationEmailsPlaceholder: 'For example: 111@abc.com\n222@abc.com',
+            adminRegistrationEmailsPlaceholder: "For example: 111{'@'}abc.com\n222{'@'}abc.com",
             adminRegistrationEmailsDesc: 'Enter complete email addresses, separated by commas, semicolons, or new lines. A matching email becomes an admin after successful registration; exact email matching only, no domain wildcards.',
             affRebate: {
                 title: 'Referral Rebates',
@@ -4462,7 +4462,7 @@ export default {
                 yipayFeeFieldHint: 'Set Yipay fees per payment method above.',
                 rechargeCardFeeFieldHint: 'Recharge card credits use the amount stored on each generated card. Fee fields are not used.',
                 heleketMethods: 'Common Currency Display',
-                heleketMethodsPlaceholder: 'USDT@TRON\nUSDT@BSC\nBTC\nETH',
+                heleketMethodsPlaceholder: "USDT{'@'}TRON\nUSDT{'@'}BSC\nBTC\nETH",
                 heleketMethodsHint: 'Used only as an admin-side display/reference list. It does not restrict the final currency or network chosen on the Heleket payment page.',
                 instructions: 'Recharge Instructions',
                 instructionsPlaceholder: 'Enter instructions shown to users when recharging...',

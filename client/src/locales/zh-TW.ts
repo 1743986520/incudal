@@ -4491,7 +4491,7 @@ export default {
             openRegistration: '開放註冊',
             inviteOnly: '僅邀請',
             adminRegistrationEmails: '註冊後自動成為管理員的信箱',
-            adminRegistrationEmailsPlaceholder: '例如：111@abc.com\n222@abc.com',
+            adminRegistrationEmailsPlaceholder: "例如：111{'@'}abc.com\n222{'@'}abc.com",
             adminRegistrationEmailsDesc: '填寫完整信箱位址，多個信箱可用逗號、分號或換行分隔。符合的信箱註冊成功後會直接成為管理員；僅支援精確信箱匹配，不支援網域萬用字元。',
             affRebate: {
                 title: 'AFF 返利',
@@ -5712,7 +5712,7 @@ export default {
                 yipayFeeFieldHint: '易支付手續費請在上方每個支付方式中設定。',
                 rechargeCardFeeFieldHint: '卡密充值金額以生成卡密時的金額為準，不使用手續費欄位。',
                 heleketMethods: '常見幣種展示',
-                heleketMethodsPlaceholder: 'USDT@TRON\nUSDT@BSC\nBTC\nETH',
+                heleketMethodsPlaceholder: "USDT{'@'}TRON\nUSDT{'@'}BSC\nBTC\nETH",
                 heleketMethodsHint: '僅作為後台展示與紀錄參考，不會限制使用者在 Heleket 支付頁最終選擇的幣種和網路。',
                 instructions: '充值說明',
                 instructionsPlaceholder: '請輸入使用者充值時看到的說明資訊...',
