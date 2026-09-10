@@ -257,10 +257,10 @@ export default async function batchConfigRoutes(fastify: FastifyInstance) {
     
     // 批量完成后，统一更新宿主机资源使用量（避免并发问题）
     if (totalCpuDelta !== 0 || totalMemoryDelta !== 0 || totalDiskDelta !== 0) {
-      await db.updateHostResources(hostId, {
-        cpuUsed: host.cpu_used + totalCpuDelta,
-        memoryUsed: host.memory_used + totalMemoryDelta,
-        diskUsed: host.disk_used + totalDiskDelta
+      await db.adjustHostResources(hostId, {
+        cpuUsed: totalCpuDelta,
+        memoryUsed: totalMemoryDelta,
+        diskUsed: totalDiskDelta
       })
     }
 
