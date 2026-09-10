@@ -61,17 +61,19 @@ function sanitizeShortString(value: unknown, maxLength: number): string | null {
 }
 
 function parseCounter(value: unknown): bigint | null {
+  const maxCounter = 9_223_372_036_854_775_807n // PostgreSQL BIGINT max
   if (typeof value === 'bigint') {
-    return value >= 0n ? value : null
+    return value >= 0n && value <= maxCounter ? value : null
   }
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value) || value < 0) {
+    if (!Number.isSafeInteger(value) || value < 0 || BigInt(value) > maxCounter) {
       return null
     }
     return BigInt(value)
   }
   if (typeof value === 'string' && /^\d{1,30}$/.test(value.trim())) {
-    return BigInt(value.trim())
+    const parsed = BigInt(value.trim())
+    return parsed <= maxCounter ? parsed : null
   }
   return null
 }
@@ -107,6 +109,7 @@ function normalizeAgentInstanceItems(payload: unknown): NormalizedAgentInstanceI
   }
 
   const items: NormalizedAgentInstanceItem[] = []
+  const seenNames = new Set<string>()
   for (const rawItem of payload.items.slice(0, maxAgentInstanceReportItems)) {
     if (!isRecord(rawItem)) {
       continue
@@ -116,6 +119,13 @@ function normalizeAgentInstanceItems(payload: unknown): NormalizedAgentInstanceI
     if (!name) {
       continue
     }
+    // A heartbeat must contain at most one record per Incus instance. Without
+    // this guard duplicate names can be processed repeatedly and amplify
+    // traffic/accounting updates in a single signed request.
+    if (seenNames.has(name)) {
+      continue
+    }
+    seenNames.add(name)
 
     const traffic = isRecord(rawItem.traffic) ? rawItem.traffic : {}
     const network = isRecord(rawItem.network) ? rawItem.network : {}
@@ -297,7 +307,11 @@ async function processOneAgentInstanceReport(
         const updateResult = await prisma.instance.updateMany({
           where: {
             id: instance.id,
-            status: { not: 'deleted' }
+            // Protect business-controlled states from an old Agent snapshot
+            // racing with suspend/create/delete workflows. The initial status
+            // is included so a concurrent state transition makes this update a
+            // no-op instead of overwriting the newer state.
+            status: instance.status
           },
           data: updateData
         })
