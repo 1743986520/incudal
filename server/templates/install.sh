@@ -2187,8 +2187,14 @@ SHORTCUT
 
 # ========================== RFW 防火墙 ==========================
 
-# RFW 下载地址
-readonly RFW_RELEASE_URL="https://github.com/0xdabiaoge/incudal-rfw/releases/latest/download"
+# RFW 下载地址。默认固定到已发布版本，避免安装时静默执行未来的 latest
+# 资产；需要升级时显式设置 INCUDAL_RFW_RELEASE_TAG 并同步检查发布物。
+readonly RFW_RELEASE_TAG="${INCUDAL_RFW_RELEASE_TAG:-v0.1.9}"
+if [[ ! "$RFW_RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    error "无效的 RFW_RELEASE_TAG"
+    exit 1
+fi
+readonly RFW_RELEASE_URL="https://github.com/0xdabiaoge/incudal-rfw/releases/download/${RFW_RELEASE_TAG}"
 readonly RFW_INSTALL_DIR="/root/rfw"
 readonly RFW_SERVICE_FILE="/etc/systemd/system/rfw.service"
 
@@ -2430,20 +2436,36 @@ install_rfw() {
     mkdir -p "$RFW_INSTALL_DIR"
 
     local rfw_url="${RFW_RELEASE_URL}/rfw-${arch_suffix}-unknown-linux-musl"
+    local rfw_tmp="${RFW_INSTALL_DIR}/rfw.tmp"
+    local rfw_checksum_tmp="${RFW_INSTALL_DIR}/checksums.txt.tmp"
+    local rfw_asset_name="rfw-${arch_suffix}-unknown-linux-musl"
     local download_ok=false
     local attempt
 
     for attempt in 1 2 3; do
         info "下载 RFW (第 ${attempt} 次)..."
+        rm -f "$rfw_tmp" "$rfw_checksum_tmp"
         if curl -sSfL --connect-timeout 15 --max-time 120 \
-            "$rfw_url" -o "${RFW_INSTALL_DIR}/rfw" 2>/dev/null; then
-            download_ok=true
-            break
+            "$rfw_url" -o "$rfw_tmp" 2>/dev/null && \
+           curl -sSfL --connect-timeout 15 --max-time 30 \
+            "${RFW_RELEASE_URL}/checksums.txt" -o "$rfw_checksum_tmp" 2>/dev/null; then
+            local expected_checksum
+            expected_checksum=$(awk -v file="$rfw_asset_name" '{ gsub(/\r$/, "", $2); if ($2 == file) { print $1; exit } }' "$rfw_checksum_tmp")
+            if [[ "$expected_checksum" =~ ^[A-Fa-f0-9]{64}$ ]] && \
+               printf '%s  %s\n' "$expected_checksum" "$rfw_tmp" | sha256sum -c - >/dev/null 2>&1; then
+                mv -f "$rfw_tmp" "${RFW_INSTALL_DIR}/rfw"
+                download_ok=true
+                break
+            fi
+            warn "RFW SHA-256 校验失败"
         else
             warn "第 ${attempt} 次下载失败"
-            [[ "$attempt" -lt 3 ]] && sleep 3
         fi
+        rm -f "$rfw_tmp" "$rfw_checksum_tmp"
+        [[ "$attempt" -lt 3 ]] && sleep 3
     done
+
+    rm -f "$rfw_tmp" "$rfw_checksum_tmp"
 
     if [[ "$download_ok" != "true" ]]; then
         error "RFW 下载失败（已重试 3 次）"
