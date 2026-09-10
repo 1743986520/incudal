@@ -4858,10 +4858,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
       // 更新宿主机资源使用量
       if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0) {
-        await db.updateHostResources(instance.host_id, {
-          cpuUsed: host.cpu_used + cpuDelta,
-          memoryUsed: host.memory_used + memoryDelta,
-          diskUsed: host.disk_used + diskDelta
+        await db.adjustHostResources(instance.host_id, {
+          cpuUsed: cpuDelta,
+          memoryUsed: memoryDelta,
+          diskUsed: diskDelta
         })
       }
 
