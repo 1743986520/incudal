@@ -88,45 +88,44 @@ export async function deductFromResourcePool(
   if (!field) {
     throw new Error(`Invalid resource type: ${resourceType}`)
   }
-
-  // 获取当前资源池
-  const pool = await prisma.userResourcePool.findUnique({
-    where: { userId }
-  })
-
-  if (!pool) {
-    return false
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error('Invalid resource amount')
   }
 
-  // 检查余额是否足够
-  const currentAmount = field === 'traffic' ? Number(pool.traffic) : pool[field]
-  if (currentAmount < amount) {
-    return false
-  }
+  // Check and decrement in one conditional statement. A read followed by an
+  // unconditional decrement allowed two concurrent requests to overspend the
+  // same resource pool.
+  const sufficientWhere = field === 'traffic'
+    ? { traffic: { gte: BigInt(amount) } }
+    : { [field]: { gte: amount } }
 
-  // 扣减资源并记录日志
-  await prisma.$transaction([
-    prisma.userResourcePool.update({
-      where: { userId },
+  return prisma.$transaction(async tx => {
+    const updated = await tx.userResourcePool.updateMany({
+      where: { userId, ...sufficientWhere },
       data: {
         [field]: field === 'traffic'
           ? { decrement: BigInt(amount) }
           : { decrement: amount }
       }
-    }),
-    prisma.resourcePoolLog.create({
+    })
+
+    if (updated.count !== 1) {
+      return false
+    }
+
+    await tx.resourcePoolLog.create({
       data: {
         userId,
         action: 'apply',
         resourceType,
-        amount: -amount, // 负数表示消耗
+        amount: -amount,
         instanceId,
         remark
       }
     })
-  ])
 
-  return true
+    return true
+  })
 }
 
 /**
