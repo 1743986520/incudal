@@ -5687,10 +5687,10 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         }
 
         // 18. 更新目标节点资源使用量
-        await db.updateHostResources(targetHostId, {
-          cpuUsed: targetHost.cpu_used + instance.cpu,
-          memoryUsed: targetHost.memory_used + instance.memory,
-          diskUsed: targetHost.disk_used + instance.disk
+        await db.adjustHostResources(targetHostId, {
+          cpuUsed: instance.cpu,
+          memoryUsed: instance.memory,
+          diskUsed: instance.disk
         })
 
         // 19. 删除源节点的实例
