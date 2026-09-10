@@ -1,7 +1,8 @@
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import { isAbsolute, join, normalize, resolve } from 'node:path'
-import { X509Certificate } from 'node:crypto'
+import { createHash, X509Certificate } from 'node:crypto'
+import type { PeerCertificate } from 'node:tls'
 import { connect as tlsConnect } from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { Address4, Address6 } from 'ip-address'
@@ -14,6 +15,7 @@ export interface IncusTlsTrust {
 export interface IncusTlsConnectOptions {
   rejectUnauthorized: true
   ca?: string | Buffer | Array<string | Buffer>
+  checkServerIdentity?: (hostname: string, certificate: PeerCertificate) => Error | undefined
 }
 
 export interface ResolvedIncusTarget {
@@ -65,9 +67,23 @@ export function assertCertificateMatchesFingerprint(certificate: string | Buffer
 
 export function buildIncusTlsConnectOptions(trust: IncusTlsTrust = {}): IncusTlsConnectOptions {
   if (trust.ca) assertCertificateMatchesFingerprint(Array.isArray(trust.ca) ? trust.ca[0] : trust.ca, trust.fingerprint)
+  const expectedFingerprint = trust.fingerprint?.replaceAll(':', '').trim().toLowerCase()
   return {
     rejectUnauthorized: true,
-    ...(trust.ca ? { ca: trust.ca } : {})
+    ...(trust.ca ? { ca: trust.ca } : {}),
+    // Incus commonly generates a self-signed server certificate whose SAN
+    // contains only localhost. When an administrator has pinned that exact
+    // certificate, verify the live peer fingerprint instead of rejecting the
+    // connection solely because its management IP is absent from the SAN.
+    ...(expectedFingerprint ? {
+      checkServerIdentity: (_hostname: string, certificate: PeerCertificate): Error | undefined => {
+        if (!certificate.raw) return new Error('Incus server did not provide a certificate')
+        const actual = createHash('sha256').update(certificate.raw).digest('hex')
+        return actual === expectedFingerprint
+          ? undefined
+          : new Error('Incus server certificate does not match the stored host fingerprint')
+      }
+    } : {})
   }
 }
 
