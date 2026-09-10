@@ -2145,7 +2145,8 @@ model BalanceLog {
   // 关联信息
   orderId    String? @map("order_id")    // 充值订单号
   instanceId Int?    @map("instance_id") // 关联实例
-  transferId Int?    @unique @map("transfer_id")
+  // A transfer can have both a debit and a refund ledger entry.
+  transferId Int?    @map("transfer_id")
   remark     String?                      // 备注
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -2155,6 +2156,7 @@ model BalanceLog {
   @@index([userId, createdAt(sort: Desc)])
   @@index([type])
   @@index([orderId]) // 充值订单关联查询
+  @@index([transferId])
   @@map("balance_logs")
 }
 
@@ -2772,6 +2774,7 @@ enum ResourcePoolAction {
   system_grant  // 系统活动奖励
   lottery       // 抽奖获得
   apply         // 应用到实例
+  refund        // 失败操作退还
   system_redeem // 系统h-兑换码兑换
 }
 
