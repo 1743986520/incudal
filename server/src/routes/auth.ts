@@ -322,7 +322,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       username: user.username,
       role: user.role,
       sid: sessionId  // 会话标识，用于会话级别的 token 失效
-    }, { expiresIn: '7d' })
+    }, { expiresIn: '30m' })
 
     // 设置 Refresh Token Cookie (HttpOnly)
     // SEC005: 使用统一的 Cookie 配置
@@ -656,7 +656,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       username: newUser.username,
       role: newUser.role,
       sid: sessionId  // 会话标识，用于会话级别的 token 失效
-    }, { expiresIn: '7d' })
+    }, { expiresIn: '30m' })
 
     // 设置 Refresh Token Cookie (HttpOnly)
     // SEC005: 使用统一的 Cookie 配置
@@ -835,7 +835,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         username: user.username,
         role: user.role,
         sid: sessionId
-      }, { expiresIn: '7d' })
+      }, { expiresIn: '30m' })
 
       // 如果会话成功延期，同步更新 Cookie 有效期
       // SEC005: 使用统一的 Cookie 配置
