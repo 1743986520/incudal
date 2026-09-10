@@ -530,9 +530,19 @@ function buildAgentInstallConfig(input: {
   agentId: string
   agentSecret: string
 }): string {
+  // The installer consumes this as a data-only key/value file. Keep the
+  // format deliberately narrower than a shell script so a compromised or
+  // malformed response cannot add commands to a root installation.
+  if (!/^agt_[A-Za-z0-9_-]{24,64}$/.test(input.agentId)) {
+    throw new Error('AGENT_ID_INVALID')
+  }
+  if (!isValidAgentSecret(input.agentSecret)) {
+    throw new Error('AGENT_SECRET_INVALID')
+  }
+
   return [
-    `INCUDAL_AGENT_ID=${shellEscape(input.agentId)}`,
-    `INCUDAL_AGENT_SECRET=${shellEscape(input.agentSecret)}`
+    `INCUDAL_AGENT_ID=${input.agentId}`,
+    `INCUDAL_AGENT_SECRET=${input.agentSecret}`
   ].join('\n') + '\n'
 }
 
