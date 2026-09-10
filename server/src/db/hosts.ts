@@ -465,6 +465,30 @@ export async function updateHostResources(id: number, resources: {
 }
 
 /**
+ * Atomically adjust the resource counters maintained on a host.
+ * Callers that already hold a host/instance operation lock should use this
+ * instead of reading counters and writing an absolute snapshot back.
+ */
+export async function adjustHostResources(id: number, deltas: {
+  cpuUsed?: number
+  memoryUsed?: number
+  diskUsed?: number
+}, client: DbClient = prisma): Promise<void> {
+  const data: {
+    cpuUsed?: { increment: number }
+    memoryUsed?: { increment: number }
+    diskUsed?: { increment: number }
+  } = {}
+
+  if (deltas.cpuUsed !== undefined && deltas.cpuUsed !== 0) data.cpuUsed = { increment: deltas.cpuUsed }
+  if (deltas.memoryUsed !== undefined && deltas.memoryUsed !== 0) data.memoryUsed = { increment: deltas.memoryUsed }
+  if (deltas.diskUsed !== undefined && deltas.diskUsed !== 0) data.diskUsed = { increment: deltas.diskUsed }
+  if (Object.keys(data).length === 0) return
+
+  await client.host.update({ where: { id }, data })
+}
+
+/**
  * 删除主机
  * 注意：在删除宿主机之前，必须先删除所有关联的记录以解除外键约�?
  */
