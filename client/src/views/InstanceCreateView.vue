@@ -489,8 +489,7 @@ onMounted(async (): Promise<void> => {
     ])
 
     packages.value = ((packagesRes as { packages?: Package[] }).packages || []).filter(p => p.active === 1)
-    const userData = userRes as { user?: { quota?: UserQuota } }
-    userQuota.value = userData.user?.quota || null
+    userQuota.value = userRes.quota || null
     regions.value = regionsRes.regions || []
 
     // 如果有 URL 参数指定的来源，更新状态
@@ -847,7 +846,7 @@ async function loadAvailableHosts(): Promise<void> {
       memory: form.value.memory,
       disk: form.value.disk
     })
-    availableHosts.value = (res as { hosts?: AvailableHost[] }).hosts || []
+    availableHosts.value = res
 
     if (availableHosts.value.length === 0) {
       form.value.hostId = null
