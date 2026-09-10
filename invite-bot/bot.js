@@ -9,7 +9,7 @@
  *   approve → picks code from inventory, sends to applicant
  *   reject → says "不通過"
  *   /su → admin mode to add invite codes (one per line)
- *   Admin locked to first /su caller via persistent db.adminId
+ *   Admin is pinned to the Telegram ID configured by ADMIN_TELEGRAM_ID
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -17,10 +17,16 @@ import { resolve, dirname } from 'node:path';
 
 // ── Config ────────────────────────────────────────────────────────
 const BOT_TOKEN = process.env.BOT_TOKEN;
+const DB_PATH = resolve(process.env.DB_PATH || './data/invite-bot.json');
+const ADMIN_TELEGRAM_ID = Number.parseInt(process.env.ADMIN_TELEGRAM_ID || '', 10);
 const POLL_TIMEOUT = 30;
 const CODE_MIN_LEN = 4;
 
 if (!BOT_TOKEN) { console.error('FATAL: BOT_TOKEN required'); process.exit(1); }
+if (!Number.isSafeInteger(ADMIN_TELEGRAM_ID) || ADMIN_TELEGRAM_ID <= 0) {
+  console.error('FATAL: ADMIN_TELEGRAM_ID must be a positive Telegram user ID');
+  process.exit(1);
+}
 const API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // ── DB ────────────────────────────────────────────────────────────
@@ -36,7 +42,14 @@ function loadDb() {
 function saveDb(data) { ensureDbDir(); writeFileSync(DB_PATH, JSON.stringify(data, null, 2)); }
 
 const db = loadDb();
-let adminUserId = db.adminId;                        // persisted, survives restart
+// Never bootstrap administrative access from the first message received.  The
+// persisted value is only a compatibility marker; the environment variable is
+// the source of truth so a lost/corrupt DB cannot hand the bot to an attacker.
+let adminUserId = ADMIN_TELEGRAM_ID;
+if (db.adminId !== adminUserId) {
+  db.adminId = adminUserId;
+  saveDb(db);
+}
 
 // ── State ─────────────────────────────────────────────────────────
 let lastUpdateId = 0;
@@ -71,9 +84,6 @@ async function handleMessage(msg) {
   const uname = msg.from.username || '', fn = msg.from.first_name||'', ln = msg.from.last_name||'';
   const text = (msg.text||'').trim();
   const display = [fn,ln].filter(Boolean).join(' ') || uname || String(userId);
-
-  // Auto-capture admin on first /su
-  if (!adminUserId && text.startsWith('/su')) { adminUserId = userId; db.adminId = userId; saveDb(db); console.log(`Admin set: ${userId}`); }
 
   if (text.startsWith('/start')) {
     return sendMessage(chatId, `🎉 歡迎來到 Incudal 邀請碼申請 Bot！
