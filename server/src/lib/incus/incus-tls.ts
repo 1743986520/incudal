@@ -78,7 +78,12 @@ const blockedIpv4Cidrs = [
 ].map(cidr => new Address4(cidr))
 
 const blockedIpv6Cidrs = [
-  '::/128', '::1/128', '100::/64', '2001::/23', 'fc00::/7', 'fe80::/10', 'ff00::/8'
+  // Unspecified/IPv4-compatible space, NAT64 translation prefixes, discard,
+  // documentation/special-use ranges, ULA, link-local and multicast. NAT64
+  // literals must not bypass the IPv4 private-range checks through a public-
+  // looking IPv6 address.
+  '::/96', '::1/128', '64:ff9b::/96', '64:ff9b:1::/48', '100::/64',
+  '2001::/23', '2001:db8::/32', 'fc00::/7', 'fe80::/10', 'ff00::/8'
 ].map(cidr => new Address6(cidr))
 
 function normalizedMappedIpv4(address: string): string | null {
