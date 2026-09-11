@@ -13,6 +13,8 @@ interface DestroyInfo {
   isFirstTime: boolean
   rules: {
     feeRate: number
+    trafficLimitBytes: string
+    trafficLimitLabel: string
   }
   refund: {
     remainingDays: number
@@ -262,13 +264,13 @@ function formatCurrency(value: number): string {
                         class="text-xs font-medium"
                         :class="themeStore.isDark ? 'text-gray-200' : 'text-gray-700'"
                       >
-                        {{ t('instance.destroy.ruleTrafficThreshold') }}
+                        {{ t('instance.destroy.ruleTrafficThreshold', { limit: destroyInfo.rules.trafficLimitLabel }) }}
                       </p>
                       <p 
                         class="text-xs"
                         :class="themeStore.isDark ? 'text-gray-500' : 'text-gray-400'"
                       >
-                        {{ t('instance.destroy.ruleTrafficThresholdDesc') }}
+                        {{ t('instance.destroy.ruleTrafficThresholdDesc', { limit: destroyInfo.rules.trafficLimitLabel }) }}
                       </p>
                     </div>
                   </div>

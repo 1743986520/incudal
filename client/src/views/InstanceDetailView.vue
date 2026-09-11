@@ -195,7 +195,7 @@ const destroyInfo = ref<{
   cannotDestroyReason: string
   isFreeInstance: boolean
   isFirstTime: boolean
-  rules: { feeRate: number }
+  rules: { feeRate: number; trafficLimitBytes: string; trafficLimitLabel: string }
   refund: { remainingDays: number; remainingValue: number; feeRate: number; feeAmount: number; refundAmount: number; destroyCount: number; maxRefundable: number }
   instance: { id: number; name: string; hostName: string; planName: string | null }
 } | null>(null)

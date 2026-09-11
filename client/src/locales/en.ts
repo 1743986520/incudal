@@ -1112,7 +1112,8 @@ export default {
             deleted: 'Instance has already been deleted',
             creating: 'Instance is still being created and cannot be destroyed',
             suspended: 'Instance is suspended and cannot be destroyed until it is unsuspended',
-            destroyTrafficLimit: 'This instance cannot be destroyed because current monthly traffic usage has reached or exceeded 5G',
+            destroyTrafficLimit: 'Destroy is unavailable because current-cycle usage has reached or exceeded {limit}',
+            destroyNotAllowed: 'This package does not allow user-initiated deletion or refunds',
             destroyFailed: 'Failed to destroy instance',
         },
         // Mobile card
@@ -1250,8 +1251,8 @@ export default {
             ruleFirstFreeDesc: 'Your first destroy operation will be exempt from fees with full refund',
             ruleFeeRate: '{rate}% fee for subsequent destroys',
             ruleFeeRateDesc: 'Second and subsequent destroys charge {rate}% fee',
-            ruleTrafficThreshold: 'Paid instances require monthly traffic cycle usage below 5G',
-            ruleTrafficThresholdDesc: 'If usage in the current monthly traffic cycle reaches or exceeds 5G, this paid instance cannot be destroyed',
+            ruleTrafficThreshold: 'Paid instances require current-cycle traffic usage below {limit}',
+            ruleTrafficThresholdDesc: 'If current-cycle usage reaches or exceeds {limit}, this paid instance cannot be destroyed',
             ruleFreeInstance: 'Free instances can be destroyed directly',
             ruleFreeInstanceDesc: 'Free instance destroy has no refund and does not count towards destroy quota',
             // Preview info
@@ -5245,7 +5246,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
 ## 5. Destroy and refund
 
 1. Back up anything you need, then click “Destroy” in the instance details. The dialog loads a preview; expand “Destroy Rules” and check the instance name, remaining days, remaining value, fee, refund amount, and refund cap.
-2. A paid instance cannot be destroyed when its current monthly traffic-cycle usage is 5G or more (the backend decides the exception for an expired-suspended instance that meets its conditions). The first paid-instance destroy is fee-free; later destroys charge 10% of the refundable value. A free instance can be destroyed but has no refund and does not count toward paid destroy history.
+2. A paid instance cannot be destroyed when its current monthly traffic-cycle usage reaches the package-defined refund destroy limit (the backend decides the exception for an expired-suspended instance that meets its conditions). The first paid-instance destroy is fee-free; later destroys charge 10% of the refundable value. A free instance can be destroyed but has no refund and does not count toward paid destroy history.
 3. When everything is correct, type the exact instance name requested in the input and click the destroy confirmation. This permanently removes the instance, snapshots, backups, port mappings, and related data. The paid refund is returned to panel balance according to the preview; it is not sent back to the original payment method.
 
 ## 6. If a top-up or deduction looks wrong
@@ -5503,7 +5504,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         INSTANCE_SUSPENDED: 'Instance is suspended and cannot perform this operation',
         INSTANCE_NOT_SUSPENDED: 'Instance is not in suspended status',
         INSTANCE_SUSPENDED_EXPIRED: 'Instance is suspended due to expiration, please renew to unsuspend',
-        INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED: 'Destroy is unavailable in the current monthly traffic cycle because usage has reached 5G',
+        INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED: 'Destroy is unavailable because current-cycle usage has reached the package limit',
         // Host errors
         HOST_NOT_FOUND: 'Host not found',
         HOST_OFFLINE: 'Host is offline',
@@ -5710,6 +5711,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         REDEEM_ALREADY_AT_LIMIT: 'Instance resource is already at package limit',
         CHECKIN_CODE_PAID_INSTANCE: 'Check-in redeem codes can only be used on free instances',
         PAID_INSTANCE_DELETION_NOT_ALLOWED: 'Paid instances cannot be deleted',
+        INSTANCE_DELETION_NOT_ALLOWED: 'This package does not allow user-initiated deletion or refunds',
         // Balance errors
         BALANCE_INSUFFICIENT: 'Insufficient balance, please top up first',
         BALANCE_TRANSFER_DISABLED: 'Balance transfers are disabled',
@@ -6338,6 +6340,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             publicAccess: 'Public Package',
             globalMaxInstances: 'Max Instances',
             allowInstanceDeletion: 'Allow users to delete instances',
+            destroyTrafficLimit: 'Refund destroy traffic limit',
         },
         hostSelector: {
             official: 'Official Hosts',
@@ -6378,7 +6381,8 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             instanceType: 'Containers are lightweight and fast, VMs provide full isolation',
             publicAccess: 'When enabled, the package will be visible to all users who can use it to create instances; when disabled, the package will be hidden/archived',
             globalMaxInstances: 'Limit the maximum number of instances users can create. Required integer from 1 to 5.',
-            allowInstanceDeletion: 'When disabled, instances created with this package will not allow users to delete them',
+            allowInstanceDeletion: 'When enabled, users can delete instances in this package; paid instances receive the remaining value minus any fee. When disabled, only administrators or host owners can delete them',
+            destroyTrafficLimit: 'Once current-cycle usage reaches this limit, the user cannot delete the instance or receive a refund',
             freePackageCreationMode: 'Free instances do not need a plan. They inherit the settings on this page directly. If you need an entry requirement or want to use the paid instance flow, choose a paid instance package, then add a plan with the price set to 0.',
             paidPackageCreationMode: 'Paid instances use the resources, quotas, traffic, and price from their plan. This page hides the fields that will be overridden by plans and saves package defaults instead.',
             paidPackageLockedToPlans: 'This package already has plans, so it runs as a paid instance package. To switch it back to free instances, delete all plans from the Plans tab first.',
@@ -6398,6 +6402,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             shutdownTimeoutRange: 'Shutdown timeout must be between 30 and 600 seconds',
             portLimitMin: 'Port limit must be at least 1',
             globalMaxInstancesRange: 'Public package max instances must be an integer from 1 to 5',
+            destroyTrafficLimitPositive: 'The refund destroy traffic limit must be greater than 0 and no more than 1 PiB',
         },
         typeHelp: {
             containerFast: 'Fast startup, seconds to ready',

@@ -1109,7 +1109,8 @@ export default {
             deleted: '实例已删除',
             creating: '实例正在创建中，无法销毁',
             suspended: '实例已被封停，无法销毁，请先联系管理员解封',
-            destroyTrafficLimit: '当前月流量周期无法销毁，已用流量达到或超过 5G',
+            destroyTrafficLimit: '当前月流量周期无法销毁，已用流量达到或超过 {limit}',
+            destroyNotAllowed: '此套餐不支持用户自行删除及退款',
             destroyFailed: '销毁实例失败',
         },
         // 移动端卡片
@@ -1247,8 +1248,8 @@ export default {
             ruleFirstFreeDesc: '您的第一次销毁操作将免除手续费，全额退款',
             ruleFeeRate: '后续销毁收取 {rate}% 手续费',
             ruleFeeRateDesc: '第二次及以后销毁收取 {rate}% 手续费',
-            ruleTrafficThreshold: '付费实例当前月流量周期已用流量需低于 5G',
-            ruleTrafficThresholdDesc: '若当前月流量周期已用流量达到或超过 5G，则本次无法销毁付费实例',
+            ruleTrafficThreshold: '付费实例当前月流量周期已用流量需低于 {limit}',
+            ruleTrafficThresholdDesc: '若当前月流量周期已用流量达到或超过 {limit}，则本次无法销毁付费实例',
             ruleFreeInstance: '免费实例可直接销毁',
             ruleFreeInstanceDesc: '免费实例销毁无退款，不计入销毁次数',
             // 预览信息
@@ -5041,7 +5042,7 @@ export default {
 ## 删除与退款注意事项
 
 - 列表中的“删除”只在 error，或没有套餐计费 ID 时显示；点击后会先以实例名称弹出确认框，确认才调用 instances.delete。详情页的直接删除也遵循权限和套餐设置；付费实例通常应使用“销毁”流程，而不是把删除当成退款。
-- “销毁”会先加载可销毁状态和退款预览。付费实例要求当前流量周期已用流量低于 5G；首次销毁免手续费，之后的手续费率、剩余价值、退款上限和实际退款额以弹窗当时显示为准。免费实例可以直接销毁但没有退款，也不计入销毁次数。
+- “销毁”会先加载可销毁状态和退款预览。付费实例要求当前流量周期已用流量低于套餐设置的退款销毁上限；首次销毁免手续费，之后的手续费率、剩余价值、退款上限和实际退款额以弹窗当时显示为准。免费实例可以直接销毁但没有退款，也不计入销毁次数。
 - 销毁不是简单点击：在弹窗查看实例和退款信息后，输入完整实例名称，再点击“确认销毁”。成功后实例及其数据（包括快照、备份、端口映射等）永久删除，付费实例的退款会在成功提示中显示；流量或其他条件不符合时，先按弹窗原因处理。
 - error 状态横幅另外提供“重试创建”和“立即销毁”；立即销毁会先弹确认，并使用 error 免手续费参数。任何删除、重装、重建或备份恢复前，都要先确认没有仍需保留的数据。`
         },
@@ -5248,7 +5249,7 @@ export default {
 ## 5. 销毁与退款
 
 1. 先备份需要保留的数据，再在实例详情点击“销毁”。弹窗会先加载预览；展开“销毁规则”，核对实例名称、剩余天数、可退价值、手续费、退款金额和退款上限。
-2. 付费实例当前月流量周期已用流量达到或超过 5G 时不能销毁（到期封停且符合系统条件的例外由后端判定）。首次付费实例销毁免手续费；之后销毁按可退款价值收取 10% 手续费。免费实例可以销毁，但没有退款，也不计入付费销毁次数。
+2. 付费实例当前月流量周期已用流量达到或超过套餐设置上限时不能销毁（到期封停且符合系统条件的例外由后端判定）。首次付费实例销毁免手续费；之后销毁按可退款价值收取 10% 手续费。免费实例可以销毁，但没有退款，也不计入付费销毁次数。
 3. 确认无误后，在输入框完整输入页面指定的实例名称，点击确认销毁。这会永久删除实例及其快照、备份、端口映射等数据，无法恢复；付费退款按预览金额退回面板余额，不会退回原支付方式。
 
 ## 6. 充值或扣款异常时
@@ -5506,7 +5507,7 @@ export default {
         INSTANCE_SUSPENDED: '实例已被封停，无法执行此操作',
         INSTANCE_NOT_SUSPENDED: '实例未处于封停状态',
         INSTANCE_SUSPENDED_EXPIRED: '实例因到期被封停，请续费后解封',
-        INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED: '当前月流量周期无法销毁，已用流量达到或超过 5G',
+        INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED: '当前月流量周期无法销毁，已用流量已达套餐设置上限',
         // 节点错误
         HOST_NOT_FOUND: '宿主机不存在',
         HOST_OFFLINE: '宿主机离线',
@@ -5713,6 +5714,7 @@ export default {
         REDEEM_ALREADY_AT_LIMIT: '实例资源已达到套餐上限',
         CHECKIN_CODE_PAID_INSTANCE: '签到兑换码只能用于免费实例',
         PAID_INSTANCE_DELETION_NOT_ALLOWED: '付费实例不允许删除',
+        INSTANCE_DELETION_NOT_ALLOWED: '此套餐不支持用户自行删除及退款',
         // 余额错误
         BALANCE_INSUFFICIENT: '余额不足，请先充值',
         BALANCE_TRANSFER_DISABLED: '余额转账功能未开启',
@@ -6339,6 +6341,7 @@ export default {
             publicAccess: '公开套餐',
             globalMaxInstances: '最大实例数',
             allowInstanceDeletion: '允许用户删除实例',
+            destroyTrafficLimit: '退款销毁流量上限',
         },
         hostSelector: {
             official: '自营节点',
@@ -6379,7 +6382,8 @@ export default {
             instanceType: '容器轻量快速，虚拟机提供完整隔离',
             publicAccess: '开启后，套餐将对所有用户可见，他们可以使用此套餐创建实例；关闭后套餐将被隐藏/归档',
             globalMaxInstances: '限制用户最多可开通的实例数量，必须填写 1-5 之间的整数',
-            allowInstanceDeletion: '关闭后，使用此套餐创建的实例将不允许用户删除',
+            allowInstanceDeletion: '开启后，用户可自行删除此套餐的实例，付费实例会按剩余价值扣除手续费后退款；关闭后只能由管理员或节点所有者删除',
+            destroyTrafficLimit: '当期已用流量达到此上限后，用户不可自行删除及退款',
             freePackageCreationMode: '免费实例无需创建方案，实例会直接继承本页配置。若需要门槛或想按付费实例流程开通，请选择付费实例套餐，创建后添加方案并将价格设置为 0 元。',
             paidPackageCreationMode: '付费实例会使用方案里的资源、实例配额、流量和价格。本页会隐藏这些会被方案覆盖的项目，并使用默认值保存套餐。',
             paidPackageLockedToPlans: '当前套餐已有方案，会按付费实例套餐运行。若要改回免费实例套餐，请先在方案选项卡删除所有方案。',
@@ -6399,6 +6403,7 @@ export default {
             shutdownTimeoutRange: '关机超时时间必须在 30-600 秒之间',
             portLimitMin: '端口映射数量至少为 1',
             globalMaxInstancesRange: '公开套餐最大实例数必须是 1-5 之间的整数',
+            destroyTrafficLimitPositive: '退款销毁流量上限必须大于 0 且不超过 1 PiB',
         },
         typeHelp: {
             containerFast: '启动快速，秒级响应',

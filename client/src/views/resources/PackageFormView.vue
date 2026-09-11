@@ -158,6 +158,8 @@ interface PackageForm {
   globalShared: boolean
   globalMaxInstances: number
   requiredPackageId: number | null
+  allowInstanceDeletion: boolean
+  destroyTrafficLimitGB: string
 }
 
 const form = ref<PackageForm>(getDefaultForm())
@@ -290,7 +292,9 @@ function getDefaultForm(): PackageForm {
     // Global sharing defaults
     globalShared: false,
     globalMaxInstances: 1,
-    requiredPackageId: null
+    requiredPackageId: null,
+    allowInstanceDeletion: true,
+    destroyTrafficLimitGB: '5'
   }
 }
 
@@ -301,7 +305,7 @@ function bytesToGB(bytes: string | null | undefined): string {
   if (!bytes) return ''
   try {
     const b = BigInt(bytes)
-    const gb = Number(b / GB_TO_BYTES)
+    const gb = Number(b) / Number(GB_TO_BYTES)
     return gb.toString()
   } catch {
     return ''
@@ -635,7 +639,9 @@ async function loadPackage(id: number): Promise<void> {
       // Global sharing
       globalShared: pkg.global_shared === true || pkg.global_shared === 1,
       globalMaxInstances: Number.isInteger(Number(pkg.global_max_instances)) && Number(pkg.global_max_instances) >= 1 && Number(pkg.global_max_instances) <= 5 ? Number(pkg.global_max_instances) : 1,
-      requiredPackageId: pkg.required_package_id ?? null
+      requiredPackageId: pkg.required_package_id ?? null,
+      allowInstanceDeletion: pkg.allow_instance_deletion !== false && pkg.allow_instance_deletion !== 0,
+      destroyTrafficLimitGB: bytesToGB(pkg.destroy_traffic_limit || '5368709120') || '5'
     }
   } catch (_err: any) {
     toast.error(t('admin.packages.loadFailed') || 'Failed to load package')
@@ -717,6 +723,12 @@ async function savePackage(): Promise<void> {
     return
   }
 
+  const destroyTrafficLimitGB = Number(form.value.destroyTrafficLimitGB)
+  if (form.value.allowInstanceDeletion && (!Number.isFinite(destroyTrafficLimitGB) || destroyTrafficLimitGB <= 0 || destroyTrafficLimitGB > 1048576)) {
+    formError.value = t('packageForm.validation.destroyTrafficLimitPositive')
+    return
+  }
+
   // 更新表单值为验证后的数值
   form.value.limitsCpuPriority = cpuPriority
   form.value.bootAutostartPriority = bootPriority
@@ -727,6 +739,10 @@ async function savePackage(): Promise<void> {
 
   try {
     const trafficLimitBytes = gbToBytes(form.value.monthlyTrafficLimitGB)
+    const effectiveDestroyTrafficLimitGB = Number.isFinite(destroyTrafficLimitGB) && destroyTrafficLimitGB > 0 && destroyTrafficLimitGB <= 1048576
+      ? destroyTrafficLimitGB
+      : 5
+    const destroyTrafficLimitBytes = BigInt(Math.round(effectiveDestroyTrafficLimitGB * Number(GB_TO_BYTES))).toString()
     const hostStoragePools = Object.fromEntries(
       form.value.hostIds.map(hostId => {
         const selectedPool = form.value.hostStoragePools[String(hostId)] || ''
@@ -780,7 +796,9 @@ async function savePackage(): Promise<void> {
       globalShared: form.value.globalShared,
       globalQuotaMultiplier: null,
       globalMaxInstances: form.value.globalShared ? globalMaxInstances : null,
-      requiredPackageId: form.value.requiredPackageId
+      requiredPackageId: form.value.requiredPackageId,
+      allowInstanceDeletion: form.value.allowInstanceDeletion,
+      destroyTrafficLimit: destroyTrafficLimitBytes
     }
 
     if (isEditMode.value && packageId.value) {
@@ -1501,6 +1519,36 @@ function goBack(): void {
               </select>
               <p class="text-xs text-themed-muted mt-1">{{ t('packageForm.hints.globalMaxInstances') }}</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Refund and destroy policy -->
+      <div class="card p-6">
+        <h2 class="text-lg font-medium mb-4" :class="themeStore.isDark ? 'text-gray-200' : 'text-gray-900'">
+          {{ t('packageForm.sections.instancePermissions') }}
+        </h2>
+        <div class="space-y-4">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input v-model="form.allowInstanceDeletion" type="checkbox" class="w-4 h-4 rounded" />
+            <span class="text-sm text-themed-secondary">{{ t('packageForm.fields.allowInstanceDeletion') }}</span>
+          </label>
+          <p class="text-xs text-themed-muted">{{ t('packageForm.hints.allowInstanceDeletion') }}</p>
+
+          <div v-if="form.allowInstanceDeletion" class="pl-6 border-l-2" :class="themeStore.isDark ? 'border-gray-700' : 'border-gray-200'">
+            <label class="block text-xs text-themed-muted mb-1.5">
+              {{ t('packageForm.fields.destroyTrafficLimit') }} (GiB)
+            </label>
+            <input
+              v-model="form.destroyTrafficLimitGB"
+              type="number"
+              min="0.01"
+              max="1048576"
+              step="0.01"
+              required
+              class="input max-w-xs"
+            />
+            <p class="text-xs text-themed-muted mt-1">{{ t('packageForm.hints.destroyTrafficLimit') }}</p>
           </div>
         </div>
       </div>

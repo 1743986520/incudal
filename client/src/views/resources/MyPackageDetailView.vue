@@ -429,6 +429,14 @@ async function deletePackage(): Promise<void> {
                 <span class="text-themed-muted">{{ t('packageForm.fields.requiredPackage') }}</span>
                 <span class="text-themed truncate">{{ pkg.required_package_name || '-' }}</span>
               </div>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-themed-muted">{{ t('packageForm.fields.allowInstanceDeletion') }}</span>
+                <span class="text-themed">{{ formatBoolean(pkg.allow_instance_deletion ?? true) }}</span>
+              </div>
+              <div v-if="pkg.allow_instance_deletion !== false" class="flex items-center justify-between gap-3">
+                <span class="text-themed-muted">{{ t('packageForm.fields.destroyTrafficLimit') }}</span>
+                <span class="text-themed">{{ formatTrafficLimit(pkg.destroy_traffic_limit || '5368709120') }}</span>
+              </div>
             </div>
           </div>
         </div>

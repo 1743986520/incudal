@@ -3202,6 +3202,8 @@ const api = {
       isFirstTime: boolean
       rules: {
         feeRate: number
+        trafficLimitBytes: string
+        trafficLimitLabel: string
       }
       refund: {
         remainingDays: number

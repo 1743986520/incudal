@@ -1088,6 +1088,7 @@ export interface Package {
   has_required_package_instance?: boolean
   // 实例操作权限
   allow_instance_deletion?: boolean  // 是否允许用户删除实例
+  destroy_traffic_limit?: string  // 付费实例可退款销毁的月流量上限（Bytes）
   sharedAt?: string  // 共享时间（共享套餐）
   // 套餐方案列表（列表响应中附带，避免前端额外请求）
   plans?: PackagePlan[]
@@ -1177,6 +1178,7 @@ export interface CreatePackageRequest {
   requiredPackageId?: number | null
   // 实例操作权限
   allowInstanceDeletion?: boolean  // 是否允许用户删除实例
+  destroyTrafficLimit?: string  // 付费实例可退款销毁的月流量上限（Bytes）
 }
 
 export interface UpdatePackageRequest {
@@ -1224,6 +1226,7 @@ export interface UpdatePackageRequest {
   requiredPackageId?: number | null
   // 实例操作权限
   allowInstanceDeletion?: boolean  // 是否允许用户删除实例
+  destroyTrafficLimit?: string  // 付费实例可退款销毁的月流量上限（Bytes）
 }
 
 // 实例配置类型

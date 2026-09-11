@@ -940,8 +940,12 @@ function translateBatchReason(reason?: string): string {
   if (reason === '实例已被封停，无法销毁，请先联系管理员解封') {
     return t('instance.batchReason.suspended')
   }
-  if (reason === '当前月流量周期无法销毁，已用流量达到或超过 5G') {
-    return t('instance.batchReason.destroyTrafficLimit')
+  const destroyTrafficLimitMatch = reason.match(/^当前月流量周期无法销毁，已用流量达到或超过\s+(.+)$/)
+  if (destroyTrafficLimitMatch) {
+    return t('instance.batchReason.destroyTrafficLimit', { limit: destroyTrafficLimitMatch[1] })
+  }
+  if (reason === '此套餐不支持用户自行删除及退款') {
+    return t('instance.batchReason.destroyNotAllowed')
   }
   if (reason === '续费失败') {
     return t('instance.batchReason.renewFailed')
