@@ -113,26 +113,28 @@ export function getTrafficCountersFromState(
     const billableVmMacs = getBillableVmMacs(instanceName)
 
     const totals: NetworkCounters = { rxBytes: 0n, txBytes: 0n }
+    const fallbackInterfaces: InstanceStateNetwork[] = []
+    let hasStrictBillableInterface = false
     if (state.network) {
         for (const [ifName, ifData] of Object.entries(state.network)) {
-            // A state response can mix Incus device names (eth0/eth1) with
-            // distro-assigned guest names (for example enp5s0/enp6s0).  Do
-            // not make the fallback all-or-nothing: seeing eth0 must not make
-            // us discard a second external NIC carrying IPv6 NAT traffic.
-            if (
-                isBillableNetworkInterface(ifName, ifData, billableVmMacs)
-                || isLikelyExternalGuestInterface(ifName)
-            ) {
+            if (isBillableNetworkInterface(ifName, ifData, billableVmMacs)) {
+                hasStrictBillableInterface = true
                 addCounters(totals, ifData.counters)
-
-                if (process.env.DEBUG_TRAFFIC === 'true' && ifData.counters) {
-                    console.log(`[Traffic Debug] ${instanceName} - ${ifName}: rx=${ifData.counters.bytes_received}, tx=${ifData.counters.bytes_sent}`)
-                }
                 continue
+            }
+
+            if (isLikelyExternalGuestInterface(ifName)) {
+                fallbackInterfaces.push(ifData)
             }
 
             if (process.env.DEBUG_TRAFFIC === 'true' && ifData.counters) {
                 console.log(`[Traffic Debug] ${instanceName} - ${ifName}: skipped non-billable interface`)
+            }
+        }
+
+        if (!hasStrictBillableInterface) {
+            for (const ifData of fallbackInterfaces) {
+                addCounters(totals, ifData.counters)
             }
         }
     }

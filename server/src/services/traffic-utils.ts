@@ -7,12 +7,13 @@
  * 计算流量增量。
  *
  * 当实例重启、网卡重建或内核计数器归零时，current 会小于 last。
- * current 此时就是归零后已经产生的流量，必须计入本次增量；若仅返回 0，
- * 每次网卡重建到下一次采样之间的流量（高流量出站尤其明显）都会永久漏计。
+ * 不能把 current 整段计入增量：Agent 与面板采集器可能在网卡短暂不可见或
+ * 计数口径切换时观测到更小的值，直接计入 current 会在每次抖动时重复计费。
+ * 重置当次返回 0，从新基线的下一次采样继续计算。
  */
 export function calculateIncrement(current: bigint, last: bigint): bigint {
     if (current < last) {
-        return current
+        return 0n
     }
     return current - last
 }

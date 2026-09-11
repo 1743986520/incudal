@@ -156,7 +156,7 @@ func TestTrafficCountersFromIncusStateFallsBackToExternalInterfaces(t *testing.T
 	}
 }
 
-func TestTrafficCountersFromIncusStateIncludesMixedExternalInterfaces(t *testing.T) {
+func TestTrafficCountersFromIncusStateDoesNotMixFallbackWithCanonicalInterfaces(t *testing.T) {
 	state := incusInstanceState{
 		Network: map[string]incusNetworkDevice{
 			"eth0": {
@@ -174,7 +174,7 @@ func TestTrafficCountersFromIncusStateIncludesMixedExternalInterfaces(t *testing
 	}
 
 	counters := getTrafficCountersFromIncusState("vm-test", state)
-	if counters.rx != 400 || counters.tx != 600 {
+	if counters.rx != 100 || counters.tx != 200 {
 		t.Fatalf("mixed-interface traffic counters mismatch: got=%+v", counters)
 	}
 }

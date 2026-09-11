@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { getTrafficCountersFromState } from './incus-traffic.js'
 
-test('counts all external NICs when Incus mixes device and guest interface names', () => {
+test('does not mix fallback interfaces with canonical Incus NICs', () => {
     const counters = getTrafficCountersFromState('vm-test', {
         network: {
             eth0: { counters: { bytes_received: '100', bytes_sent: '200' } },
@@ -11,5 +11,5 @@ test('counts all external NICs when Incus mixes device and guest interface names
         }
     })
 
-    assert.deepEqual(counters, { rxBytes: 400n, txBytes: 600n })
+    assert.deepEqual(counters, { rxBytes: 100n, txBytes: 200n })
 })

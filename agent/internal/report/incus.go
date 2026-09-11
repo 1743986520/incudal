@@ -262,13 +262,24 @@ func firstExternalGuestMAC(network map[string]incusNetworkDevice) string {
 func getTrafficCountersFromIncusState(instanceName string, state incusInstanceState) trafficCounters {
 	billableVmMacs := generateBillableVmMacs(instanceName)
 	totals := trafficCounters{}
+	fallbackInterfaces := make([]incusNetworkDevice, 0)
+	hasStrictBillableInterface := false
 
 	// 与面板旧采集口径保持一致，避免 guest 内部 bridge/veth 被重复计费。
 	for ifName, ifData := range state.Network {
-		// Incus 状态可能同时包含设备名（eth0/eth1）及系统分配的网卡名
-		//（如 enp5s0/enp6s0）。不能在发现 eth0 后丢弃其余外部网卡，
-		// 否则第二张网卡承载的 IPv6 NAT 去向流量不会计费。
-		if isBillableNetworkInterface(ifName, ifData, billableVmMacs) || isLikelyExternalGuestInterface(ifName) {
+		if isBillableNetworkInterface(ifName, ifData, billableVmMacs) {
+			hasStrictBillableInterface = true
+			addNetworkCounters(&totals, ifData.Counters)
+			continue
+		}
+
+		if isLikelyExternalGuestInterface(ifName) {
+			fallbackInterfaces = append(fallbackInterfaces, ifData)
+		}
+	}
+
+	if !hasStrictBillableInterface {
+		for _, ifData := range fallbackInterfaces {
 			addNetworkCounters(&totals, ifData.Counters)
 		}
 	}
