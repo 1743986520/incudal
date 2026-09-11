@@ -171,6 +171,7 @@ export interface Package {
   required_package_name?: string | null
   // 实例操作权限
   allow_instance_deletion?: boolean  // 是否允许用户删除实例
+  destroy_traffic_limit?: string  // 付费实例可退款销毁的月流量上限（Bytes）
   host_storage_pools?: Record<string, string | null>
   // 补货/释放通知渠道 ID（绑定的全局渠道或私有渠道）
   release_channel_id?: number | null

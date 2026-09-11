@@ -254,6 +254,7 @@ export async function getAllPackages(
     required_package_id: (pkg as any).requiredPackageId ?? null,
     required_package_name: (pkg as any).requiredPackage?.name ?? null,
     allow_instance_deletion: (pkg as any).allowInstanceDeletion ?? true,
+    destroy_traffic_limit: (pkg as any).destroyTrafficLimit?.toString() ?? '5368709120',
     created_at: pkg.createdAt.toISOString(),
     owner_username: pkg.user?.username,
     owner_email: includeOwnerEmail ? (pkg.user as any)?.email : undefined,
@@ -334,6 +335,7 @@ export async function getPackageById(id: number): Promise<(Package & { host_ids?
     required_package_id: pkg.requiredPackageId ?? null,
     required_package_name: pkg.requiredPackage?.name ?? null,
     allow_instance_deletion: pkg.allowInstanceDeletion,
+    destroy_traffic_limit: pkg.destroyTrafficLimit.toString(),
     created_at: pkg.createdAt.toISOString(),
     host_ids: pkg.packageHosts.map(ph => ph.hostId),  // 绑定的宿主机ID列表
     host_storage_pools: buildHostStoragePoolMap(pkg.packageHosts),
@@ -390,6 +392,7 @@ export async function getPackageByName(name: string): Promise<Package | null> {
     boot_host_shutdown_timeout: pkg.bootHostShutdownTimeout,
     required_package_id: pkg.requiredPackageId ?? null,
     allow_instance_deletion: pkg.allowInstanceDeletion,
+    destroy_traffic_limit: pkg.destroyTrafficLimit.toString(),
     created_at: pkg.createdAt.toISOString()
   }
 }
@@ -442,6 +445,7 @@ export async function getPackageByUserAndName(userId: number, name: string): Pro
     boot_host_shutdown_timeout: pkg.bootHostShutdownTimeout,
     required_package_id: pkg.requiredPackageId ?? null,
     allow_instance_deletion: pkg.allowInstanceDeletion,
+    destroy_traffic_limit: pkg.destroyTrafficLimit.toString(),
     created_at: pkg.createdAt.toISOString()
   }
 }
@@ -496,6 +500,7 @@ export async function createPackage(data: {
   requiredPackageId?: number | null
   // 实例操作权限
   allowInstanceDeletion?: boolean
+  destroyTrafficLimit?: bigint
 }, isAdmin?: boolean): Promise<number> {
   if (data.requiredPackageId !== null && data.requiredPackageId !== undefined) {
     return prisma.$transaction(async tx => {
@@ -559,6 +564,7 @@ async function createPackageUnchecked(data: {
   globalMaxInstances?: number | null
   requiredPackageId?: number | null
   allowInstanceDeletion?: boolean
+  destroyTrafficLimit?: bigint
 }, isAdmin: boolean | undefined, client: Prisma.TransactionClient | typeof prisma): Promise<number> {
   // 验证必须至少绑定一个宿主机
   if (!data.hostIds || data.hostIds.length === 0) {
@@ -626,6 +632,7 @@ async function createPackageUnchecked(data: {
       requiredPackageId: data.requiredPackageId ?? null,
       // 实例操作权限
       allowInstanceDeletion: data.allowInstanceDeletion ?? true,
+      destroyTrafficLimit: data.destroyTrafficLimit ?? 5368709120n,
       // 绑定宿主机
       packageHosts: {
         create: data.hostIds.map(hostId => ({
@@ -689,6 +696,7 @@ export async function updatePackage(id: number, data: {
     requiredPackageId?: number | null
     // 实例操作权限
     allowInstanceDeletion?: boolean
+    destroyTrafficLimit?: bigint
 }, isAdmin?: boolean): Promise<void> {
   if (data.requiredPackageId !== undefined) {
     await prisma.$transaction(async tx => {
@@ -760,6 +768,7 @@ async function updatePackageUnchecked(id: number, data: {
   globalMaxInstances?: number | null
   requiredPackageId?: number | null
   allowInstanceDeletion?: boolean
+  destroyTrafficLimit?: bigint
 }, isAdmin: boolean | undefined, client: Prisma.TransactionClient | typeof prisma): Promise<void> {
   const updateData: {
     name?: string
@@ -802,6 +811,7 @@ async function updatePackageUnchecked(id: number, data: {
     requiredPackageId?: number | null
     // 实例操作权限
     allowInstanceDeletion?: boolean
+    destroyTrafficLimit?: bigint
   } = {}
 
   if (data.name !== undefined) updateData.name = data.name
@@ -843,6 +853,7 @@ async function updatePackageUnchecked(id: number, data: {
   if (data.globalMaxInstances !== undefined) updateData.globalMaxInstances = data.globalMaxInstances
   if (data.requiredPackageId !== undefined) updateData.requiredPackageId = data.requiredPackageId
   if (data.allowInstanceDeletion !== undefined) updateData.allowInstanceDeletion = data.allowInstanceDeletion
+  if (data.destroyTrafficLimit !== undefined) updateData.destroyTrafficLimit = data.destroyTrafficLimit
 
   const needsPackageHostUpdate = data.hostIds !== undefined || data.hostStoragePools !== undefined || data.hostTrafficMultipliers !== undefined
   if (needsPackageHostUpdate) {

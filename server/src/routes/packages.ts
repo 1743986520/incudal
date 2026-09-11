@@ -20,6 +20,16 @@ const PUBLIC_PACKAGE_MAX_INSTANCES_MIN = 1
 const PUBLIC_PACKAGE_MAX_INSTANCES_MAX = 5
 const MAX_PACKAGE_PLAN_PRICE_CENTS = 99999999
 const MAX_PACKAGE_PLAN_PRICE_YUAN = (MAX_PACKAGE_PLAN_PRICE_CENTS / 100).toFixed(2)
+const MAX_DESTROY_TRAFFIC_LIMIT = 1024n * 1024n * 1024n * 1024n * 1024n // 1 PiB
+
+function parseDestroyTrafficLimit(value: string | undefined): bigint | undefined {
+  if (value === undefined) return undefined
+  const parsed = BigInt(value)
+  if (parsed <= 0n || parsed > MAX_DESTROY_TRAFFIC_LIMIT) {
+    throw new Error('退款销毁流量上限必须大于 0 且不超过 1 PiB')
+  }
+  return parsed
+}
 
 type PackagePrerequisiteRequestFields = {
   requiredPackageId?: number | null
@@ -740,6 +750,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
             site_limit: p.site_limit,
             global_shared: p.global_shared,
             allow_instance_deletion: p.allow_instance_deletion,
+            destroy_traffic_limit: (p as any).destroy_traffic_limit ?? '5368709120',
             required_package_id: (p as any).required_package_id ?? null,
             required_package_name: (p as any).required_package_name ?? null,
             sourceType: 'hosted',
@@ -796,6 +807,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       boot_host_shutdown_timeout: 30,
       // 实例操作权限
       allow_instance_deletion: p.allowInstanceDeletion ?? true,
+      destroy_traffic_limit: p.destroyTrafficLimit ?? '5368709120',
       ...getPackagePrerequisiteFields(p),
       // 所有者信息
       ownerId: p.ownerId,
@@ -993,6 +1005,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         boot_host_shutdown_timeout: p.boot_host_shutdown_timeout,
         // 实例操作权限
         allow_instance_deletion: (p as any).allow_instance_deletion ?? true,
+        destroy_traffic_limit: (p as any).destroy_traffic_limit ?? '5368709120',
         required_package_id: (p as any).required_package_id ?? null,
         required_package_name: (p as any).required_package_name ?? null,
         has_required_package_instance: (p as any).required_package_id
@@ -1240,6 +1253,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           : undefined,
         // 实例操作权限（所有用户都需要知道是否可以删除）
         allow_instance_deletion: (pkg as any).allow_instance_deletion ?? true,
+        destroy_traffic_limit: (pkg as any).destroy_traffic_limit ?? '5368709120',
         required_package_id: (pkg as any).required_package_id ?? null,
         required_package_name: (pkg as any).required_package_name ?? null,
         has_required_package_instance: hasRequiredPackageInstance,
@@ -1309,7 +1323,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           globalMaxInstances: { type: ['integer', 'null'] },
           requiredPackageId: { type: ['integer', 'null'], minimum: 1 },
           // 实例操作权限
-          allowInstanceDeletion: { type: 'boolean' }
+          allowInstanceDeletion: { type: 'boolean' },
+          destroyTrafficLimit: { type: 'string', pattern: '^\\d+$', maxLength: 19 }
         }
       }
     }
@@ -1320,7 +1335,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       ioLimitMode, limitsRead, limitsWrite, limitsReadIops, limitsWriteIops,
       limitsIngress, limitsEgress, limitsProcesses, limitsCpuPriority,
       bootAutostart, bootAutostartPriority, bootAutostartDelay, bootHostShutdownTimeout,
-      globalShared, globalMaxInstances, hostStoragePools, hostTrafficMultipliers
+      globalShared, globalMaxInstances, hostStoragePools, hostTrafficMultipliers,
+      allowInstanceDeletion, destroyTrafficLimit
     } = request.body as CreatePackageRequest & PackagePrerequisiteRequestFields & { hostTrafficMultipliers?: Record<string, number | string | null> }
     const { requiredPackageId } = request.body as PackagePrerequisiteRequestFields
 
@@ -1413,8 +1429,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         globalQuotaMultiplier: null,
         globalMaxInstances: globalShared ? globalMaxInstances : null,
         requiredPackageId: requiredPackageId ?? null,
-        // 实例操作权限不再暴露配置入口，新套餐默认允许删除
-        allowInstanceDeletion: true
+        // 实例退款/销毁策略
+        allowInstanceDeletion: allowInstanceDeletion ?? true,
+        destroyTrafficLimit: parseDestroyTrafficLimit(destroyTrafficLimit)
       }, request.user.role === 'admin')  // 管理员可以绑定任何节点
     } catch (error) {
       const prerequisiteError = getPackagePrerequisiteError(error)
@@ -1494,7 +1511,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           globalMaxInstances: { type: ['integer', 'null'] },
           requiredPackageId: { type: ['integer', 'null'], minimum: 1 },
           // 实例操作权限
-          allowInstanceDeletion: { type: 'boolean' }
+          allowInstanceDeletion: { type: 'boolean' },
+          destroyTrafficLimit: { type: 'string', pattern: '^\\d+$', maxLength: 19 }
         }
       }
     }
@@ -1550,12 +1568,19 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       limitsIngress, limitsEgress, limitsProcesses, limitsCpuPriority,
       bootAutostart, bootAutostartPriority, bootAutostartDelay, bootHostShutdownTimeout,
       globalShared, globalQuotaMultiplier, globalMaxInstances,
+      allowInstanceDeletion, destroyTrafficLimit,
       ...restBody
     } = request.body as UpdatePackageRequest & PackagePrerequisiteRequestFields & { hostTrafficMultipliers?: Record<string, number | string | null> }
     const { requiredPackageId } = request.body as PackagePrerequisiteRequestFields
     const updateData: Parameters<typeof db.updatePackage>[1] = { ...restBody }
-    delete (updateData as any).allowInstanceDeletion
-    updateData.allowInstanceDeletion = true
+    if (allowInstanceDeletion !== undefined) updateData.allowInstanceDeletion = allowInstanceDeletion
+    if (destroyTrafficLimit !== undefined) {
+      try {
+        updateData.destroyTrafficLimit = parseDestroyTrafficLimit(destroyTrafficLimit)
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : 'Invalid destroy traffic limit' })
+      }
+    }
     const nextInstanceType = request.body.instanceType ?? pkg.instance_type ?? 'container'
     const nextNetworkMode = request.body.networkMode ?? pkg.network_mode ?? 'nat'
 

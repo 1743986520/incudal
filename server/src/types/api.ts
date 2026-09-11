@@ -199,6 +199,7 @@ export interface CreatePackageRequest {
   globalMaxInstances?: number | null  // 全局共享的最大实例数，null 表示无限�?
   // 实例操作权限
   allowInstanceDeletion?: boolean  // 是否允许用户删除实例
+  destroyTrafficLimit?: string  // paid instance destroy traffic threshold in bytes
 }
 
 export interface UpdatePackageRequest {
@@ -244,6 +245,7 @@ export interface UpdatePackageRequest {
   globalMaxInstances?: number | null  // 全局共享的最大实例数，null 表示无限�?
   // 实例操作权限
   allowInstanceDeletion?: boolean  // 是否允许用户删除实例
+  destroyTrafficLimit?: string  // paid instance destroy traffic threshold in bytes
 }
 
 export interface InstanceConfig {

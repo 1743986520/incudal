@@ -1,0 +1,2 @@
+ALTER TABLE "packages"
+ADD COLUMN "destroy_traffic_limit" BIGINT NOT NULL DEFAULT 5368709120;

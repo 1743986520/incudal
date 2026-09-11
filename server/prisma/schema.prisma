@@ -940,6 +940,7 @@ model Package {
 
   // 实例操作权限
   allowInstanceDeletion Boolean @default(true) @map("allow_instance_deletion") // 是否允许用户删除实例
+  destroyTrafficLimit   BigInt  @default(5368709120) @map("destroy_traffic_limit") // 付费实例可退款销毁的月流量上限 (Bytes)
 
   // 资源释放通知渠道（可选）
   releaseChannelId Int? @map("release_channel_id")

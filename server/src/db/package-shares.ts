@@ -53,6 +53,7 @@ export interface SharedPackageInfo {
     requiredPackageId?: number | null
     requiredPackageName?: string | null
     allowInstanceDeletion?: boolean  // 是否允许用户删除实例
+    destroyTrafficLimit?: string  // 付费实例可退款销毁的月流量上限（Bytes）
 }
 
 export interface HostingZoneInfo {
@@ -387,6 +388,7 @@ export async function getSharedToUser(userId: number): Promise<SharedPackageInfo
             nested: s.package.nested ? 1 : 0,
             privileged: s.package.privileged ? 1 : 0,
             allowInstanceDeletion: s.package.allowInstanceDeletion,
+            destroyTrafficLimit: s.package.destroyTrafficLimit.toString(),
             hostIds: s.package.packageHosts.map(ph => ph.hostId),
             ownerId: s.package.user.id,
             ownerUsername: s.package.user.username,
@@ -538,6 +540,7 @@ export async function getHostedMarketPackages(
         nested: pkg.nested ? 1 : 0,
         privileged: pkg.privileged ? 1 : 0,
         allowInstanceDeletion: pkg.allowInstanceDeletion,
+        destroyTrafficLimit: pkg.destroyTrafficLimit.toString(),
         hostIds: pkg.packageHosts.map(ph => ph.hostId),
         ownerId: pkg.user.id,
         ownerUsername: pkg.user.username,
@@ -599,7 +602,8 @@ export async function getGlobalSharedPackages(): Promise<SharedPackageInfo[]> {
         monthlyTrafficLimit: pkg.monthlyTrafficLimit?.toString() ?? null,
         nested: pkg.nested ? 1 : 0,  // 嵌套虚拟化支持
         privileged: pkg.privileged ? 1 : 0,  // 特权容器
-        allowInstanceDeletion: pkg.allowInstanceDeletion,  // 实例操作权限
+        allowInstanceDeletion: pkg.allowInstanceDeletion,
+        destroyTrafficLimit: pkg.destroyTrafficLimit.toString(),
         hostIds: pkg.packageHosts.map(ph => ph.hostId),
         ownerId: pkg.user.id,
         ownerUsername: pkg.user.username,
