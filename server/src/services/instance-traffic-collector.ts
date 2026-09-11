@@ -4,7 +4,7 @@ import { getIncusClientFromPool } from '../lib/incus/incus-pool.js'
 import type { IncusClient } from '../lib/incus/incus-client.js'
 import { acquireLock, extendLock, releaseLock } from '../lib/distributed-lock.js'
 import type { LockOptions } from '../lib/distributed-lock.js'
-import { calculateIncrement } from './traffic-utils.js'
+import { calculateIncrement, isTransientEmptyCounterSample } from './traffic-utils.js'
 
 export interface CollectInstanceTrafficResult {
   success: boolean
@@ -53,6 +53,18 @@ async function applyTrafficCounters(
     const latestSnapshot = await tx.trafficSnapshot.findUnique({
       where: { instanceId }
     })
+
+    if (latestSnapshot && isTransientEmptyCounterSample(
+      counters.rxBytes,
+      counters.txBytes,
+      latestSnapshot.rxRaw,
+      latestSnapshot.txRaw
+    )) {
+      return {
+        totalDelta: 0n,
+        currentUsage: instance.monthlyTrafficUsed
+      }
+    }
 
     const rxIncrement = latestSnapshot
       ? calculateIncrement(counters.rxBytes, latestSnapshot.rxRaw)

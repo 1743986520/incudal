@@ -18,6 +18,16 @@ export function calculateIncrement(current: bigint, last: bigint): bigint {
     return current - last
 }
 
+/** Ignore a transient empty network state instead of replacing a valid baseline. */
+export function isTransientEmptyCounterSample(
+    currentRx: bigint,
+    currentTx: bigint,
+    lastRx: bigint,
+    lastTx: bigint
+): boolean {
+    return currentRx === 0n && currentTx === 0n && (lastRx > 0n || lastTx > 0n)
+}
+
 /**
  * 计算有效流量限额
  * 基础限额 + 额外配额

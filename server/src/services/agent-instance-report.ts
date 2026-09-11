@@ -12,7 +12,7 @@ import type { InstanceStatus } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
 import { withLock } from '../lib/distributed-lock.js'
 import { mapInstanceStatus } from '../lib/incus/incus-utils.js'
-import { calculateIncrement } from './traffic-utils.js'
+import { calculateIncrement, isTransientEmptyCounterSample } from './traffic-utils.js'
 
 interface NormalizedAgentInstanceItem {
   name: string
@@ -234,6 +234,18 @@ async function applyReportedTrafficCounters(
       const latestSnapshot = await tx.trafficSnapshot.findUnique({
         where: { instanceId: instance.id }
       })
+
+      if (latestSnapshot && isTransientEmptyCounterSample(
+        item.rxBytes!,
+        item.txBytes!,
+        latestSnapshot.rxRaw,
+        latestSnapshot.txRaw
+      )) {
+        return {
+          updated: false,
+          delta: 0n
+        }
+      }
 
       const rxIncrement = latestSnapshot
         ? calculateIncrement(item.rxBytes!, latestSnapshot.rxRaw)
