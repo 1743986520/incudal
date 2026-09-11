@@ -103,6 +103,22 @@ function normalizeNetworkAddress(value: unknown): string | null | undefined {
   return address ?? null
 }
 
+function normalizeReportedIpv6(value: unknown): string | null | undefined {
+  const address = normalizeNetworkAddress(value)
+  if (!address) {
+    return address
+  }
+
+  const normalized = address.split('/')[0]!.toLowerCase()
+  // Agent versions before the public-IPv6 selection fix can report an Incus
+  // bridge ULA as globally scoped. Ignore it instead of replacing a routed
+  // public IPv6 already assigned to the instance.
+  if (normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:')) {
+    return undefined
+  }
+  return address
+}
+
 function normalizeAgentInstanceItems(payload: unknown): NormalizedAgentInstanceItem[] {
   if (!isRecord(payload) || !Array.isArray(payload.items)) {
     return []
@@ -135,7 +151,7 @@ function normalizeAgentInstanceItems(payload: unknown): NormalizedAgentInstanceI
       rxBytes: parseCounter(traffic.rxBytes),
       txBytes: parseCounter(traffic.txBytes),
       ipv4: normalizeNetworkAddress(network.ipv4),
-      ipv6: normalizeNetworkAddress(network.ipv6)
+      ipv6: normalizeReportedIpv6(network.ipv6)
     })
   }
 

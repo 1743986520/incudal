@@ -1,5 +1,10 @@
 import { prisma } from '../db/prisma.js'
-import { buildInstanceConfig, createInstance, getIncusClient, getInstanceState, startInstance } from '../lib/incus/index.js'
+import { buildInstanceConfig, createInstance, getIncusClient, getInstance, getInstanceState, startInstance } from '../lib/incus/index.js'
+import {
+  persistResolvedInstanceNetworkAddresses,
+  resolveInstanceNetworkAddresses,
+  type ResolvedInstanceNetworkAddresses
+} from './instance-network-sync.js'
 import type { Host } from '../types/database.js'
 
 export interface ManagedInstanceProvisionConfig {
@@ -113,33 +118,53 @@ export async function provisionManagedInstanceAsync(
       }
     }
 
-    let ipv4: string | null = config.ipv4Address || null
-    let ipv6: string | null = config.ipv6Address || null
+    const storedInstance = await prisma.instance.findUniqueOrThrow({
+      where: { id: instanceId },
+      select: {
+        id: true,
+        name: true,
+        hostId: true,
+        networkMode: true,
+        ipv4: true,
+        ipv6: true
+      }
+    })
+
+    let resolvedNetwork: ResolvedInstanceNetworkAddresses = {
+      ipv4: config.ipv4Address || storedInstance.ipv4 || null,
+      ipv6: config.ipv6Address || storedInstance.ipv6 || null,
+      ipv4Device: 'eth0',
+      ipv6Device: 'eth1',
+      configuredIpv6: config.ipv6Address || null,
+      observedIpv6: null
+    }
 
     try {
-      const stateResp = await getInstanceState(client, config.name) as {
+      const [incusInstance, stateResp] = await Promise.all([
+        getInstance(client, config.name),
+        getInstanceState(client, config.name)
+      ]) as [Awaited<ReturnType<typeof getInstance>>, {
         network?: Record<string, { addresses?: Array<{ family: string; scope: string; address: string }> }>
-      }
-      const network = stateResp?.network
-      if (network?.eth0?.addresses) {
-        for (const addr of network.eth0.addresses) {
-          if (addr.family === 'inet' && addr.scope === 'global') {
-            ipv4 = addr.address
-          } else if (addr.family === 'inet6' && addr.scope === 'global') {
-            ipv6 = addr.address
-          }
-        }
-      }
+      }]
+      resolvedNetwork = resolveInstanceNetworkAddresses(
+        {
+          ...storedInstance,
+          ipv4: config.ipv4Address || storedInstance.ipv4,
+          ipv6: config.ipv6Address || storedInstance.ipv6
+        },
+        incusInstance,
+        stateResp
+      )
     } catch {
       // keep pre-allocated addresses
     }
+
+    await persistResolvedInstanceNetworkAddresses(storedInstance, resolvedNetwork)
 
     await prisma.instance.update({
       where: { id: instanceId },
       data: {
         status: 'running',
-        ipv4,
-        ipv6,
         storagePoolName: config.storagePool || 'default'
       }
     })

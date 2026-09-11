@@ -351,7 +351,10 @@ func firstRoutableAddresses(network map[string]incusNetworkDevice) (string, stri
 				ipv4 = address.Address
 				continue
 			}
-			if ipv6 == "" && ip.To4() == nil && strings.EqualFold(address.Family, "inet6") {
+			// net.IP.IsPrivate includes IPv6 ULA (fc00::/7). Incus may expose a
+			// transient bridge ULA alongside the routed public address; reporting
+			// that ULA would replace the customer's public IPv6 in the panel.
+			if ipv6 == "" && ip.To4() == nil && !ip.IsPrivate() && strings.EqualFold(address.Family, "inet6") {
 				ipv6 = address.Address
 			}
 		}

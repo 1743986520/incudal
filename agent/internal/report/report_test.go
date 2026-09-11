@@ -179,6 +179,30 @@ func TestTrafficCountersFromIncusStateIncludesMixedExternalInterfaces(t *testing
 	}
 }
 
+func TestFirstRoutableAddressesRejectsIPv6ULA(t *testing.T) {
+	state := map[string]incusNetworkDevice{
+		"eth0": {
+			Addresses: []incusNetworkAddress{
+				{Family: "inet", Address: "10.10.1.93"},
+				{Family: "inet6", Address: "fd42:5c4:22dd:5a99::1"},
+			},
+		},
+		"eth1": {
+			Addresses: []incusNetworkAddress{
+				{Family: "inet6", Address: "2607:9d00:2000:39::1234"},
+			},
+		},
+	}
+
+	ipv4, ipv6 := firstRoutableAddresses(state)
+	if ipv4 != "10.10.1.93" {
+		t.Fatalf("IPv4 mismatch: got=%q", ipv4)
+	}
+	if ipv6 != "2607:9d00:2000:39::1234" {
+		t.Fatalf("public IPv6 mismatch: got=%q", ipv6)
+	}
+}
+
 func containsCapability(capabilities []any, expected string) bool {
 	for _, capability := range capabilities {
 		if capability == expected {
