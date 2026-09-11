@@ -3043,9 +3043,9 @@ export default {
             requireInviteCodeDesc: 'When enabled, users must enter an invite code to register',
             openRegistration: 'Open',
             inviteOnly: 'Invite Only',
-            adminRegistrationEmails: 'Emails that become admins on registration',
-            adminRegistrationEmailsPlaceholder: "For example: 111{'@'}abc.com\n222{'@'}abc.com",
-            adminRegistrationEmailsDesc: 'Enter complete email addresses, separated by commas, semicolons, or new lines. A matching email becomes an admin after successful registration; exact email matching only, no domain wildcards.',
+            adminRegistrationEmails: 'Admin email suffixes',
+            adminRegistrationEmailsPlaceholder: "For example: {'@'}abc.com\n{'@'}example.org",
+            adminRegistrationEmailsDesc: 'Enter email suffixes separated by commas, semicolons, or new lines. Users with a matching, verified email become administrators after registration.',
             affRebate: {
                 title: 'Referral Rebates',
                 description: 'Control whether users can create and use referral promo codes to earn rebates.',

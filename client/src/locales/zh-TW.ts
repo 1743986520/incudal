@@ -4490,9 +4490,9 @@ export default {
             requireInviteCodeDesc: '啟用後，使用者註冊時需要填寫邀請碼',
             openRegistration: '開放註冊',
             inviteOnly: '僅邀請',
-            adminRegistrationEmails: '註冊後自動成為管理員的信箱',
-            adminRegistrationEmailsPlaceholder: "例如：111{'@'}abc.com\n222{'@'}abc.com",
-            adminRegistrationEmailsDesc: '填寫完整信箱位址，多個信箱可用逗號、分號或換行分隔。符合的信箱註冊成功後會直接成為管理員；僅支援精確信箱匹配，不支援網域萬用字元。',
+            adminRegistrationEmails: '註冊後自動成為管理員的信箱後綴',
+            adminRegistrationEmailsPlaceholder: "例如：{'@'}abc.com\n{'@'}example.org",
+            adminRegistrationEmailsDesc: '填寫信箱後綴，多個後綴可用逗號、分號或換行分隔。使用符合後綴且完成信箱驗證的使用者，註冊後會自動成為管理員。',
             affRebate: {
                 title: 'AFF 返利',
                 description: '控制使用者是否可以建立、使用 AFF 優惠碼並獲得返利收益。',

@@ -11,6 +11,7 @@ import { isSmtpEnabled, testSmtpConnection, sendTestEmail, clearTransporterCache
 import { logAdminAction } from '../lib/security.js'
 import { getSafeTelegramUrl, validateOptionalTelegramUrl } from '../lib/external-url.js'
 import { isSupportedInviteCostResource, serializeInviteCostOptions, type InviteCostOption } from '../lib/invite-pricing.js'
+import { parseAdminRegistrationEmailSuffixes } from '../lib/registration-role.js'
 
 interface UpdateConfigsBody {
     configs: Array<{ key: string; value: string }>
@@ -44,7 +45,7 @@ const maxRegisterGiftBalance = 99999999.99
 const maxRegisterGiftPoints = 2147483647
 const maxTransferFee = 100
 const decimalMoneyPattern = /^\d+(?:\.\d{1,2})?$/
-const emailAddressPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const emailDomainPattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
 
 function isHttpImageUrl(value: string): boolean {
     try {
@@ -355,6 +356,7 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             'smtp_from_email',
             'smtp_from_name',
             'email_allowed_domains',
+            'admin_registration_emails',
             'ticket_image_lsky_base_url',
             'ticket_image_lsky_token',
             'ticket_image_lsky_api_version',
@@ -390,16 +392,21 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
                     config.value = telegramLinkValidation.value || ''
                 }
                 if (config.key === 'admin_registration_emails') {
-                    const emails = config.value
+                    const rawSuffixes = config.value
                         .split(/[\s,;]+/)
-                        .map(email => email.trim().toLowerCase())
+                        .map(suffix => suffix.trim().toLowerCase())
                         .filter(Boolean)
+                    const suffixes = parseAdminRegistrationEmailSuffixes(config.value)
 
-                    if (emails.length > 50 || emails.some(email => email.length > 254 || !emailAddressPattern.test(email))) {
+                    if (
+                        rawSuffixes.length > 50 ||
+                        suffixes.length !== new Set(rawSuffixes).size ||
+                        suffixes.some(suffix => suffix.length > 254 || !emailDomainPattern.test(suffix.slice(1)))
+                    ) {
                         return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
                     }
 
-                    config.value = [...new Set(emails)].join(',')
+                    config.value = suffixes.join(',')
                 }
                 if (config.key === 'popup_announcement' && config.value.length > 5000) {
                     return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))

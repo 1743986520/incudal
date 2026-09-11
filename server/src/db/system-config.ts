@@ -59,7 +59,7 @@ export async function initSystemConfig(): Promise<void> {
         { key: 'default_quota_package', value: '0', type: 'number', label: '默认套餐配额', description: '新用户默认可创建套餐数量（0 = 未授权，需管理员开启）' },
         { key: 'registration_enabled', value: 'true', type: 'boolean', label: '开放注册', description: '是否允许新用户注册账号' },
         { key: 'require_invite_code', value: 'true', type: 'boolean', label: '邀请码注册', description: '是否需要邀请码才能注册' },
-        { key: 'admin_registration_emails', value: '', type: 'string', label: '自动管理员邮箱', description: '使用这些邮箱注册的新用户将自动成为管理员，多个邮箱使用逗号或换行分隔' },
+        { key: 'admin_registration_emails', value: '', type: 'string', label: '自动管理员邮箱后缀', description: '使用这些邮箱后缀注册的新用户将自动成为管理员，多个后缀使用逗号或换行分隔' },
         { key: 'invite_generation_costs', value: '[{"resource":"balance","amount":0,"enabled":false},{"resource":"points","amount":0,"enabled":false}]', type: 'json', label: '邀请码生成定价', description: '用户生成邀请码可选择的成本项，当前支持 balance 和 points' },
         { key: 'invite_default_expire_days', value: '0', type: 'number', label: '用户邀请码有效期', description: '用户生成邀请码的默认有效天数，0 表示永不过期' },
         { key: 'user_vip_metric', value: 'totalRecharge', type: 'string', label: '用户 VIP 统计口径', description: '用户 VIP 等级全局计算口径：totalRecharge=累计充值，totalConsume=累计消费' },
@@ -160,19 +160,17 @@ export async function isRegistrationEnabled(): Promise<boolean> {
 }
 
 /**
- * 判断邮箱是否配置为注册后自动成为管理员。
- * 该配置只在服务端注册流程中使用，邮箱地址按完整地址精确匹配（不支持域名通配）。
+ * 判断邮箱后缀是否配置为注册后自动成为管理员。
+ * 后缀包含 @ 边界，例如 @example.com 不会匹配 user@notexample.com。
  */
 export async function isAdminRegistrationEmail(email: string): Promise<boolean> {
-    const configuredEmails = await getSystemConfig('admin_registration_emails')
-    if (!configuredEmails) return false
+    const configuredSuffixes = await getSystemConfig('admin_registration_emails')
+    if (!configuredSuffixes) return false
 
     const normalizedEmail = email.trim().toLowerCase()
-    return configuredEmails
-        .split(/[\s,;]+/)
-        .map(item => item.trim().toLowerCase())
-        .filter(Boolean)
-        .includes(normalizedEmail)
+    const { parseAdminRegistrationEmailSuffixes } = await import('../lib/registration-role.js')
+    return parseAdminRegistrationEmailSuffixes(configuredSuffixes)
+        .some(suffix => normalizedEmail.endsWith(suffix))
 }
 
 /**
