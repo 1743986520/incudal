@@ -23,10 +23,10 @@ import {
 // 销毁业务规则常量
 const DESTROY_RULES = {
   FEE_RATE: 0.10,                // 手续费率 10%（首次免手续费）
-  MAX_PAID_DESTROY_MONTHLY_TRAFFIC: 5n * 1024n * 1024n * 1024n // 5 GiB
+  DEFAULT_MAX_PAID_DESTROY_MONTHLY_TRAFFIC: 5n * 1024n * 1024n * 1024n // 5 GiB
 }
 
-const DESTROY_TRAFFIC_LIMIT_REASON = '当前月流量周期无法销毁，已用流量达到或超过 5G'
+const DESTROY_DISABLED_REASON = '此套餐不支持用户自行删除及退款'
 
 interface BatchDestroyPreviewItem {
   id: number
@@ -93,8 +93,25 @@ function calculateFeeRate(destroyCount: number): number {
   return DESTROY_RULES.FEE_RATE
 }
 
-function exceedsPaidDestroyTrafficLimit(monthlyTrafficUsed: bigint): boolean {
-  return monthlyTrafficUsed >= DESTROY_RULES.MAX_PAID_DESTROY_MONTHLY_TRAFFIC
+function getDestroyTrafficLimit(instance: { package?: { destroyTrafficLimit: bigint } | null }): bigint {
+  return instance.package?.destroyTrafficLimit ?? DESTROY_RULES.DEFAULT_MAX_PAID_DESTROY_MONTHLY_TRAFFIC
+}
+
+function isInstanceDeletionAllowed(instance: { package?: { allowInstanceDeletion: boolean } | null }): boolean {
+  return instance.package?.allowInstanceDeletion ?? true
+}
+
+function exceedsPaidDestroyTrafficLimit(monthlyTrafficUsed: bigint, limit: bigint): boolean {
+  return monthlyTrafficUsed >= limit
+}
+
+function formatTrafficLimit(limit: bigint): string {
+  const gib = Number(limit) / (1024 ** 3)
+  return `${Number.isInteger(gib) ? gib.toFixed(0) : gib.toFixed(2)} GiB`
+}
+
+function getDestroyTrafficLimitReason(limit: bigint): string {
+  return `当前月流量周期无法销毁，已用流量达到或超过 ${formatTrafficLimit(limit)}`
 }
 
 async function getDestroyBlockingTask(instanceId: number, client: any = prisma): Promise<{
@@ -277,6 +294,7 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
     where: { id: instanceId },
     include: {
       host: { select: { id: true, name: true, userId: true } },
+      package: { select: { allowInstanceDeletion: true, destroyTrafficLimit: true } },
       packagePlan: { select: { id: true, name: true } }
     }
   })
@@ -435,6 +453,11 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
   let canDestroy = true
   let cannotDestroyReason = ''
 
+  if (!isInstanceDeletionAllowed(instance)) {
+    canDestroy = false
+    cannotDestroyReason = DESTROY_DISABLED_REASON
+  }
+
   if (!isFreeInstance && instance.expiresAt && instance.billingPrice && instance.billingCycle) {
     const refundQuote = await db.calculateInstanceRemainingRefundQuote({
       id: instance.id,
@@ -456,13 +479,16 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
       refundAmount = Number((refundableValue - feeAmount).toFixed(2))
     }
 
-    if (
-      !canUserDestroyExpiredSuspendedPaidInstance(instance)
-      && exceedsPaidDestroyTrafficLimit(instance.monthlyTrafficUsed)
-    ) {
-      canDestroy = false
-      cannotDestroyReason = DESTROY_TRAFFIC_LIMIT_REASON
-    }
+  }
+
+  if (
+    canDestroy
+    && !isFreeInstance
+    && !canUserDestroyExpiredSuspendedPaidInstance(instance)
+    && exceedsPaidDestroyTrafficLimit(instance.monthlyTrafficUsed, getDestroyTrafficLimit(instance))
+  ) {
+    canDestroy = false
+    cannotDestroyReason = getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance))
   }
 
   return {
@@ -500,7 +526,8 @@ async function executeDestroyForUser(
     where: { id: instanceId },
     include: {
       user: { select: { id: true, username: true, balance: true, email: true } },
-      host: { select: { id: true, name: true, userId: true } }
+      host: { select: { id: true, name: true, userId: true } },
+      package: { select: { allowInstanceDeletion: true, destroyTrafficLimit: true } }
     }
   })
 
@@ -510,6 +537,10 @@ async function executeDestroyForUser(
 
   if (instance.userId !== user.id) {
     return { id: instanceId, name: `#${instanceId}`, success: false, reason: BATCH_HIDDEN_REASON }
+  }
+
+  if (!isInstanceDeletionAllowed(instance)) {
+    return { id: instance.id, name: instance.name, success: false, skipped: true, reason: DESTROY_DISABLED_REASON }
   }
 
   if (instance.status === 'deleted') {
@@ -550,9 +581,9 @@ async function executeDestroyForUser(
   if (
     !isFreeInstance
     && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-    && exceedsPaidDestroyTrafficLimit(currentMonthlyTrafficUsed)
+    && exceedsPaidDestroyTrafficLimit(currentMonthlyTrafficUsed, getDestroyTrafficLimit(instance))
   ) {
-    return { id: instance.id, name: instance.name, success: false, skipped: true, reason: DESTROY_TRAFFIC_LIMIT_REASON }
+    return { id: instance.id, name: instance.name, success: false, skipped: true, reason: getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance)) }
   }
 
   let feeAmount = 0
@@ -843,6 +874,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       where: { id: instanceId },
       include: {
         host: { select: { id: true, name: true, userId: true } },
+        package: { select: { allowInstanceDeletion: true, destroyTrafficLimit: true } },
         packagePlan: { select: { id: true, name: true } }
       }
     })
@@ -921,16 +953,17 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     }
 
     // 判断是否可以销毁（已移除冷却期限制，付费实例随时可销毁）
-    let canDestroy = true
-    let cannotDestroyReason = ''
+    let canDestroy = isInstanceDeletionAllowed(instance)
+    let cannotDestroyReason = canDestroy ? '' : DESTROY_DISABLED_REASON
 
     if (
-      !isFreeInstance
+      canDestroy
+      && !isFreeInstance
       && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-      && exceedsPaidDestroyTrafficLimit(instance.monthlyTrafficUsed)
+      && exceedsPaidDestroyTrafficLimit(instance.monthlyTrafficUsed, getDestroyTrafficLimit(instance))
     ) {
       canDestroy = false
-      cannotDestroyReason = DESTROY_TRAFFIC_LIMIT_REASON
+      cannotDestroyReason = getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance))
     }
 
     return {
@@ -942,7 +975,9 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       feeWaiverEligible: isErrorState,
       // 销毁规则
       rules: {
-        feeRate: feeWaiver ? 0 : DESTROY_RULES.FEE_RATE
+        feeRate: feeWaiver ? 0 : DESTROY_RULES.FEE_RATE,
+        trafficLimitBytes: getDestroyTrafficLimit(instance).toString(),
+        trafficLimitLabel: formatTrafficLimit(getDestroyTrafficLimit(instance))
       },
       // 退款预览
       refund: {
@@ -982,7 +1017,8 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       where: { id: instanceId },
       include: {
         user: { select: { id: true, username: true, balance: true, email: true } },
-        host: { select: { id: true, name: true, userId: true } }
+        host: { select: { id: true, name: true, userId: true } },
+        package: { select: { allowInstanceDeletion: true, destroyTrafficLimit: true } }
       }
     })
 
@@ -993,6 +1029,10 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     // 只有实例所有者可以销毁
     if (instance.userId !== user.id) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+    }
+
+    if (!isInstanceDeletionAllowed(instance)) {
+      return reply.code(403).send(apiError(ErrorCode.INSTANCE_DELETION_NOT_ALLOWED, DESTROY_DISABLED_REASON))
     }
 
     // 检查实例状态
@@ -1046,11 +1086,11 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     if (
       !isFreeInstance
       && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-      && exceedsPaidDestroyTrafficLimit(currentMonthlyTrafficUsed)
+      && exceedsPaidDestroyTrafficLimit(currentMonthlyTrafficUsed, getDestroyTrafficLimit(instance))
     ) {
       return reply.code(400).send(apiError(
         ErrorCode.INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED,
-        DESTROY_TRAFFIC_LIMIT_REASON
+        getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance))
       ))
     }
 
