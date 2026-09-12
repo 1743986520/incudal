@@ -73,7 +73,7 @@ import crypto from 'crypto'
 import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { checkInstanceOwnerOrAdminPermission } from '../lib/permission.js'
-import { assertAllowedHostUrl, captureIncusServerCertificate, panelCertificatePaths, resolveIncusTarget } from '../lib/incus/incus-tls.js'
+import { assertAllowedHostUrl, buildIncusTlsConnectOptions, captureIncusServerCertificate, panelCertificatePaths, resolveIncusTarget } from '../lib/incus/incus-tls.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1479,8 +1479,14 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         connect: {
           cert,
           key,
-          ca: captured.certificate,
-          rejectUnauthorized: true,
+          // Reuse the pinned-certificate policy used by IncusClient. Incus
+          // commonly issues a certificate whose SAN contains only localhost,
+          // so ordinary hostname verification would fail here before Incus can
+          // authenticate the panel certificate.
+          ...buildIncusTlsConnectOptions({
+            ca: captured.certificate,
+            fingerprint: captured.fingerprint
+          }),
           ...(captured.target.servername ? { servername: captured.target.servername } : {})
         }
       })
