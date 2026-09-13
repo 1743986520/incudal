@@ -846,7 +846,7 @@ async function loadAvailableHosts(): Promise<void> {
       memory: form.value.memory,
       disk: form.value.disk
     })
-    availableHosts.value = res
+    availableHosts.value = res.hosts || []
 
     if (availableHosts.value.length === 0) {
       form.value.hostId = null

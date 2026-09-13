@@ -399,7 +399,7 @@ async function loadAvailableHosts(): Promise<void> {
       return
     }
 
-    availableHosts.value = (res as { hosts?: AvailableHost[] }).hosts || []
+    availableHosts.value = res.hosts || []
 
     if (availableHosts.value.length === 0) {
       form.value.hostId = null

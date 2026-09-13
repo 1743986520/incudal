@@ -923,7 +923,7 @@ const api = {
     create: (data: CreateInstanceRequest): Promise<Instance> => http.post('/instances', data),
     retryProvision: (id: number): Promise<{ message: string; status: string }> =>
       http.post(`/instances/${id}/retry-provision`, {}),
-    getAvailableHosts: (params: Record<string, unknown> = {}): Promise<AvailableHost[]> =>
+    getAvailableHosts: (params: Record<string, unknown> = {}): Promise<{ hosts: AvailableHost[] }> =>
       http.get('/instances/available-hosts', { params }),
     getChangeHostOptions: (id: number): Promise<ChangeHostOptionsResponse> =>
       http.get(`/instances/${id}/change-host-options`),
