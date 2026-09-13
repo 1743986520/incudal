@@ -7,6 +7,7 @@ import { prisma } from './prisma.js'
 import { Prisma, type InstanceStatus } from '@prisma/client'
 import type { Package } from '../types/database.js'
 import { normalizeTrafficMultiplier } from '../lib/traffic-multiplier.js'
+import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
 
 const NORMAL_PACKAGE_INSTANCE_STATUSES: InstanceStatus[] = ['running', 'stopped']
 const PACKAGE_PREREQUISITE_LOCK_NAMESPACE = 4201
@@ -1310,21 +1311,28 @@ export async function getPackageHostsDetail(packageId: number): Promise<Array<{
           cpuAllowanceMax: true,
           memoryMax: true,
           cpuUsed: true,
-          memoryUsed: true
+          memoryUsed: true,
+          instances: {
+            where: { status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] } },
+            select: { status: true, cpu: true, memory: true }
+          }
         }
       }
     }
   })
 
-  return packageHosts.map(ph => ({
-    id: ph.host.id,
-    name: ph.host.name,
-    countryCode: ph.host.countryCode,
-    cpuAllowanceMax: ph.host.cpuAllowanceMax,
-    memoryMax: ph.host.memoryMax,
-    cpuUsed: ph.host.cpuUsed,
-    memoryUsed: ph.host.memoryUsed
-  }))
+  return packageHosts.map(ph => {
+    const usage = calculateAllocatedHostResources(ph.host.instances)
+    return {
+      id: ph.host.id,
+      name: ph.host.name,
+      countryCode: ph.host.countryCode,
+      cpuAllowanceMax: ph.host.cpuAllowanceMax,
+      memoryMax: ph.host.memoryMax,
+      cpuUsed: usage.cpuUsed,
+      memoryUsed: usage.memoryUsed
+    }
+  })
 }
 
 /**
@@ -1333,20 +1341,35 @@ export async function getPackageHostsDetail(packageId: number): Promise<Array<{
 export async function increaseHostQuota(hostId: number, cpuAdd: number, memoryAdd: number): Promise<{
   cpuAllowanceMax: number
   memoryMax: number
+  cpuUsed: number
+  memoryUsed: number
 }> {
-  const host = await prisma.host.update({
-    where: { id: hostId },
-    data: {
-      cpuAllowanceMax: { increment: cpuAdd },
-      memoryMax: { increment: memoryAdd }
-    },
-    select: {
-      cpuAllowanceMax: true,
-      memoryMax: true
-    }
-  })
+  const [host, aggregate] = await prisma.$transaction([
+    prisma.host.update({
+      where: { id: hostId },
+      data: {
+        cpuAllowanceMax: { increment: cpuAdd },
+        memoryMax: { increment: memoryAdd }
+      },
+      select: {
+        cpuAllowanceMax: true,
+        memoryMax: true
+      }
+    }),
+    prisma.instance.aggregate({
+      where: {
+        hostId,
+        status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] }
+      },
+      _sum: { cpu: true, memory: true }
+    })
+  ])
 
-  return host
+  return {
+    ...host,
+    cpuUsed: aggregate._sum.cpu ?? 0,
+    memoryUsed: aggregate._sum.memory ?? 0
+  }
 }
 
 /**
@@ -1366,7 +1389,7 @@ export async function checkPackageSoldOut(packageId: number): Promise<boolean> {
           cpuAllowanceMax: true,
           memoryMax: true,
           instances: {
-            where: { status: { not: 'deleted' } },
+            where: { status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] } },
             select: { cpu: true, memory: true }
           }
         }
@@ -1456,7 +1479,7 @@ export async function checkPackagesSoldOut(packageIds: number[]): Promise<Map<nu
           cpuAllowanceMax: true,
           memoryMax: true,
           instances: {
-            where: { status: { not: 'deleted' } },
+            where: { status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] } },
             select: { cpu: true, memory: true }
           }
         }

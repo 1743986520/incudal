@@ -7,6 +7,7 @@ import { prisma } from './prisma.js'
 import type { Prisma } from '@prisma/client'
 import type { Host } from '../types/database.js'
 import { getSafeHttpUrl } from '../lib/external-url.js'
+import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
 
 type DbClient = Prisma.TransactionClient | typeof prisma
 
@@ -408,7 +409,7 @@ export async function calculateHostResourcesFromInstances(hostId: number): Promi
   const result = await prisma.instance.aggregate({
     where: {
       hostId,
-      status: { notIn: ['deleted', 'error'] }
+      status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] }
     },
     _sum: {
       cpu: true,
@@ -633,9 +634,10 @@ export async function selectAvailableHost(options: {
     include: {
       instances: {
         where: {
-          status: { not: 'deleted' }
+          status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] }
         },
         select: {
+          status: true,
           cpu: true,
           memory: true,
           disk: true
@@ -661,12 +663,13 @@ export async function selectAvailableHost(options: {
     }
 
     // 计算资源使用�?= 关联该宿主机的实例的资源总和
-    const cpuUsedCalculated = host.instances.reduce((sum, inst) => sum + inst.cpu, 0)
-    const memoryUsedCalculated = host.instances.reduce((sum, inst) => sum + inst.memory, 0)
-    const diskUsedCalculated = host.instances.reduce((sum, inst) => sum + inst.disk, 0)
-    const cpuUsedEffective = Math.max(cpuUsedCalculated, host.cpuUsed ?? 0)
-    const memoryUsedEffective = Math.max(memoryUsedCalculated, host.memoryUsed ?? 0)
-    const diskUsedEffective = Math.max(diskUsedCalculated, host.diskUsed ?? 0)
+    const calculated = calculateAllocatedHostResources(host.instances)
+    const cpuUsedCalculated = calculated.cpuUsed
+    const memoryUsedCalculated = calculated.memoryUsed
+    const diskUsedCalculated = calculated.diskUsed
+    const cpuUsedEffective = cpuUsedCalculated
+    const memoryUsedEffective = memoryUsedCalculated
+    const diskUsedEffective = diskUsedCalculated
 
     console.log(`[selectAvailableHost] 检查宿主机 ${host.name} (ID: ${host.id})`)
     console.log(`  资源使用�? CPU=${cpuUsedCalculated}%, Memory=${memoryUsedCalculated}MB, Disk=${diskUsedCalculated}MB`)
@@ -854,7 +857,7 @@ export async function selectAndReserveHostWithLock(
     const resourceSum = await tx.instance.aggregate({
       where: {
         hostId: host.id,
-        status: { notIn: ['deleted', 'error'] }
+        status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] }
       },
       _sum: {
         cpu: true,
@@ -866,9 +869,9 @@ export async function selectAndReserveHostWithLock(
     const cpuUsedCalculated = resourceSum._sum.cpu ?? 0
     const memoryUsedCalculated = resourceSum._sum.memory ?? 0
     const diskUsedCalculated = resourceSum._sum.disk ?? 0
-    const cpuUsedEffective = Math.max(cpuUsedCalculated, host.cpu_used ?? 0)
-    const memoryUsedEffective = Math.max(memoryUsedCalculated, host.memory_used ?? 0)
-    const diskUsedEffective = Math.max(diskUsedCalculated, host.disk_used ?? 0)
+    const cpuUsedEffective = cpuUsedCalculated
+    const memoryUsedEffective = memoryUsedCalculated
+    const diskUsedEffective = diskUsedCalculated
 
     console.log(`[selectAndReserveHostWithLock] 检查宿主机 ${host.name} (ID: ${host.id})`)
     console.log(`  实时资源使用�? CPU=${cpuUsedCalculated}%, Memory=${memoryUsedCalculated}MB, Disk=${diskUsedCalculated}MB`)

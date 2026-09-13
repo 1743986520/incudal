@@ -8,6 +8,7 @@ import { prisma } from './prisma.js'
 import { getImageDisplayNames } from './images.js'
 import type { Host, User, Instance } from '../types/database.js'
 import { getSafeHttpUrl } from '../lib/external-url.js'
+import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
 
 export const USER_SEARCH_FIELDS = ['username', 'id', 'email'] as const
 export type UserSearchField = (typeof USER_SEARCH_FIELDS)[number]
@@ -637,9 +638,10 @@ export async function getAvailableHosts(
       },
       instances: {
         where: {
-          status: { not: 'deleted' }
+          status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] }
         },
         select: {
+          status: true,
           cpu: true,
           memory: true,
           disk: true
@@ -653,9 +655,7 @@ export async function getAvailableHosts(
   // 资源上限 = 用户输入的配额（cpuAllowanceMax、memoryMax、storageSize）
   const hostsWithResources = hosts.map(host => {
     // 计算实例资源总和（已使用量）
-    const cpuUsed = host.instances.reduce((sum, inst) => sum + inst.cpu, 0)
-    const memoryUsed = host.instances.reduce((sum, inst) => sum + inst.memory, 0)
-    const diskUsed = host.instances.reduce((sum, inst) => sum + inst.disk, 0)
+    const { cpuUsed, memoryUsed, diskUsed } = calculateAllocatedHostResources(host.instances)
 
     return {
       ...host,

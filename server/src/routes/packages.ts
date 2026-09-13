@@ -12,6 +12,7 @@ import { removeDangerousChars, validateName, validateText } from '../lib/securit
 import { sendToChannel } from '../lib/notifier.js'
 import { prisma } from '../db/prisma.js'
 import { normalizeTrafficMultiplier } from '../lib/traffic-multiplier.js'
+import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
 import { calculateVipLevel, getVipBadgeStyleForLevel, getVipRules } from '../services/vip-levels.js'
 
 const KVM_UNSUPPORTED_NETWORK_MODES = new Set(['nat_ipv6_nat', 'ipv6_nat'])
@@ -448,7 +449,15 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       allHostIds.length > 0
         ? prisma.host.findMany({
             where: { id: { in: allHostIds }, status: 'online' },
-            select: { id: true, cpuAllowanceMax: true, memoryMax: true, cpuUsed: true, memoryUsed: true }
+            select: {
+              id: true,
+              cpuAllowanceMax: true,
+              memoryMax: true,
+              instances: {
+                where: { status: { in: [...HOST_RESOURCE_INSTANCE_STATUSES] } },
+                select: { status: true, cpu: true, memory: true }
+              }
+            }
           })
         : Promise.resolve([])
     ])
@@ -483,8 +492,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           const minMemory = isPaid ? Math.min(...availablePlans.map(plan => plan.memory)) : 128
 
           const hasAvailable = hosts.some(h => {
-            const cpuAvailable = (h.cpuAllowanceMax || 0) - (h.cpuUsed || 0) >= minCpu
-            const memoryAvailable = (h.memoryMax || 0) - (h.memoryUsed || 0) >= minMemory
+            const usage = calculateAllocatedHostResources(h.instances)
+            const cpuAvailable = (h.cpuAllowanceMax || 0) - usage.cpuUsed >= minCpu
+            const memoryAvailable = (h.memoryMax || 0) - usage.memoryUsed >= minMemory
             return cpuAvailable && memoryAvailable
           })
 
@@ -2113,8 +2123,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         countryCode: host.country_code || 'us',
         cpuAllowanceMax: updated.cpuAllowanceMax,
         memoryMax: updated.memoryMax,
-        cpuAvailable: updated.cpuAllowanceMax - (host.cpu_used || 0),
-        memoryAvailable: updated.memoryMax - (host.memory_used || 0)
+        cpuAvailable: updated.cpuAllowanceMax - updated.cpuUsed,
+        memoryAvailable: updated.memoryMax - updated.memoryUsed
       })
     }
 
