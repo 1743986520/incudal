@@ -10,7 +10,7 @@ import type {
   IncusApiResponse
 } from '../../types/incus.js'
 import { waitForOperation } from './incus-utils.js'
-import { assertServerManagedCertificatePaths, buildIncusTlsConnectOptions, resolveIncusTarget, trustFromEnvironment, type IncusTlsConnectOptions } from './incus-tls.js'
+import { buildIncusTlsConnectOptions, panelCertificatePaths, resolveIncusTarget, trustFromEnvironment, type IncusTlsConnectOptions } from './incus-tls.js'
 import { getIncusExecutionGuard, throwIfIncusExecutionAborted } from './incus-execution-guard.js'
 
 export class IncusClient {
@@ -27,8 +27,13 @@ export class IncusClient {
   constructor(options: IncusClientOptions) {
     this.originalUrl = IncusClient.normalizeUrl(options.url)
     this.baseUrl = this.originalUrl
-    this.certPath = options.certPath
-    this.keyPath = options.keyPath
+    // certPath/keyPath on Host are legacy deployment paths and may refer to the
+    // host filesystem (for example /root/incudal/server/certs). The application
+    // runs in a container where the managed certificate pair is mounted at a
+    // different path, so never use persisted paths for filesystem access.
+    const managedCertificatePaths = panelCertificatePaths()
+    this.certPath = managedCertificatePaths.certPath
+    this.keyPath = managedCertificatePaths.keyPath
     this.allowPrivateNetwork = options.allowPrivateNetwork === true
     const environmentTrust = trustFromEnvironment()
     const trust = options.serverCertificate
@@ -84,7 +89,6 @@ export class IncusClient {
         throw new Error('Certificate or key path is missing')
       }
 
-      assertServerManagedCertificatePaths(this.certPath, this.keyPath)
       const target = await resolveIncusTarget(this.originalUrl, this.allowPrivateNetwork)
       this.baseUrl = target.url
       this.servername = target.servername
@@ -252,4 +256,3 @@ export class IncusClient {
     }
   }
 }
-
