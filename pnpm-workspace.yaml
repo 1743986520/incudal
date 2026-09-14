@@ -1,6 +1,9 @@
 packages:
   - 'client'
   - 'server'
+overrides:
+  'webdav>fast-xml-parser': 4.5.5
+  'fastify-cloudflare-turnstile>undici': 6.27.0
 allowBuilds:
   '@prisma/engines': set this to true or false
   cpu-features: set this to true or false

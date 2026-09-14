@@ -7,6 +7,7 @@ import { useConfigStore } from '@/stores/config'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import PopupAnnouncementModal from '@/components/PopupAnnouncementModal.vue'
+import { setAccessToken } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -132,7 +133,7 @@ onMounted(() => {
         if (response.ok) {
           const data = await response.json()
           if (data.token) {
-            localStorage.setItem('token', data.token)
+            setAccessToken(data.token)
             authStore.syncToken()
           }
         }

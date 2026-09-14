@@ -7,7 +7,7 @@
 import * as db from '../db/index.js'
 import { createInboxMessage } from '../db/inbox.js'
 import { prisma } from '../db/prisma.js'
-import { assertSafeWebhookUrl } from './outbound-security.js'
+import { assertSafeWebhookUrl, withSafePublicFetch } from './outbound-security.js'
 
 // 重试配置
 const MAX_RETRIES = 3
@@ -1207,7 +1207,7 @@ async function sendDiscord(
     }
 
     const parsedUrl = await assertSafeWebhookUrl(webhookUrl)
-    const response = await fetch(parsedUrl.toString(), {
+    return await withSafePublicFetch(parsedUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1221,15 +1221,9 @@ async function sendDiscord(
           }
         }]
       }),
-      redirect: 'manual'
-    })
-
-    if (!response.ok) {
-      const text = await response.text()
-      return { success: false, error: text || `HTTP ${response.status}` }
-    }
-
-    return { success: true, error: null }
+    }, async response => response.ok
+      ? { success: true, error: null }
+      : { success: false, error: `HTTP ${response.status}` })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     return { success: false, error }
@@ -1275,18 +1269,13 @@ async function sendWebhook(
       headers['X-Signature'] = signature
     }
 
-    const response = await fetch(parsedUrl.toString(), {
+    return await withSafePublicFetch(parsedUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-      redirect: 'manual'
-    })
-
-    if (!response.ok) {
-      return { success: false, error: `HTTP ${response.status}` }
-    }
-
-    return { success: true, error: null }
+    }, async response => response.ok
+      ? { success: true, error: null }
+      : { success: false, error: `HTTP ${response.status}` })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     return { success: false, error }

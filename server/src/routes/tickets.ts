@@ -15,6 +15,7 @@ import { getAllAdminUserIds } from '../db/users.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { deleteTicketImageFromLsky, uploadTicketImageToLsky } from '../lib/lsky.js'
 import { sendNotification } from '../lib/notifier.js'
+import { withSafePublicFetch, OutboundTargetValidationError } from '../lib/outbound-security.js'
 
 // 工单状态类型
 type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
@@ -54,6 +55,7 @@ type ExtendedTicketStatus = TicketStatus | 'active'
 
 const MAX_TICKET_IMAGES = 6
 const MAX_TICKET_IMAGE_SIZE = 50 * 1024 * 1024
+const MAX_TICKET_PROXY_RESPONSE_SIZE = 20 * 1024 * 1024
 const TICKET_UPLOAD_BODY_LIMIT = (MAX_TICKET_IMAGES * MAX_TICKET_IMAGE_SIZE) + (4 * 1024 * 1024)
 const TICKET_PROXY_FETCH_TIMEOUT_MS = 15_000
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
@@ -63,6 +65,37 @@ const ALLOWED_IMAGE_MIME_TYPES = new Set([
   'image/gif',
   'image/avif'
 ])
+
+function detectImageMimeType(buffer: Buffer): string | null {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (buffer.length >= 6 && ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString('ascii'))) return 'image/gif'
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buffer.subarray(8, 12).toString('ascii')
+    if (brand === 'avif' || brand === 'avis') return 'image/avif'
+  }
+  return null
+}
+
+async function readLimitedResponse(response: Response, limit: number): Promise<Buffer> {
+  if (!response.ok) throw new Error('UPSTREAM_RESPONSE_INVALID')
+  if (response.status >= 300 && response.status < 400) throw new Error('UPSTREAM_REDIRECT_REJECTED')
+
+  const declaredLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declaredLength) && declaredLength > limit) throw new Error('UPSTREAM_RESPONSE_TOO_LARGE')
+  if (!response.body) return Buffer.alloc(0)
+
+  const chunks: Buffer[] = []
+  let total = 0
+  for await (const chunk of response.body as any) {
+    const buffer = Buffer.from(chunk)
+    total += buffer.length
+    if (total > limit) throw new Error('UPSTREAM_RESPONSE_TOO_LARGE')
+    chunks.push(buffer)
+  }
+  return Buffer.concat(chunks, total)
+}
 
 interface ParsedTicketPayload {
   fields: Record<string, string>
@@ -134,6 +167,11 @@ async function readTicketPayload(request: FastifyRequest): Promise<ParsedTicketP
 
       if (buffer.length > MAX_TICKET_IMAGE_SIZE) {
         throw new Error(`Each image must be no larger than ${MAX_TICKET_IMAGE_SIZE / (1024 * 1024)}MB`)
+      }
+
+      const detectedMimeType = detectImageMimeType(buffer)
+      if (!detectedMimeType || detectedMimeType !== part.mimetype) {
+        throw new Error('Uploaded file content does not match its declared image type')
       }
 
       images.push({
@@ -397,24 +435,27 @@ export default async function ticketsRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.NOT_FOUND))
     }
 
-    let upstream: Response
     try {
-      upstream = await fetch(attachment.url, {
-        signal: AbortSignal.timeout(TICKET_PROXY_FETCH_TIMEOUT_MS)
-      })
-    } catch {
+      const imageBuffer = await withSafePublicFetch(
+        attachment.url,
+        { signal: AbortSignal.timeout(TICKET_PROXY_FETCH_TIMEOUT_MS) },
+        response => readLimitedResponse(response, MAX_TICKET_PROXY_RESPONSE_SIZE)
+      )
+
+      if (detectImageMimeType(imageBuffer) !== attachment.mimeType) {
+        return reply.code(502).send(apiError(ErrorCode.INTERNAL_ERROR, 'Remote attachment is not a valid image'))
+      }
+
+      reply.header('Cache-Control', 'private, max-age=300')
+      reply.header('Content-Type', attachment.mimeType)
+      reply.header('X-Content-Type-Options', 'nosniff')
+      return reply.send(imageBuffer)
+    } catch (error) {
+      if (error instanceof OutboundTargetValidationError) {
+        request.log.warn({ attachmentId }, 'Blocked unsafe ticket attachment target')
+      }
       return reply.code(502).send(apiError(ErrorCode.INTERNAL_ERROR, 'Failed to load remote image'))
     }
-
-    if (!upstream.ok) {
-      return reply.code(502).send(apiError(ErrorCode.INTERNAL_ERROR, 'Failed to load remote image'))
-    }
-
-    const imageBuffer = Buffer.from(await upstream.arrayBuffer())
-
-    reply.header('Cache-Control', 'private, max-age=300')
-    reply.header('Content-Type', attachment.mimeType)
-    return reply.send(imageBuffer)
   })
 
   /**

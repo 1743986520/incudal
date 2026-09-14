@@ -4,11 +4,12 @@ import { useConfigStore } from '@/stores/config'
 import { useInstanceStore } from '@/stores/instance'
 import { useInstanceResourcesStore } from '@/stores/instanceResources'
 import type { RouteLocationNormalized, NavigationGuardNext, RouteRecordRaw } from 'vue-router'
-import api, { cancelAllPendingRequests } from '@/api'
+import api, { cancelAllPendingRequests, setAccessToken } from '@/api'
 
 // OAuth 登录码处理状态
 let oauthProcessing = false
 let oauthProcessed = false
+let sessionRestoreAttempted = false
 const hiddenHostingRouteNames = new Set([
   'my-hosts',
   'my-host-create',
@@ -45,8 +46,7 @@ async function handleOAuthCode(): Promise<boolean> {
   
   try {
     const response = await api.oauth.exchangeCode(oauthCode)
-    // 保存 token 到 localStorage
-    localStorage.setItem('token', response.token)
+    setAccessToken(response.token)
     // 同步到 auth store
     const authStore = useAuthStore()
     authStore.syncToken()
@@ -513,6 +513,15 @@ router.beforeEach(async (to: RouteLocationNormalized, _from: RouteLocationNormal
 
   const authStore = useAuthStore()
   const configStore = useConfigStore()
+
+  if (!sessionRestoreAttempted && !authStore.isAuthenticated) {
+    sessionRestoreAttempted = true
+    try {
+      await authStore.restoreSession()
+    } catch {
+      // Missing/expired refresh cookies are the normal logged-out state.
+    }
+  }
 
   // 检查是否有 OAuth 登录码需要处理
   const urlParams = new URLSearchParams(window.location.search)

@@ -1,26 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref, computed, type Ref } from 'vue'
-import api from '@/api'
+import api, { getAccessToken, proactiveRefreshToken, setAccessToken } from '@/api'
 import type { AuthUser } from '@/types/store.js'
 import type { RegisterRequest } from '@/types/api.js'
 
 export const useAuthStore = defineStore('auth', () => {
   const user: Ref<AuthUser | null> = ref(null)
-  const token: Ref<string | null> = ref(localStorage.getItem('token') || null)
+  const token: Ref<string | null> = ref(getAccessToken())
   const quota = ref<any>(null)
 
   // 同步 token 的方法（用于 token 刷新后同步）
   function syncToken() {
-    token.value = localStorage.getItem('token')
-  }
-
-  // 监听 localStorage 变化（跨窗口同步）
-  if (typeof window !== 'undefined') {
-    window.addEventListener('storage', (e) => {
-      if (e.key === 'token') {
-        token.value = e.newValue
-      }
-    })
+    token.value = getAccessToken()
   }
 
   const isAuthenticated = computed(() => !!token.value)
@@ -44,7 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     token.value = response.token
     applyAuthUser(response.user)
-    localStorage.setItem('token', response.token)
+    setAccessToken(response.token)
     return response
   }
 
@@ -54,7 +45,7 @@ export const useAuthStore = defineStore('auth', () => {
     // 注册成功后自动登录
     token.value = response.token
     applyAuthUser(response.user)
-    localStorage.setItem('token', response.token)
+    setAccessToken(response.token)
 
     return response
   }
@@ -81,7 +72,16 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     user.value = null
     quota.value = null
-    localStorage.removeItem('token')
+    setAccessToken(null)
+  }
+
+  async function restoreSession(): Promise<boolean> {
+    if (token.value) return true
+    const restoredToken = await proactiveRefreshToken(false)
+    token.value = restoredToken
+    if (!restoredToken) return false
+    await fetchCurrentUser()
+    return true
   }
 
   async function logout() {
@@ -142,8 +142,8 @@ export const useAuthStore = defineStore('auth', () => {
     fetchCurrentUser,
     logout,
     syncToken,
+    restoreSession,
     clearLocalAuth,
     checkSession
   }
 })
-

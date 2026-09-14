@@ -1,5 +1,17 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/stores/auth'
+
+// Keep bearer tokens in memory only. Session restoration uses the HttpOnly
+// refresh-token cookie, so XSS cannot recover a persisted access token.
+let memoryAccessToken: string | null = null
+
+export function setAccessToken(token: string | null): void {
+  memoryAccessToken = token
+}
+
+export function getAccessToken(): string | null {
+  return memoryAccessToken
+}
 import type {
   LoginRequest,
   LoginResponse,
@@ -408,7 +420,7 @@ function isTokenExpiringSoon(token: string): boolean {
 /**
  * 主动刷新 token（在 token 即将过期前）
  */
-async function proactiveRefreshToken(): Promise<string | null> {
+export async function proactiveRefreshToken(redirectOnInvalid: boolean = true): Promise<string | null> {
   if (isRefreshing) {
     // 如果正在刷新，等待刷新完成
     return new Promise((resolve, reject) => {
@@ -446,7 +458,7 @@ async function proactiveRefreshToken(): Promise<string | null> {
     const refreshData = await refreshResponse.json()
     const newToken = refreshData?.token
     if (newToken) {
-      localStorage.setItem('token', newToken)
+      setAccessToken(newToken)
       // 同步更新 auth store 中的 token
       try {
         const authStore = useAuthStore()
@@ -463,8 +475,8 @@ async function proactiveRefreshToken(): Promise<string | null> {
     processQueue(refreshError, null)
     // 如果是 refreshToken 失效，需要清除并跳转登录
     if (refreshError?.message === 'REFRESH_TOKEN_INVALID') {
-      localStorage.removeItem('token')
-      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
+      setAccessToken(null)
+      if (redirectOnInvalid && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
         window.location.href = '/login'
       }
       return null
@@ -489,7 +501,7 @@ http.interceptors.request.use(
       controllerBySignal.set(controller.signal, controller)
     }
 
-    let token = localStorage.getItem('token')
+    let token = getAccessToken()
     if (token) {
       // 检查 token 是否即将过期，如果是则先刷新
       if (isTokenExpiringSoon(token)) {
@@ -569,7 +581,7 @@ http.interceptors.response.use(
             authStore.clearLocalAuth()
           } catch {
             // 如果 store 未初始化，只清除 localStorage
-            localStorage.removeItem('token')
+            setAccessToken(null)
           }
           if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
             window.location.href = '/login'
@@ -632,7 +644,7 @@ http.interceptors.response.use(
         const newToken = refreshData?.token
         if (newToken) {
           // 更新 localStorage 中的 token
-          localStorage.setItem('token', newToken)
+          setAccessToken(newToken)
           // 同步更新 auth store 中的 token
           try {
             const authStore = useAuthStore()
@@ -670,7 +682,7 @@ http.interceptors.response.use(
               authStore.clearLocalAuth()
             } catch {
               // 如果 store 未初始化，只清除 localStorage
-              localStorage.removeItem('token')
+              setAccessToken(null)
             }
             if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
               window.location.href = '/login'
@@ -708,7 +720,7 @@ function getRequestKey(url: string, params?: unknown): string {
   // matters when a user logs out and another user logs in while a GET is still
   // pending. The token is already held by the client for authentication; it is
   // only used here as an in-memory request-scope discriminator.
-  const authContext = localStorage.getItem('token') || 'anonymous'
+  const authContext = getAccessToken() || 'anonymous'
   return `${authContext}:${url}${params ? `?${JSON.stringify(params)}` : ''}`
 }
 

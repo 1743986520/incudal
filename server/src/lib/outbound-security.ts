@@ -1,5 +1,6 @@
 import { lookup as dnsLookup } from 'dns/promises'
 import { isIP } from 'net'
+import { Agent, fetch as undiciFetch, type RequestInit, type Response } from 'undici'
 
 export class OutboundTargetValidationError extends Error {
   constructor(message: string) {
@@ -95,6 +96,10 @@ export function isIpPrivateOrReserved(ip: string): boolean {
 }
 
 async function assertPublicHostname(hostname: string): Promise<void> {
+  await resolvePublicAddresses(hostname)
+}
+
+async function resolvePublicAddresses(hostname: string): Promise<Array<{ address: string; family: 4 | 6 }>> {
   const normalizedHost = hostname.trim().toLowerCase().replace(/\.$/, '')
   if (!normalizedHost) {
     throw new OutboundTargetValidationError('Hostname cannot be empty')
@@ -114,7 +119,7 @@ async function assertPublicHostname(hostname: string): Promise<void> {
     if (isIpPrivateOrReserved(normalizedHost)) {
       throw new OutboundTargetValidationError('Private or reserved IP targets are not allowed')
     }
-    return
+    return [{ address: normalizedHost, family: family as 4 | 6 }]
   }
 
   if (!normalizedHost.includes('.')) {
@@ -137,6 +142,53 @@ async function assertPublicHostname(hostname: string): Promise<void> {
     if (isIpPrivateOrReserved(record.address)) {
       throw new OutboundTargetValidationError('Targets resolving to private or reserved IPs are not allowed')
     }
+  }
+
+  return records.map(record => ({
+    address: record.address,
+    family: isIP(record.address) as 4 | 6
+  }))
+}
+
+/**
+ * Execute an HTTP request while pinning DNS resolution to the public addresses
+ * that were validated immediately beforehand. Redirects are deliberately
+ * disabled so every destination must pass a fresh validation.
+ */
+export async function withSafePublicFetch<T>(
+  input: string | URL,
+  init: RequestInit,
+  consume: (response: Response) => Promise<T>
+): Promise<T> {
+  const parsed = typeof input === 'string' ? new URL(input) : input
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new OutboundTargetValidationError('Outbound URL must use http or https')
+  }
+
+  const addresses = await resolvePublicAddresses(parsed.hostname)
+  let nextAddress = 0
+  const dispatcher = new Agent({
+    connect: {
+      lookup: (_hostname, options, callback) => {
+        const requestedFamily = typeof options === 'number' ? options : options?.family
+        const candidates = requestedFamily === 4 || requestedFamily === 6
+          ? addresses.filter(item => item.family === requestedFamily)
+          : addresses
+        const selected = candidates[nextAddress++ % candidates.length] || addresses[0]
+        callback(null, selected.address, selected.family)
+      }
+    }
+  })
+
+  try {
+    const response = await undiciFetch(parsed, {
+      ...init,
+      redirect: 'manual',
+      dispatcher
+    })
+    return await consume(response)
+  } finally {
+    await dispatcher.close()
   }
 }
 

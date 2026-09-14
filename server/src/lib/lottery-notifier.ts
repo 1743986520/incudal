@@ -3,7 +3,7 @@
  * 向管理员配置的通知渠道发送中奖通知
  */
 import * as db from '../db/index.js'
-import { assertSafeWebhookUrl } from './outbound-security.js'
+import { assertSafeWebhookUrl, withSafePublicFetch } from './outbound-security.js'
 
 // ==================== 通知内容模板 ====================
 
@@ -184,7 +184,7 @@ async function sendDiscord(
   }
 
   const parsedUrl = await assertSafeWebhookUrl(webhookUrl)
-  const response = await fetch(parsedUrl.toString(), {
+  const result = await withSafePublicFetch(parsedUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -198,13 +198,9 @@ async function sendDiscord(
         }
       }]
     }),
-    redirect: 'manual'
-  })
+  }, async response => ({ ok: response.ok, status: response.status }))
 
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(text || `HTTP ${response.status}`)
-  }
+  if (!result.ok) throw new Error(`HTTP ${result.status}`)
 }
 
 /**
@@ -233,17 +229,14 @@ async function sendWebhook(
   }
 
   const parsedUrl = await assertSafeWebhookUrl(url)
-  const response = await fetch(parsedUrl.toString(), {
+  const result = await withSafePublicFetch(parsedUrl, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       ...payload,
       timestamp: new Date().toISOString()
     }),
-    redirect: 'manual'
-  })
+  }, async response => ({ ok: response.ok, status: response.status }))
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
+  if (!result.ok) throw new Error(`HTTP ${result.status}`)
 }
