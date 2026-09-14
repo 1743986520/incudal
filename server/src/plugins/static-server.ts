@@ -97,15 +97,17 @@ export async function registerStaticServer(
     setHeaders: (res, pathName) => {
       try {
         if (pathName.endsWith('.js')) {
-          res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+          res.header('Content-Type', 'application/javascript; charset=utf-8')
         } else if (pathName.endsWith('.css')) {
-          res.setHeader('Content-Type', 'text/css; charset=utf-8')
+          res.header('Content-Type', 'text/css; charset=utf-8')
         } else if (pathName.endsWith('.html')) {
-          res.setHeader('Content-Type', 'text/html; charset=utf-8')
-          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+          res.header('Content-Type', 'text/html; charset=utf-8')
+          res.header('Cache-Control', 'no-cache, no-store, must-revalidate')
         }
-        if (!pathName.endsWith('.html')) {
-          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        if (pathName.endsWith('theme-init.js')) {
+          res.header('Cache-Control', 'no-cache, must-revalidate')
+        } else if (!pathName.endsWith('.html')) {
+          res.header('Cache-Control', 'public, max-age=31536000, immutable')
         }
       } catch (error) {
         // 忽略设置响应头时的错误
