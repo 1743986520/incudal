@@ -40,11 +40,25 @@ function formatCurrency(amount: number): string {
 }
 
 function getTrafficResetInfo(
-    instance: Awaited<ReturnType<typeof trafficDb.getInstanceTrafficInfo>>,
+    instance: {
+        packagePlanId: number | null
+        monthlyTrafficUsed: bigint
+        trafficBillingMode?: 'package' | 'usage'
+        packagePlan: { trafficResetEnabled: boolean; trafficResetPrice: unknown } | null
+    } | null,
     options: { freeResetAllowed?: boolean } = {}
 ) {
     const plan = instance?.packagePlan
     const priceCents = plan ? Number(plan.trafficResetPrice) || 0 : 0
+
+    if (instance?.trafficBillingMode === 'usage') {
+        return {
+            resetAllowed: false,
+            resetPrice: 0,
+            resetPriceFormatted: null,
+            resetDisabledReason: 'USAGE_BILLING'
+        }
+    }
 
     if (options.freeResetAllowed) {
         return {
@@ -229,14 +243,28 @@ export default async function trafficRoutes(fastify: FastifyInstance): Promise<v
             monthlyUsed: serializeBigInt(instance.monthlyTrafficUsed),
             monthlyUsedFormatted: formatBytes(instance.monthlyTrafficUsed),
             monthlyLimit: serializeBigInt(instance.monthlyTrafficLimit),
-            monthlyLimitFormatted: instance.monthlyTrafficLimit
-                ? formatBytes(instance.monthlyTrafficLimit)
-                : null,
+            monthlyLimitFormatted: instance.trafficBillingMode === 'usage'
+                ? formatBytes(instance.monthlyTrafficLimit ?? 0n)
+                : (instance.monthlyTrafficLimit ? formatBytes(instance.monthlyTrafficLimit) : null),
             trafficStatus: instance.trafficStatus,
             percentage: calculatePercentage(instance.monthlyTrafficUsed, instance.monthlyTrafficLimit),
             trafficResetDay,
             periodStart: formatLocalDate(periodStart),
             periodEnd: formatLocalDate(periodEnd),
+            trafficBillingMode: instance.trafficBillingMode,
+            trafficUnitPrice: Number(instance.trafficUnitPrice),
+            includedTraffic: serializeBigInt(instance.monthlyTrafficLimit),
+            overageTraffic: serializeBigInt(instance.monthlyTrafficUsed > (instance.monthlyTrafficLimit ?? 0n)
+                ? instance.monthlyTrafficUsed - (instance.monthlyTrafficLimit ?? 0n)
+                : 0n),
+            settledTraffic: serializeBigInt(instance.trafficSettledBytes),
+            settledTrafficCost: Number(instance.trafficSettledCost),
+            pendingTraffic: serializeBigInt((instance.monthlyTrafficUsed > (instance.monthlyTrafficLimit ?? 0n)
+                ? instance.monthlyTrafficUsed - (instance.monthlyTrafficLimit ?? 0n)
+                : 0n) > instance.trafficSettledBytes
+                ? (instance.monthlyTrafficUsed - (instance.monthlyTrafficLimit ?? 0n)) - instance.trafficSettledBytes
+                : 0n),
+            nextTrafficBillingAt: instance.nextTrafficBillingAt?.toISOString() ?? null,
             ...resetInfo
         }
     })
@@ -467,7 +495,9 @@ export default async function trafficRoutes(fastify: FastifyInstance): Promise<v
                     },
                     data: {
                         monthlyTrafficUsed: 0n,
-                        trafficStatus: 'NORMAL'
+                        trafficStatus: 'NORMAL',
+                        trafficSettledBytes: 0n,
+                        trafficSettledCost: 0
                     }
                 })
 
@@ -575,14 +605,8 @@ export default async function trafficRoutes(fastify: FastifyInstance): Promise<v
                     trafficStatus: result.updatedInstance.trafficStatus,
                     percentage: calculatePercentage(result.updatedInstance.monthlyTrafficUsed, result.updatedInstance.monthlyTrafficLimit),
                     ...getTrafficResetInfo({
-                        id: result.updatedInstance.id,
-                        name: result.updatedInstance.name,
-                        userId: request.user.id,
-                        hostId: instance.hostId,
                         packagePlanId: result.updatedInstance.packagePlanId,
-                        monthlyTrafficLimit: result.updatedInstance.monthlyTrafficLimit,
                         monthlyTrafficUsed: result.updatedInstance.monthlyTrafficUsed,
-                        trafficStatus: result.updatedInstance.trafficStatus,
                         packagePlan: result.updatedInstance.packagePlan
                     })
                 }

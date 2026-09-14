@@ -127,6 +127,14 @@ interface TrafficData {
   resetPrice: number
   resetPriceFormatted: string | null
   resetDisabledReason: string | null
+  trafficBillingMode: 'package' | 'usage'
+  trafficUnitPrice: number
+  includedTraffic: string | null
+  overageTraffic: string
+  settledTraffic: string
+  settledTrafficCost: number
+  pendingTraffic: string
+  nextTrafficBillingAt: string | null
 }
 const trafficData = ref<TrafficData | null>(null)
 const trafficLoading = ref<boolean>(false)

@@ -8,6 +8,9 @@ export async function startSchedulers(): Promise<void> {
   const { startTrafficScheduler } = await import('../services/traffic-scheduler.js')
   startTrafficScheduler()
 
+  const { startTrafficBillingScheduler } = await import('../services/traffic-billing-scheduler.js')
+  startTrafficBillingScheduler()
+
   // 启动自动快照/备份调度器
   const { startAutoPolicyScheduler } = await import('../services/auto-policy-scheduler.js')
   startAutoPolicyScheduler()

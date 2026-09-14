@@ -22,6 +22,8 @@ interface PackagePlan {
   swapSize: number
   trafficLimit: string
   trafficLimitSpeed: string
+  trafficBillingMode: 'package' | 'usage'
+  trafficUnitPrice: number
   price: number
   billingCycle: number
   setupFee: number
@@ -81,6 +83,7 @@ function formatPrice(cents: number): string {
 
 function formatTraffic(bytes: string): string {
   const b = BigInt(bytes || '0')
+  if (b === 0n) return '0 GB'
   if (b >= BigInt(1024 * 1024 * 1024 * 1024)) {
     return (Number(b) / (1024 * 1024 * 1024 * 1024)).toFixed(1) + ' TB'
   }
@@ -319,7 +322,7 @@ function handleSelect(plan: PackagePlan): void {
           <!-- 流量 -->
           <div class="text-center">
             <div class="text-xs text-themed-muted mb-0.5">
-              {{ t('billing.traffic') }}
+              {{ plan.trafficBillingMode === 'usage' ? t('resources.plans.includedTraffic') : t('billing.traffic') }}
               <span class="opacity-60">({{ t('billing.trafficBidirectional') }})</span>
             </div>
             <div
@@ -328,6 +331,7 @@ function handleSelect(plan: PackagePlan): void {
             >
               {{ formatTraffic(plan.trafficLimit) }}
             </div>
+            <div v-if="plan.trafficBillingMode === 'usage'" class="mt-0.5 text-xs text-blue-500">¥{{ (plan.trafficUnitPrice / 100).toFixed(2) }} / GB · {{ t('resources.plans.settlementHourly') }}</div>
           </div>
         </div>
 
@@ -355,7 +359,7 @@ function handleSelect(plan: PackagePlan): void {
             <span :class="themeStore.isDark ? 'text-gray-300' : 'text-gray-700'">{{ formatLimit(plan.siteLimit) }}</span>
           </div>
           <!-- 带宽限制 -->
-          <div v-if="plan.trafficLimitSpeed && plan.trafficLimitSpeed !== '0'" class="flex items-center gap-1 ml-auto">
+          <div v-if="plan.trafficBillingMode !== 'usage' && plan.trafficLimitSpeed && plan.trafficLimitSpeed !== '0'" class="flex items-center gap-1 ml-auto">
             <span class="text-themed-muted">{{ t('instance.selector.bandwidth') }}:</span>
             <span class="text-blue-500 font-medium">{{ formatBandwidth(plan.trafficLimitSpeed) }}</span>
           </div>

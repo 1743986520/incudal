@@ -3,6 +3,7 @@ import { THROTTLE_BANDWIDTH } from '../lib/incus/incus-traffic.js'
 const MB_IN_BYTES = 1024n * 1024n
 
 interface TrafficBandwidthSource {
+  trafficBillingMode?: 'package' | 'usage'
   limitsIngress: string | null
   limitsEgress: string | null
   package?: {
@@ -39,7 +40,9 @@ export function resolveTrafficBandwidthLimits(
   instance: TrafficBandwidthSource,
   options: { stripThrottleOverride?: boolean } = {}
 ): ResolvedTrafficBandwidthLimits {
-  const planLimit = normalizePlanTrafficLimitSpeed(instance.packagePlan?.trafficLimitSpeed)
+  const planLimit = instance.trafficBillingMode === 'usage'
+    ? null
+    : normalizePlanTrafficLimitSpeed(instance.packagePlan?.trafficLimitSpeed)
   if (planLimit) {
     return {
       incusIngress: planLimit,

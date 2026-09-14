@@ -4,7 +4,7 @@
  */
 
 import { prisma } from './prisma.js'
-import type { PackagePlan } from '@prisma/client'
+import type { PackagePlan, TrafficBillingMode } from '@prisma/client'
 import { applyTrafficMultiplier } from '../lib/traffic-multiplier.js'
 import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
 
@@ -93,6 +93,8 @@ export interface CreatePlanInput {
   swapSize: number
   trafficLimit: bigint
   trafficLimitSpeed?: string
+  trafficBillingMode?: TrafficBillingMode
+  trafficUnitPrice?: number
   price: number
   billingCycle?: number
   setupFee?: number
@@ -122,6 +124,8 @@ export async function createPlan(input: CreatePlanInput): Promise<PackagePlan> {
     swapSize,
     trafficLimit,
     trafficLimitSpeed = '1Mbit',
+    trafficBillingMode = 'package',
+    trafficUnitPrice = 0,
     price,
     billingCycle = 1,
     setupFee = 0,
@@ -148,6 +152,8 @@ export async function createPlan(input: CreatePlanInput): Promise<PackagePlan> {
       swapSize,
       trafficLimit,
       trafficLimitSpeed,
+      trafficBillingMode,
+      trafficUnitPrice,
       price,
       billingCycle,
       setupFee,
@@ -176,6 +182,8 @@ export interface UpdatePlanInput {
   swapSize?: number
   trafficLimit?: bigint
   trafficLimitSpeed?: string
+  trafficBillingMode?: TrafficBillingMode
+  trafficUnitPrice?: number
   price?: number
   billingCycle?: number
   setupFee?: number
@@ -232,7 +240,7 @@ export async function syncPlanQuotaToInstances(
   async function applyTrafficLimitsToPlanInstances(): Promise<void> {
     const instances = await prisma.instance.findMany({
       where: { packagePlanId: planId },
-      select: { id: true, hostId: true, monthlyTrafficUsed: true }
+      select: { id: true, hostId: true, monthlyTrafficUsed: true, trafficBillingMode: true }
     })
 
     await Promise.all(instances.map(instance => {
@@ -242,7 +250,9 @@ export async function syncPlanQuotaToInstances(
         where: { id: instance.id },
         data: {
           monthlyTrafficLimit,
-          trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit)
+          trafficStatus: instance.trafficBillingMode === 'usage'
+            ? 'NORMAL'
+            : calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit)
         }
       })
     }))
@@ -379,7 +389,9 @@ export function getPlanResources(plan: PackagePlan) {
     siteLimit: plan.siteLimit,
     swapSize: plan.swapSize,
     trafficLimit: plan.trafficLimit.toString(),
-    trafficLimitSpeed: plan.trafficLimitSpeed
+    trafficLimitSpeed: plan.trafficLimitSpeed,
+    trafficBillingMode: plan.trafficBillingMode,
+    trafficUnitPrice: Number(plan.trafficUnitPrice)
   }
 }
 
@@ -391,6 +403,8 @@ export function getPlanBilling(plan: PackagePlan) {
     price: Number(plan.price),
     billingCycle: plan.billingCycle,
     setupFee: Number(plan.setupFee),
-    monthlyPrice: calculateMonthlyPrice(plan)
+    monthlyPrice: calculateMonthlyPrice(plan),
+    trafficBillingMode: plan.trafficBillingMode,
+    trafficUnitPrice: Number(plan.trafficUnitPrice)
   }
 }

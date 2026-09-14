@@ -25,6 +25,8 @@ interface PublicPromoPackagePlan {
     memory: number
     disk: number
     trafficLimit: string
+    trafficBillingMode: 'package' | 'usage'
+    trafficUnitPrice: number
     price: number
     billingCycle: number
     isSoldOut: boolean
@@ -133,6 +135,8 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
                                 memory: true,
                                 disk: true,
                                 trafficLimit: true,
+                                trafficBillingMode: true,
+                                trafficUnitPrice: true,
                                 price: true,
                                 billingCycle: true,
                                 isSoldOut: true
@@ -160,6 +164,8 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
                             memory: plan.memory,
                             disk: plan.disk,
                             trafficLimit: plan.trafficLimit.toString(),
+                            trafficBillingMode: plan.trafficBillingMode,
+                            trafficUnitPrice: Number(plan.trafficUnitPrice),
                             price: Number(plan.price),
                             billingCycle: plan.billingCycle,
                             isSoldOut: plan.isSoldOut

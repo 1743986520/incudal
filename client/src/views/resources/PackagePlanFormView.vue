@@ -45,6 +45,8 @@ const planForm = ref({
   siteLimit: 1,
   trafficLimit: 1,
   trafficLimitSpeed: 10,
+  trafficBillingMode: 'package' as 'package' | 'usage',
+  trafficUnitPrice: 0,
   price: 0,
   billingCycle: 1,
   trafficResetEnabled: false,
@@ -124,6 +126,8 @@ function resetForCreate(sortOrder: number): void {
     siteLimit: 1,
     trafficLimit: 1,
     trafficLimitSpeed: 10,
+    trafficBillingMode: 'package',
+    trafficUnitPrice: 0,
     price: 0,
     billingCycle: 1,
     trafficResetEnabled: false,
@@ -147,6 +151,8 @@ function applyPlan(plan: PackagePlan): void {
     siteLimit: plan.siteLimit,
     trafficLimit: bytesToGB(plan.trafficLimit),
     trafficLimitSpeed: bytesToMbps(plan.trafficLimitSpeed),
+    trafficBillingMode: plan.trafficBillingMode || 'package',
+    trafficUnitPrice: (plan.trafficUnitPrice || 0) / 100,
     price: plan.price / 100,
     billingCycle: plan.billingCycle,
     trafficResetEnabled: Boolean(plan.trafficResetEnabled),
@@ -158,10 +164,10 @@ function applyPlan(plan: PackagePlan): void {
 }
 
 function bytesToGB(bytes: string | null | undefined): number {
-  if (!bytes) return 1
+  if (!bytes) return 0
   const value = Number(bytes)
-  if (!Number.isFinite(value) || value <= 0) return 1
-  return Math.round((value / (1024 * 1024 * 1024)) * 1000000) / 1000000 || 1
+  if (!Number.isFinite(value) || value < 0) return 0
+  return Math.round((value / (1024 * 1024 * 1024)) * 1000000) / 1000000
 }
 
 function bytesToMbps(bytes: string | null | undefined): number {
@@ -173,7 +179,7 @@ function bytesToMbps(bytes: string | null | undefined): number {
 
 function gbToBytes(gb: string | number): string {
   const value = typeof gb === 'string' ? Number.parseFloat(gb) : gb
-  if (!Number.isFinite(value) || value <= 0) return ''
+  if (!Number.isFinite(value) || value < 0) return ''
   return Math.floor(value * 1024 * 1024 * 1024).toString()
 }
 
@@ -231,7 +237,18 @@ async function savePlan(): Promise<void> {
     return
   }
 
-  const trafficResetPriceCents = planForm.value.trafficResetEnabled
+  const usageBilling = planForm.value.trafficBillingMode === 'usage'
+  const trafficUnitPriceCents = usageBilling ? normalizePlanPriceCents(planForm.value.trafficUnitPrice) : 0
+  if (usageBilling && (!trafficUnitPriceCents || trafficUnitPriceCents <= 0)) {
+    formError.value = t('resources.plans.trafficUnitPriceRequired')
+    return
+  }
+  if (!usageBilling && Number(planForm.value.trafficLimit) <= 0) {
+    formError.value = t('resources.plans.packageTrafficRequired')
+    return
+  }
+
+  const trafficResetPriceCents = !usageBilling && planForm.value.trafficResetEnabled
     ? normalizePlanPriceCents(planForm.value.trafficResetPrice)
     : 0
   if (trafficResetPriceCents === null) {
@@ -254,10 +271,12 @@ async function savePlan(): Promise<void> {
       swapSize: planForm.value.swapSize,
       trafficLimit: gbToBytes(planForm.value.trafficLimit) || '0',
       trafficLimitSpeed: mbpsToBytes(planForm.value.trafficLimitSpeed) || '0',
+      trafficBillingMode: planForm.value.trafficBillingMode,
+      trafficUnitPrice: trafficUnitPriceCents ?? 0,
       price: priceCents,
       billingCycle: planForm.value.billingCycle,
-      trafficResetEnabled: planForm.value.trafficResetEnabled,
-      trafficResetPrice: trafficResetPriceCents,
+      trafficResetEnabled: usageBilling ? false : planForm.value.trafficResetEnabled,
+      trafficResetPrice: usageBilling ? 0 : trafficResetPriceCents,
       isActive: planForm.value.status !== 'inactive',
       isSoldOut: planForm.value.status === 'soldOut',
       sortOrder: planForm.value.sortOrder,
@@ -349,12 +368,24 @@ async function savePlan(): Promise<void> {
                 <input v-model.number="planForm.disk" type="number" min="512" max="104857600" class="input" />
               </div>
               <div>
-                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.trafficLimit') }} (GB) *</label>
-                <input v-model.number="planForm.trafficLimit" type="number" min="1" max="100000" step="1" class="input" />
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.trafficBillingMode') }}</label>
+                <select v-model="planForm.trafficBillingMode" class="input">
+                  <option value="package">{{ t('resources.plans.packageTraffic') }}</option>
+                  <option value="usage">{{ t('resources.plans.usageTraffic') }}</option>
+                </select>
               </div>
               <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t(planForm.trafficBillingMode === 'usage' ? 'resources.plans.includedTraffic' : 'resources.plans.trafficLimit') }} (GB) *</label>
+                <input v-model.number="planForm.trafficLimit" type="number" :min="planForm.trafficBillingMode === 'usage' ? 0 : 1" max="100000" step="1" class="input" />
+              </div>
+              <div v-if="planForm.trafficBillingMode === 'package'">
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.trafficSpeed') }} (Mbps) *</label>
                 <input v-model.number="planForm.trafficLimitSpeed" type="number" min="1" max="10000" step="1" class="input" />
+              </div>
+              <div v-else>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.trafficUnitPrice') }} ({{ t('resources.plans.priceUnit') }} / GB) *</label>
+                <input v-model.number="planForm.trafficUnitPrice" type="number" min="0.01" :max="MAX_PACKAGE_PLAN_PRICE" step="0.01" class="input" />
+                <p class="mt-1 text-xs text-themed-muted">{{ t('resources.plans.hourlySettlement') }}</p>
               </div>
             </div>
           </section>
@@ -405,7 +436,7 @@ async function savePlan(): Promise<void> {
               </div>
             </div>
 
-            <div class="mt-4 rounded-lg border p-4" :class="themeStore.isDark ? 'border-gray-800 bg-gray-900/40' : 'border-gray-100 bg-gray-50'">
+            <div v-if="planForm.trafficBillingMode === 'package'" class="mt-4 rounded-lg border p-4" :class="themeStore.isDark ? 'border-gray-800 bg-gray-900/40' : 'border-gray-100 bg-gray-50'">
               <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <label class="flex min-w-0 cursor-pointer items-start gap-3">
                   <input v-model="planForm.trafficResetEnabled" type="checkbox" class="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />

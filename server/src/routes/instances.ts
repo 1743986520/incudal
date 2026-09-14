@@ -1267,7 +1267,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         // 如果是付费方案，使用方案的配额限制；否则使用套餐配额
         // 带宽限制：付费方案优先使用方案的 trafficLimitSpeed
         let planBandwidthLimit: string | null = null
-        if (selectedPlan?.trafficLimitSpeed && selectedPlan.trafficLimitSpeed !== '0') {
+        if (selectedPlan?.trafficBillingMode !== 'usage' && selectedPlan?.trafficLimitSpeed && selectedPlan.trafficLimitSpeed !== '0') {
           const bytes = BigInt(selectedPlan.trafficLimitSpeed)
           const MB = BigInt(1024 * 1024)
           const mbps = Number(bytes / MB)
@@ -1333,6 +1333,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             expiresAt: billing?.expiresAt ?? null,
             billingPrice: billing?.price ?? null,
             billingCycle: billing?.billingCycle ?? null,
+            trafficBillingMode: selectedPlan?.trafficBillingMode ?? 'package',
+            trafficUnitPrice: selectedPlan?.trafficUnitPrice ?? 0,
+            nextTrafficBillingAt: selectedPlan?.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             autoRenew: false
           }
         })

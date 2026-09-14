@@ -505,7 +505,9 @@ export async function resetAllInstanceMonthlyTraffic() {
         },
         data: {
             monthlyTrafficUsed: 0n,
-            trafficStatus: 'NORMAL'
+            trafficStatus: 'NORMAL',
+            trafficSettledBytes: 0n,
+            trafficSettledCost: 0
         }
     })
 }
@@ -518,7 +520,9 @@ export async function resetInstanceMonthlyTraffic(instanceId: number) {
         where: { id: instanceId },
         data: {
             monthlyTrafficUsed: 0n,
-            trafficStatus: 'NORMAL'
+            trafficStatus: 'NORMAL',
+            trafficSettledBytes: 0n,
+            trafficSettledCost: 0
         }
     })
 }
@@ -552,7 +556,9 @@ export async function resetHostInstancesMonthlyTraffic(hostIds: number[]) {
         },
         data: {
             monthlyTrafficUsed: 0n,
-            trafficStatus: 'NORMAL'
+            trafficStatus: 'NORMAL',
+            trafficSettledBytes: 0n,
+            trafficSettledCost: 0
         }
     })
 }
@@ -732,6 +738,11 @@ export async function getInstanceTrafficInfo(instanceId: number) {
             monthlyTrafficLimit: true,
             monthlyTrafficUsed: true,
             trafficStatus: true,
+            trafficBillingMode: true,
+            trafficUnitPrice: true,
+            trafficSettledBytes: true,
+            trafficSettledCost: true,
+            nextTrafficBillingAt: true,
             packagePlan: {
                 select: {
                     id: true,

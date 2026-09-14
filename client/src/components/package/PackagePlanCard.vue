@@ -39,7 +39,7 @@ function formatPrice(cents: number | null | undefined): string {
 }
 
 function formatTraffic(bytes: string | null | undefined): string {
-  if (!bytes || bytes === '0') return '-'
+  if (!bytes || bytes === '0') return props.plan.trafficBillingMode === 'usage' ? '0 GB' : '-'
   const value = Number(bytes)
   if (!Number.isFinite(value) || value <= 0) return '-'
   return formatBytes(value)
@@ -128,9 +128,10 @@ function emitStatus(status: PlanStatus): void {
         <div class="text-xs text-themed-muted">{{ formatMemory(plan.memory) }} / {{ formatDisk(plan.disk) }}</div>
       </div>
       <div>
-        <div class="text-xs text-themed-muted">{{ t('resources.plans.trafficLimit') }}</div>
+        <div class="text-xs text-themed-muted">{{ t(plan.trafficBillingMode === 'usage' ? 'resources.plans.includedTraffic' : 'resources.plans.trafficLimit') }}</div>
         <div class="mt-1 text-sm font-medium text-themed">{{ formatTraffic(plan.trafficLimit) }}</div>
-        <div class="text-xs text-themed-muted">{{ formatSpeed(plan.trafficLimitSpeed) }}</div>
+        <div v-if="plan.trafficBillingMode === 'usage'" class="text-xs text-themed-muted">¥{{ formatPrice(plan.trafficUnitPrice) }} / GB · {{ t('resources.plans.settlementHourly') }}</div>
+        <div v-else class="text-xs text-themed-muted">{{ formatSpeed(plan.trafficLimitSpeed) }}</div>
       </div>
       <div>
         <div class="text-xs text-themed-muted">{{ t('resources.plans.quota') }}</div>
@@ -140,7 +141,8 @@ function emitStatus(status: PlanStatus): void {
       <div>
         <div class="text-xs text-themed-muted">{{ t('resources.plans.trafficReset') }}</div>
         <div class="mt-1 text-sm font-medium text-themed">
-          <template v-if="plan.trafficResetEnabled">¥{{ formatPrice(plan.trafficResetPrice || 0) }}/{{ t('resources.plans.perReset') }}</template>
+          <template v-if="plan.trafficBillingMode === 'usage'">{{ t('resources.plans.usageTraffic') }}</template>
+          <template v-else-if="plan.trafficResetEnabled">¥{{ formatPrice(plan.trafficResetPrice || 0) }}/{{ t('resources.plans.perReset') }}</template>
           <template v-else>{{ t('resources.plans.trafficResetDisabled') }}</template>
         </div>
         <div class="text-xs text-themed-muted">

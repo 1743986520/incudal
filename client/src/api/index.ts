@@ -2116,6 +2116,8 @@ const api = {
       swapSize: number
       trafficLimit: string
       trafficLimitSpeed?: string
+      trafficBillingMode?: 'package' | 'usage'
+      trafficUnitPrice?: number
       price: number
       billingCycle?: number
       setupFee?: number
@@ -2141,6 +2143,8 @@ const api = {
       swapSize?: number
       trafficLimit?: string
       trafficLimitSpeed?: string
+      trafficBillingMode?: 'package' | 'usage'
+      trafficUnitPrice?: number
       price?: number
       billingCycle?: number
       setupFee?: number
@@ -2409,6 +2413,14 @@ const api = {
       resetPrice: number
       resetPriceFormatted: string | null
       resetDisabledReason: string | null
+      trafficBillingMode: 'package' | 'usage'
+      trafficUnitPrice: number
+      includedTraffic: string | null
+      overageTraffic: string
+      settledTraffic: string
+      settledTrafficCost: number
+      pendingTraffic: string
+      nextTrafficBillingAt: string | null
     }> => http.get(`/instances/${instanceId}/traffic`),
 
     // 获取实例流量历史

@@ -50,6 +50,8 @@ type PackagePlanResponse = {
   swapSize: number
   trafficLimit: string
   trafficLimitSpeed: string
+  trafficBillingMode: 'package' | 'usage'
+  trafficUnitPrice: number
   price: number
   billingCycle: number
   setupFee: number
@@ -117,6 +119,8 @@ function serializePackagePlan(plan: any, pkg: { instance_type?: string | null })
     swapSize: pkg.instance_type === 'vm' ? 0 : plan.swapSize,
     trafficLimit: plan.trafficLimit.toString(),
     trafficLimitSpeed: plan.trafficLimitSpeed,
+    trafficBillingMode: plan.trafficBillingMode,
+    trafficUnitPrice: Number(plan.trafficUnitPrice),
     price: Number(plan.price),
     billingCycle: plan.billingCycle,
     setupFee: Number(plan.setupFee),
@@ -254,6 +258,35 @@ function normalizeTrafficResetPrice(enabled: boolean | undefined, price: unknown
   const value = enabled ? (price ?? 0) : 0
   const error = validatePackagePlanPrice(value)
   return { value: typeof value === 'number' ? value : 0, error }
+}
+
+function validateTrafficBilling(input: {
+  mode: unknown
+  trafficLimit: unknown
+  trafficLimitSpeed: unknown
+  trafficUnitPrice: unknown
+}): { mode: 'package' | 'usage'; trafficLimit: bigint; trafficUnitPrice: number; error?: string } {
+  const mode = input.mode === 'usage' ? 'usage' : input.mode === undefined || input.mode === 'package' ? 'package' : null
+  if (!mode) return { mode: 'package', trafficLimit: 0n, trafficUnitPrice: 0, error: 'trafficBillingMode 必须为 package 或 usage' }
+
+  let trafficLimit: bigint
+  try {
+    trafficLimit = BigInt(input.trafficLimit as string | number | bigint)
+  } catch {
+    return { mode, trafficLimit: 0n, trafficUnitPrice: 0, error: '流量额度必须为有效整数' }
+  }
+  if ((mode === 'package' && trafficLimit <= 0n) || (mode === 'usage' && trafficLimit < 0n)) {
+    return { mode, trafficLimit, trafficUnitPrice: 0, error: mode === 'package' ? '套餐流量必须大于 0' : '赠送流量不能为负数' }
+  }
+
+  const trafficUnitPrice = mode === 'usage' ? Number(input.trafficUnitPrice) : 0
+  if (mode === 'usage' && (!Number.isFinite(trafficUnitPrice) || trafficUnitPrice <= 0 || trafficUnitPrice > MAX_PACKAGE_PLAN_PRICE_CENTS)) {
+    return { mode, trafficLimit, trafficUnitPrice: 0, error: '按量计费的每 GB 单价必须大于 0' }
+  }
+  if (mode === 'package' && (typeof input.trafficLimitSpeed !== 'string' || !input.trafficLimitSpeed || input.trafficLimitSpeed === '0')) {
+    return { mode, trafficLimit, trafficUnitPrice: 0, error: '套餐流量模式必须配置超限速度' }
+  }
+  return { mode, trafficLimit, trafficUnitPrice }
 }
 
 function normalizePublicPackageMaxInstances(value: unknown): number {
@@ -437,6 +470,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           swapSize: true,
           trafficLimit: true,
           trafficLimitSpeed: true,
+          trafficBillingMode: true,
+          trafficUnitPrice: true,
           price: true,
           billingCycle: true,
           setupFee: true,
@@ -542,6 +577,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           swapSize: pkg.instanceType === 'vm' ? 0 : p.swapSize,
           trafficLimit: p.trafficLimit?.toString() || null,
           trafficLimitSpeed: p.trafficLimitSpeed,
+          trafficBillingMode: p.trafficBillingMode,
+          trafficUnitPrice: Number(p.trafficUnitPrice),
           price: p.price,
           billingCycle: p.billingCycle,
           setupFee: p.setupFee,
@@ -2266,6 +2303,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       swapSize: number
       trafficLimit: string // BigInt 作为字符串传输
       trafficLimitSpeed?: string
+      trafficBillingMode?: 'package' | 'usage'
+      trafficUnitPrice?: number
       price: number
       billingCycle?: number
       setupFee?: number
@@ -2297,7 +2336,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
-    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
+    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
     const normalizedSwapSize = pkg.instance_type === 'vm' ? 0 : swapSize
 
     if (isActive !== undefined && typeof isActive !== 'boolean') {
@@ -2340,7 +2379,12 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     if (priceError) {
       return reply.code(400).send({ error: priceError })
     }
-    const normalizedTrafficResetPrice = normalizeTrafficResetPrice(trafficResetEnabled, trafficResetPrice)
+    const trafficBilling = validateTrafficBilling({ mode: trafficBillingMode, trafficLimit, trafficLimitSpeed, trafficUnitPrice })
+    if (trafficBilling.error) {
+      return reply.code(400).send({ error: trafficBilling.error })
+    }
+    const effectiveResetEnabled = trafficBilling.mode === 'usage' ? false : trafficResetEnabled
+    const normalizedTrafficResetPrice = normalizeTrafficResetPrice(effectiveResetEnabled, trafficBilling.mode === 'usage' ? 0 : trafficResetPrice)
     if (normalizedTrafficResetPrice.error) {
       return reply.code(400).send({ error: normalizedTrafficResetPrice.error })
     }
@@ -2376,12 +2420,14 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         backupLimit,
         siteLimit,
         swapSize: normalizedSwapSize,
-        trafficLimit: BigInt(trafficLimit),
+        trafficLimit: trafficBilling.trafficLimit,
         trafficLimitSpeed,
+        trafficBillingMode: trafficBilling.mode,
+        trafficUnitPrice: trafficBilling.trafficUnitPrice,
         price,
         billingCycle,
         setupFee: 0,  // 开通费固定为0
-        trafficResetEnabled: trafficResetEnabled ?? false,
+        trafficResetEnabled: effectiveResetEnabled ?? false,
         trafficResetPrice: normalizedTrafficResetPrice.value,
         isActive,
         isSoldOut,
@@ -2423,6 +2469,8 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       swapSize?: number
       trafficLimit?: string
       trafficLimitSpeed?: string
+      trafficBillingMode?: 'package' | 'usage'
+      trafficUnitPrice?: number
       price?: number
       billingCycle?: number
       setupFee?: number
@@ -2461,7 +2509,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '方案不存在' })
     }
 
-    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
+    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
     const normalizedSwapSize = pkg.instance_type === 'vm' ? 0 : swapSize
 
     if (isActive !== undefined && typeof isActive !== 'boolean') {
@@ -2510,8 +2558,17 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: priceError })
       }
     }
-    const nextTrafficResetEnabled = trafficResetEnabled ?? existingPlan.trafficResetEnabled
-    const nextTrafficResetPrice = trafficResetPrice ?? Number(existingPlan.trafficResetPrice)
+    const trafficBilling = validateTrafficBilling({
+      mode: trafficBillingMode ?? existingPlan.trafficBillingMode,
+      trafficLimit: trafficLimit ?? existingPlan.trafficLimit,
+      trafficLimitSpeed: trafficLimitSpeed ?? existingPlan.trafficLimitSpeed,
+      trafficUnitPrice: trafficUnitPrice ?? existingPlan.trafficUnitPrice
+    })
+    if (trafficBilling.error) {
+      return reply.code(400).send({ error: trafficBilling.error })
+    }
+    const nextTrafficResetEnabled = trafficBilling.mode === 'usage' ? false : (trafficResetEnabled ?? existingPlan.trafficResetEnabled)
+    const nextTrafficResetPrice = trafficBilling.mode === 'usage' ? 0 : (trafficResetPrice ?? Number(existingPlan.trafficResetPrice))
     const normalizedTrafficResetPrice = normalizeTrafficResetPrice(nextTrafficResetEnabled, nextTrafficResetPrice)
     if (trafficResetPrice !== undefined || trafficResetEnabled !== undefined) {
       if (normalizedTrafficResetPrice.error) {
@@ -2552,11 +2609,13 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       }
       if (trafficLimit !== undefined) updateData.trafficLimit = BigInt(trafficLimit)
       if (trafficLimitSpeed !== undefined) updateData.trafficLimitSpeed = trafficLimitSpeed
+      if (trafficBillingMode !== undefined) updateData.trafficBillingMode = trafficBilling.mode
+      if (trafficUnitPrice !== undefined || trafficBillingMode !== undefined) updateData.trafficUnitPrice = trafficBilling.trafficUnitPrice
       if (price !== undefined) updateData.price = price
       if (billingCycle !== undefined) updateData.billingCycle = billingCycle
       // setupFee 已废弃，不再接受更新
-      if (trafficResetEnabled !== undefined) updateData.trafficResetEnabled = trafficResetEnabled
-      if (trafficResetPrice !== undefined || trafficResetEnabled !== undefined) updateData.trafficResetPrice = normalizedTrafficResetPrice.value
+      if (trafficResetEnabled !== undefined || trafficBillingMode !== undefined) updateData.trafficResetEnabled = nextTrafficResetEnabled
+      if (trafficResetPrice !== undefined || trafficResetEnabled !== undefined || trafficBillingMode !== undefined) updateData.trafficResetPrice = normalizedTrafficResetPrice.value
       if (isActive !== undefined) updateData.isActive = isActive
       if (isSoldOut !== undefined) updateData.isSoldOut = isSoldOut
       if (sortOrder !== undefined) updateData.sortOrder = sortOrder

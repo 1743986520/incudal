@@ -138,6 +138,7 @@ function formatImageName(image: string, imageName?: string | null): string {
 function getSuspendReasonText(reason: string | null | undefined): string {
   if (!reason) return t('instance.detail.info.suspendReasonDefault')
   if (reason === 'expired') return t('instance.detail.info.suspendReasonExpired')
+  if (reason === 'traffic_billing_insufficient_balance') return t('instance.detail.info.suspendReasonTrafficBilling')
   return reason
 }
 
@@ -652,4 +653,3 @@ function formatBandwidth(bandwidth: string | null | undefined): string {
     </Teleport>
   </div>
 </template>
-

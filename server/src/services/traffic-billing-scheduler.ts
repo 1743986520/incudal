@@ -1,0 +1,248 @@
+import { Prisma } from '@prisma/client'
+import { schedule } from 'node-cron'
+import { prisma } from '../db/prisma.js'
+import { getIncusClient } from '../lib/incus/incus-pool.js'
+import { stopInstance } from '../lib/incus/incus-instances.js'
+
+const GIB = 1024 * 1024 * 1024
+const SUSPEND_REASON = 'traffic_billing_insufficient_balance'
+
+function nextHour(from = new Date()): Date {
+  return new Date(from.getTime() + 60 * 60 * 1000)
+}
+
+type SettlementResult = {
+  instanceId: number
+  incusId: string
+  host: {
+    id: number
+    url: string
+    certPath: string | null
+    keyPath: string | null
+    serverCertificate: string | null
+    serverFingerprint: string | null
+    allowPrivateNetwork: boolean
+  }
+  suspended: boolean
+}
+
+async function settleInstance(instanceId: number, now: Date): Promise<SettlementResult | null> {
+  return prisma.$transaction(async tx => {
+    const instance = await tx.instance.findUnique({
+      where: { id: instanceId },
+      include: {
+        host: {
+          select: {
+            id: true,
+            url: true,
+            certPath: true,
+            keyPath: true,
+            serverCertificate: true,
+            serverFingerprint: true,
+            allowPrivateNetwork: true
+          }
+        }
+      }
+    })
+
+    if (!instance || instance.status !== 'running' || instance.trafficBillingMode !== 'usage' ||
+      (instance.nextTrafficBillingAt && instance.nextTrafficBillingAt > now)) {
+      return null
+    }
+
+    const included = instance.monthlyTrafficLimit ?? 0n
+    const totalOverage = instance.monthlyTrafficUsed > included ? instance.monthlyTrafficUsed - included : 0n
+    const unsettledBytes = totalOverage > instance.trafficSettledBytes
+      ? totalOverage - instance.trafficSettledBytes
+      : 0n
+    const dueAt = instance.nextTrafficBillingAt ?? now
+    const followingRun = nextHour(now)
+    const pendingRecord = await tx.trafficBillingRecord.findFirst({
+      where: { instanceId: instance.id, status: 'pending' },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    if (unsettledBytes === 0n && !pendingRecord) {
+      await tx.instance.update({ where: { id: instance.id }, data: { nextTrafficBillingAt: followingRun } })
+      return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: false }
+    }
+
+    // PackagePlan prices are stored in cents. User balances and billing records are stored in yuan.
+    const amount = unsettledBytes === 0n && pendingRecord
+      ? Number(pendingRecord.amount)
+      : new Prisma.Decimal(unsettledBytes.toString())
+        .div(GIB)
+        .mul(instance.trafficUnitPrice)
+        .div(100)
+        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+        .toNumber()
+    const billingBytes = unsettledBytes === 0n && pendingRecord ? pendingRecord.trafficBytes : unsettledBytes
+    if (amount <= 0) {
+      // Keep sub-cent usage pending so repeated hourly rounding cannot make it free.
+      await tx.instance.update({ where: { id: instance.id }, data: { nextTrafficBillingAt: followingRun } })
+      return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: false }
+    }
+
+    const user = await tx.user.findUnique({ where: { id: instance.userId }, select: { balance: true } })
+    if (!user) throw new Error(`Traffic billing user ${instance.userId} not found`)
+    const balanceBefore = Number(user.balance)
+    const periodStart = new Date(dueAt.getTime() - 60 * 60 * 1000)
+    if (balanceBefore < amount) {
+      if (pendingRecord) {
+        // A host owner may temporarily unsuspend an unpaid instance. Refresh the
+        // existing debt instead of generating duplicate pending bills.
+        await tx.trafficBillingRecord.update({
+          where: { id: pendingRecord.id },
+          data: {
+            trafficBytes: billingBytes,
+            unitPrice: instance.trafficUnitPrice,
+            amount,
+            periodEnd: now
+          }
+        })
+      } else {
+        await tx.trafficBillingRecord.create({
+          data: {
+            instanceId: instance.id,
+            userId: instance.userId,
+            trafficBytes: billingBytes,
+            unitPrice: instance.trafficUnitPrice,
+            amount,
+            status: 'pending',
+            periodStart,
+            periodEnd: now
+          }
+        })
+      }
+      await tx.instance.update({
+        where: { id: instance.id },
+        data: {
+          status: 'suspended',
+          suspendedAt: now,
+          suspendedBy: null,
+          suspendReason: SUSPEND_REASON,
+          nextTrafficBillingAt: null,
+          version: { increment: 1 }
+        }
+      })
+      return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: true }
+    }
+
+    const balanceAfter = Number((balanceBefore - amount).toFixed(2))
+    await tx.user.update({ where: { id: instance.userId }, data: { balance: balanceAfter } })
+    const balanceLog = await tx.balanceLog.create({
+      data: {
+        userId: instance.userId,
+        type: 'consume',
+        amount: -amount,
+        balanceBefore,
+        balanceAfter,
+        instanceId: instance.id,
+        remark: `实例 ${instance.name} 按量流量费（${billingBytes.toString()} bytes）`
+      }
+    })
+    if (pendingRecord) {
+      await tx.trafficBillingRecord.update({
+        where: { id: pendingRecord.id },
+        data: {
+          trafficBytes: billingBytes,
+          unitPrice: instance.trafficUnitPrice,
+          amount,
+          status: 'paid',
+          periodEnd: now,
+          balanceLogId: balanceLog.id
+        }
+      })
+    } else {
+      await tx.trafficBillingRecord.create({
+        data: {
+          instanceId: instance.id,
+          userId: instance.userId,
+          trafficBytes: billingBytes,
+          unitPrice: instance.trafficUnitPrice,
+          amount,
+          status: 'paid',
+          periodStart,
+          periodEnd: now,
+          balanceLogId: balanceLog.id
+        }
+      })
+    }
+    await tx.instance.update({
+      where: { id: instance.id },
+      data: {
+        trafficSettledBytes: totalOverage,
+        trafficSettledCost: { increment: amount },
+        nextTrafficBillingAt: followingRun
+      }
+    })
+    return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: false }
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    timeout: 15000
+  })
+}
+
+export async function runTrafficBillingJob(): Promise<void> {
+  const now = new Date()
+  const dueInstances = await prisma.instance.findMany({
+    where: {
+      trafficBillingMode: 'usage',
+      status: 'running',
+      OR: [{ nextTrafficBillingAt: null }, { nextTrafficBillingAt: { lte: now } }]
+    },
+    select: { id: true }
+  })
+
+  for (const candidate of dueInstances) {
+    try {
+      const result = await settleInstance(candidate.id, now)
+      if (!result?.suspended) continue
+      try {
+        const client = await getIncusClient(result.host)
+        await stopInstance(client, result.incusId, true)
+      } catch (error) {
+        console.error(`[TrafficBilling] Instance ${result.instanceId} was suspended but Incus stop failed:`, error)
+      }
+    } catch (error) {
+      console.error(`[TrafficBilling] Failed to settle instance ${candidate.id}:`, error)
+    }
+  }
+
+  // A host can be temporarily unreachable during the first suspension attempt.
+  // Retry the physical stop without creating another bill or touching the balance.
+  const suspendedInstances = await prisma.instance.findMany({
+    where: {
+      trafficBillingMode: 'usage',
+      status: 'suspended',
+      suspendReason: SUSPEND_REASON
+    },
+    include: {
+      host: {
+        select: {
+          id: true,
+          url: true,
+          certPath: true,
+          keyPath: true,
+          serverCertificate: true,
+          serverFingerprint: true,
+          allowPrivateNetwork: true
+        }
+      }
+    }
+  })
+  for (const instance of suspendedInstances) {
+    try {
+      const client = await getIncusClient(instance.host)
+      await stopInstance(client, instance.incusId, true)
+    } catch (error) {
+      console.error(`[TrafficBilling] Retry stop failed for instance ${instance.id}:`, error)
+    }
+  }
+
+}
+
+export function startTrafficBillingScheduler(): void {
+  schedule('0 * * * *', () => runTrafficBillingJob().catch(console.error))
+  console.log('[TrafficBilling] Scheduler started (hourly)')
+}

@@ -35,6 +35,20 @@ interface TrafficData {
   resetPrice: number
   resetPriceFormatted: string | null
   resetDisabledReason: string | null
+  trafficBillingMode: 'package' | 'usage'
+  trafficUnitPrice: number
+  includedTraffic: string | null
+  overageTraffic: string
+  settledTraffic: string
+  settledTrafficCost: number
+  pendingTraffic: string
+  nextTrafficBillingAt: string | null
+}
+
+function formatTrafficBytes(value: string | null): string {
+  const bytes = Number(value || 0)
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
 }
 
 interface TrafficHistoryItem {
@@ -236,6 +250,15 @@ const xAxisLabels = computed(() => {
                 / {{ $t('traffic.unlimited') }}
               </template>
             </span>
+          </div>
+
+          <div v-if="trafficData.trafficBillingMode === 'usage'" class="grid gap-2 rounded-lg border p-3 text-sm sm:grid-cols-2" :class="themeStore.isDark ? 'border-gray-800 bg-gray-900/40' : 'border-gray-100 bg-gray-50'">
+            <div><span class="text-themed-muted">{{ $t('resources.plans.includedTraffic') }}:</span> <span class="font-medium text-themed">{{ formatTrafficBytes(trafficData.includedTraffic) }}</span></div>
+            <div><span class="text-themed-muted">{{ $t('resources.plans.overageTraffic') }}:</span> <span class="font-medium text-themed">{{ formatTrafficBytes(trafficData.overageTraffic) }}</span></div>
+            <div><span class="text-themed-muted">{{ $t('resources.plans.settledTrafficCost') }}:</span> <span class="font-medium text-themed">¥{{ trafficData.settledTrafficCost.toFixed(2) }}</span></div>
+            <div><span class="text-themed-muted">{{ $t('resources.plans.pendingTraffic') }}:</span> <span class="font-medium text-themed">{{ formatTrafficBytes(trafficData.pendingTraffic) }}</span></div>
+            <div><span class="text-themed-muted">{{ $t('resources.plans.trafficUnitPrice') }}:</span> <span class="font-medium text-themed">¥{{ (trafficData.trafficUnitPrice / 100).toFixed(2) }} / GB</span></div>
+            <div><span class="text-themed-muted">{{ $t('resources.plans.nextSettlement') }}:</span> <span class="font-medium text-themed">{{ trafficData.nextTrafficBillingAt ? new Date(trafficData.nextTrafficBillingAt).toLocaleString() : '-' }}</span></div>
           </div>
 
           <!-- Progress Bar -->

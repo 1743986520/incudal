@@ -1058,6 +1058,13 @@ export async function performPlanChange(
               : instance.swapSize),
         monthlyTrafficLimit,
         trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
+        trafficBillingMode: newPlan.trafficBillingMode,
+        trafficUnitPrice: newPlan.trafficUnitPrice,
+        trafficSettledBytes: newPlan.trafficBillingMode === 'usage' && instance.monthlyTrafficUsed > (monthlyTrafficLimit ?? 0n)
+          ? instance.monthlyTrafficUsed - (monthlyTrafficLimit ?? 0n)
+          : 0n,
+        trafficSettledCost: 0,
+        nextTrafficBillingAt: newPlan.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
         // 更新冷却期时间
         lastPlanChangeAt: new Date(),
         // 版本号递增

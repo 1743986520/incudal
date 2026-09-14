@@ -331,6 +331,16 @@ enum TrafficStatus {
   LIMITED // 已限速
 }
 
+enum TrafficBillingMode {
+  package
+  usage
+}
+
+enum TrafficBillingRecordStatus {
+  paid
+  pending
+}
+
 // 好友关系状态枚举
 enum FriendshipStatus {
   pending // 待确认
@@ -427,6 +437,7 @@ model User {
 
   // 计费相关
   balanceLogs           BalanceLog[]
+  trafficBillingRecords TrafficBillingRecord[]
   rechargeRecords       RechargeRecord[]
   rechargeCardsCreated  RechargeCard[] @relation("RechargeCardsCreated")
   rechargeCardsUsed     RechargeCard[] @relation("RechargeCardsUsed")
@@ -995,6 +1006,11 @@ model Instance {
   monthlyTrafficLimit BigInt?       @map("monthly_traffic_limit")
   monthlyTrafficUsed  BigInt        @default(0) @map("monthly_traffic_used")
   trafficStatus       TrafficStatus @default(NORMAL) @map("traffic_status")
+  trafficBillingMode  TrafficBillingMode @default(package) @map("traffic_billing_mode")
+  trafficUnitPrice    Decimal @default(0) @map("traffic_unit_price") @db.Decimal(10, 2)
+  trafficSettledBytes BigInt @default(0) @map("traffic_settled_bytes")
+  trafficSettledCost  Decimal @default(0) @map("traffic_settled_cost") @db.Decimal(10, 2)
+  nextTrafficBillingAt DateTime? @map("next_traffic_billing_at")
 
   // 存储 I/O 限制 (null = 继承套餐)
   limitsRead      String? @map("limits_read")
@@ -1077,6 +1093,7 @@ model Instance {
   checkinRecords   CheckinRecord[]
   redeemCodeUsages RedeemCodeUsage[]
   billingRecords   InstanceBillingRecord[]  // 计费记录
+  trafficBillingRecords TrafficBillingRecord[]
   affBinding       AffBinding?              // AFF优惠码绑定
   resourcePoolLogs ResourcePoolLog[]        // 资源池应用记录
   destroyRecords   UserDestroyRecord[]      // 销毁记录
@@ -1092,6 +1109,7 @@ model Instance {
   @@index([hostId, status]) // 高可用优化：状态同步调度器使用
   @@index([expiresAt])      // 计费调度器使用：查找即将到期的实例
   @@index([autoRenew, expiresAt]) // 计费调度器使用：自动续费查询
+  @@index([trafficBillingMode, status, nextTrafficBillingAt])
   @@index([userId, displayOrder, createdAt(sort: Desc)])
   @@map("instances")
 }
@@ -2367,6 +2385,8 @@ model PackagePlan {
   swapSize          Int    @default(0) @map("swap_size") // SWAP 大小(MB)，0 表示不提供
   trafficLimit      BigInt @map("traffic_limit")       // 月流量限额 (Bytes)
   trafficLimitSpeed String @default("1Mbit") @map("traffic_limit_speed") // 流量超限后的限速值
+  trafficBillingMode TrafficBillingMode @default(package) @map("traffic_billing_mode")
+  trafficUnitPrice Decimal @default(0) @map("traffic_unit_price") @db.Decimal(10, 2)
 
   // ========== 计费配置 ==========
   price               Decimal @db.Decimal(10, 2)                                     // 价格
@@ -2423,6 +2443,28 @@ model InstanceBillingRecord {
   @@index([instanceId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("instance_billing_records")
+}
+
+model TrafficBillingRecord {
+  id           Int @id @default(autoincrement())
+  instanceId   Int @map("instance_id")
+  userId       Int @map("user_id")
+  trafficBytes BigInt @map("traffic_bytes")
+  unitPrice    Decimal @map("unit_price") @db.Decimal(10, 2)
+  amount       Decimal @db.Decimal(10, 2)
+  status       TrafficBillingRecordStatus
+  periodStart  DateTime @map("period_start")
+  periodEnd    DateTime @map("period_end")
+  balanceLogId Int? @map("balance_log_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("traffic_billing_records")
 }
 
 // ==================== AFF推荐计划模型 ====================

@@ -1746,6 +1746,8 @@ export interface PackagePlan {
   monthlyTrafficLimit?: string | null
   trafficLimit: string
   trafficLimitSpeed: string
+  trafficBillingMode: 'package' | 'usage'
+  trafficUnitPrice: number
   swapSize: number
   isActive: boolean
   isSoldOut: boolean

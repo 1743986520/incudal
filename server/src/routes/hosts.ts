@@ -5619,6 +5619,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         const finalPlanId = isPaidInstance && targetPlan ? targetPlan.id : instance.packagePlanId
         const finalBillingPrice = isPaidInstance && targetPlan ? Number(targetPlan.price) / 100 : instance.billingPrice
         const finalBillingCycle = isPaidInstance && targetPlan ? targetPlan.billingCycle : instance.billingCycle
+        const finalTrafficBillingMode = isPaidInstance && targetPlan ? targetPlan.trafficBillingMode : instance.trafficBillingMode
+        const finalTrafficUnitPrice = isPaidInstance && targetPlan ? targetPlan.trafficUnitPrice : instance.trafficUnitPrice
 
         // 17. 在数据库中创建新实例记录
         const { createdInstance: newInstance, migratedBillingRecordCount } = await prisma.$transaction(async tx => {
@@ -5651,6 +5653,13 @@ export default async function hostRoutes(fastify: FastifyInstance) {
               expiresAt: instance.expiresAt,
               billingPrice: finalBillingPrice,
               billingCycle: finalBillingCycle,
+              trafficBillingMode: finalTrafficBillingMode,
+              trafficUnitPrice: finalTrafficUnitPrice,
+              trafficSettledBytes: instance.trafficSettledBytes,
+              trafficSettledCost: instance.trafficSettledCost,
+              nextTrafficBillingAt: finalTrafficBillingMode === 'usage'
+                ? (instance.nextTrafficBillingAt ?? new Date(Date.now() + 60 * 60 * 1000))
+                : null,
               autoRenew: instance.autoRenew,
               // 存储 I/O 限制
               limitsRead: (instance as any).limitsRead,
@@ -5964,7 +5973,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       }
 
       billing = calculateCreateBilling(selectedPlan)
-      planTrafficSpeed = (selectedPlan as { trafficLimitSpeed?: string }).trafficLimitSpeed || null
+      planTrafficSpeed = selectedPlan.trafficBillingMode === 'usage' ? null : selectedPlan.trafficLimitSpeed || null
     }
 
     const requestedCpu = selectedPlan ? selectedPlan.cpu : (cpu || 15)
@@ -6177,6 +6186,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
             expiresAt: paidGiftExpiresAt,
             billingPrice: billing?.price ?? null,
             billingCycle: billing?.billingCycle ?? null,
+            trafficBillingMode: selectedPlan?.trafficBillingMode ?? 'package',
+            trafficUnitPrice: selectedPlan?.trafficUnitPrice ?? 0,
+            nextTrafficBillingAt: selectedPlan?.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             autoRenew: false
           }
         })

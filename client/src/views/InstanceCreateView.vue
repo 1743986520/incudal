@@ -64,6 +64,8 @@ interface PackagePlan {
   swapSize: number
   trafficLimit: string
   trafficLimitSpeed: string
+  trafficBillingMode: 'package' | 'usage'
+  trafficUnitPrice: number
   price: number
   billingCycle: number
   setupFee: number
@@ -241,7 +243,7 @@ const prerequisiteMessage = computed<string>(() => {
 // 流量格式化
 function formatTraffic(bytes: string): string {
   const b = BigInt(bytes || '0')
-  if (b === BigInt(0)) return t('common.unlimited')
+  if (b === BigInt(0)) return selectedPlan.value?.trafficBillingMode === 'usage' ? '0 GB' : t('common.unlimited')
   if (b >= BigInt(1024 * 1024 * 1024 * 1024)) {
     return (Number(b) / (1024 * 1024 * 1024 * 1024)).toFixed(1) + ' TB'
   }
@@ -1274,6 +1276,12 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
                   <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 pt-3 border-t text-xs" :class="themeStore.isDark ? 'border-blue-500/20' : 'border-blue-200'">
                     <span class="text-themed-muted"><span class="opacity-75">{{ $t('instance.ports') }}:</span> {{ selectedPlan.portLimit }}</span>
                     <span class="text-themed-muted"><span class="opacity-75">{{ $t('instance.snapshots') }}:</span> {{ selectedPlan.snapshotLimit }}</span>
+                  </div>
+                  <div v-if="selectedPlan.trafficBillingMode === 'usage'" class="mt-3 space-y-1 border-t pt-3 text-sm" :class="themeStore.isDark ? 'border-blue-500/20' : 'border-blue-200'">
+                    <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.includedTraffic') }}</span><span class="font-medium text-themed">{{ formatTraffic(selectedPlan.trafficLimit) }}</span></div>
+                    <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.trafficUnitPrice') }}</span><span class="font-medium text-themed">¥{{ (selectedPlan.trafficUnitPrice / 100).toFixed(2) }} / GB</span></div>
+                    <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.billingCycle') }}</span><span class="font-medium text-themed">{{ $t('resources.plans.settlementHourly') }}</span></div>
+                    <p class="pt-1 text-xs text-amber-600 dark:text-amber-400">{{ $t('resources.plans.hourlySettlement') }}</p>
                   </div>
                 </div>
                 <!-- 优惠码 -->

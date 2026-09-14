@@ -129,6 +129,7 @@ async function checkAndThrottle(
     instance: RunningTrafficInstance,
     client: IncusClient
 ): Promise<void> {
+    if (instance.trafficBillingMode === 'usage') return
     const userQuota = instance.user.quota
     if (!userQuota) return
 
@@ -192,11 +193,12 @@ async function checkAndRestore(
     const userEffectiveLimit = getEffectiveLimit(userQuota.monthlyTrafficLimit, userQuota.extraTrafficQuota)
     const instanceLimit = instance.monthlyTrafficLimit
 
-    const userUnderLimit = !isOverLimit(userQuota.monthlyTrafficUsed, userEffectiveLimit)
+    const usageBilling = instance.trafficBillingMode === 'usage'
+    const userUnderLimit = usageBilling || !isOverLimit(userQuota.monthlyTrafficUsed, userEffectiveLimit)
     const instanceUnderLimit = !isOverLimit(instance.monthlyTrafficUsed, instanceLimit)
     const desiredUserStatus = calculateUserTrafficStatus(userQuota.monthlyTrafficUsed, userEffectiveLimit)
 
-    if (userUnderLimit && instanceUnderLimit) {
+    if (userUnderLimit && (usageBilling || instanceUnderLimit)) {
         const remoteThrottled = await isThrottled(client, instance.incusId)
         if (instance.trafficStatus !== 'LIMITED' && !remoteThrottled) {
             if (userQuota.trafficStatus !== desiredUserStatus) {

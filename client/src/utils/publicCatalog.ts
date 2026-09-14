@@ -18,6 +18,8 @@ export interface PublicPackagePlan {
   swapSize: number
   trafficLimit: string
   trafficLimitSpeed: string
+  trafficBillingMode: 'package' | 'usage'
+  trafficUnitPrice: number
   price: number
   billingCycle: number
   setupFee: number

@@ -3044,7 +3044,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         // 配额配置：付费实例使用方案配额，免费实例使用套餐配额
         // 带宽限制：付费方案优先使用方案的 trafficLimitSpeed
         let planBandwidthLimit: string | null = null
-        if (selectedPlan?.trafficLimitSpeed && selectedPlan.trafficLimitSpeed !== '0') {
+        if (selectedPlan?.trafficBillingMode !== 'usage' && selectedPlan?.trafficLimitSpeed && selectedPlan.trafficLimitSpeed !== '0') {
           const bytes = BigInt(selectedPlan.trafficLimitSpeed)
           const MB = BigInt(1024 * 1024)
           const mbps = Number(bytes / MB)
@@ -3172,6 +3172,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             expiresAt: billing?.expiresAt ?? null,
             billingPrice: billing?.price ?? null,
             billingCycle: billing?.billingCycle ?? null,
+            trafficBillingMode: selectedPlan?.trafficBillingMode ?? 'package',
+            trafficUnitPrice: selectedPlan?.trafficUnitPrice ?? 0,
+            nextTrafficBillingAt: selectedPlan?.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             autoRenew: false
           }
         })
@@ -3808,6 +3811,13 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
                   : instance.swapSize),
             monthlyTrafficLimit,
             trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
+            trafficBillingMode: newPlan.trafficBillingMode,
+            trafficUnitPrice: newPlan.trafficUnitPrice,
+            trafficSettledBytes: newPlan.trafficBillingMode === 'usage' && instance.monthlyTrafficUsed > (monthlyTrafficLimit ?? 0n)
+              ? instance.monthlyTrafficUsed - (monthlyTrafficLimit ?? 0n)
+              : 0n,
+            trafficSettledCost: 0,
+            nextTrafficBillingAt: newPlan.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             // 更新计费信息（续费价格和周期）
             billingPrice: Number(newPlan.price) / 100,
             billingCycle: newPlan.billingCycle,
