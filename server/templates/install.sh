@@ -135,6 +135,31 @@ PY
     error "未找到可用的 Incus 私有网桥子网，请检查现有路由配置"
     return 1
 }
+
+# The distro dnsmasq package may automatically start a standalone daemon that
+# listens on 0.0.0.0:53. Incus launches its own per-network dnsmasq process and
+# cannot bind the bridge gateway while that system service owns the wildcard
+# socket. Keep the binary installed, but disable only the standalone service.
+prepare_incus_dnsmasq() {
+    local was_active="false"
+
+    if command -v systemctl &>/dev/null; then
+        if systemctl is-active --quiet dnsmasq.service 2>/dev/null; then
+            was_active="true"
+        fi
+        systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
+    elif command -v rc-service &>/dev/null; then
+        if rc-service dnsmasq status >/dev/null 2>&1; then
+            was_active="true"
+        fi
+        rc-service dnsmasq stop >/dev/null 2>&1 || true
+        rc-update del dnsmasq default >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$was_active" == "true" ]]; then
+        info "已停止系统 dnsmasq 服务，端口 53 将由 Incus 网桥独立管理"
+    fi
+}
 error() { echo -e "${RED}[✗]${NC} $1"; }
 step()  { echo -e "\n${CYAN}[▶]${NC} ${BOLD}$1${NC}"; }
 
@@ -1771,6 +1796,8 @@ SRC
 # 步骤 4: 初始化 Incus
 init_incus() {
     step "步骤 [4/5]  初始化 Incus..."
+
+    prepare_incus_dnsmasq
 
     # 幂等性：网桥已存在则跳过
     if incus network show "$BRIDGE_NAME" &>/dev/null; then
