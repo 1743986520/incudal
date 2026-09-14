@@ -50,9 +50,11 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# 创建非 root 用户
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 incudal
+# 创建非 root 用户。入口脚本仅以 root 复制只读挂载的证书，
+# 然后通过 su-exec 降权运行迁移和应用。
+RUN apk add --no-cache su-exec && \
+    addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 --ingroup nodejs incudal
 
 # 复制依赖 (包含生成的 Prisma Client)
 COPY --from=builder-server /app/node_modules ./node_modules
@@ -77,8 +79,6 @@ RUN chmod +x ./server/docker-entrypoint.sh
 
 # 创建证书目录
 RUN mkdir -p server/certs && chown -R incudal:nodejs server/certs
-
-USER incudal
 
 EXPOSE 3000
 

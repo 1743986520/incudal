@@ -36,7 +36,9 @@ services:
       - TRAFFIC_HOST_CONCURRENCY=${TRAFFIC_HOST_CONCURRENCY:-3}
       - DB_WORKER_BACKOFF_MS=${DB_WORKER_BACKOFF_MS:-15000}
     volumes:
-      - ./server/certs:/app/server/certs:ro
+      # Mount source certificates separately. The root entrypoint copies them
+      # into the container-owned directory before dropping privileges.
+      - ./server/certs:/run/incudal-certs:ro
     depends_on:
       db:
         condition: service_healthy
