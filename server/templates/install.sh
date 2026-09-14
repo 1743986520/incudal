@@ -33,7 +33,7 @@ PANEL_URL="${INJECT_PANEL_URL:-}"
 PANEL_URL="${PANEL_URL%/}"
 readonly PANEL_URL
 readonly SCRIPT_VERSION="2.0.0"
-readonly BRIDGE_SUBNET="10.10.0.1/22"
+BRIDGE_SUBNET="10.10.0.1/22"
 readonly BRIDGE_NAME="incusbr0"
 readonly PRESEED_FILE="/tmp/.incus-preseed-$$.yaml"
 readonly AGENT_ID="${INJECT_AGENT_ID:-}"
@@ -88,6 +88,53 @@ readonly PPS_OBSERVE_SECONDS="120"
 log()   { echo -e "${GREEN}[✓]${NC} $1"; }
 info()  { echo -e "${BLUE}[i]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
+
+# Incus dnsmasq cannot bind when the selected bridge gateway is already used
+# by another interface/network. Pick the first RFC1918 /22 that does not
+# overlap any existing IPv4 address or route on the host.
+select_bridge_subnet() {
+    local candidates=(
+        "10.10.0.1/22" "10.20.0.1/22" "10.30.0.1/22" "10.40.0.1/22"
+        "10.64.0.1/22" "10.80.0.1/22" "10.96.0.1/22" "10.112.0.1/22"
+    )
+    local candidate
+    local existing_networks
+
+    existing_networks="$({ ip -o -4 addr show 2>/dev/null | awk '{print $4}'; ip -4 route show table all 2>/dev/null | awk '$1 ~ /^[0-9]+\./ {print $1}'; } | sort -u)"
+
+    for candidate in "${candidates[@]}"; do
+        if command -v python3 &>/dev/null; then
+            if CANDIDATE="$candidate" EXISTING_NETWORKS="$existing_networks" python3 - <<'PY'
+import ipaddress
+import os
+
+candidate = ipaddress.ip_interface(os.environ["CANDIDATE"]).network
+for value in os.environ.get("EXISTING_NETWORKS", "").splitlines():
+    try:
+        if candidate.overlaps(ipaddress.ip_network(value, strict=False)):
+            raise SystemExit(1)
+    except ValueError:
+        pass
+PY
+            then
+                if [[ "$candidate" != "$BRIDGE_SUBNET" ]]; then
+                    warn "默认网桥子网 ${BRIDGE_SUBNET} 与现有网络冲突，已自动改用 ${candidate}"
+                fi
+                BRIDGE_SUBNET="$candidate"
+                return 0
+            fi
+        else
+            local gateway="${candidate%/*}"
+            if ! ip -o -4 addr show 2>/dev/null | grep -qw "$gateway"; then
+                BRIDGE_SUBNET="$candidate"
+                return 0
+            fi
+        fi
+    done
+
+    error "未找到可用的 Incus 私有网桥子网，请检查现有路由配置"
+    return 1
+}
 error() { echo -e "${RED}[✗]${NC} $1"; }
 step()  { echo -e "\n${CYAN}[▶]${NC} ${BOLD}$1${NC}"; }
 
@@ -3295,6 +3342,8 @@ main() {
     else
         SKIP_WARP="false"
     fi
+
+    select_bridge_subnet
 
     # 安装前确认
     confirm_install
