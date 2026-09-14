@@ -2223,3 +2223,72 @@ export async function sendInstanceDestroyRefundEmail(
         return { success: false, error: errorMessage }
     }
 }
+
+/** Send a one-time warning when the balance can buy less than 5 GB of traffic. */
+export async function sendTrafficBillingLowBalanceEmail(
+    email: string,
+    data: {
+        username: string
+        instanceName: string
+        balance: number
+        unitPricePerGb: number
+        affordableGb: number
+    }
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const transporter = await getTransporter()
+        if (!transporter) return { success: false, error: 'SMTP not configured' }
+
+        const { config, brandName, brandLogoUrl } = await getMailContext()
+        const htmlContent = generateEmailHtml({
+            title: '按量流量余额预警',
+            alertType: 'warning',
+            alertTitle: '余额可用流量不足 5 GB',
+            alertMessage: `实例「${data.instanceName}」的当前余额可支付流量已低于 5 GB`,
+            greeting: `您好，${data.username}`,
+            paragraphs: [
+                '请及时充值，避免下次每小时结算时因余额不足导致实例自动停止。'
+            ],
+            infoTitle: '流量计费详情',
+            infoItems: [
+                { label: '实例名称', value: data.instanceName },
+                { label: '当前余额', value: `¥${data.balance.toFixed(2)}` },
+                { label: '超量单价', value: `¥${data.unitPricePerGb.toFixed(2)} / GB` },
+                { label: '预估可用流量', value: `${data.affordableGb.toFixed(2)} GB` }
+            ],
+            actionTip: `请登录 ${brandName} 控制面板充值。余额恢复到可支付 5 GB 以上后，本预警状态会自动重置。`,
+            brandName,
+            brandLogoUrl
+        })
+        const textContent = generateEmailText({
+            title: '按量流量余额预警',
+            alertTitle: '余额可用流量不足 5 GB',
+            alertMessage: `实例「${data.instanceName}」的当前余额可支付流量已低于 5 GB`,
+            greeting: `您好，${data.username}`,
+            paragraphs: ['请及时充值，避免下次每小时结算时因余额不足导致实例自动停止。'],
+            infoTitle: '流量计费详情',
+            infoItems: [
+                { label: '实例名称', value: data.instanceName },
+                { label: '当前余额', value: `¥${data.balance.toFixed(2)}` },
+                { label: '超量单价', value: `¥${data.unitPricePerGb.toFixed(2)} / GB` },
+                { label: '预估可用流量', value: `${data.affordableGb.toFixed(2)} GB` }
+            ],
+            actionTip: `请登录 ${brandName} 控制面板充值。`,
+            brandName,
+            brandLogoUrl
+        })
+
+        await transporter.sendMail({
+            from: config.fromName ? `"${config.fromName}" <${config.fromEmail}>` : config.fromEmail,
+            to: email,
+            subject: formatBrandSubject(brandName, `实例「${data.instanceName}」按量流量余额不足 5 GB`),
+            text: textContent,
+            html: htmlContent
+        })
+        return { success: true }
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('Failed to send traffic billing low balance email:', errorMessage)
+        return { success: false, error: errorMessage }
+    }
+}

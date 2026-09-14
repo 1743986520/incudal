@@ -1011,6 +1011,7 @@ model Instance {
   trafficSettledBytes BigInt @default(0) @map("traffic_settled_bytes")
   trafficSettledCost  Decimal @default(0) @map("traffic_settled_cost") @db.Decimal(10, 2)
   nextTrafficBillingAt DateTime? @map("next_traffic_billing_at")
+  trafficLowBalanceNotifiedAt DateTime? @map("traffic_low_balance_notified_at")
 
   // 存储 I/O 限制 (null = 继承套餐)
   limitsRead      String? @map("limits_read")

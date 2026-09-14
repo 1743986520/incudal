@@ -3,6 +3,7 @@ import { schedule } from 'node-cron'
 import { prisma } from '../db/prisma.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
 import { stopInstance } from '../lib/incus/incus-instances.js'
+import { sendTrafficBillingLowBalanceEmail } from '../lib/mailer.js'
 
 const GIB = 1024 * 1024 * 1024
 const SUSPEND_REASON = 'traffic_billing_insufficient_balance'
@@ -24,6 +25,68 @@ type SettlementResult = {
     allowPrivateNetwork: boolean
   }
   suspended: boolean
+}
+
+async function sendLowBalanceWarnings(): Promise<void> {
+  const instances = await prisma.instance.findMany({
+    where: {
+      trafficBillingMode: 'usage',
+      trafficUnitPrice: { gt: 0 },
+      OR: [
+        { status: 'running' },
+        { status: 'suspended', suspendReason: SUSPEND_REASON }
+      ]
+    },
+    select: {
+      id: true,
+      name: true,
+      trafficUnitPrice: true,
+      trafficLowBalanceNotifiedAt: true,
+      user: { select: { username: true, email: true, balance: true } }
+    }
+  })
+
+  for (const instance of instances) {
+    const unitPricePerGb = new Prisma.Decimal(instance.trafficUnitPrice).div(100).toNumber()
+    const warningBalance = new Prisma.Decimal(unitPricePerGb).mul(5).toNumber()
+    const balance = Number(instance.user.balance)
+
+    if (balance >= warningBalance) {
+      if (instance.trafficLowBalanceNotifiedAt) {
+        await prisma.instance.updateMany({
+          where: { id: instance.id, trafficLowBalanceNotifiedAt: { not: null } },
+          data: { trafficLowBalanceNotifiedAt: null }
+        })
+      }
+      continue
+    }
+
+    const email = instance.user.email?.trim()
+    if (!email || instance.trafficLowBalanceNotifiedAt) continue
+
+    // Atomic claim prevents duplicate mail when multiple panel replicas run the cron.
+    const claimed = await prisma.instance.updateMany({
+      where: { id: instance.id, trafficLowBalanceNotifiedAt: null },
+      data: { trafficLowBalanceNotifiedAt: new Date() }
+    })
+    if (claimed.count !== 1) continue
+
+    const result = await sendTrafficBillingLowBalanceEmail(email, {
+      username: instance.user.username,
+      instanceName: instance.name,
+      balance,
+      unitPricePerGb,
+      affordableGb: unitPricePerGb > 0 ? balance / unitPricePerGb : 0
+    })
+    if (!result.success) {
+      // Allow the next hourly run to retry transient SMTP failures.
+      await prisma.instance.update({
+        where: { id: instance.id },
+        data: { trafficLowBalanceNotifiedAt: null }
+      })
+      console.error(`[TrafficBilling] Low-balance email failed for instance ${instance.id}: ${result.error}`)
+    }
+  }
 }
 
 async function settleInstance(instanceId: number, now: Date): Promise<SettlementResult | null> {
@@ -240,6 +303,7 @@ export async function runTrafficBillingJob(): Promise<void> {
     }
   }
 
+  await sendLowBalanceWarnings()
 }
 
 export function startTrafficBillingScheduler(): void {
