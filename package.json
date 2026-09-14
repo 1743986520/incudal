@@ -18,5 +18,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "pnpm@9.14.2"
+  "packageManager": "pnpm@9.14.2",
+  "pnpm": {
+    "overrides": {
+      "webdav>fast-xml-parser": "4.5.5",
+      "fastify-cloudflare-turnstile>undici": "6.27.0"
+    }
+  }
 }
