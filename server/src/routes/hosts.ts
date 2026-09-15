@@ -103,6 +103,15 @@ function normalizeAuditFindingTarget(value: unknown): AuditFindingTarget | null 
 
 function validateAuditRegex(matchType: AuditRuleMatchType, pattern: string): void {
   if (matchType !== 'regex') return
+  // JavaScript RegExp has no execution timeout. Reject the constructs most
+  // commonly responsible for catastrophic backtracking before persisting a
+  // rule that will later run on the API event loop.
+  if (pattern.length > 200
+    || /\\[1-9]/.test(pattern)
+    || /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)[+*{]/.test(pattern)
+    || /(?:\.\*|\.\+).*(?:\.\*|\.\+)/.test(pattern)) {
+    throw new Error('Unsafe regular expression')
+  }
   new RegExp(pattern)
 }
 
@@ -386,39 +395,26 @@ function extractHostPublicIpv6FromResources(resources: Record<string, unknown>):
  * 优先级：FRONTEND_URL 环境变量 > Origin/Referer 头 > Host 头拼接
  */
 function derivePanelUrl(request: FastifyRequest): string {
-  // 1. 优先使用 FRONTEND_URL 环境变量（管理员显式配置的）
-  if (process.env.FRONTEND_URL) {
-    let envUrl = process.env.FRONTEND_URL.split(',')[0].trim()
-    // 清理可能误填的双协议头例如 https://https://
-    envUrl = envUrl.replace(/^https?:\/\/(https?:\/\/)/, '$1')
-    // 移除末尾的斜杠
-    envUrl = envUrl.replace(/\/+$/, '')
-    
-    if (envUrl && envUrl !== 'https://incudal.com') {
-      return envUrl
+  const configuredUrl = process.env.PUBLIC_URL?.trim()
+    || process.env.FRONTEND_URL?.split(',')[0]?.trim()
+
+  if (configuredUrl) {
+    const parsed = new URL(configuredUrl)
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+      throw new Error('PUBLIC_URL/FRONTEND_URL must be an absolute HTTP(S) URL without credentials')
     }
+    return parsed.origin
   }
 
-  // 2. 从 Referer 头推导（用户通过面板页面下载时会带上）
-  const referer = request.headers.referer || request.headers.origin
-  if (referer) {
-    try {
-      const url = new URL(Array.isArray(referer) ? referer[0] : referer)
-      return `${url.protocol}//${url.host}`
-    } catch { /* 忽略解析失败 */ }
+  // Production bootstrap output must never be derived from attacker-controlled
+  // Host, Origin, Referer or X-Forwarded-* headers.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('PUBLIC_URL or FRONTEND_URL is required to generate host install scripts')
   }
 
-  // 3. 从 Host 头拼接（curl 直接下载时会有）
-  const host = request.headers.host
-  if (host) {
-    let proto = request.headers['x-forwarded-proto'] || 'http'
-    let protocol = Array.isArray(proto) ? proto[0] : proto
-    protocol = protocol.replace(/:\/\/$/, '') // 清理可能的畸形协议头
-    return `${protocol}://${host}`
-  }
-
-  // 4. 兑底默认值
-  return 'https://incudal.com'
+  // Local development only. request.protocol respects Fastify's trustProxy
+  // setting, while request.hostname is parsed and normalized by Fastify.
+  return new URL(`${request.protocol}://${request.hostname}`).origin
 }
 
 function shellDoubleQuote(value: string): string {
@@ -438,7 +434,8 @@ function injectInstallVariable(script: string, name: string, value: string): str
 
 function buildHostInstallCommand(panelUrl: string, installToken: string): string {
   const scriptUrl = `${panelUrl}/api/hosts/install.sh/${installToken}`
-  return `if command -v apk >/dev/null 2>&1; then if [ "$(id -u)" = 0 ]; then apk add --no-cache bash curl; else sudo apk add --no-cache bash curl; fi; fi && curl -sL ${scriptUrl} -o incudal.sh && if command -v sudo >/dev/null 2>&1; then sudo bash incudal.sh; else bash incudal.sh; fi`
+  const quotedScriptUrl = `'${scriptUrl.replace(/'/g, `'"'"'`)}'`
+  return `if command -v apk >/dev/null 2>&1; then if [ "$(id -u)" = 0 ]; then apk add --no-cache bash curl; else sudo apk add --no-cache bash curl; fi; fi && curl --fail --show-error --location ${quotedScriptUrl} -o incudal.sh && if command -v sudo >/dev/null 2>&1; then sudo bash incudal.sh; else bash incudal.sh; fi`
 }
 
 export default async function hostRoutes(fastify: FastifyInstance) {
@@ -1345,7 +1342,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         select: {
           id: true,
           name: true,
-          isInstalled: true
+          isInstalled: true,
+          installTokenExpire: true
         }
       })
 
@@ -1360,7 +1358,10 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         return reply.code(403).send('# Error: Host already installed')
       }
 
-      // 注意: 已移除证书下载的时效和次数限制，允许无限次下载直到安装完成
+      if (!host.installTokenExpire || host.installTokenExpire < new Date()) {
+        request.log.warn(`Certificate download failed: install token expired for host ${host.name}`)
+        return reply.code(403).send('# Error: Install token has expired')
+      }
 
       // 读取证书文件
       const certPath = process.env.PANEL_CRT_PATH || join(__dirname, '../../certs/client.crt')
