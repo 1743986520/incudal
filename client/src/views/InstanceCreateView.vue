@@ -43,6 +43,7 @@ import { validateName as validateInstanceName } from '@/utils/validation'
 import { translateError } from '@/utils/errorHandler'
 import { freeSiteCopy, getFreeSiteBillingCycleLabel } from '@/utils/freeSiteFun'
 import { getVipBadgeInlineStyle, normalizeVipBadgeStyle, type VipBadgeStyle } from '@/utils/vipBadge'
+import { formatTrafficUnitPrice } from '@/utils/trafficBilling'
 
 interface ImageOption {
   value: string
@@ -1279,7 +1280,7 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
                   </div>
                   <div v-if="selectedPlan.trafficBillingMode === 'usage'" class="mt-3 space-y-1 border-t pt-3 text-sm" :class="themeStore.isDark ? 'border-blue-500/20' : 'border-blue-200'">
                     <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.includedTraffic') }}</span><span class="font-medium text-themed">{{ formatTraffic(selectedPlan.trafficLimit) }}</span></div>
-                    <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.trafficUnitPrice') }}</span><span class="font-medium text-themed">¥{{ (selectedPlan.trafficUnitPrice / 100).toFixed(2) }} / GB</span></div>
+                    <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.trafficUnitPrice') }}</span><span class="font-medium text-themed">¥{{ formatTrafficUnitPrice(selectedPlan.trafficUnitPrice) }} / GB</span></div>
                     <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.billingCycle') }}</span><span class="font-medium text-themed">{{ $t('resources.plans.settlementHourly') }}</span></div>
                     <p class="pt-1 text-xs text-amber-600 dark:text-amber-400">{{ $t('resources.plans.hourlySettlement') }}</p>
                   </div>

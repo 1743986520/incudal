@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
 import { formatBytes, formatDisk, formatMemory } from '@/utils/formatters'
 import type { PackagePlan } from '@/types/api'
+import { formatTrafficUnitPrice } from '@/utils/trafficBilling'
 
 type PlanStatus = 'active' | 'soldOut' | 'inactive'
 
@@ -130,7 +131,7 @@ function emitStatus(status: PlanStatus): void {
       <div>
         <div class="text-xs text-themed-muted">{{ t(plan.trafficBillingMode === 'usage' ? 'resources.plans.includedTraffic' : 'resources.plans.trafficLimit') }}</div>
         <div class="mt-1 text-sm font-medium text-themed">{{ formatTraffic(plan.trafficLimit) }}</div>
-        <div v-if="plan.trafficBillingMode === 'usage'" class="text-xs text-themed-muted">¥{{ formatPrice(plan.trafficUnitPrice) }} / GB · {{ t('resources.plans.settlementHourly') }}</div>
+        <div v-if="plan.trafficBillingMode === 'usage'" class="text-xs text-themed-muted">¥{{ formatTrafficUnitPrice(plan.trafficUnitPrice) }} / GB · {{ t('resources.plans.settlementHourly') }}</div>
         <div v-else class="text-xs text-themed-muted">{{ formatSpeed(plan.trafficLimitSpeed) }}</div>
       </div>
       <div>

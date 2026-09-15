@@ -17,6 +17,7 @@ import * as trafficDb from '../db/traffic.js'
 import { sendTrafficWarningNotification, sendTrafficThrottledNotification } from './traffic-notifier.js'
 import { collectTrafficForInstanceWithClient } from './instance-traffic-collector.js'
 import { resolveTrafficBandwidthLimits } from './traffic-bandwidth.js'
+import { runTrafficBillingThresholdJob } from './traffic-billing-scheduler.js'
 import {
     calculateUserTrafficStatus,
     getEffectiveLimit,
@@ -503,6 +504,13 @@ async function executeTrafficJob(startTime: number): Promise<void> {
             })
 
         await reconcileTrafficState(instancesToCheck)
+    }
+
+    const usageBillingInstanceIds = instances
+        .filter(instance => instance.trafficBillingMode === 'usage')
+        .map(instance => instance.id)
+    if (usageBillingInstanceIds.length > 0) {
+        await runTrafficBillingThresholdJob(usageBillingInstanceIds)
     }
 
     const duration = Date.now() - startTime

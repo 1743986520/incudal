@@ -7,6 +7,7 @@
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
 import { getFreeSiteBillingCycleLabel } from '@/utils/freeSiteFun'
+import { formatTrafficUnitPrice } from '@/utils/trafficBilling'
 
 interface PackagePlan {
   id: number
@@ -331,7 +332,7 @@ function handleSelect(plan: PackagePlan): void {
             >
               {{ formatTraffic(plan.trafficLimit) }}
             </div>
-            <div v-if="plan.trafficBillingMode === 'usage'" class="mt-0.5 text-xs text-blue-500">¥{{ (plan.trafficUnitPrice / 100).toFixed(2) }} / GB · {{ t('resources.plans.settlementHourly') }}</div>
+            <div v-if="plan.trafficBillingMode === 'usage'" class="mt-0.5 text-xs text-blue-500">¥{{ formatTrafficUnitPrice(plan.trafficUnitPrice) }} / GB · {{ t('resources.plans.settlementHourly') }}</div>
           </div>
         </div>
 

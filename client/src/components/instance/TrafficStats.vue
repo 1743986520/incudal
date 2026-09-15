@@ -5,6 +5,7 @@ import { useThemeStore } from '@/stores/theme'
 import { useToast } from '@/stores/toast'
 import { translateError } from '@/utils/errorHandler'
 import api from '@/api'
+import { formatTrafficUnitPrice } from '@/utils/trafficBilling'
 
 const props = defineProps<{
   instanceId: number
@@ -257,7 +258,7 @@ const xAxisLabels = computed(() => {
             <div><span class="text-themed-muted">{{ $t('resources.plans.overageTraffic') }}:</span> <span class="font-medium text-themed">{{ formatTrafficBytes(trafficData.overageTraffic) }}</span></div>
             <div><span class="text-themed-muted">{{ $t('resources.plans.settledTrafficCost') }}:</span> <span class="font-medium text-themed">¥{{ trafficData.settledTrafficCost.toFixed(2) }}</span></div>
             <div><span class="text-themed-muted">{{ $t('resources.plans.pendingTraffic') }}:</span> <span class="font-medium text-themed">{{ formatTrafficBytes(trafficData.pendingTraffic) }}</span></div>
-            <div><span class="text-themed-muted">{{ $t('resources.plans.trafficUnitPrice') }}:</span> <span class="font-medium text-themed">¥{{ (trafficData.trafficUnitPrice / 100).toFixed(2) }} / GB</span></div>
+            <div><span class="text-themed-muted">{{ $t('resources.plans.trafficUnitPrice') }}:</span> <span class="font-medium text-themed">¥{{ formatTrafficUnitPrice(trafficData.trafficUnitPrice) }} / GB</span></div>
             <div><span class="text-themed-muted">{{ $t('resources.plans.nextSettlement') }}:</span> <span class="font-medium text-themed">{{ trafficData.nextTrafficBillingAt ? new Date(trafficData.nextTrafficBillingAt).toLocaleString() : '-' }}</span></div>
           </div>
 

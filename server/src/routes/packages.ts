@@ -279,9 +279,16 @@ function validateTrafficBilling(input: {
     return { mode, trafficLimit, trafficUnitPrice: 0, error: mode === 'package' ? '套餐流量必须大于 0' : '赠送流量不能为负数' }
   }
 
-  const trafficUnitPrice = mode === 'usage' ? Number(input.trafficUnitPrice) : 0
+  let trafficUnitPrice = mode === 'usage' ? Number(input.trafficUnitPrice) : 0
   if (mode === 'usage' && (!Number.isFinite(trafficUnitPrice) || trafficUnitPrice <= 0 || trafficUnitPrice > MAX_PACKAGE_PLAN_PRICE_CENTS)) {
     return { mode, trafficLimit, trafficUnitPrice: 0, error: '按量计费的每 GB 单价必须大于 0' }
+  }
+  if (mode === 'usage') {
+    const hundredthsOfCent = trafficUnitPrice * 100
+    if (Math.abs(hundredthsOfCent - Math.round(hundredthsOfCent)) >= 1e-8) {
+      return { mode, trafficLimit, trafficUnitPrice: 0, error: '按量计费的每 GB 单价最多支持 4 位人民币小数' }
+    }
+    trafficUnitPrice = Math.round(hundredthsOfCent) / 100
   }
   if (mode === 'package' && (typeof input.trafficLimitSpeed !== 'string' || !input.trafficLimitSpeed || input.trafficLimitSpeed === '0')) {
     return { mode, trafficLimit, trafficUnitPrice: 0, error: '套餐流量模式必须配置超限速度' }

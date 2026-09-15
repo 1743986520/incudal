@@ -2247,13 +2247,13 @@ export async function sendTrafficBillingLowBalanceEmail(
             alertMessage: `实例「${data.instanceName}」的当前余额可支付流量已低于 5 GB`,
             greeting: `您好，${data.username}`,
             paragraphs: [
-                '请及时充值，避免下次每小时结算时因余额不足导致实例自动停止。'
+                '请及时充值，避免下次流量结算时因余额不足导致实例自动停止。'
             ],
             infoTitle: '流量计费详情',
             infoItems: [
                 { label: '实例名称', value: data.instanceName },
                 { label: '当前余额', value: `¥${data.balance.toFixed(2)}` },
-                { label: '超量单价', value: `¥${data.unitPricePerGb.toFixed(2)} / GB` },
+                { label: '超量单价', value: `¥${data.unitPricePerGb.toFixed(4).replace(/\.?0+$/, '')} / GB` },
                 { label: '预估可用流量', value: `${data.affordableGb.toFixed(2)} GB` }
             ],
             actionTip: `请登录 ${brandName} 控制面板充值。余额恢复到可支付 5 GB 以上后，本预警状态会自动重置。`,
@@ -2265,12 +2265,12 @@ export async function sendTrafficBillingLowBalanceEmail(
             alertTitle: '余额可用流量不足 5 GB',
             alertMessage: `实例「${data.instanceName}」的当前余额可支付流量已低于 5 GB`,
             greeting: `您好，${data.username}`,
-            paragraphs: ['请及时充值，避免下次每小时结算时因余额不足导致实例自动停止。'],
+            paragraphs: ['请及时充值，避免下次流量结算时因余额不足导致实例自动停止。'],
             infoTitle: '流量计费详情',
             infoItems: [
                 { label: '实例名称', value: data.instanceName },
                 { label: '当前余额', value: `¥${data.balance.toFixed(2)}` },
-                { label: '超量单价', value: `¥${data.unitPricePerGb.toFixed(2)} / GB` },
+                { label: '超量单价', value: `¥${data.unitPricePerGb.toFixed(4).replace(/\.?0+$/, '')} / GB` },
                 { label: '预估可用流量', value: `${data.affordableGb.toFixed(2)} GB` }
             ],
             actionTip: `请登录 ${brandName} 控制面板充值。`,

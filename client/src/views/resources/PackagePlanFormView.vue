@@ -198,6 +198,14 @@ function normalizePlanPriceCents(value: unknown): number | null {
   return roundedCents <= MAX_PACKAGE_PLAN_PRICE_CENTS ? roundedCents : null
 }
 
+function normalizeTrafficUnitPriceCents(value: unknown): number | null {
+  const price = Number(value)
+  if (!Number.isFinite(price) || price <= 0 || price > MAX_PACKAGE_PLAN_PRICE) return null
+  const tenThousandthsOfYuan = price * 10000
+  if (Math.abs(tenThousandthsOfYuan - Math.round(tenThousandthsOfYuan)) >= 1e-8) return null
+  return Math.round(tenThousandthsOfYuan) / 100
+}
+
 function getPlanStatusSegmentClass(status: PlanStatus): string {
   const selected = planForm.value.status === status
   if (!selected) {
@@ -238,7 +246,7 @@ async function savePlan(): Promise<void> {
   }
 
   const usageBilling = planForm.value.trafficBillingMode === 'usage'
-  const trafficUnitPriceCents = usageBilling ? normalizePlanPriceCents(planForm.value.trafficUnitPrice) : 0
+  const trafficUnitPriceCents = usageBilling ? normalizeTrafficUnitPriceCents(planForm.value.trafficUnitPrice) : 0
   if (usageBilling && (!trafficUnitPriceCents || trafficUnitPriceCents <= 0)) {
     formError.value = t('resources.plans.trafficUnitPriceRequired')
     return
@@ -384,7 +392,7 @@ async function savePlan(): Promise<void> {
               </div>
               <div v-else>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.trafficUnitPrice') }} ({{ t('resources.plans.priceUnit') }} / GB) *</label>
-                <input v-model.number="planForm.trafficUnitPrice" type="number" min="0.01" :max="MAX_PACKAGE_PLAN_PRICE" step="0.01" class="input" />
+                <input v-model.number="planForm.trafficUnitPrice" type="number" min="0.0001" :max="MAX_PACKAGE_PLAN_PRICE" step="0.0001" class="input" />
                 <p class="mt-1 text-xs text-themed-muted">{{ t('resources.plans.hourlySettlement') }}</p>
               </div>
             </div>
