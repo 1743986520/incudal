@@ -46,7 +46,7 @@ import {
 } from '../db/billing-operations.js'
 import { shouldSyncInstanceSwapSizeWithPlan } from '../lib/instance-swap.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
-import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
+import { calculateInstanceTrafficStatus, calculatePlanChangeSettledBytes } from '../services/traffic-utils.js'
 import type { Host } from '../types/database.js'
 import { getInstanceBillingLineageIds } from '../db/billing-records.js'
 import { INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
@@ -3747,6 +3747,16 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       // 10. 执行事务：扣款 + 更新数据库
       await prisma.$transaction(async (tx) => {
+        if (instance.trafficBillingMode === 'usage' && newPlan.trafficBillingMode !== 'usage') {
+          const pendingTrafficBill = await tx.trafficBillingRecord.findFirst({
+            where: { instanceId, status: 'pending' },
+            select: { id: true }
+          })
+          if (pendingTrafficBill) {
+            throw new Error('PENDING_TRAFFIC_BILL')
+          }
+        }
+
         let balanceBefore = userBalance
         let balanceAfter = balanceBefore - priceDifference
         const monthlyTrafficLimit = await resolveInstanceTrafficLimitForHost(tx as any, {
@@ -3813,10 +3823,15 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
             trafficBillingMode: newPlan.trafficBillingMode,
             trafficUnitPrice: newPlan.trafficUnitPrice,
-            trafficSettledBytes: newPlan.trafficBillingMode === 'usage' && instance.monthlyTrafficUsed > (monthlyTrafficLimit ?? 0n)
-              ? instance.monthlyTrafficUsed - (monthlyTrafficLimit ?? 0n)
-              : 0n,
-            trafficSettledCost: 0,
+            trafficSettledBytes: calculatePlanChangeSettledBytes({
+              monthlyTrafficUsed: instance.monthlyTrafficUsed,
+              previousBillingMode: instance.trafficBillingMode,
+              previousSettledBytes: instance.trafficSettledBytes,
+              newBillingMode: newPlan.trafficBillingMode,
+              newMonthlyTrafficLimit: monthlyTrafficLimit
+            }),
+            // Keep already charged traffic visible for this monthly period.
+            trafficSettledCost: instance.trafficSettledCost,
             nextTrafficBillingAt: newPlan.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             // 更新计费信息（续费价格和周期）
             billingPrice: Number(newPlan.price) / 100,
@@ -3910,6 +3925,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       request.log.error(error, '升级方案失败')
       if (error instanceof Error && error.message === 'INSTANCE_STATE_CHANGED') {
         return reply.status(409).send({ error: '实例状态已变化，请刷新后重试' })
+      }
+      if (error instanceof Error && error.message === 'PENDING_TRAFFIC_BILL') {
+        return reply.status(409).send({ error: '实例存在未支付流量账单，结清后才能切换计费模式' })
       }
       return reply.status(500).send({ error: '升级方案失败' })
     }

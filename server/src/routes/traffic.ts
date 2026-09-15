@@ -404,8 +404,16 @@ export default async function trafficRoutes(fastify: FastifyInstance): Promise<v
             return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
         }
 
+        // Usage-billed traffic is monetary consumption, not a resettable quota.
+        if (instance.trafficBillingMode === 'usage') {
+            return reply.code(400).send(apiError(ErrorCode.TRAFFIC_RESET_NOT_ALLOWED))
+        }
+
         if (isAdmin || isHostOwner) {
-            await trafficDb.resetInstanceMonthlyTraffic(instanceId)
+            const resetResult = await trafficDb.resetInstanceMonthlyTraffic(instanceId)
+            if (resetResult.count !== 1) {
+                return reply.code(400).send(apiError(ErrorCode.TRAFFIC_RESET_NOT_ALLOWED))
+            }
             try {
                 const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
                 await reconcileTrafficStateForInstanceIds([instanceId])
@@ -454,6 +462,7 @@ export default async function trafficRoutes(fastify: FastifyInstance): Promise<v
                         packagePlanId: true,
                         monthlyTrafficLimit: true,
                         monthlyTrafficUsed: true,
+                        trafficBillingMode: true,
                         trafficStatus: true,
                         status: true,
                         packagePlan: {
@@ -475,6 +484,9 @@ export default async function trafficRoutes(fastify: FastifyInstance): Promise<v
                 if (freshInstance.status === 'deleted') {
                     throw new Error('INSTANCE_NOT_FOUND')
                 }
+                if (freshInstance.trafficBillingMode === 'usage') {
+                    throw new Error('TRAFFIC_RESET_NOT_ALLOWED')
+                }
                 if (!freshInstance.packagePlanId || !freshInstance.packagePlan?.trafficResetEnabled) {
                     throw new Error('TRAFFIC_RESET_NOT_ALLOWED')
                 }
@@ -491,13 +503,15 @@ export default async function trafficRoutes(fastify: FastifyInstance): Promise<v
                         id: instanceId,
                         userId: request.user.id,
                         status: { not: 'deleted' },
+                        trafficBillingMode: { not: 'usage' },
                         monthlyTrafficUsed: { gt: 0n }
                     },
                     data: {
                         monthlyTrafficUsed: 0n,
                         trafficStatus: 'NORMAL',
                         trafficSettledBytes: 0n,
-                        trafficSettledCost: 0
+                        trafficSettledCost: 0,
+                        version: { increment: 1 }
                     }
                 })
 

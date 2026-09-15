@@ -83,6 +83,34 @@ export function calculateInstanceTrafficStatus(used: bigint, limit: bigint | nul
 }
 
 /**
+ * Rebase paid traffic when an instance changes plan.
+ *
+ * Package traffic is grandfathered when entering usage billing so historical
+ * traffic is not charged retroactively. For usage-to-usage changes, only bytes
+ * that were actually settled are carried forward; deriving this value from the
+ * new limit would incorrectly mark outstanding traffic as paid.
+ */
+export function calculatePlanChangeSettledBytes(input: {
+    monthlyTrafficUsed: bigint
+    previousBillingMode: 'package' | 'usage'
+    previousSettledBytes: bigint
+    newBillingMode: 'package' | 'usage'
+    newMonthlyTrafficLimit: bigint | null
+}): bigint {
+    if (input.newBillingMode !== 'usage') return 0n
+
+    const included = input.newMonthlyTrafficLimit ?? 0n
+    const newOverage = input.monthlyTrafficUsed > included
+        ? input.monthlyTrafficUsed - included
+        : 0n
+
+    if (input.previousBillingMode !== 'usage') return newOverage
+    return input.previousSettledBytes < newOverage
+        ? input.previousSettledBytes
+        : newOverage
+}
+
+/**
  * 格式化字节数为人类可读格式
  */
 export function formatBytes(bytes: bigint): string {

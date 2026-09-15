@@ -1067,6 +1067,7 @@ export default {
             clone: '複製',
             suspend: '封停',
             unsuspend: '解封',
+            payTrafficDebt: '補繳流量費並解封',
         },
         retryCreateStarted: '已開始重新建立「{name}」',
         renameModal: {

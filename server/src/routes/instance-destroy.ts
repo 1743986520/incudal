@@ -105,6 +105,18 @@ function exceedsPaidDestroyTrafficLimit(monthlyTrafficUsed: bigint, limit: bigin
   return monthlyTrafficUsed >= limit
 }
 
+function getDestroyTrafficUsage(instance: {
+  trafficBillingMode: 'package' | 'usage'
+  monthlyTrafficUsed: bigint
+  monthlyTrafficLimit: bigint | null
+  trafficSettledBytes: bigint
+}, currentMonthlyTrafficUsed = instance.monthlyTrafficUsed): bigint {
+  if (instance.trafficBillingMode !== 'usage') return currentMonthlyTrafficUsed
+  const included = instance.monthlyTrafficLimit ?? 0n
+  const overage = currentMonthlyTrafficUsed > included ? currentMonthlyTrafficUsed - included : 0n
+  return overage > instance.trafficSettledBytes ? overage - instance.trafficSettledBytes : 0n
+}
+
 function formatTrafficLimit(limit: bigint): string {
   const gib = Number(limit) / (1024 ** 3)
   return `${Number.isInteger(gib) ? gib.toFixed(0) : gib.toFixed(2)} GiB`
@@ -485,7 +497,7 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
     canDestroy
     && !isFreeInstance
     && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-    && exceedsPaidDestroyTrafficLimit(instance.monthlyTrafficUsed, getDestroyTrafficLimit(instance))
+    && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance), getDestroyTrafficLimit(instance))
   ) {
     canDestroy = false
     cannotDestroyReason = getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance))
@@ -581,7 +593,7 @@ async function executeDestroyForUser(
   if (
     !isFreeInstance
     && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-    && exceedsPaidDestroyTrafficLimit(currentMonthlyTrafficUsed, getDestroyTrafficLimit(instance))
+    && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance, currentMonthlyTrafficUsed), getDestroyTrafficLimit(instance))
   ) {
     return { id: instance.id, name: instance.name, success: false, skipped: true, reason: getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance)) }
   }
@@ -960,7 +972,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       canDestroy
       && !isFreeInstance
       && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-      && exceedsPaidDestroyTrafficLimit(instance.monthlyTrafficUsed, getDestroyTrafficLimit(instance))
+      && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance), getDestroyTrafficLimit(instance))
     ) {
       canDestroy = false
       cannotDestroyReason = getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance))
@@ -1086,7 +1098,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     if (
       !isFreeInstance
       && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-      && exceedsPaidDestroyTrafficLimit(currentMonthlyTrafficUsed, getDestroyTrafficLimit(instance))
+      && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance, currentMonthlyTrafficUsed), getDestroyTrafficLimit(instance))
     ) {
       return reply.code(400).send(apiError(
         ErrorCode.INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED,

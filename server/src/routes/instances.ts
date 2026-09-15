@@ -31,6 +31,7 @@ import {
   getCachedCloudInitStatus,
   persistCloudInitStatus
 } from '../lib/cloud-init-status.js'
+import { payPendingTrafficBillAndUnsuspend } from '../services/traffic-billing-scheduler.js'
 import { customAlphabet } from 'nanoid'
 
 // 自定义 nanoid，只使用小写字母和数字（Incus 不允许下划线）
@@ -2753,12 +2754,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
     }
 
-    // 解封权限：仅管理员和宿主机所有者可以解封
+    // 管理员和宿主机所有者可人工解封；实例所有者可通过此入口
+    // 原子补缴按量流量欠款并自助解封。
     const host = await db.getHostById(instance.host_id)
     const isHostOwner = host && host.user_id === user.id
     const isAdmin = user.role === 'admin'
+    const isInstanceOwner = instance.user_id === user.id
 
-    if (!isAdmin && !isHostOwner) {
+    if (!isAdmin && !isHostOwner && !isInstanceOwner) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
@@ -2772,6 +2775,28 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // 如果到期时间仍然在过去，不允许解封
       if (instance.expires_at && new Date(instance.expires_at) <= new Date()) {
         return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+      }
+    }
+
+    if (instance.suspend_reason === 'traffic_billing_insufficient_balance' && !isAdmin) {
+      // Host ownership must not bypass somebody else's unpaid traffic bill.
+      if (!isInstanceOwner) return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+      try {
+        const payment = await payPendingTrafficBillAndUnsuspend(instanceId, user.id)
+        await createLog(user.id, 'instance', 'instance.traffic_debt_paid', `Paid traffic debt and unsuspended instance "${instance.name}"`, 'success', { instanceId })
+        return reply.code(200).send({
+          message: 'Traffic debt paid and instance unsuspended successfully',
+          chargedAmount: payment.amount
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : ''
+        if (message === 'BALANCE_INSUFFICIENT') {
+          return reply.code(400).send(apiError(ErrorCode.INSUFFICIENT_BALANCE))
+        }
+        if (message === 'INSTANCE_STATE_CHANGED') {
+          return reply.code(409).send({ error: 'Instance state changed, please retry' })
+        }
+        return reply.code(400).send({ error: 'Unable to settle pending traffic bill' })
       }
     }
 

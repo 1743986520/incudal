@@ -908,6 +908,7 @@ export default {
             clone: 'Clone',
             suspend: 'Suspend',
             unsuspend: 'Unsuspend',
+            payTrafficDebt: 'Pay traffic bill and unsuspend',
         },
         retryCreateStarted: 'Retrying creation of "{name}"',
         renameModal: {

@@ -19,7 +19,7 @@ import {
 } from '../lib/billing-calc.js'
 import { shouldSyncInstanceSwapSizeWithPlan } from '../lib/instance-swap.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
-import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
+import { calculateInstanceTrafficStatus, calculatePlanChangeSettledBytes } from '../services/traffic-utils.js'
 import {
   HOSTING_BALANCE_LOG_LOCK_NAMESPACE,
   INSTANCE_OPERATION_LOCK_NAMESPACE,
@@ -941,6 +941,16 @@ export async function performPlanChange(
 
   // 执行事务（带乐观锁）
   const txResult = await prisma.$transaction(async (tx) => {
+    if (instance.trafficBillingMode === 'usage' && newPlan.trafficBillingMode !== 'usage') {
+      const pendingTrafficBill = await tx.trafficBillingRecord.findFirst({
+        where: { instanceId: instance.id, status: 'pending' },
+        select: { id: true }
+      })
+      if (pendingTrafficBill) {
+        throw new Error('存在未支付流量账单，结清后才能切换到套餐流量计费')
+      }
+    }
+
     // 获取用户当前余额
     const user = await tx.user.findUnique({
       where: { id: userId },
@@ -1060,10 +1070,16 @@ export async function performPlanChange(
         trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
         trafficBillingMode: newPlan.trafficBillingMode,
         trafficUnitPrice: newPlan.trafficUnitPrice,
-        trafficSettledBytes: newPlan.trafficBillingMode === 'usage' && instance.monthlyTrafficUsed > (monthlyTrafficLimit ?? 0n)
-          ? instance.monthlyTrafficUsed - (monthlyTrafficLimit ?? 0n)
-          : 0n,
-        trafficSettledCost: 0,
+        trafficSettledBytes: calculatePlanChangeSettledBytes({
+          monthlyTrafficUsed: instance.monthlyTrafficUsed,
+          previousBillingMode: instance.trafficBillingMode,
+          previousSettledBytes: instance.trafficSettledBytes,
+          newBillingMode: newPlan.trafficBillingMode,
+          newMonthlyTrafficLimit: monthlyTrafficLimit
+        }),
+        // Preserve the current traffic-period accounting trail across plan
+        // changes. Monthly resets remain responsible for clearing this value.
+        trafficSettledCost: instance.trafficSettledCost,
         nextTrafficBillingAt: newPlan.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
         // 更新冷却期时间
         lastPlanChangeAt: new Date(),

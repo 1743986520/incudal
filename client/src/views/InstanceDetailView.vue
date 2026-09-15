@@ -485,6 +485,14 @@ const canSuspend = computed<boolean>(() => {
   const inst = instance.value as { isHostOwner?: boolean } | null
   return inst?.isHostOwner === true
 })
+const isTrafficBillingSuspension = computed<boolean>(() => {
+  const inst = instance.value as { suspendReason?: string | null; suspend_reason?: string | null } | null
+  return (inst?.suspendReason ?? inst?.suspend_reason) === 'traffic_billing_insufficient_balance'
+})
+const canUnsuspend = computed<boolean>(() => {
+  const inst = instance.value as { isHostOwner?: boolean; isInstanceOwner?: boolean } | null
+  return inst?.isHostOwner === true || (inst?.isInstanceOwner === true && isTrafficBillingSuspension.value)
+})
 const canSyncStatus = computed<boolean>(() => {
   const inst = instance.value
   return !!inst && (inst.isHostOwner === true || inst.isInstanceOwner === true)
@@ -1595,7 +1603,7 @@ async function confirmSuspend(): Promise<void> {
 }
 
 async function handleUnsuspend(): Promise<void> {
-  if (!instance.value || !canSuspend.value) return
+  if (!instance.value || !canUnsuspend.value) return
   
   if (!confirm(t('instance.detail.actions.confirmUnsuspend', { name: instance.value.name }))) {
     return
@@ -2638,7 +2646,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
           </button>
           <!-- 解封按钮（仅宿主机所有者可见，实例已封停时） -->
           <button 
-            v-if="canSuspend && isSuspended" 
+            v-if="canUnsuspend && isSuspended"
             :disabled="suspendLoading" 
             class="btn-sm sm:btn inline-flex rounded-lg"
             :class="themeStore.isDark ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-green-500 hover:bg-green-600 text-white'"
@@ -2652,7 +2660,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
             <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span class="hidden sm:inline ml-1">{{ $t('instance.actions.unsuspend') }}</span>
+            <span class="hidden sm:inline ml-1">{{ isTrafficBillingSuspension && !canSuspend ? $t('instance.actions.payTrafficDebt') : $t('instance.actions.unsuspend') }}</span>
           </button>
           <button v-if="canDeleteInstance" :disabled="isOperationDisabled" class="btn-danger btn-sm sm:btn" @click="handleAction('delete')">
             <svg v-if="actionLoading === 'delete'" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

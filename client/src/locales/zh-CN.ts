@@ -906,6 +906,7 @@ export default {
             clone: '复制',
             suspend: '封停',
             unsuspend: '解封',
+            payTrafficDebt: '补缴流量费并解封',
         },
         renameModal: {
             title: '重命名实例',

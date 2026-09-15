@@ -4,6 +4,7 @@ import { prisma } from '../db/prisma.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
 import { stopInstance } from '../lib/incus/incus-instances.js'
 import { sendTrafficBillingLowBalanceEmail } from '../lib/mailer.js'
+import { getTrafficPeriod } from './traffic-utils.js'
 
 const GIB = 1024 * 1024 * 1024
 const HALF_GIB = GIB / 2
@@ -14,6 +15,8 @@ type SettlementTrigger = 'hourly' | 'gigabyte'
 function nextHour(from = new Date()): Date {
   return new Date(from.getTime() + 60 * 60 * 1000)
 }
+
+const LOW_BALANCE_WARNING_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
 type SettlementResult = {
   instanceId: number
@@ -51,7 +54,9 @@ async function sendLowBalanceWarnings(): Promise<void> {
 
   for (const instance of instances) {
     const unitPricePerGb = new Prisma.Decimal(instance.trafficUnitPrice).div(100).toNumber()
-    const warningBalance = new Prisma.Decimal(unitPricePerGb).mul(5).toNumber()
+    // Never make the warning threshold smaller than the wallet's one-cent
+    // precision, otherwise very cheap plans could never produce a warning.
+    const warningBalance = Prisma.Decimal.max(new Prisma.Decimal(unitPricePerGb).mul(5), new Prisma.Decimal(0.01)).toNumber()
     const balance = Number(instance.user.balance)
 
     if (balance >= warningBalance) {
@@ -65,11 +70,18 @@ async function sendLowBalanceWarnings(): Promise<void> {
     }
 
     const email = instance.user.email?.trim()
-    if (!email || instance.trafficLowBalanceNotifiedAt) continue
+    const warningCutoff = new Date(Date.now() - LOW_BALANCE_WARNING_COOLDOWN_MS)
+    if (!email || (instance.trafficLowBalanceNotifiedAt && instance.trafficLowBalanceNotifiedAt > warningCutoff)) continue
 
     // Atomic claim prevents duplicate mail when multiple panel replicas run the cron.
     const claimed = await prisma.instance.updateMany({
-      where: { id: instance.id, trafficLowBalanceNotifiedAt: null },
+      where: {
+        id: instance.id,
+        OR: [
+          { trafficLowBalanceNotifiedAt: null },
+          { trafficLowBalanceNotifiedAt: { lte: warningCutoff } }
+        ]
+      },
       data: { trafficLowBalanceNotifiedAt: new Date() }
     })
     if (claimed.count !== 1) continue
@@ -105,7 +117,8 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
             keyPath: true,
             serverCertificate: true,
             serverFingerprint: true,
-            allowPrivateNetwork: true
+            allowPrivateNetwork: true,
+            trafficResetDay: true
           }
         }
       }
@@ -122,7 +135,6 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
     const unsettledBytes = totalOverage > instance.trafficSettledBytes
       ? totalOverage - instance.trafficSettledBytes
       : 0n
-    const dueAt = instance.nextTrafficBillingAt ?? now
     const followingRun = nextHour(now)
     const pendingRecord = await tx.trafficBillingRecord.findFirst({
       where: { instanceId: instance.id, status: 'pending' },
@@ -153,11 +165,13 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
     // Wallet balances have cent precision. Always round down and leave the
     // fractional value represented by unbilled bytes, so tiny unit prices are
     // accumulated rather than rounded away or rounded up against the user.
-    const amountDecimal = unsettledBytes === 0n && pendingRecord
+    // An existing debt is immutable and belongs to its original traffic
+    // period. Pay it first; current-period usage is settled on the next pass.
+    const amountDecimal = pendingRecord
       ? new Prisma.Decimal(pendingRecord.amount)
       : rawAmount.toDecimalPlaces(2, Prisma.Decimal.ROUND_DOWN)
     const amount = amountDecimal.toNumber()
-    const billingBytes = unsettledBytes === 0n && pendingRecord
+    const billingBytes = pendingRecord
       ? pendingRecord.trafficBytes
       : BigInt(amountDecimal
         .mul(100)
@@ -175,21 +189,19 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
 
     const user = await tx.user.findUnique({ where: { id: instance.userId }, select: { balance: true } })
     if (!user) throw new Error(`Traffic billing user ${instance.userId} not found`)
-    const balanceBefore = Number(user.balance)
-    const periodStart = new Date(dueAt.getTime() - 60 * 60 * 1000)
-    if (balanceBefore < amount) {
+    const balanceBefore = new Prisma.Decimal(user.balance)
+    const trafficPeriodStart = getTrafficPeriod(instance.host.trafficResetDay ?? 1, now).periodStart
+    const previousPaidRecord = await tx.trafficBillingRecord.findFirst({
+      where: { instanceId: instance.id, status: 'paid' },
+      orderBy: { periodEnd: 'desc' },
+      select: { periodEnd: true }
+    })
+    const periodStart = previousPaidRecord?.periodEnd && previousPaidRecord.periodEnd > trafficPeriodStart
+      ? previousPaidRecord.periodEnd
+      : trafficPeriodStart
+    if (balanceBefore.lt(amountDecimal)) {
       if (pendingRecord) {
-        // A host owner may temporarily unsuspend an unpaid instance. Refresh the
-        // existing debt instead of generating duplicate pending bills.
-        await tx.trafficBillingRecord.update({
-          where: { id: pendingRecord.id },
-          data: {
-            trafficBytes: billingBytes,
-            unitPrice: instance.trafficUnitPrice,
-            amount,
-            periodEnd: now
-          }
-        })
+        // Keep the original debt and its period snapshot unchanged.
       } else {
         await tx.trafficBillingRecord.create({
           data: {
@@ -204,8 +216,8 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
           }
         })
       }
-      await tx.instance.update({
-        where: { id: instance.id },
+      const suspended = await tx.instance.updateMany({
+        where: { id: instance.id, version: instance.version },
         data: {
           status: 'suspended',
           suspendedAt: now,
@@ -215,16 +227,17 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
           version: { increment: 1 }
         }
       })
+      if (suspended.count !== 1) throw new Error('TRAFFIC_BILLING_INSTANCE_CHANGED')
       return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: true }
     }
 
-    const balanceAfter = Number((balanceBefore - amount).toFixed(2))
-    await tx.user.update({ where: { id: instance.userId }, data: { balance: balanceAfter } })
+    const balanceAfter = balanceBefore.sub(amountDecimal)
+    await tx.user.update({ where: { id: instance.userId }, data: { balance: { decrement: amountDecimal } } })
     const balanceLog = await tx.balanceLog.create({
       data: {
         userId: instance.userId,
         type: 'consume',
-        amount: -amount,
+        amount: amountDecimal.neg(),
         balanceBefore,
         balanceAfter,
         instanceId: instance.id,
@@ -258,21 +271,106 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
         }
       })
     }
-    await tx.instance.update({
-      where: { id: instance.id },
+    const currentPeriodBillingBytes = pendingRecord && pendingRecord.periodStart < trafficPeriodStart
+      ? 0n
+      : billingBytes
+    const currentPeriodBillingAmount = pendingRecord && pendingRecord.periodStart < trafficPeriodStart
+      ? new Prisma.Decimal(0)
+      : amountDecimal
+    const instanceUpdate = await tx.instance.updateMany({
+      where: { id: instance.id, version: instance.version },
       data: {
-        trafficSettledBytes: { increment: billingBytes },
-        trafficSettledCost: { increment: amount },
+        trafficSettledBytes: { increment: currentPeriodBillingBytes },
+        trafficSettledCost: { increment: currentPeriodBillingAmount },
         nextTrafficBillingAt: trigger === 'hourly'
           ? followingRun
-          : (instance.nextTrafficBillingAt ?? followingRun)
+          : (instance.nextTrafficBillingAt ?? followingRun),
+        version: { increment: 1 }
       }
     })
+    if (instanceUpdate.count !== 1) throw new Error('TRAFFIC_BILLING_INSTANCE_CHANGED')
     return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: false }
   }, {
     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     timeout: 15000
   })
+}
+
+/**
+ * Let an instance owner settle the debt that caused a traffic suspension.
+ * The wallet debit, billing record, accounting counters and unsuspension are
+ * committed atomically. The instance remains physically stopped afterwards.
+ */
+export async function payPendingTrafficBillAndUnsuspend(instanceId: number, userId: number): Promise<{ amount: number }> {
+  return prisma.$transaction(async tx => {
+    const instance = await tx.instance.findUnique({
+      where: { id: instanceId },
+      include: { host: { select: { trafficResetDay: true } } }
+    })
+    if (!instance || instance.userId !== userId) throw new Error('INSTANCE_NOT_FOUND')
+    if (instance.status !== 'suspended' || instance.suspendReason !== SUSPEND_REASON) {
+      throw new Error('INSTANCE_NOT_TRAFFIC_SUSPENDED')
+    }
+
+    const pending = await tx.trafficBillingRecord.findFirst({
+      where: { instanceId, userId, status: 'pending' },
+      orderBy: { createdAt: 'desc' }
+    })
+    if (!pending) throw new Error('PENDING_TRAFFIC_BILL_NOT_FOUND')
+
+    const amount = new Prisma.Decimal(pending.amount)
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { balance: true } })
+    if (!user) throw new Error('USER_NOT_FOUND')
+    const balanceBefore = new Prisma.Decimal(user.balance)
+    if (balanceBefore.lt(amount)) throw new Error('BALANCE_INSUFFICIENT')
+    const balanceAfter = balanceBefore.sub(amount)
+
+    const walletUpdate = await tx.user.updateMany({
+      where: { id: userId, balance: { gte: amount } },
+      data: { balance: { decrement: amount } }
+    })
+    if (walletUpdate.count !== 1) throw new Error('BALANCE_INSUFFICIENT')
+
+    const balanceLog = await tx.balanceLog.create({
+      data: {
+        userId,
+        instanceId,
+        type: 'consume',
+        amount: amount.neg(),
+        balanceBefore,
+        balanceAfter,
+        remark: `实例 ${instance.name} 补缴按量流量费（${pending.trafficBytes.toString()} bytes）`
+      }
+    })
+    await tx.trafficBillingRecord.update({
+      where: { id: pending.id },
+      data: { status: 'paid', balanceLogId: balanceLog.id, periodEnd: new Date() }
+    })
+
+    const periodStart = getTrafficPeriod(instance.host.trafficResetDay ?? 1).periodStart
+    const belongsToCurrentPeriod = pending.periodStart >= periodStart
+    const updated = await tx.instance.updateMany({
+      where: {
+        id: instanceId,
+        userId,
+        version: instance.version,
+        status: 'suspended',
+        suspendReason: SUSPEND_REASON
+      },
+      data: {
+        status: 'stopped',
+        suspendedAt: null,
+        suspendedBy: null,
+        suspendReason: null,
+        nextTrafficBillingAt: nextHour(),
+        trafficSettledBytes: belongsToCurrentPeriod ? { increment: pending.trafficBytes } : undefined,
+        trafficSettledCost: belongsToCurrentPeriod ? { increment: amount } : undefined,
+        version: { increment: 1 }
+      }
+    })
+    if (updated.count !== 1) throw new Error('INSTANCE_STATE_CHANGED')
+    return { amount: amount.toNumber() }
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 })
 }
 
 async function runSettlementCandidates(candidateIds: number[], now: Date, trigger: SettlementTrigger): Promise<void> {
@@ -330,8 +428,13 @@ export async function runTrafficBillingJob(): Promise<void> {
 
   await runSettlementCandidates(dueInstances.map(candidate => candidate.id), now, 'hourly')
 
-  // A host can be temporarily unreachable during the first suspension attempt.
-  // Retry the physical stop without creating another bill or touching the balance.
+  await retryTrafficBillingSuspensions()
+
+  await sendLowBalanceWarnings()
+}
+
+/** Retry the physical stop without creating another bill or touching balance. */
+export async function retryTrafficBillingSuspensions(): Promise<void> {
   const suspendedInstances = await prisma.instance.findMany({
     where: {
       trafficBillingMode: 'usage',
@@ -361,10 +464,10 @@ export async function runTrafficBillingJob(): Promise<void> {
     }
   }
 
-  await sendLowBalanceWarnings()
 }
 
 export function startTrafficBillingScheduler(): void {
   schedule('0 * * * *', () => runTrafficBillingJob().catch(console.error))
+  schedule('*/5 * * * *', () => retryTrafficBillingSuspensions().catch(console.error))
   console.log('[TrafficBilling] Scheduler started (1 GiB threshold + hourly 0.5 GiB fallback)')
 }

@@ -507,7 +507,8 @@ export async function resetAllInstanceMonthlyTraffic() {
             monthlyTrafficUsed: 0n,
             trafficStatus: 'NORMAL',
             trafficSettledBytes: 0n,
-            trafficSettledCost: 0
+            trafficSettledCost: 0,
+            version: { increment: 1 }
         }
     })
 }
@@ -516,13 +517,17 @@ export async function resetAllInstanceMonthlyTraffic() {
  * 重置单个实例的月度流量用量
  */
 export async function resetInstanceMonthlyTraffic(instanceId: number) {
-    return prisma.instance.update({
-        where: { id: instanceId },
+    return prisma.instance.updateMany({
+        where: {
+            id: instanceId,
+            trafficBillingMode: { not: 'usage' }
+        },
         data: {
             monthlyTrafficUsed: 0n,
             trafficStatus: 'NORMAL',
             trafficSettledBytes: 0n,
-            trafficSettledCost: 0
+            trafficSettledCost: 0,
+            version: { increment: 1 }
         }
     })
 }
@@ -558,7 +563,8 @@ export async function resetHostInstancesMonthlyTraffic(hostIds: number[]) {
             monthlyTrafficUsed: 0n,
             trafficStatus: 'NORMAL',
             trafficSettledBytes: 0n,
-            trafficSettledCost: 0
+            trafficSettledCost: 0,
+            version: { increment: 1 }
         }
     })
 }
