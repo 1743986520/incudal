@@ -5,7 +5,11 @@
 
 import { prisma } from './prisma.js'
 import type { OAuthConfig, UserOAuthBinding } from '../types/database.js'
-import { encryptSensitiveData } from '../lib/security.js'
+import { decryptSensitiveData, encryptSensitiveData, isEncrypted } from '../lib/security.js'
+
+function decryptOAuthSecret(value: string): string {
+  return decryptSensitiveData(value) || value
+}
 
 /**
  * 获取所有 OAuth 配置
@@ -16,12 +20,20 @@ export async function getOAuthConfigs(): Promise<OAuthConfig[]> {
       provider: 'asc'
     }
   })
+
+  const legacyConfigs = configs.filter(config => !isEncrypted(config.clientSecret))
+  if (legacyConfigs.length > 0) {
+    await prisma.$transaction(legacyConfigs.map(config => prisma.oAuthConfig.update({
+      where: { id: config.id },
+      data: { clientSecret: encryptSensitiveData(config.clientSecret) }
+    })))
+  }
   
   return configs.map(c => ({
     id: c.id,
     provider: c.provider,
     client_id: c.clientId,
-    client_secret: c.clientSecret,
+    client_secret: decryptOAuthSecret(c.clientSecret),
     enabled: c.enabled ? 1 : 0,
     created_at: c.createdAt.toISOString(),
     updated_at: c.updatedAt.toISOString()
@@ -37,12 +49,19 @@ export async function getOAuthConfig(provider: 'github' | 'google'): Promise<OAu
   })
   
   if (!config) return null
+
+  if (!isEncrypted(config.clientSecret)) {
+    await prisma.oAuthConfig.update({
+      where: { id: config.id },
+      data: { clientSecret: encryptSensitiveData(config.clientSecret) }
+    })
+  }
   
   return {
     id: config.id,
     provider: config.provider,
     client_id: config.clientId,
-    client_secret: config.clientSecret,
+    client_secret: decryptOAuthSecret(config.clientSecret),
     enabled: config.enabled ? 1 : 0,
     created_at: config.createdAt.toISOString(),
     updated_at: config.updatedAt.toISOString()
@@ -83,12 +102,12 @@ export async function upsertOAuthConfig(
     create: {
       provider,
       clientId: data.clientId,
-      clientSecret: data.clientSecret,
+      clientSecret: encryptSensitiveData(data.clientSecret),
       enabled: data.enabled
     },
     update: {
       clientId: data.clientId,
-      clientSecret: data.clientSecret,
+      clientSecret: encryptSensitiveData(data.clientSecret),
       enabled: data.enabled
     }
   })

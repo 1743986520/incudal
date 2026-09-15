@@ -533,13 +533,13 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     // 提取会话标识
     const sessionId = refreshToken.substring(0, 20)
 
-    // 生成 Access Token（简化版：7天有效期）
+    // OAuth 与密码登录使用相同的短期 Access Token 生命周期。
     const accessToken = fastify.jwt.sign({
       id: loginData.userId,
       username: loginData.username,
       role: loginData.role as 'admin' | 'user',
       sid: sessionId
-    }, { expiresIn: '7d' })
+    }, { expiresIn: '30m' })
 
     return {
       token: accessToken,
@@ -582,4 +582,3 @@ function parseOAuthUser(
 
   return { id: String(data.id || ''), username: null, email: null, avatar: null }
 }
-
