@@ -228,7 +228,6 @@ await fastify.register(helmet, {
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'",
-        "'unsafe-inline'",
         'https://challenges.cloudflare.com',
         'https://static.cloudflareinsights.com',
       ],
