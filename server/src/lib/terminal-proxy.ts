@@ -8,7 +8,7 @@ import type { WebSocket as WsWebSocket } from 'ws'
 import { Agent, request } from 'undici'
 import { readFileSync } from 'fs'
 import type { Host } from '../types/database.js'
-import { assertServerManagedCertificatePaths, buildIncusTlsConnectOptions, trustFromEnvironment } from './incus/incus-tls.js'
+import { buildIncusTlsConnectOptions, panelCertificatePaths, trustFromEnvironment } from './incus/incus-tls.js'
 
 // 证书缓存（避免每次连接都读取文件）
 interface CertCache {
@@ -342,13 +342,10 @@ export async function createIncusConsoleConnection(
     const baseUrl = host.url
 
     // 创建 mTLS Agent
-    if (!host.cert_path || !host.key_path) {
-        throw new Error('Host certificate configuration missing')
-    }
-
-    // 使用缓存的服务端托管证书（避免每次连接都读取文件）
-    assertServerManagedCertificatePaths(host.cert_path, host.key_path)
-    const { cert, key } = getCachedCertificates(host.cert_path, host.key_path)
+    // Persisted host paths can point to the host filesystem. WebSSH must use
+    // the certificate pair mounted inside the running panel container.
+    const { certPath, keyPath } = panelCertificatePaths()
+    const { cert, key } = getCachedCertificates(certPath, keyPath)
     const configuredTrust = trustFromEnvironment()
     const tlsOptions = buildIncusTlsConnectOptions(
         configuredTrust.ca && typeof configuredTrust.ca === 'string'
