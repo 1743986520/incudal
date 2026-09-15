@@ -1009,6 +1009,7 @@ export default {
                 insufficientCpu: 'Insufficient remaining CPU (<15%), cannot create instance',
             },
             ownPaidPackageWarning: 'This is your own paid package, you cannot create instances for yourself',
+            packagePrerequisiteRequired: 'Prerequisite: you must first own a normal instance of the “{package}” package before creating an instance from this package.',
             destroyTrafficNotice: 'Destroy limit: this instance can only be destroyed while its current-month traffic usage is below 5 GB.',
             firstPaidInstanceNotice: 'Destroy limit: this instance can only be destroyed while its current-month traffic usage is below 5 GB.',
             // Order Summary

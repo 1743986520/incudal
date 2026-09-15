@@ -1153,6 +1153,7 @@ export default {
                 insufficientCpu: '剩餘 CPU 不足（<15%），無法建立實例',
             },
             ownPaidPackageWarning: '這是您自己建立的付費方案，不能為自己開通實例',
+            packagePrerequisiteRequired: '前置要求：您必須先擁有「{package}」方案的正常實例，才能建立此方案的實例。',
             destroyTrafficNotice: '銷毀限制：實例本月已用流量低於 5 GB 時才可銷毀。',
             firstPaidInstanceNotice: '銷毀限制：實例本月已用流量低於 5 GB 時才可銷毀。',
             // 訂單概覽

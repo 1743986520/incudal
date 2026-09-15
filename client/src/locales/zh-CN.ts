@@ -1006,6 +1006,7 @@ export default {
                 insufficientCpu: '剩余 CPU 不足（<15%），无法创建实例',
             },
             ownPaidPackageWarning: '这是您自己创建的付费套餐，不能为自己开通实例',
+            packagePrerequisiteRequired: '前置要求：您必须先拥有“{package}”套餐的正常实例，才能创建此套餐的实例。',
             destroyTrafficNotice: '销毁限制：实例本月已用流量低于 5 GB 时才可销毁。',
             firstPaidInstanceNotice: '销毁限制：实例本月已用流量低于 5 GB 时才可销毁。',
             // 订单概览
