@@ -156,6 +156,14 @@ fastify.addHook('onRequest', async (request) => {
 import type { FastifyError } from 'fastify'
 
 fastify.setErrorHandler((error: FastifyError, _request, reply) => {
+  if ((error as FastifyError & { code?: string }).code === 'ADVISORY_LOCK_BUSY') {
+    return reply.code(409).send({
+      error: 'Resource is busy, please retry',
+      code: 'RESOURCE_BUSY',
+      retryAfter: '1'
+    })
+  }
+
   if ((error as FastifyError & { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
     return reply.code(413).send({
       error: 'Uploaded file is too large',
