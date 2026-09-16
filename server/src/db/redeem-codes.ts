@@ -307,6 +307,26 @@ export async function useSystemRedeemCode(
   throw new Error('REDEEM_CODE_BUSY')
 }
 
+/** Compensate a reserved code when delivery fails before it becomes durable. */
+export async function releaseSystemRedeemCode(
+  redeemCodeId: number,
+  userId: number,
+  instanceId: number
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const usage = await tx.redeemCodeUsage.findFirst({
+      where: { redeemCodeId, userId, instanceId },
+      select: { id: true }
+    })
+    if (!usage) return
+    await tx.redeemCodeUsage.delete({ where: { id: usage.id } })
+    await tx.redeemCode.updateMany({
+      where: { id: redeemCodeId, usedCount: { gt: 0 } },
+      data: { usedCount: { decrement: 1 } }
+    })
+  })
+}
+
 /**
  * 更新兑换码
  */

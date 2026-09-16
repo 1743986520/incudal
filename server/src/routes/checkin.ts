@@ -8,6 +8,7 @@ import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { getIncusClient } from '../lib/incus/index.js'
 import { patchInstanceResources } from '../lib/incus/incus-instances.js'
+import { prisma } from '../db/prisma.js'
 
 // 资源类型名称映射
 const CODE_TYPE_NAMES: Record<string, { zh: string; en: string }> = {
@@ -54,7 +55,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         'checkin.disabled',
         'Daily check-in is temporarily disabled',
         'failed'
-      )
+      ).catch(err => request.log.warn(err, '兑换成功，但操作日志写入失败'))
       return reply.code(403).send(apiError(ErrorCode.FEATURE_DISABLED, '签到功能暂时下线，后续改版后再开放'))
     }
 
@@ -204,10 +205,30 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
     // 不再检查套餐上限，允许资源无限叠加
 
     let actualAdded = codeValue
+    let hostAdjusted = false
+    let remoteApplied = false
+    let databaseApplied = false
+    let codeConsumed = false
 
     try {
-      // 先执行原子操作确认可用
+      // Claim the instance version before touching Incus. This serializes
+      // different codes redeemed against the same instance and prevents stale
+      // read/overwrite races.
+      const claimed = await prisma.instance.updateMany({
+        where: {
+          id: instanceId,
+          userId: user.id,
+          version: instance.version,
+          status: { in: ['running', 'stopped'] }
+        },
+        data: { version: { increment: 1 } }
+      })
+      if (claimed.count !== 1) throw new Error('REDEEM_INSTANCE_BUSY')
+
+      // Reserve the code after the instance claim. Any later delivery failure
+      // releases this exact usage record in the compensation path.
       await db.useSystemRedeemCode(systemCodeRecord.id, user.id, instanceId, systemCodeRecord.batchId)
+      codeConsumed = true
 
       // 资源应用逻辑（不再截断到套餐上限）
       if (codeType === 'c') {
@@ -217,9 +238,12 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
           return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
         }
         await db.adjustHostResources(instance.host_id, { cpuUsed: actualAdded })
+        hostAdjusted = true
         const client = await getIncusClient(host)
         await patchInstanceResources(client, instance.incus_id, { cpu: newCpu })
+        remoteApplied = true
         await db.updateInstanceResources(instanceId, { cpu: newCpu })
+        databaseApplied = true
       } else if (codeType === 'r') {
         const newMemory = instance.memory + codeValue
         const host = await db.getHostById(instance.host_id)
@@ -227,9 +251,12 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
           return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
         }
         await db.adjustHostResources(instance.host_id, { memoryUsed: actualAdded })
+        hostAdjusted = true
         const client = await getIncusClient(host)
         await patchInstanceResources(client, instance.incus_id, { memory: newMemory })
+        remoteApplied = true
         await db.updateInstanceResources(instanceId, { memory: newMemory })
+        databaseApplied = true
       } else if (codeType === 'd') {
         const newDisk = instance.disk + codeValue
         const host = await db.getHostById(instance.host_id)
@@ -237,16 +264,21 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
           return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
         }
         await db.adjustHostResources(instance.host_id, { diskUsed: actualAdded })
+        hostAdjusted = true
         const client = await getIncusClient(host)
         await patchInstanceResources(client, instance.incus_id, { disk: newDisk })
+        remoteApplied = true
         await db.updateInstanceResources(instanceId, { disk: newDisk })
+        databaseApplied = true
       } else if (codeType === 't') {
         const trafficBytes = BigInt(codeValue) * BigInt(1024 * 1024 * 1024)
         const currentLimit = instance.monthly_traffic_limit ? BigInt(instance.monthly_traffic_limit) : BigInt(0)
         const newLimit = currentLimit + trafficBytes
         await db.updateInstanceResources(instanceId, { monthlyTrafficLimit: newLimit })
+        databaseApplied = true
       } else if (codeType === 'p') {
         await db.addPoints(user.id, codeValue, 'checkin', undefined, '兑换码奖励')
+        databaseApplied = true
       }
 
       const typeName = CODE_TYPE_NAMES[codeType]?.en || codeType
@@ -268,7 +300,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
           actualAdded,
           instanceId,
           `系统兑换码 ${trimmedCode} 应用到 ${instance.name}`
-        )
+        ).catch(err => request.log.warn(err, '兑换成功，但资源日志写入失败'))
       }
 
       return {
@@ -283,6 +315,48 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
+      try {
+        if (codeType === 'c') {
+          if (remoteApplied) {
+            const host = await db.getHostById(instance.host_id)
+            if (host) await patchInstanceResources(await getIncusClient(host), instance.incus_id, { cpu: instance.cpu })
+          }
+          if (databaseApplied) await db.updateInstanceResources(instanceId, { cpu: instance.cpu })
+          if (hostAdjusted) await db.adjustHostResources(instance.host_id, { cpuUsed: -actualAdded })
+        } else if (codeType === 'r') {
+          if (remoteApplied) {
+            const host = await db.getHostById(instance.host_id)
+            if (host) await patchInstanceResources(await getIncusClient(host), instance.incus_id, { memory: instance.memory })
+          }
+          if (databaseApplied) await db.updateInstanceResources(instanceId, { memory: instance.memory })
+          if (hostAdjusted) await db.adjustHostResources(instance.host_id, { memoryUsed: -actualAdded })
+        } else if (codeType === 'd') {
+          if (!remoteApplied) {
+            if (databaseApplied) await db.updateInstanceResources(instanceId, { disk: instance.disk })
+            if (hostAdjusted) await db.adjustHostResources(instance.host_id, { diskUsed: -actualAdded })
+          } else if (!databaseApplied) {
+            // Disk growth is irreversible on common Incus storage drivers;
+            // complete the local side instead of attempting an unsafe shrink.
+            await db.updateInstanceResources(instanceId, { disk: instance.disk + codeValue })
+            databaseApplied = true
+          }
+        } else if (codeType === 't' && databaseApplied) {
+          await db.updateInstanceResources(instanceId, {
+            monthlyTrafficLimit: instance.monthly_traffic_limit ? BigInt(instance.monthly_traffic_limit) : 0n
+          })
+        } else if (codeType === 'p' && databaseApplied) {
+          await db.addPoints(user.id, -codeValue, 'checkin', undefined, '兑换码发放失败回滚')
+        }
+        if (codeConsumed && !(codeType === 'd' && remoteApplied && databaseApplied)) {
+          await db.releaseSystemRedeemCode(systemCodeRecord.id, user.id, instanceId)
+          codeConsumed = false
+        }
+      } catch (compensationError) {
+        request.log.error({ compensationError, instanceId, codeType }, '兑换码发放补偿失败')
+      }
+      if (errorMessage === 'REDEEM_INSTANCE_BUSY') {
+        return reply.code(409).send({ error: 'REDEEM_INSTANCE_BUSY', message: 'Instance is being modified, please retry' })
+      }
       if (errorMessage === 'REDEEM_CODE_EXHAUSTED') {
         return reply.code(400).send(apiError(ErrorCode.REDEEM_CODE_EXHAUSTED))
       }
