@@ -1,5 +1,85 @@
 # Changelog
 
+## 2026-09-16 — 计费一致性、并发安全与 IPAM 修复
+
+本次更新集中处理 9 月生产审计发现的流量计费、实例交付、资源台账、支付回调和数据库并发问题。升级包含 Prisma 迁移，必须重新构建服务并执行 `prisma migrate deploy`。
+
+### 流量计费
+
+- 新增按量流量计费、余额不足提醒和用户自主偿还欠费入口。
+- 按累计流量阈值结算，并保留小时级兜底任务；调度器增加单进程防重入及可配置并发限制。
+- 修复重置流量时洗掉未结算流量、套餐切换后把未付超量错误标记为已结算，以及 `usage → package` 遗留 pending 账单的问题。
+- 套餐切换同时保留已结算金额痕迹，统一用户与管理员入口的结算公式。
+- 修复多网卡流量漏计、计数器重置后尾段流量丢失、瞬时空样本导致计数异常及并发增量覆盖。
+- 按量实例不再套用套餐超量限速；余额恢复并完成结算后会撤销欠费限速。
+
+涉及位置：`server/src/services/traffic-*`、`server/src/db/traffic.ts`、`server/src/routes/instance-billing.ts`、`server/src/routes/admin-billing.ts`。
+
+### 创建、重试与 IP 地址分配
+
+- 实例 IPv4/IPv6 在交给 Incus 前写入数据库完成原子预留，不再使用存在竞态的“先查询、稍后写入”。
+- 数据库强制同宿主机地址唯一；Routed IPv6 额外强制全局唯一。并发冲突会换用新候选地址，同一次分配不会反复尝试相同 IP。
+- 普通购买、管理员创建和失败重试统一使用同一套地址预留逻辑；已有有效预留可复用，无预留的旧字段不会被盲目信任。
+- 修复 `ipv6_only` 重试不重新分配 IPv6、清空数据库地址及未生成 guest 网络配置的问题。
+- 创建、重试扣款和宿主机资源预留改为条件更新及事务操作，避免余额、资源计数和实例状态互相脱节。
+- 失败创建的资源统计只包含真正持有资源的状态，避免历史 `error` 实例重新占用 NAT port。
+
+涉及位置：`server/src/db/ip-addresses.ts`、`server/src/db/quota-operations.ts`、`server/src/routes/instances.ts`、`server/src/routes/admin-billing.ts`、`server/prisma/migrations/20260916120000_enforce_ip_reservations/`。
+
+### 套餐变更、退款与资源台账
+
+- 修复降档时未付流量被洗白、切换套餐后孤儿账单及已结算成本归零。
+- 方案升级会检查并预留 NAT port 差额，不再只调整 CPU、内存和磁盘。
+- Incus 配置变更、数据库计费与宿主机资源计数增加补偿路径，并明确记录补偿失败，避免无声留下不一致状态。
+- 退款上限、销毁流程、转移费用和资源池扣减增加幂等及串行化保护。
+- VIP 奖励、AFF 余额、签到资源、批量配置和管理员计费统一使用原子增减，避免并发覆盖。
+
+### 支付、兑换码与生命周期
+
+- 已付款但回调延迟的充值订单，即使清理任务已标记为 `cancelled`，仍可按支付平台结果幂等入账。
+- 兑换码发放在完整流程内持有实例锁；宿主机不存在或发放失败时会补偿兑换码状态。
+- 套餐销毁策略支持退款期限、销毁期限和前端配置，并统一用户与管理员口径。
+- 创建、停止、暂停、销毁和退款操作增加状态认领及补偿，降低 Worker、调度器与用户请求并发执行造成的重复处理。
+
+### 数据库连接与任务锁
+
+- 热点事务锁改为 `pg_try_advisory_xact_lock` 快速失败，不再让等待者长期占用连接池。
+- 锁冲突统一返回可重试的 `409`，后台 Worker 使用退避重试。
+- Prisma 连接池默认最小连接数改为 `0`，并增加连接、查询、statement timeout 及 Worker backoff 配置。
+- 流量、备份、恢复、通知和实例任务按宿主机限制并发，避免任务高峰耗尽 PostgreSQL 连接。
+
+可调整环境变量：`DB_POOL_MAX`、`DB_POOL_MIN`、`DB_CONNECTION_TIMEOUT`、`DB_IDLE_TIMEOUT`、`DB_STATEMENT_TIMEOUT`、`DB_QUERY_TIMEOUT`、`TRAFFIC_CONCURRENCY_PER_HOST`、`TRAFFIC_HOST_CONCURRENCY`、`DB_WORKER_BACKOFF_MS`。
+
+### 安全与节点通信
+
+- OAuth client secret 改为加密保存，缩短访问令牌寿命并修复续期路径。
+- 收紧 CSP、外部 URL、IPv6 特殊地址、安装脚本来源和远程下载校验。
+- Incus 客户端证书按指纹验证；容器部署从只读挂载复制证书后以非 root 用户启动应用。
+- Agent 实例报告增加去重与校验，任务增加执行租约，降低重复执行和伪造状态污染。
+- Agent 当前版本为 `v0.0.7`。
+
+### 升级步骤
+
+Docker Compose 部署：
+
+```bash
+git pull
+docker compose build app
+docker compose up -d --no-deps app
+docker compose logs --tail=100 app
+```
+
+入口脚本会自动执行 `prisma migrate deploy`。非容器部署需手动执行：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter server exec prisma migrate deploy
+pnpm --filter server exec prisma generate
+pnpm build
+```
+
+升级前必须备份 PostgreSQL。IP 唯一索引迁移若发现历史活动实例已经撞 IP，会明确失败而不会静默删除或覆盖地址；应先核对 Incus 实际配置并修复冲突记录，再将迁移标记为 rolled back 后重试。
+
 ## 2026-09-01 — PPS 误封修正
 
 - Agent 启动和自动升级后会同步 PPS Guard 规则，并将旧配置中的最低阈值迁移到 20,000 PPS，避免节点升级后继续使用旧规则。
