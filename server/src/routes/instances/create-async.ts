@@ -170,36 +170,6 @@ export async function createInstanceAsync(
       return
     }
 
-    if (ipv4) {
-      try {
-        await db.createIpAddress({
-          address: ipv4,
-          type: 'inet4',
-          isPrimary: true,
-          device: 'eth0',
-          instanceId
-        })
-        console.log(`[Provisioning] 主 IPv4 地址记录已创建: ${ipv4} (device: eth0)`)
-      } catch (err) {
-        console.warn(`[Provisioning] 创建 IPv4 记录失败 (可能已存在):`, err)
-      }
-    }
-
-    if (ipv6) {
-      try {
-        await db.createIpAddress({
-          address: ipv6,
-          type: 'inet6',
-          isPrimary: true,
-          device: 'eth1',
-          instanceId
-        })
-        console.log(`[Provisioning] 主 IPv6 地址记录已创建: ${ipv6} (device: eth1)`)
-      } catch (err) {
-        console.warn(`[Provisioning] 创建 IPv6 记录失败 (可能已存在):`, err)
-      }
-    }
-
     console.log(`[Provisioning] ✔ 实例 ${instanceId} (${config.name}) 创建成功!`)
 
     const instance = await db.getInstanceById(instanceId)

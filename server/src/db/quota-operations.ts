@@ -295,8 +295,6 @@ export async function claimInstanceAndReserveResources(options: {
       },
       data: {
         status: 'creating',
-        ipv4: null,
-        ipv6: null,
         version: { increment: 1 }
       }
     })

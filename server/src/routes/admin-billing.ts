@@ -35,7 +35,6 @@ import {
   isValidSystemImage
 } from '../db/images.js'
 import { sendAdminInstanceCreatedEmail, sendInstanceDestroyRefundEmail } from '../lib/mailer.js'
-import { generateRandomIPv4, generateRandomIPv6 } from '../lib/ip-calculator.js'
 import { validateCommandsOwnership, mergeCommandContents, getImageDistroFromAlias } from '../db/custom-init-commands.js'
 import { customAlphabet } from 'nanoid'
 import { buildInstanceConfig, getIncusClient, createInstance, startInstance, deleteInstance, getInstanceState } from '../lib/incus/index.js'
@@ -3241,20 +3240,6 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       let staticIPv4: string | null = null
       let staticIPv6: string | null = null
 
-      try {
-        let attempts = 0
-        const maxAttempts = 50
-        while (attempts < maxAttempts) {
-          staticIPv4 = generateRandomIPv4()
-          const exists = await db.isIpAddressExistsOnHost(staticIPv4, host.id)
-          if (!exists) break
-          attempts++
-          staticIPv4 = null
-        }
-      } catch (err) {
-        console.error('[Admin Create Instance] IPv4 分配错误:', err)
-      }
-
       const hostWithIpv6 = host as typeof host & {
         ipv6_mode?: number
         ipv6_subnet?: string | null
@@ -3262,23 +3247,15 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         ipv6_parent_interface?: string | null
       }
 
-      // 仅 Routed 模式（需要独立 IPv6 地址）才从子网分配
       const needsRoutedIPv6 = ['nat_ipv6', 'ipv6_only'].includes(networkMode)
-      if (hostWithIpv6.ipv6_subnet && needsRoutedIPv6) {
-        try {
-          let attempts = 0
-          const maxAttempts = 50
-          while (attempts < maxAttempts) {
-            staticIPv6 = generateRandomIPv6(hostWithIpv6.ipv6_subnet)
-            const exists = await db.isIpAddressExists(staticIPv6)
-            if (!exists) break
-            attempts++
-            staticIPv6 = null
-          }
-        } catch (err) {
-          console.warn('[Admin Create Instance] IPv6 分配错误:', err)
-        }
-      }
+      const reservedAddresses = await db.reserveInstanceIpAddresses({
+        instanceId,
+        hostId: host.id,
+        allocateIpv4: networkMode !== 'ipv6_only',
+        ipv6Subnet: needsRoutedIPv6 ? hostWithIpv6.ipv6_subnet : null
+      })
+      staticIPv4 = reservedAddresses.ipv4
+      staticIPv6 = reservedAddresses.ipv6
 
       // VM 和容器都需要在 IP 分配完成后重新生成 cloud-init network-config
       let finalConfigPayload = configPayload
@@ -3290,10 +3267,10 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           imageAlias: image,
           rootPassword: metaData.rootPassword,
           sshKey: sshKey,
-          network: staticIPv4 ? {
-            ipAddress: `${staticIPv4}/22`,
-            gateway: '10.10.0.1',  // NAT 网关 (与 incusbr0 一致)
-            dns: ['8.8.8.8', '1.1.1.1'],
+          network: (staticIPv4 || staticIPv6) ? {
+            ipAddress: staticIPv4 ? `${staticIPv4}/22` : undefined,
+            gateway: staticIPv4 ? '10.10.0.1' : undefined,
+            dns: staticIPv4 ? ['8.8.8.8', '1.1.1.1'] : undefined,
             ipv6Address: staticIPv6 ? `${staticIPv6}` : undefined,
             ipv6Gateway: staticIPv6 ? (hostWithIpv6.ipv6_gateway || undefined) : undefined
           } : undefined,
@@ -3301,7 +3278,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         })
         finalConfigPayload = vmResult.configPayload
         console.log(`[Admin Create Instance] VM network-config 已更新: IPv4=${staticIPv4 || 'dhcp'}, IPv6=${staticIPv6 || 'none'}`)
-      } else if (staticIPv4) {
+      } else if (staticIPv4 || staticIPv6) {
         // 容器类型：重新生成包含静态 IP 的 cloud-init 配置
         const containerResult = generateIncusConfig({
           instanceName: name,
@@ -3311,9 +3288,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           networkMode,
           type: 'container',
           network: {
-            ipAddress: `${staticIPv4}/22`,
-            gateway: '10.10.0.1',
-            dns: ['8.8.8.8', '1.1.1.1'],
+            ipAddress: staticIPv4 ? `${staticIPv4}/22` : undefined,
+            gateway: staticIPv4 ? '10.10.0.1' : undefined,
+            dns: staticIPv4 ? ['8.8.8.8', '1.1.1.1'] : undefined,
             ipv6Address: staticIPv6 ? `${staticIPv6}/128` : undefined,
             ipv6Gateway: staticIPv6 ? 'fe80::1' : undefined
           },

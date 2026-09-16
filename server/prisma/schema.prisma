@@ -1140,7 +1140,7 @@ model IpAddress {
 
   @@index([address])
   @@index([hostId])
-  @@index([hostId, address])
+  @@unique([hostId, address])
   @@index([instanceId])
   @@map("ip_addresses")
 }

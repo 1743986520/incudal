@@ -2,7 +2,8 @@
  * IP 地址数据库操作
  */
 import { prisma } from './prisma.js'
-import type { IpType } from '@prisma/client'
+import { Prisma, type IpType } from '@prisma/client'
+import { generateRandomIPv4, generateRandomIPv6 } from '../lib/ip-calculator.js'
 
 export interface CreateIpAddressData {
     address: string
@@ -12,6 +13,104 @@ export interface CreateIpAddressData {
     device: string
     hostId?: number
     instanceId: number
+}
+
+export interface ReserveInstanceIpAddressesData {
+    instanceId: number
+    hostId: number
+    allocateIpv4: boolean
+    ipv6Subnet?: string | null
+}
+
+export interface ReservedInstanceIpAddresses {
+    ipv4: string | null
+    ipv6: string | null
+}
+
+/**
+ * Atomically reserves provisioning addresses before they are handed to Incus.
+ *
+ * Availability checks alone are inherently racy: two provisioners can observe
+ * the same free candidate. The host/address unique constraint is the final
+ * arbiter, while this transaction keeps the reservation rows and the legacy
+ * Instance.ipv4/ipv6 fields in sync. Candidates already tried in this call are
+ * never selected again.
+ */
+export async function reserveInstanceIpAddresses(
+    data: ReserveInstanceIpAddressesData
+): Promise<ReservedInstanceIpAddresses> {
+    const attemptedIpv4 = new Set<string>()
+    const attemptedIpv6 = new Set<string>()
+    const maxAttempts = 100
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const ipv4Candidate = data.allocateIpv4
+            ? nextDistinctCandidate(() => generateRandomIPv4(), attemptedIpv4, maxAttempts)
+            : null
+        const ipv6Candidate = data.ipv6Subnet
+            ? nextDistinctCandidate(() => generateRandomIPv6(data.ipv6Subnet!), attemptedIpv6, maxAttempts)
+            : null
+
+        try {
+            return await prisma.$transaction(async tx => {
+                const instance = await tx.instance.findUnique({
+                    where: { id: data.instanceId },
+                    select: { hostId: true, status: true }
+                })
+                if (!instance) throw new Error(`Instance ${data.instanceId} not found while reserving IP addresses`)
+                if (instance.hostId !== data.hostId) throw new Error('Instance host changed while reserving IP addresses')
+                if (instance.status === 'deleted') throw new Error('Cannot reserve IP addresses for a deleted instance')
+
+                const existing = await tx.ipAddress.findMany({
+                    where: { instanceId: data.instanceId, isPrimary: true },
+                    select: { address: true, type: true }
+                })
+                // Only an IpAddress row is a reservation. Legacy Instance fields
+                // without one are untrusted check-then-use leftovers and must be
+                // replaced rather than retried forever with the same collision.
+                const existingIpv4 = existing.find(ip => ip.type === 'inet4')?.address
+                const existingIpv6 = existing.find(ip => ip.type === 'inet6')?.address
+                const ipv4 = data.allocateIpv4 ? (existingIpv4 ?? ipv4Candidate) : null
+                const ipv6 = data.ipv6Subnet ? (existingIpv6 ?? ipv6Candidate) : null
+
+                if (data.allocateIpv4 && !ipv4) throw new Error('IPv4 address pool exhausted')
+                if (data.ipv6Subnet && !ipv6) throw new Error('IPv6 address pool exhausted')
+
+                if (ipv4 && !existing.some(ip => ip.type === 'inet4')) {
+                    await tx.ipAddress.create({
+                        data: { address: ipv4, type: 'inet4', isPrimary: true, device: 'eth0', hostId: data.hostId, instanceId: data.instanceId }
+                    })
+                }
+                if (ipv6 && !existing.some(ip => ip.type === 'inet6')) {
+                    await tx.ipAddress.create({
+                        data: { address: ipv6, type: 'inet6', isPrimary: true, device: 'eth1', hostId: data.hostId, instanceId: data.instanceId }
+                    })
+                }
+
+                await tx.instance.update({
+                    where: { id: data.instanceId },
+                    data: { ipv4, ipv6 }
+                })
+                return { ipv4, ipv6 }
+            }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 3000, timeout: 5000 })
+        } catch (error) {
+            if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === 'P2002' || error.code === 'P2034')) continue
+            throw error
+        }
+    }
+
+    throw new Error(`Unable to reserve a unique IP address after ${maxAttempts} attempts`)
+}
+
+function nextDistinctCandidate(factory: () => string, attempted: Set<string>, maxAttempts: number): string | null {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const candidate = factory()
+        if (!attempted.has(candidate)) {
+            attempted.add(candidate)
+            return candidate
+        }
+    }
+    return null
 }
 
 async function resolveInstanceHostId(instanceId: number): Promise<number> {

@@ -45,7 +45,7 @@ import {
   isImageCompatibleWithMemory,
   isValidSystemImage
 } from '../db/images.js'
-import { generateRandomIPv4, generateRandomIPv6 } from '../lib/ip-calculator.js'
+import { generateRandomIPv6 } from '../lib/ip-calculator.js'
 import { getProxySitesByInstanceId, deleteProxySite } from '../db/proxy-sites.js'
 import { calculateVipLevel, getVipBadgeStyleForLevel, getVipRules } from '../services/vip-levels.js'
 import { ProxyStrategyFactory } from '../lib/proxy/index.js'
@@ -1514,63 +1514,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
     console.log(`[Provisioning] Host IPv6 config: mode=${hostWithIpv6.ipv6_mode}, subnet=${hostWithIpv6.ipv6_subnet}, gateway=${hostWithIpv6.ipv6_gateway}, parent_interface=${hostWithIpv6.ipv6_parent_interface}`)
 
-    // 分配 IPv4
-    try {
-      let attempts = 0
-      const maxAttempts = 50
-
-      while (attempts < maxAttempts) {
-        staticIPv4 = generateRandomIPv4()
-        // 内网 IPv4 只需在同一宿主机内唯一（不同宿主机的内网是隔离的）
-        const exists = await db.isIpAddressExistsOnHost(staticIPv4, host.id)
-
-        if (!exists) {
-          console.log(`[Provisioning] 分配静态 IPv4: ${staticIPv4} (尝试次数: ${attempts + 1})`)
-          break
-        }
-
-        attempts++
-        staticIPv4 = null
-      }
-
-      if (!staticIPv4) {
-        console.error(`[Provisioning] IPv4 分配失败（已尝试 ${maxAttempts} 次），实例将使用动态 IP`)
-        // 不在这里返回错误，让实例使用动态 IP
-      }
-    } catch (err) {
-      console.error(`[Provisioning] IPv4 分配错误:`, err)
-      // 不在这里返回错误，让实例使用动态 IP
-    }
-
-    // 分配 IPv6（仅当存在 IPv6 子网配置且是 Routed 模式时，即需要独立 IPv6 地址）
-    // nat_ipv6 和 ipv6_only 从子网分配独立 IPv6，nat_ipv6_nat 和 ipv6_nat 共享宿主机 IPv6
+    // 在把地址交给 Incus 之前先原子预留。数据库唯一约束负责仲裁并发，
+    // 不再使用会让两个请求同时看到同一“空闲”地址的 check-then-use。
     const needsRoutedIPv6 = ['nat_ipv6', 'ipv6_only'].includes(networkMode)
-    if (hostWithIpv6.ipv6_subnet && needsRoutedIPv6) {
-      try {
-        let attempts = 0
-        const maxAttempts = 50
-
-        while (attempts < maxAttempts) {
-          staticIPv6 = generateRandomIPv6(hostWithIpv6.ipv6_subnet)
-          const exists = await db.isIpAddressExists(staticIPv6)
-
-          if (!exists) {
-            console.log(`[Provisioning] 分配静态 IPv6: ${staticIPv6} (尝试次数: ${attempts + 1})`)
-            break
-          }
-
-          attempts++
-          staticIPv6 = null
-        }
-
-        if (!staticIPv6) {
-          console.warn(`[Provisioning] IPv6 分配失败（已尝试 ${maxAttempts} 次），将使用动态分配`)
-        }
-      } catch (err) {
-        console.warn(`[Provisioning] IPv6 分配错误，将使用动态分配:`, err)
-        staticIPv6 = null
-      }
-    }
+    const reservedAddresses = await db.reserveInstanceIpAddresses({
+      instanceId,
+      hostId: host.id,
+      allocateIpv4: networkMode !== 'ipv6_only',
+      ipv6Subnet: needsRoutedIPv6 ? hostWithIpv6.ipv6_subnet : null
+    })
+    staticIPv4 = reservedAddresses.ipv4
+    staticIPv6 = reservedAddresses.ipv6
 
     console.log(`[Provisioning] IP 分配完成: IPv4=${staticIPv4}, IPv6=${staticIPv6}`)
 
@@ -1585,10 +1539,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         imageAlias: actualImageAlias,
         rootPassword: metaData.rootPassword,
         sshKey: sshKey,
-        network: staticIPv4 ? {
-          ipAddress: `${staticIPv4}/22`,
-          gateway: '10.10.0.1',  // NAT 网关 (与 incusbr0 一致)
-          dns: ['10.10.0.1'],
+        network: (staticIPv4 || staticIPv6) ? {
+          ipAddress: staticIPv4 ? `${staticIPv4}/22` : undefined,
+          gateway: staticIPv4 ? '10.10.0.1' : undefined,
+          dns: staticIPv4 ? ['10.10.0.1'] : undefined,
           ipv6Address: staticIPv6 ? `${staticIPv6}` : undefined,
           ipv6Gateway: staticIPv6 ? (hostWithIpv6.ipv6_gateway || undefined) : undefined
         } : undefined,
@@ -1596,7 +1550,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       })
       finalConfigPayload = vmResult.configPayload
       console.log(`[Provisioning] VM network-config 已更新: IPv4=${staticIPv4 || 'dhcp'}, IPv6=${staticIPv6 || 'none'}`)
-    } else if (staticIPv4) {
+    } else if (staticIPv4 || staticIPv6) {
       // 容器类型：重新生成包含静态 IP 的 cloud-init 配置
       const containerResult = generateIncusConfig({
         instanceName: name,
@@ -1606,9 +1560,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         networkMode,
         type: 'container',
         network: {
-          ipAddress: `${staticIPv4}/22`,
-          gateway: '10.10.0.1',
-          dns: ['10.10.0.1'],
+          ipAddress: staticIPv4 ? `${staticIPv4}/22` : undefined,
+          gateway: staticIPv4 ? '10.10.0.1' : undefined,
+          dns: staticIPv4 ? ['10.10.0.1'] : undefined,
           ipv6Address: staticIPv6 ? `${staticIPv6}/128` : undefined,
           ipv6Gateway: staticIPv6 ? 'fe80::1' : undefined
         },
@@ -1744,33 +1698,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const instanceType = ((instance.package as any).instanceType || (instance.package as any).instance_type || 'container') as 'container' | 'vm'
     const networkMode = instance.networkMode as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
     const rootPassword = (instance.rootPassword ? decryptSensitiveData(instance.rootPassword) : null) || generateRandomPassword(16)
-    let ipv4Address: string | null = instance.ipv4
-    if (networkMode !== 'ipv6_only' && !ipv4Address) {
-      for (let attempt = 0; attempt < 50; attempt++) {
-        const candidate = generateRandomIPv4()
-        if (!(await db.isIpAddressExistsOnHost(candidate, instance.hostId))) {
-          ipv4Address = candidate
-          break
-        }
-      }
-    }
-
     const hostRecord = await db.getHostById(instance.hostId)
     if (!hostRecord) return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
     const hostIpv6 = instance.host as any
-    let ipv6Address: string | null = instance.ipv6
-    if (['nat_ipv6', 'ipv6_only'].includes(networkMode) && !ipv6Address && hostIpv6.ipv6Subnet) {
-      for (let attempt = 0; attempt < 50; attempt++) {
-        const candidate = generateRandomIPv6(hostIpv6.ipv6Subnet)
-        if (!(await db.isIpAddressExists(candidate))) {
-          ipv6Address = candidate
-          break
-        }
-      }
-      if (!ipv6Address) {
-        return reply.code(503).send({ error: '无法分配 IPv6 地址，请稍后重试', code: 'IPV6_ALLOCATION_FAILED' })
-      }
-    }
+    const retryAddresses = await db.reserveInstanceIpAddresses({
+      instanceId,
+      hostId: instance.hostId,
+      allocateIpv4: networkMode !== 'ipv6_only',
+      ipv6Subnet: ['nat_ipv6', 'ipv6_only'].includes(networkMode) ? hostIpv6.ipv6Subnet : null
+    })
+    const ipv4Address = retryAddresses.ipv4
+    const ipv6Address = retryAddresses.ipv6
     const sshPublicKey = typeof snapshot.sshPublicKey === 'string' ? snapshot.sshPublicKey : ''
     const retryNetwork = (ipv4Address || ipv6Address) ? {
       ipAddress: ipv4Address ? `${ipv4Address}/22` : undefined,
