@@ -909,59 +909,99 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const result = await db.performPlanChange(user.id, instance, newPlan)
-      try {
-        const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
-        await reconcileTrafficStateForInstanceIds([instance.id])
-      } catch (err) {
-        request.log.warn(err, '实例方案已更新，流量状态即时复核失败')
+      if (newPlan.disk < instance.disk) {
+        throw new Error('不支持缩小实例磁盘，请选择磁盘不小于当前配置的方案')
       }
 
-      // 计算资源变化量并更新宿主机资源统计
       const cpuDelta = newPlan.cpu - instance.cpu
       const memoryDelta = newPlan.memory - instance.memory
       const diskDelta = newPlan.disk - instance.disk
-      
-      if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0) {
-        const host = await db.getHostById(instance.hostId)
-        if (host) {
-          await db.adjustHostResources(instance.hostId, {
-            cpuUsed: cpuDelta,
-            memoryUsed: memoryDelta,
-            diskUsed: diskDelta
-          })
-          console.log(`[ChangePlan] 实例 ${instance.name} 资源变化: CPU ${cpuDelta > 0 ? '+' : ''}${cpuDelta}%, Memory ${memoryDelta > 0 ? '+' : ''}${memoryDelta}MB, Disk ${diskDelta > 0 ? '+' : ''}${diskDelta}MB`)
-        }
+      const host = await db.getHostById(instance.hostId)
+      if (!host) throw new Error('宿主机不存在')
+
+      if (cpuDelta > 0 && host.cpu_used + cpuDelta > (host.cpu_allowance_max ?? 0)) {
+        throw new Error('宿主机 CPU 资源不足')
+      }
+      if (memoryDelta > 0 && host.memory_used + memoryDelta > (host.memory_max ?? 0)) {
+        throw new Error('宿主机内存资源不足')
+      }
+      if (diskDelta > 0 && host.disk_used + diskDelta > (host.storage_size ?? 0) * 1024) {
+        throw new Error('宿主机磁盘资源不足')
       }
 
-      // 同步配置到 Incus
-      let incusSyncSuccess = false
-      let incusSyncError: string | null = null
+      let hostReserved = false
+      let result: Awaited<ReturnType<typeof db.performPlanChange>>
+      let incusApplied = false
+      const client = await getIncusClient(host)
       try {
-        const host = await db.getHostById(instance.hostId)
-        if (host) {
-          const client = await getIncusClient(host)
-          // 同步 CPU/内存/磁盘配置到 Incus
-          await patchInstanceResources(client, instance.incusId, {
-            cpu: newPlan.cpu,
-            memory: newPlan.memory,
-            disk: newPlan.disk
+        if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0) {
+          const reservation = await prisma.host.updateMany({
+            where: {
+              id: instance.hostId,
+              cpuUsed: host.cpu_used,
+              memoryUsed: host.memory_used,
+              diskUsed: host.disk_used
+            },
+            data: {
+              cpuUsed: { increment: cpuDelta },
+              memoryUsed: { increment: memoryDelta },
+              diskUsed: { increment: diskDelta }
+            }
           })
-          incusSyncSuccess = true
-          console.log(`[ChangePlan] 实例 ${instance.name} Incus 配置同步成功: CPU=${newPlan.cpu}%, Memory=${newPlan.memory}MB, Disk=${newPlan.disk}MB`)
+          if (reservation.count !== 1) throw new Error('宿主机资源已被其他操作占用，请重试')
+          hostReserved = true
         }
-      } catch (incusErr) {
-        incusSyncError = incusErr instanceof Error ? incusErr.message : String(incusErr)
-        console.error(`[ChangePlan] 实例 ${instance.name} Incus 配置同步失败:`, incusSyncError)
+
+        // Apply the non-transactional Incus side first. No money or plan state
+        // is committed unless the host accepted the complete resource change.
+        await patchInstanceResources(client, instance.incusId, {
+          cpu: newPlan.cpu,
+          memory: newPlan.memory,
+          disk: newPlan.disk
+        })
+        incusApplied = true
+
+        result = await db.performPlanChange(user.id, instance, newPlan)
+        try {
+          const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
+          await reconcileTrafficStateForInstanceIds([instance.id])
+        } catch (err) {
+          request.log.warn(err, '实例方案已更新，流量状态即时复核失败')
+        }
+
+        // 发送升降级通知
+      } catch (changeError) {
+        if (incusApplied) {
+          try {
+            await patchInstanceResources(client, instance.incusId, {
+              cpu: instance.cpu,
+              memory: instance.memory,
+              disk: instance.disk
+            })
+          } catch (rollbackError) {
+            request.log.error({ rollbackError, instanceId }, '方案变更 Incus 回滚失败')
+          }
+        }
+        if (hostReserved) {
+          await db.adjustHostResources(instance.hostId, {
+            cpuUsed: -cpuDelta,
+            memoryUsed: -memoryDelta,
+            diskUsed: -diskDelta
+          })
+        }
+        throw changeError
       }
 
-      // 发送升降级通知
+      const incusSyncSuccess = true
+      const incusSyncError: string | null = null
+
+
       await sendNotification(user.id, 'instance_plan_changed', {
         instanceName: instance.name,
         oldPlanName: oldPlan?.name || '未知',
         newPlanName: newPlan.name,
         priceDiff: result.priceDiff // 元（与其他通知保持一致）
-      })
+      }).catch(err => request.log.warn(err, '方案升级成功，但通知发送失败'))
 
       await createLog(
         user.id,
@@ -970,7 +1010,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
         `Changed plan for instance "${instance.name}": ${oldPlan?.name || 'unknown'} → ${newPlan.name}, priceDiff: ${result.priceDiff}`,
         'success',
         { instanceId }
-      )
+      ).catch(err => request.log.warn(err, '方案升级成功，但操作日志写入失败'))
 
       // 判断实例类型：KVM 需要重启，LXC 即时生效
       const instanceType = (instance.package as { instanceType?: string } | null)?.instanceType || 'container'
