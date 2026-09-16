@@ -346,12 +346,17 @@ export async function createIncusConsoleConnection(
     // the certificate pair mounted inside the running panel container.
     const { certPath, keyPath } = panelCertificatePaths()
     const { cert, key } = getCachedCertificates(certPath, keyPath)
-    const configuredTrust = trustFromEnvironment()
-    const tlsOptions = buildIncusTlsConnectOptions(
-        configuredTrust.ca && typeof configuredTrust.ca === 'string'
-            ? { ca: readFileSync(configuredTrust.ca) }
-            : configuredTrust
-    )
+    // Every Incus host has its own self-signed server certificate. The normal
+    // API client pins the certificate saved on the host record, but the
+    // terminal WebSocket previously fell back to only the panel-wide TLS
+    // environment. That made console connections fail after a clean rebuild.
+    const environmentTrust = trustFromEnvironment()
+    const trust = host.server_certificate
+        ? { ca: host.server_certificate, fingerprint: host.server_fingerprint }
+        : environmentTrust.ca && typeof environmentTrust.ca === 'string'
+            ? { ca: readFileSync(environmentTrust.ca) }
+            : environmentTrust
+    const tlsOptions = buildIncusTlsConnectOptions(trust)
 
     const agent = new Agent({
         connect: {
