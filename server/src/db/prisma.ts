@@ -38,7 +38,10 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   // 连接池大小：根据应用负载调整
   max: parseInt(process.env.DB_POOL_MAX || '20', 10), // 最大连接数
-  min: parseInt(process.env.DB_POOL_MIN || '5', 10),  // 最小连接数
+  // Do not pin idle connections by default. This matters when multiple panel
+  // replicas share PostgreSQL; each process otherwise reserves five slots even
+  // while idle.
+  min: parseInt(process.env.DB_POOL_MIN || '0', 10),
   // 连接超时
   connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '5000', 10),
   // 空闲连接超时（30秒）
@@ -159,6 +162,13 @@ const adapter = new PrismaPg(pool)
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
   adapter,
+  // Bound both pool acquisition and interactive transaction lifetime. Long
+  // external Incus operations must live outside DB transactions rather than
+  // monopolising a connection.
+  transactionOptions: {
+    maxWait: parseInt(process.env.DB_TRANSACTION_MAX_WAIT || '3000', 10),
+    timeout: parseInt(process.env.DB_TRANSACTION_TIMEOUT || '15000', 10)
+  },
   // 开发环境也只记录错误，减少日志噪音
   // 如需调试查询，可设置环境变量 PRISMA_LOG=query,error,warn
   log: process.env.PRISMA_LOG
@@ -183,4 +193,3 @@ export function getDbPoolStats(): {
 }
 
 export default prisma
-

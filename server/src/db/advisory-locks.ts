@@ -12,6 +12,21 @@ export const USER_ADMIN_ROLE_LOCK_NAMESPACE = 4108
 export const USER_CREATE_EMAIL_LOCK_NAMESPACE = 4109
 export const USER_BALANCE_LOCK_NAMESPACE = 4110
 
+/**
+ * Blocking pg_advisory_xact_lock calls consume one pool connection per waiter.
+ * Under a hot key that can exhaust the entire application pool and prevent the
+ * lock owner from finishing. Callers must fail/retry the whole transaction
+ * instead of queueing while holding a connection.
+ */
+export class AdvisoryLockBusyError extends Error {
+  readonly code = 'ADVISORY_LOCK_BUSY'
+
+  constructor(namespace: number, key: number) {
+    super(`Advisory transaction lock is busy (${namespace}:${key})`)
+    this.name = 'AdvisoryLockBusyError'
+  }
+}
+
 export async function tryAdvisoryTransactionLock(
   tx: Prisma.TransactionClient,
   namespace: number,
@@ -29,10 +44,6 @@ export async function advisoryTransactionLock(
   namespace: number,
   key: number
 ): Promise<void> {
-  await tx.$queryRaw<Array<{ locked: boolean }>>(Prisma.sql`
-    WITH acquired_lock AS (
-      SELECT pg_advisory_xact_lock(${namespace}, ${key})
-    )
-    SELECT true AS locked FROM acquired_lock
-  `)
+  const locked = await tryAdvisoryTransactionLock(tx, namespace, key)
+  if (!locked) throw new AdvisoryLockBusyError(namespace, key)
 }
