@@ -54,7 +54,7 @@ import { sendHostManagedInstanceNotification, sendNotification } from '../lib/no
 import { createInstanceTask, getInstanceTaskById, getActiveTaskForInstance, getTaskQueuePosition, cancelInstanceTask } from '../db/instance-tasks.js'
 import { canRecoverInstanceTask } from '../workers/instance-task-lease.js'
 import { closeInstanceSessions } from '../lib/terminal-proxy.js'
-import { calculateDiscountAmount } from '../lib/billing-calc.js'
+import { calculateDiscountAmount, getCycleDays } from '../lib/billing-calc.js'
 import { validateCommandsOwnership, mergeCommandContents, getImageDistroFromAlias } from '../db/custom-init-commands.js'
 import { getPlanById, isPaidPackage } from '../db/package-plans.js'
 import { calculateCreateBilling } from '../db/billing-operations.js'
@@ -62,6 +62,7 @@ import { getUserBalance } from '../db/balance.js'
 import { normalizeIpv4Address, selectBindableIpv4ListenAddress } from '../lib/network-address.js'
 import { applyTrafficMultiplier, normalizeTrafficMultiplier, resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { getSafeHttpUrl } from '../lib/external-url.js'
+import { normalizePlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js'
 import {
   persistResolvedInstanceNetworkAddresses,
   resolveInstanceNetworkAddresses
@@ -1141,6 +1142,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       portLimit: effectivePortLimit,
       nested: Boolean(pkg.nested),
       privileged: Boolean(pkg.privileged),
+      // Public keys are needed to reproduce cloud-init after a failed
+      // provision. Keeping it in the immutable purchase snapshot avoids a
+      // retry silently removing SSH access.
+      sshPublicKey: sshKey || null,
       nodeSelectors: JSON.parse(pkgWithExtras.node_selectors || '[]'),
       createdAt: new Date().toISOString()
     }
@@ -1269,12 +1274,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         // 带宽限制：付费方案优先使用方案的 trafficLimitSpeed
         let planBandwidthLimit: string | null = null
         if (selectedPlan?.trafficBillingMode !== 'usage' && selectedPlan?.trafficLimitSpeed && selectedPlan.trafficLimitSpeed !== '0') {
-          const bytes = BigInt(selectedPlan.trafficLimitSpeed)
-          const MB = BigInt(1024 * 1024)
-          const mbps = Number(bytes / MB)
-          if (mbps > 0) {
-            planBandwidthLimit = `${mbps}Mbit`
-          }
+          planBandwidthLimit = normalizePlanTrafficLimitSpeed(selectedPlan.trafficLimitSpeed)
         }
 
         const baseMonthlyTrafficLimit = selectedPlan ? selectedPlan.trafficLimit : packageTrafficLimit
@@ -1742,20 +1742,23 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const snapshot = (instance.snapshottedSpecs || {}) as Record<string, unknown>
     const instanceType = ((instance.package as any).instanceType || (instance.package as any).instance_type || 'container') as 'container' | 'vm'
+    const networkMode = instance.networkMode as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
     const rootPassword = (instance.rootPassword ? decryptSensitiveData(instance.rootPassword) : null) || generateRandomPassword(16)
-    let ipv4Address: string | null = null
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const candidate = generateRandomIPv4()
-      if (!(await db.isIpAddressExistsOnHost(candidate, instance.hostId))) {
-        ipv4Address = candidate
-        break
+    let ipv4Address: string | null = instance.ipv4
+    if (networkMode !== 'ipv6_only' && !ipv4Address) {
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const candidate = generateRandomIPv4()
+        if (!(await db.isIpAddressExistsOnHost(candidate, instance.hostId))) {
+          ipv4Address = candidate
+          break
+        }
       }
     }
 
     const hostRecord = await db.getHostById(instance.hostId)
     if (!hostRecord) return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
-    const networkMode = instance.networkMode as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
     const hostIpv6 = instance.host as any
+    const sshPublicKey = typeof snapshot.sshPublicKey === 'string' ? snapshot.sshPublicKey : ''
     let cloudInitConfig: Record<string, string>
     if (instanceType === 'vm') {
       const { generateVmConfig } = await import('../lib/incus-config-vm.js')
@@ -1764,7 +1767,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         instanceIdSeed: instance.incusId,
         imageAlias: instance.image,
         rootPassword,
-        sshKey: '',
+        sshKey: sshPublicKey,
         network: ipv4Address ? {
           ipAddress: `${ipv4Address}/22`, gateway: '10.10.0.1', dns: ['10.10.0.1']
         } : undefined
@@ -1774,7 +1777,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         instanceName: instance.name,
         imageAlias: instance.image,
         rootPassword,
-        sshKey: '',
+        sshKey: sshPublicKey,
         networkMode,
         type: 'container',
         network: ipv4Address ? {
@@ -1808,14 +1811,18 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           const user = await tx.user.findUnique({ where: { id: request.user.id }, select: { balance: true } })
           if (!user || Number(user.balance) < retryAmount) throw new Error('BALANCE_INSUFFICIENT')
           const balanceBefore = Number(user.balance)
+          const updated = await tx.user.updateMany({
+            where: { id: request.user.id, balance: { gte: retryAmount } },
+            data: { balance: { decrement: retryAmount } }
+          })
+          if (updated.count === 0) throw new Error('BALANCE_INSUFFICIENT')
           const balanceAfter = Number((balanceBefore - retryAmount).toFixed(2))
-          await tx.user.update({ where: { id: request.user.id }, data: { balance: balanceAfter } })
           const balanceLog = await tx.balanceLog.create({
             data: { userId: request.user.id, type: 'consume', amount: -retryAmount, balanceBefore, balanceAfter, instanceId, remark: `重试创建实例：${instance.name}` }
           })
           const now = new Date()
           const periodEnd = new Date(now)
-          periodEnd.setMonth(periodEnd.getMonth() + Math.max(1, instance.billingCycle || lastPurchase?.months || 1))
+          periodEnd.setDate(periodEnd.getDate() + getCycleDays(Math.max(1, instance.billingCycle || lastPurchase?.months || 1)))
           await tx.instanceBillingRecord.create({
             data: { instanceId, userId: request.user.id, type: 'newPurchase', amount: retryAmount, months: instance.billingCycle || lastPurchase?.months || 1, periodStart: now, periodEnd, balanceLogId: balanceLog.id, remark: '创建失败后重新创建' }
           })
@@ -1857,7 +1864,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       sshPort: instance.sshPort,
       storagePool: instance.storagePoolName || 'default',
       ipv4Address,
-      ipv6Address: null,
+      ipv6Address: instance.ipv6,
       ipv6Gateway: hostIpv6.ipv6Gateway || null,
       hostInterface: hostIpv6.ipv6ParentInterface || 'eth0',
       limitsRead: instance.limitsRead,
@@ -3858,20 +3865,21 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         cpu: instance.cpu,
         memory: instance.memory,
         disk: instance.disk,
-        portCount: portMappingsCount
+        portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.network_mode) ? (instance.port_limit ?? 0) : 0
       })
 
       // 重新计算宿主机资源使用量（包括端口）
       const usedResources = await db.calculateHostResourcesFromInstances(instance.host_id)
       // 重新计算端口映射使用量
-      const actualPortsUsed = await prisma.portMapping.count({
+      const reservedPorts = await prisma.instance.aggregate({
         where: {
-          instance: {
-            hostId: instance.host_id,
-            status: { not: 'deleted' }
-          }
-        }
+          hostId: instance.host_id,
+          status: { not: 'deleted' },
+          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
+        },
+        _sum: { portLimit: true }
       })
+      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
       await db.updateHostResources(instance.host_id, {
         cpuUsed: usedResources.cpuUsed,
         memoryUsed: usedResources.memoryUsed,

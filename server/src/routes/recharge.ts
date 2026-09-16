@@ -2409,9 +2409,10 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
 
     // 9. 检查订单是否已过期
     if (record.expiredAt && new Date(record.expiredAt) < new Date()) {
-      request.log.warn({ orderNo, expiredAt: record.expiredAt }, '订单已过期，拒绝处理回调')
-      // 过期订单不处理，但返回成功避免支付平台重试
-      return provider.type === 'yipay' && epayVersion === 'v1' ? 'success' : { code: 'SUCCESS', message: 'OK' }
+      // A verified payment remains money received even if provider delivery is
+      // delayed beyond our checkout deadline. Continue through the idempotent
+      // completion path so acknowledging the callback never discards funds.
+      request.log.warn({ orderNo, expiredAt: record.expiredAt }, '收到已过期订单的有效付款回调，继续入账')
     }
 
     // 10. 检查订单状态（幂等性处理）

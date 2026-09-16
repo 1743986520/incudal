@@ -1,5 +1,6 @@
 import { Prisma, type VipBenefitClaim, type VipBenefitClaimStatus, type VipBenefitReward } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
+import { USER_BALANCE_LOCK_NAMESPACE, advisoryTransactionLock } from '../db/advisory-locks.js'
 import {
   MAX_VIP_LEVEL,
   calculateUserVipLevelByMetric,
@@ -643,6 +644,10 @@ export async function claimVipBenefitReward(userId: number, rewardId: number): P
 
       if (type === 'balance') {
         const amount = normalizeMoney(config.amount, 'Balance reward amount')
+        // Serialize every balance read/log/write for this user. Without the
+        // lock, concurrent rewards or payments can both derive balanceAfter
+        // from the same stale value and one update is lost.
+        await advisoryTransactionLock(tx, USER_BALANCE_LOCK_NAMESPACE, userId)
         const user = await tx.user.findUnique({
           where: { id: userId },
           select: { balance: true }
@@ -654,7 +659,7 @@ export async function claimVipBenefitReward(userId: number, rewardId: number): P
         const balanceAfter = roundMoney(balanceBefore + amount)
         await tx.user.update({
           where: { id: userId },
-          data: { balance: balanceAfter }
+          data: { balance: { increment: amount } }
         })
         await tx.balanceLog.create({
           data: {
