@@ -47,6 +47,7 @@ import {
 import { shouldSyncInstanceSwapSizeWithPlan } from '../lib/instance-swap.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { calculateInstanceTrafficStatus, calculatePlanChangeSettledBytes } from '../services/traffic-utils.js'
+import { normalizePlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js'
 import type { Host } from '../types/database.js'
 import { getInstanceBillingLineageIds } from '../db/billing-records.js'
 import { INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
@@ -1518,7 +1519,6 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       // 4. 远端实例已经确认删除，现在清理本地关联数据
       // 4.2 删除端口映射
-      const portMappings = await prisma.portMapping.findMany({ where: { instanceId } })
 
       // 4.3 清理关联数据
       try {
@@ -1541,25 +1541,25 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       }
 
       // 4.6 释放宿主机资源
-      const portMappingsCount = portMappings?.length || 0
       await db.rollbackResources({
         hostId: instance.hostId,
         cpu: instance.cpu,
         memory: instance.memory,
         disk: instance.disk,
-        portCount: portMappingsCount
+        portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
       })
 
       // 重新计算宿主机资源使用量
       const usedResources = await db.calculateHostResourcesFromInstances(instance.hostId)
-      const actualPortsUsed = await prisma.portMapping.count({
+      const reservedPorts = await prisma.instance.aggregate({
         where: {
-          instance: {
-            hostId: instance.hostId,
-            status: { not: 'deleted' }
-          }
-        }
+          hostId: instance.hostId,
+          status: { not: 'deleted' },
+          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
+        },
+        _sum: { portLimit: true }
       })
+      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
       await db.updateHostResources(instance.hostId, {
         cpuUsed: usedResources.cpuUsed,
         memoryUsed: usedResources.memoryUsed,
@@ -3045,12 +3045,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         // 带宽限制：付费方案优先使用方案的 trafficLimitSpeed
         let planBandwidthLimit: string | null = null
         if (selectedPlan?.trafficBillingMode !== 'usage' && selectedPlan?.trafficLimitSpeed && selectedPlan.trafficLimitSpeed !== '0') {
-          const bytes = BigInt(selectedPlan.trafficLimitSpeed)
-          const MB = BigInt(1024 * 1024)
-          const mbps = Number(bytes / MB)
-          if (mbps > 0) {
-            planBandwidthLimit = `${mbps}Mbit`
-          }
+          planBandwidthLimit = normalizePlanTrafficLimitSpeed(selectedPlan.trafficLimitSpeed)
         }
 
         const baseMonthlyTrafficLimit = selectedPlan ? selectedPlan.trafficLimit : packageTrafficLimit
@@ -3820,13 +3815,18 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
                   ? newPlan.swapSize
                   : instance.swapSize),
             monthlyTrafficLimit,
-            trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
+            trafficStatus: newPlan.trafficBillingMode === 'usage'
+              ? 'NORMAL'
+              : calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
             trafficBillingMode: newPlan.trafficBillingMode,
             trafficUnitPrice: newPlan.trafficUnitPrice,
+            limitsIngress: newPlan.trafficBillingMode === 'usage' ? null : normalizePlanTrafficLimitSpeed(newPlan.trafficLimitSpeed),
+            limitsEgress: newPlan.trafficBillingMode === 'usage' ? null : normalizePlanTrafficLimitSpeed(newPlan.trafficLimitSpeed),
             trafficSettledBytes: calculatePlanChangeSettledBytes({
               monthlyTrafficUsed: instance.monthlyTrafficUsed,
               previousBillingMode: instance.trafficBillingMode,
               previousSettledBytes: instance.trafficSettledBytes,
+              previousMonthlyTrafficLimit: instance.monthlyTrafficLimit,
               newBillingMode: newPlan.trafficBillingMode,
               newMonthlyTrafficLimit: monthlyTrafficLimit
             }),

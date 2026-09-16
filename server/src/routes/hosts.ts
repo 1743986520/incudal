@@ -3029,13 +3029,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         await db.updateInstanceStatus(instance.id, 'deleted')
 
         // ===== 8. 释放资源配额 =====
-        const portMappingsCount = portMappings?.length || 0
         await db.rollbackResources({
           hostId: instance.hostId,
           cpu: instance.cpu,
           memory: instance.memory,
           disk: instance.disk,
-          portCount: portMappingsCount
+          portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
         })
 
         // ===== 9. 处理退款（节点所有者删除他人的付费实例时）=====
@@ -3164,14 +3163,15 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     try {
       const usedResources = await db.calculateHostResourcesFromInstances(hostId)
       // 重新计算端口映射使用量
-      const actualPortsUsed = await prisma.portMapping.count({
+      const reservedPorts = await prisma.instance.aggregate({
         where: {
-          instance: {
-            hostId: hostId,
-            status: { not: 'deleted' }
-          }
-        }
+          hostId: hostId,
+          status: { not: 'deleted' },
+          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
+        },
+        _sum: { portLimit: true }
       })
+      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
       await db.updateHostResources(hostId, {
         cpuUsed: usedResources.cpuUsed,
         memoryUsed: usedResources.memoryUsed,
@@ -4445,14 +4445,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           await db.updateInstanceStatus(instance.id, 'deleted')
           
           // 2. 获取端口映射数量并回滚资源
-          const portMappings = await db.getPortMappings(instance.id)
-          const portMappingsCount = portMappings?.length || 0
           await db.rollbackResources({
             hostId: instance.hostId,
             cpu: instance.cpu,
             memory: instance.memory,
             disk: instance.disk,
-            portCount: portMappingsCount
+            portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
           })
           
           changedCount++
@@ -4480,14 +4478,15 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       try {
         const usedResources = await db.calculateHostResourcesFromInstances(hostId)
         // 重新计算端口映射使用量
-        const actualPortsUsed = await prisma.portMapping.count({
+        const reservedPorts = await prisma.instance.aggregate({
           where: {
-            instance: {
-              hostId: hostId,
-              status: { not: 'deleted' }
-            }
-          }
+            hostId,
+            status: { not: 'deleted' },
+            networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
+          },
+          _sum: { portLimit: true }
         })
+        const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
         await db.updateHostResources(hostId, {
           cpuUsed: usedResources.cpuUsed,
           memoryUsed: usedResources.memoryUsed,
@@ -4562,14 +4561,15 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     const usedResources = await db.calculateHostResourcesFromInstances(hostId)
 
     // 重新计算端口映射使用量
-    const portMappingsCount = await prisma.portMapping.count({
+    const reservedPorts = await prisma.instance.aggregate({
       where: {
-        instance: {
-          hostId: hostId,
-          status: { not: 'deleted' }
-        }
-      }
+        hostId,
+        status: { not: 'deleted' },
+        networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
+      },
+      _sum: { portLimit: true }
     })
+    const portMappingsCount = reservedPorts._sum.portLimit ?? 0
 
     // 更新宿主机资源使用量
     await db.updateHostResources(hostId, {

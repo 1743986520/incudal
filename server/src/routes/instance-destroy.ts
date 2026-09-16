@@ -655,8 +655,6 @@ async function executeDestroyForUser(
       isFirstTime = billingResult.isFirstTime
     }
 
-    const portMappings = await prisma.portMapping.findMany({ where: { instanceId } })
-
     try {
       await prisma.snapshot.deleteMany({ where: { instanceId } })
       await prisma.backup.deleteMany({ where: { instanceId } })
@@ -675,25 +673,24 @@ async function executeDestroyForUser(
     } catch (cleanupErr) {
       logger.warn(cleanupErr, '清理关联数据失败')
     }
-
-    const portMappingsCount = portMappings?.length || 0
     await db.rollbackResources({
       hostId: instance.hostId,
       cpu: instance.cpu,
       memory: instance.memory,
       disk: instance.disk,
-      portCount: portMappingsCount
+      portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
     })
 
     const usedResources = await db.calculateHostResourcesFromInstances(instance.hostId)
-    const actualPortsUsed = await prisma.portMapping.count({
-      where: {
-        instance: {
+    const reservedPorts = await prisma.instance.aggregate({
+        where: {
           hostId: instance.hostId,
-          status: { not: 'deleted' }
-        }
-      }
-    })
+          status: { not: 'deleted' },
+          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
+        },
+        _sum: { portLimit: true }
+      })
+      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
     await db.updateHostResources(instance.hostId, {
       cpuUsed: usedResources.cpuUsed,
       memoryUsed: usedResources.memoryUsed,
@@ -1171,7 +1168,6 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       }
 
       // 2. 获取端口映射数量（用于释放资源）
-      const portMappings = await prisma.portMapping.findMany({ where: { instanceId } })
 
       // 3. 清理关联数据
       try {
@@ -1194,25 +1190,25 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       }
 
       // 6. 释放宿主机资源
-      const portMappingsCount = portMappings?.length || 0
       await db.rollbackResources({
         hostId: instance.hostId,
         cpu: instance.cpu,
         memory: instance.memory,
         disk: instance.disk,
-        portCount: portMappingsCount
+        portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
       })
 
       // 重新计算宿主机资源使用量
       const usedResources = await db.calculateHostResourcesFromInstances(instance.hostId)
-      const actualPortsUsed = await prisma.portMapping.count({
+      const reservedPorts = await prisma.instance.aggregate({
         where: {
-          instance: {
-            hostId: instance.hostId,
-            status: { not: 'deleted' }
-          }
-        }
+          hostId: instance.hostId,
+          status: { not: 'deleted' },
+          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
+        },
+        _sum: { portLimit: true }
       })
+      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
       await db.updateHostResources(instance.hostId, {
         cpuUsed: usedResources.cpuUsed,
         memoryUsed: usedResources.memoryUsed,
