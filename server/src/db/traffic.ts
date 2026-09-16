@@ -822,6 +822,7 @@ export async function syncPackageTrafficLimitsToInstances(packageId?: number): P
             hostId: true,
             packageId: true,
             monthlyTrafficUsed: true,
+            trafficBillingMode: true,
             package: {
                 select: {
                     monthlyTrafficLimit: true
@@ -868,7 +869,9 @@ export async function syncPackageTrafficLimitsToInstances(packageId?: number): P
             where: { id: instance.id },
             data: {
                 monthlyTrafficLimit,
-                trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit)
+                trafficStatus: instance.trafficBillingMode === 'usage'
+                    ? 'NORMAL'
+                    : calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit)
             }
         })
     }))

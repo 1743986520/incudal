@@ -186,7 +186,8 @@ async function checkAndThrottle(
  */
 async function checkAndRestore(
     instance: RunningTrafficInstance,
-    client: IncusClient
+    client: IncusClient,
+    forceUsageRestore = false
 ): Promise<void> {
     const userQuota = instance.user.quota
     if (!userQuota) return
@@ -201,7 +202,7 @@ async function checkAndRestore(
 
     if (userUnderLimit && (usageBilling || instanceUnderLimit)) {
         const remoteThrottled = await isThrottled(client, instance.incusId)
-        if (instance.trafficStatus !== 'LIMITED' && !remoteThrottled) {
+        if (instance.trafficStatus !== 'LIMITED' && !remoteThrottled && !(usageBilling && forceUsageRestore)) {
             if (userQuota.trafficStatus !== desiredUserStatus) {
                 await trafficDb.updateUserTrafficStatus(instance.userId, desiredUserStatus)
             }
@@ -237,7 +238,10 @@ async function checkAndRestore(
     }
 }
 
-async function reconcileTrafficState(instances: RunningTrafficInstance[]): Promise<void> {
+async function reconcileTrafficState(
+    instances: RunningTrafficInstance[],
+    options: { forceUsageRestore?: boolean } = {}
+): Promise<void> {
     if (instances.length === 0) {
         return
     }
@@ -270,7 +274,7 @@ async function reconcileTrafficState(instances: RunningTrafficInstance[]): Promi
             hostInstances.map(instance =>
                 hostLimit(async () => {
                     await checkAndThrottle(instance, client)
-                    await checkAndRestore(instance, client)
+                    await checkAndRestore(instance, client, options.forceUsageRestore === true)
                 })
             )
         )
@@ -279,7 +283,10 @@ async function reconcileTrafficState(instances: RunningTrafficInstance[]): Promi
 
 export async function reconcileTrafficStateForInstanceIds(instanceIds: number[]): Promise<void> {
     const instances = await trafficDb.getRunningInstancesForTrafficByIds(instanceIds)
-    await reconcileTrafficState(instances)
+    // Explicit reconciliation follows configuration/reset changes. Force a
+    // usage-billed instance back to its unthrottled/base package bandwidth even
+    // when the stale remote cap is not the standard emergency throttle value.
+    await reconcileTrafficState(instances, { forceUsageRestore: true })
 }
 
 export async function reconcileTrafficStateForUser(userId: number): Promise<void> {
@@ -311,14 +318,28 @@ async function withTimeout<T>(
 /**
  * 主流量采集任务
  */
+let activeTrafficJob: Promise<void> | null = null
+
 export async function runTrafficJob(): Promise<void> {
+    if (activeTrafficJob) {
+        console.warn('[Traffic] Previous collection job is still running; skipping overlapping tick')
+        return
+    }
+
     console.log('[Traffic] Starting traffic collection job...')
     const startTime = Date.now()
+    const execution = executeTrafficJob(startTime)
+    activeTrafficJob = execution
+    // A timeout cannot cancel Incus/DB I/O. Keep the overlap guard active until
+    // the real execution settles rather than merely until Promise.race rejects.
+    void execution.finally(() => {
+        if (activeTrafficJob === execution) activeTrafficJob = null
+    }).catch(() => {})
 
     try {
         // 使用超时包装整个任务
         await withTimeout(
-            executeTrafficJob(startTime),
+            execution,
             JOB_TIMEOUT_MS,
             `[Traffic] Job timeout after ${JOB_TIMEOUT_MS}ms`
         )

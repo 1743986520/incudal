@@ -1937,7 +1937,7 @@ async function executeChangeHostTask(
       })
       const currentTraffic = await tx.instance.findUniqueOrThrow({
         where: { id: task.instanceId },
-        select: { monthlyTrafficUsed: true }
+        select: { monthlyTrafficUsed: true, trafficBillingMode: true }
       })
 
       const deletedPortMappings = await tx.portMapping.deleteMany({ where: { instanceId: task.instanceId } })
@@ -1974,7 +1974,9 @@ async function executeChangeHostTask(
           ipv6: actualIpv6,
           storagePoolName: storagePool,
           monthlyTrafficLimit,
-          trafficStatus: calculateInstanceTrafficStatus(currentTraffic.monthlyTrafficUsed, monthlyTrafficLimit),
+          trafficStatus: currentTraffic.trafficBillingMode === 'usage'
+            ? 'NORMAL'
+            : calculateInstanceTrafficStatus(currentTraffic.monthlyTrafficUsed, monthlyTrafficLimit),
           cloudInitState: null,
           cloudInitSource: null,
           cloudInitLastCheckedAt: null,

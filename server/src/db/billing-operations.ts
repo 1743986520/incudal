@@ -20,6 +20,7 @@ import {
 import { shouldSyncInstanceSwapSizeWithPlan } from '../lib/instance-swap.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { calculateInstanceTrafficStatus, calculatePlanChangeSettledBytes } from '../services/traffic-utils.js'
+import { normalizePlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js'
 import {
   HOSTING_BALANCE_LOG_LOCK_NAMESPACE,
   INSTANCE_OPERATION_LOCK_NAMESPACE,
@@ -1067,13 +1068,18 @@ export async function performPlanChange(
               ? newPlan.swapSize
               : instance.swapSize),
         monthlyTrafficLimit,
-        trafficStatus: calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
+        trafficStatus: newPlan.trafficBillingMode === 'usage'
+          ? 'NORMAL'
+          : calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit),
         trafficBillingMode: newPlan.trafficBillingMode,
         trafficUnitPrice: newPlan.trafficUnitPrice,
+        limitsIngress: newPlan.trafficBillingMode === 'usage' ? null : normalizePlanTrafficLimitSpeed(newPlan.trafficLimitSpeed),
+        limitsEgress: newPlan.trafficBillingMode === 'usage' ? null : normalizePlanTrafficLimitSpeed(newPlan.trafficLimitSpeed),
         trafficSettledBytes: calculatePlanChangeSettledBytes({
           monthlyTrafficUsed: instance.monthlyTrafficUsed,
           previousBillingMode: instance.trafficBillingMode,
           previousSettledBytes: instance.trafficSettledBytes,
+          previousMonthlyTrafficLimit: instance.monthlyTrafficLimit,
           newBillingMode: newPlan.trafficBillingMode,
           newMonthlyTrafficLimit: monthlyTrafficLimit
         }),

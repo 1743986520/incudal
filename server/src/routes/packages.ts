@@ -14,6 +14,7 @@ import { prisma } from '../db/prisma.js'
 import { normalizeTrafficMultiplier } from '../lib/traffic-multiplier.js'
 import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
 import { calculateVipLevel, getVipBadgeStyleForLevel, getVipRules } from '../services/vip-levels.js'
+import { isValidPlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js'
 
 const KVM_UNSUPPORTED_NETWORK_MODES = new Set(['nat_ipv6_nat', 'ipv6_nat'])
 const MAX_PACKAGE_PLAN_NAME_LENGTH = 50
@@ -290,8 +291,8 @@ function validateTrafficBilling(input: {
     }
     trafficUnitPrice = Math.round(hundredthsOfCent) / 100
   }
-  if (mode === 'package' && (typeof input.trafficLimitSpeed !== 'string' || !input.trafficLimitSpeed || input.trafficLimitSpeed === '0')) {
-    return { mode, trafficLimit, trafficUnitPrice: 0, error: '套餐流量模式必须配置超限速度' }
+  if (mode === 'package' && !isValidPlanTrafficLimitSpeed(input.trafficLimitSpeed)) {
+    return { mode, trafficLimit, trafficUnitPrice: 0, error: '套餐流量模式必须配置有效的超限速度' }
   }
   return { mode, trafficLimit, trafficUnitPrice }
 }

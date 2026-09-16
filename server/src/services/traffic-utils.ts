@@ -94,6 +94,7 @@ export function calculatePlanChangeSettledBytes(input: {
     monthlyTrafficUsed: bigint
     previousBillingMode: 'package' | 'usage'
     previousSettledBytes: bigint
+    previousMonthlyTrafficLimit: bigint | null
     newBillingMode: 'package' | 'usage'
     newMonthlyTrafficLimit: bigint | null
 }): bigint {
@@ -105,9 +106,15 @@ export function calculatePlanChangeSettledBytes(input: {
         : 0n
 
     if (input.previousBillingMode !== 'usage') return newOverage
-    return input.previousSettledBytes < newOverage
-        ? input.previousSettledBytes
-        : newOverage
+
+    // Settled bytes are stored relative to the old included allowance. Convert
+    // them to an absolute paid-through usage watermark before rebasing against
+    // the new allowance, otherwise raising the allowance forgives unpaid bytes
+    // and lowering it charges already-covered bytes again.
+    const oldIncluded = input.previousMonthlyTrafficLimit ?? 0n
+    const paidThroughUsage = oldIncluded + input.previousSettledBytes
+    const rebased = paidThroughUsage > included ? paidThroughUsage - included : 0n
+    return rebased < newOverage ? rebased : newOverage
 }
 
 /**
