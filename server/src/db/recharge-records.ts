@@ -326,8 +326,9 @@ export async function completeRecharge(
     return record
   }
 
-  // 已取消或失败的订单不能再完成
-  if (record.status === 'cancelled' || record.status === 'failed') {
+  // A cancelled order may still receive a cryptographically verified late
+  // provider callback. Failed orders remain terminal.
+  if (record.status === 'failed') {
     throw new Error(`订单状态异常：${record.status}`)
   }
 
@@ -335,11 +336,12 @@ export async function completeRecharge(
   const actualAmount = resolveActualAmount(record, data.actualAmount)
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. 使用条件更新确保并发安全（只有 pending 或 paid 状态可以变为 completed）
+    // 1. 使用条件更新确保并发安全；cancelled is accepted for verified
+    // late payment callbacks after the hourly expiry cleanup.
     const updateResult = await tx.rechargeRecord.updateMany({
       where: {
         orderNo,
-        status: { in: ['pending', 'paid'] }  // 状态机：只有这两种状态可以转为 completed
+        status: { in: ['pending', 'paid', 'cancelled'] }
       },
       data: {
         status: 'completed',

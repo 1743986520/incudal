@@ -9,6 +9,7 @@ import { apiError, ErrorCode } from '../lib/errors.js'
 import { getIncusClient } from '../lib/incus/index.js'
 import { patchInstanceResources } from '../lib/incus/incus-instances.js'
 import { prisma } from '../db/prisma.js'
+import { acquireLock, extendLock, releaseLock } from '../lib/distributed-lock.js'
 
 // 资源类型名称映射
 const CODE_TYPE_NAMES: Record<string, { zh: string; en: string }> = {
@@ -182,7 +183,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
     codeValue = systemCodeRecord.codeValue
 
     // 获取目标实例
-    const instance = await db.getInstanceById(instanceId)
+    let instance = await db.getInstanceById(instanceId)
     if (!instance) {
       return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
     }
@@ -203,6 +204,28 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
     }
 
     // 不再检查套餐上限，允许资源无限叠加
+
+    // 同一實例上的兌換碼發放必須序列化。原本只用 version + 1 的樂觀鎖，
+    // 它只保護「單次更新」，無法阻止兩個請求在檢查與寫入之間各自通過檢查，
+    // 導致兩個兌換碼都被消耗、宿主機計數加兩次、實例卻只加一次。
+    const redeemLockKey = `redeem:instance:${instanceId}`
+    const redeemLock = await acquireLock(redeemLockKey, { expireMs: 120_000, waitTimeoutMs: 5_000 })
+    if (!redeemLock.success || !redeemLock.ownerId) {
+      return reply.code(409).send({ error: 'REDEEM_INSTANCE_BUSY', message: 'Instance is being modified, please retry' })
+    }
+    const redeemLockOwner = redeemLock.ownerId
+    const redeemLockHeartbeat = setInterval(() => {
+      void extendLock(redeemLockKey, redeemLockOwner, 120_000)
+    }, 30_000)
+
+    // 取鎖後重新讀取實例，確保 CPU/記憶體/磁碟基準值為最新（避免使用過期快照）。
+    const lockedInstance = await db.getInstanceById(instanceId)
+    if (!lockedInstance || lockedInstance.user_id !== user.id) {
+      clearInterval(redeemLockHeartbeat)
+      await releaseLock(redeemLockKey, redeemLockOwner)
+      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+    }
+    instance = lockedInstance
 
     let actualAdded = codeValue
     let hostAdjusted = false
@@ -235,7 +258,9 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         const newCpu = instance.cpu + codeValue
         const host = await db.getHostById(instance.host_id)
         if (!host) {
-          return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+          // 用拋出取代直接回應：兌換碼已在上方被消耗，必須讓 catch 的補償路徑
+          // 釋放該筆兌換碼，否則使用者會白白損失一張碼。
+          throw new Error('REDEEM_HOST_NOT_FOUND')
         }
         await db.adjustHostResources(instance.host_id, { cpuUsed: actualAdded })
         hostAdjusted = true
@@ -248,7 +273,9 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         const newMemory = instance.memory + codeValue
         const host = await db.getHostById(instance.host_id)
         if (!host) {
-          return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+          // 用拋出取代直接回應：兌換碼已在上方被消耗，必須讓 catch 的補償路徑
+          // 釋放該筆兌換碼，否則使用者會白白損失一張碼。
+          throw new Error('REDEEM_HOST_NOT_FOUND')
         }
         await db.adjustHostResources(instance.host_id, { memoryUsed: actualAdded })
         hostAdjusted = true
@@ -261,7 +288,9 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         const newDisk = instance.disk + codeValue
         const host = await db.getHostById(instance.host_id)
         if (!host) {
-          return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+          // 用拋出取代直接回應：兌換碼已在上方被消耗，必須讓 catch 的補償路徑
+          // 釋放該筆兌換碼，否則使用者會白白損失一張碼。
+          throw new Error('REDEEM_HOST_NOT_FOUND')
         }
         await db.adjustHostResources(instance.host_id, { diskUsed: actualAdded })
         hostAdjusted = true
@@ -354,6 +383,9 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
       } catch (compensationError) {
         request.log.error({ compensationError, instanceId, codeType }, '兑换码发放补偿失败')
       }
+      if (errorMessage === 'REDEEM_HOST_NOT_FOUND') {
+        return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+      }
       if (errorMessage === 'REDEEM_INSTANCE_BUSY') {
         return reply.code(409).send({ error: 'REDEEM_INSTANCE_BUSY', message: 'Instance is being modified, please retry' })
       }
@@ -374,6 +406,9 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
       }
       await createLog(user.id, 'checkin', 'redeem.failed', `Failed to redeem code ${trimmedCode}: ${errorMessage}`, 'failed', { instanceId })
       return reply.code(500).send(apiError(ErrorCode.INTERNAL_ERROR, errorMessage))
+    } finally {
+      clearInterval(redeemLockHeartbeat)
+      await releaseLock(redeemLockKey, redeemLockOwner)
     }
   })
 

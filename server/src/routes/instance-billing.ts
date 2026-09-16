@@ -916,6 +916,8 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       const cpuDelta = newPlan.cpu - instance.cpu
       const memoryDelta = newPlan.memory - instance.memory
       const diskDelta = newPlan.disk - instance.disk
+      const usesReservedNatPorts = ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode)
+      const portDelta = usesReservedNatPorts ? newPlan.portLimit - (instance.portLimit ?? 0) : 0
       const host = await db.getHostById(instance.hostId)
       if (!host) throw new Error('宿主机不存在')
 
@@ -928,24 +930,32 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       if (diskDelta > 0 && host.disk_used + diskDelta > (host.storage_size ?? 0) * 1024) {
         throw new Error('宿主机磁盘资源不足')
       }
+      const natPortsTotal = host.nat_port_start && host.nat_port_end
+        ? host.nat_port_end - host.nat_port_start + 1
+        : 0
+      if (portDelta > 0 && (host.nat_ports_used_count ?? 0) + portDelta > natPortsTotal) {
+        throw new Error('宿主机 NAT 端口资源不足')
+      }
 
       let hostReserved = false
       let result: Awaited<ReturnType<typeof db.performPlanChange>>
       let incusApplied = false
       const client = await getIncusClient(host)
       try {
-        if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0) {
+        if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0 || portDelta !== 0) {
           const reservation = await prisma.host.updateMany({
             where: {
               id: instance.hostId,
               cpuUsed: host.cpu_used,
               memoryUsed: host.memory_used,
-              diskUsed: host.disk_used
+              diskUsed: host.disk_used,
+              natPortsUsedCount: host.nat_ports_used_count ?? 0
             },
             data: {
               cpuUsed: { increment: cpuDelta },
               memoryUsed: { increment: memoryDelta },
-              diskUsed: { increment: diskDelta }
+              diskUsed: { increment: diskDelta },
+              natPortsUsedCount: { increment: portDelta }
             }
           })
           if (reservation.count !== 1) throw new Error('宿主机资源已被其他操作占用，请重试')
@@ -983,10 +993,14 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
           }
         }
         if (hostReserved) {
-          await db.adjustHostResources(instance.hostId, {
-            cpuUsed: -cpuDelta,
-            memoryUsed: -memoryDelta,
-            diskUsed: -diskDelta
+          await prisma.host.update({
+            where: { id: instance.hostId },
+            data: {
+              cpuUsed: { increment: -cpuDelta },
+              memoryUsed: { increment: -memoryDelta },
+              diskUsed: { increment: -diskDelta },
+              natPortsUsedCount: { increment: -portDelta }
+            }
           })
         }
         throw changeError

@@ -1758,7 +1758,27 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const hostRecord = await db.getHostById(instance.hostId)
     if (!hostRecord) return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
     const hostIpv6 = instance.host as any
+    let ipv6Address: string | null = instance.ipv6
+    if (['nat_ipv6', 'ipv6_only'].includes(networkMode) && !ipv6Address && hostIpv6.ipv6Subnet) {
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const candidate = generateRandomIPv6(hostIpv6.ipv6Subnet)
+        if (!(await db.isIpAddressExists(candidate))) {
+          ipv6Address = candidate
+          break
+        }
+      }
+      if (!ipv6Address) {
+        return reply.code(503).send({ error: '无法分配 IPv6 地址，请稍后重试', code: 'IPV6_ALLOCATION_FAILED' })
+      }
+    }
     const sshPublicKey = typeof snapshot.sshPublicKey === 'string' ? snapshot.sshPublicKey : ''
+    const retryNetwork = (ipv4Address || ipv6Address) ? {
+      ipAddress: ipv4Address ? `${ipv4Address}/22` : undefined,
+      gateway: ipv4Address ? '10.10.0.1' : undefined,
+      dns: ipv4Address ? ['10.10.0.1'] : undefined,
+      ipv6Address: ipv6Address ? `${ipv6Address}/128` : undefined,
+      ipv6Gateway: ipv6Address ? (hostIpv6.ipv6Gateway || 'fe80::1') : undefined
+    } : undefined
     let cloudInitConfig: Record<string, string>
     if (instanceType === 'vm') {
       const { generateVmConfig } = await import('../lib/incus-config-vm.js')
@@ -1768,9 +1788,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         imageAlias: instance.image,
         rootPassword,
         sshKey: sshPublicKey,
-        network: ipv4Address ? {
-          ipAddress: `${ipv4Address}/22`, gateway: '10.10.0.1', dns: ['10.10.0.1']
-        } : undefined
+        network: retryNetwork
       }).configPayload
     } else {
       cloudInitConfig = generateIncusConfig({
@@ -1780,9 +1798,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         sshKey: sshPublicKey,
         networkMode,
         type: 'container',
-        network: ipv4Address ? {
-          ipAddress: `${ipv4Address}/22`, gateway: '10.10.0.1', dns: ['10.10.0.1']
-        } : undefined
+        network: retryNetwork
       }).configPayload
     }
 
@@ -1864,7 +1880,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       sshPort: instance.sshPort,
       storagePool: instance.storagePoolName || 'default',
       ipv4Address,
-      ipv6Address: instance.ipv6,
+      ipv6Address,
       ipv6Gateway: hostIpv6.ipv6Gateway || null,
       hostInterface: hostIpv6.ipv6ParentInterface || 'eth0',
       limitsRead: instance.limitsRead,
@@ -3874,7 +3890,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const reservedPorts = await prisma.instance.aggregate({
         where: {
           hostId: instance.host_id,
-          status: { not: 'deleted' },
+          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
           networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
         },
         _sum: { portLimit: true }

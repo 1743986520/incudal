@@ -34,9 +34,9 @@ interface OsInfo {
 // 静态网络配置接口 (支持 IPv6 双栈)
 interface StaticNetworkConfig {
   /** IPv4 CIDR 格式，例如: 10.10.1.100/24 */
-  ipAddress: string
+  ipAddress?: string
   /** IPv4 网关，例如: 10.10.1.1 */
-  gateway: string
+  gateway?: string
   /** IPv4 DNS，默认为 ["8.8.8.8", "1.1.1.1"] */
   dns?: string[]
   /** IPv6 CIDR 格式，例如: 2001:db8::100/64 */
@@ -446,7 +446,7 @@ config:
 
   const subnets: string[] = []
   const dnsV4 = net.dns || CONFIG.DEFAULT_DNS
-  subnets.push(`      - type: static
+  if (net.ipAddress && net.gateway) subnets.push(`      - type: static
         address: ${net.ipAddress}
         gateway: ${net.gateway}
         dns_nameservers:

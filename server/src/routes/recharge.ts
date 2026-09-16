@@ -2106,7 +2106,7 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
         return reply.status(404).send({ error: '订单不存在' })
       }
 
-      if (record.status !== 'pending' && record.status !== 'paid') {
+      if (record.status !== 'pending' && record.status !== 'paid' && record.status !== 'cancelled') {
         return reply.status(400).send({ error: '当前订单状态不允许标记失败' })
       }
 
@@ -2423,7 +2423,7 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
       return provider.type === 'yipay' && epayVersion === 'v1' ? 'success' : { code: 'SUCCESS', message: 'OK' }
     }
 
-    if (record.status !== 'pending' && record.status !== 'paid') {
+    if (record.status !== 'pending' && record.status !== 'paid' && record.status !== 'cancelled') {
       request.log.warn({ orderNo, status: record.status }, '订单状态不允许完成')
       return reply.status(400).send({ error: '订单状态异常' })
     }

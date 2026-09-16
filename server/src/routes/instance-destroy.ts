@@ -685,7 +685,7 @@ async function executeDestroyForUser(
     const reservedPorts = await prisma.instance.aggregate({
         where: {
           hostId: instance.hostId,
-          status: { not: 'deleted' },
+          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
           networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
         },
         _sum: { portLimit: true }
@@ -1203,7 +1203,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       const reservedPorts = await prisma.instance.aggregate({
         where: {
           hostId: instance.hostId,
-          status: { not: 'deleted' },
+          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
           networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
         },
         _sum: { portLimit: true }

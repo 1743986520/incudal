@@ -3,8 +3,8 @@ import { generateVmNicMacs, type VmNicMacs } from './vm-network-identifiers.js'
 // ================= 类型定义 =================
 
 interface StaticNetworkConfig {
-  ipAddress: string
-  gateway: string
+  ipAddress?: string
+  gateway?: string
   dns?: string[]
   ipv6Address?: string
   ipv6Gateway?: string
@@ -590,14 +590,14 @@ ${getNetworkMatchYaml(nicMacs.eth0)}
 }
 
 function generateNetworkConfig(net: StaticNetworkConfig | undefined, nicMacs: VmNicMacs): string {
-  if (!net?.ipAddress || !net.gateway) {
+  if (!net) {
     return generateDhcpNetworkConfig(nicMacs)
   }
 
   const dnsV4 = net.dns && net.dns.length > 0 ? net.dns : DEFAULT_DNS_V4
   const dnsV6 = net.ipv6Dns && net.ipv6Dns.length > 0 ? net.ipv6Dns : DEFAULT_DNS_V6
 
-  const ipv4Section = `  incus_eth0:
+  const ipv4Section = net.ipAddress && net.gateway ? `  incus_eth0:
     match:
 ${getNetworkMatchYaml(nicMacs.eth0)}
     dhcp4: false
@@ -609,9 +609,10 @@ ${getNetworkMatchYaml(nicMacs.eth0)}
     gateway4: ${net.gateway}
     nameservers:
       addresses:
-${dnsV4.map(dns => `        - ${dns}`).join('\n')}`
+${dnsV4.map(dns => `        - ${dns}`).join('\n')}` : ''
 
   if (!net.ipv6Address) {
+    if (!ipv4Section) return generateDhcpNetworkConfig(nicMacs)
     return `version: 2
 ethernets:
 ${ipv4Section}
