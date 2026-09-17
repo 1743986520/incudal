@@ -321,6 +321,18 @@ export const ErrorCode = {
     REDEEM_ALREADY_AT_LIMIT: 'REDEEM_ALREADY_AT_LIMIT',
     CHECKIN_CODE_PAID_INSTANCE: 'CHECKIN_CODE_PAID_INSTANCE',
 
+    // Official coupon errors
+    COUPON_NOT_FOUND: 'COUPON_NOT_FOUND',
+    COUPON_DISABLED: 'COUPON_DISABLED',
+    COUPON_NOT_STARTED: 'COUPON_NOT_STARTED',
+    COUPON_EXPIRED: 'COUPON_EXPIRED',
+    COUPON_SCOPE_MISMATCH: 'COUPON_SCOPE_MISMATCH',
+    COUPON_USER_LIMIT_REACHED: 'COUPON_USER_LIMIT_REACHED',
+    COUPON_EXHAUSTED: 'COUPON_EXHAUSTED',
+    COUPON_CODE_EXISTS: 'COUPON_CODE_EXISTS',
+    COUPON_IN_USE: 'COUPON_IN_USE',
+    COUPON_INVALID_DISCOUNT: 'COUPON_INVALID_DISCOUNT',
+
     // Resource Pool errors
     RESOURCE_POOL_INSUFFICIENT: 'RESOURCE_POOL_INSUFFICIENT',
     RESOURCE_POOL_KVM_CPU_MULTIPLE: 'RESOURCE_POOL_KVM_CPU_MULTIPLE',
@@ -660,6 +672,18 @@ export const ErrorMessages: Record<ErrorCodeType, string> = {
     [ErrorCode.REDEEM_EXCEEDS_PACKAGE_QUOTA]: 'Redeeming would exceed instance package quota',
     [ErrorCode.REDEEM_ALREADY_AT_LIMIT]: 'Instance resource is already at package limit',
     [ErrorCode.CHECKIN_CODE_PAID_INSTANCE]: 'Check-in redeem codes can only be used on free instances',
+
+    // Official coupon errors
+    [ErrorCode.COUPON_NOT_FOUND]: 'Official coupon not found',
+    [ErrorCode.COUPON_DISABLED]: 'This official coupon has been disabled',
+    [ErrorCode.COUPON_NOT_STARTED]: 'This official coupon is not active yet',
+    [ErrorCode.COUPON_EXPIRED]: 'This official coupon has expired',
+    [ErrorCode.COUPON_SCOPE_MISMATCH]: 'This official coupon does not apply to the selected package',
+    [ErrorCode.COUPON_USER_LIMIT_REACHED]: 'You have reached the usage limit for this official coupon',
+    [ErrorCode.COUPON_EXHAUSTED]: 'This official coupon has reached its total usage limit',
+    [ErrorCode.COUPON_CODE_EXISTS]: 'Official coupon code already exists',
+    [ErrorCode.COUPON_IN_USE]: 'Used official coupons cannot be deleted, disable it instead',
+    [ErrorCode.COUPON_INVALID_DISCOUNT]: 'Discount rate must be between 0 and 0.99',
 
     // Resource Pool errors
     [ErrorCode.RESOURCE_POOL_INSUFFICIENT]: 'Insufficient resource pool balance',

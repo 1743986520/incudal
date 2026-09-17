@@ -172,6 +172,9 @@ export * from './recharge-records.js'
 // 导出 AFF 推荐计划相关操作
 export * from './aff.js'
 
+// 导出官方优惠券相关操作
+export * from './official-coupons.js'
+
 // 导出积分系统相关操作
 export * from './points.js'
 

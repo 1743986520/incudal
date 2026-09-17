@@ -324,6 +324,13 @@ enum AffWithdrawalStatus {
   rejected  // 已拒绝
 }
 
+// 官方优惠券适用范围
+enum OfficialCouponScope {
+  all           // 全部套餐
+  official_only // 仅官方直营套餐（管理员创建的套餐）
+  hosted_only   // 仅托管套餐（普通用户创建的套餐）
+}
+
 // 流量状态枚举
 enum TrafficStatus {
   NORMAL // 正常
@@ -450,6 +457,10 @@ model User {
   affCodes         AffCode[]
   affLogs          AffLog[]
   affWithdrawals   AffWithdrawal[]
+
+  // 官方优惠券
+  officialCouponsCreated OfficialCoupon[]      @relation("OfficialCouponsCreated")
+  officialCouponUsages   OfficialCouponUsage[]
 
   // 托管余额系统
   hostingBalance      Decimal              @default(0) @map("hosting_balance") @db.Decimal(10, 2) // 可用托管余额
@@ -1096,6 +1107,7 @@ model Instance {
   billingRecords   InstanceBillingRecord[]  // 计费记录
   trafficBillingRecords TrafficBillingRecord[]
   affBinding       AffBinding?              // AFF优惠码绑定
+  officialCouponUsages OfficialCouponUsage[] // 官方优惠券使用记录
   resourcePoolLogs ResourcePoolLog[]        // 资源池应用记录
   destroyRecords   UserDestroyRecord[]      // 销毁记录
   appliedBadgeOwnerships UserBadgeOwnership[] @relation("InstanceAppliedBadgeOwnerships")
@@ -2565,6 +2577,57 @@ model AffWithdrawal {
   @@index([userId, status])
   @@index([status, createdAt])
   @@map("aff_withdrawals")
+}
+
+// ==================== 官方优惠券模型 ====================
+
+// 官方优惠券：由平台发放，折扣金额由平台承担，不产生 AFF 返利
+model OfficialCoupon {
+  id              Int                 @id @default(autoincrement())
+  code            String              @unique                                // 优惠券代码
+  name            String                                                     // 优惠券名称
+  remark          String?                                                    // 备注
+  discountRate    Decimal             @map("discount_rate") @db.Decimal(5, 4) // 折扣率，如 0.05 表示 5% off
+  scope           OfficialCouponScope @default(all)                          // 适用范围
+  reusable        Boolean             @default(false)                        // 同一用户是否可重复使用
+  maxUsesPerUser  Int?                @map("max_uses_per_user")              // 每位用户最多使用次数，仅在 reusable 时生效
+  totalUsageLimit Int?                @map("total_usage_limit")              // 全站总使用次数上限，null 表示不限
+  usedCount       Int                 @default(0) @map("used_count")         // 已使用次数
+  enabled         Boolean             @default(true)                         // 是否启用
+  startsAt        DateTime?           @map("starts_at")                      // 生效时间
+  expiresAt       DateTime?           @map("expires_at")                     // 失效时间
+  createdById     Int?                @map("created_by_id")                  // 创建管理员ID
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  createdBy User?                 @relation("OfficialCouponsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  usages    OfficialCouponUsage[]
+
+  @@index([enabled])
+  @@index([scope])
+  @@index([createdAt(sort: Desc)])
+  @@map("official_coupons")
+}
+
+// 官方优惠券使用记录：每次成功使用写入一条，用于次数控制、审计与后台统计
+model OfficialCouponUsage {
+  id             Int      @id @default(autoincrement())
+  couponId       Int      @map("coupon_id")
+  userId         Int      @map("user_id")
+  instanceId     Int?     @map("instance_id")
+  originalPrice  Decimal  @map("original_price") @db.Decimal(10, 2)  // 订单原价
+  discountAmount Decimal  @map("discount_amount") @db.Decimal(10, 2) // 平台承担的折扣金额
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  coupon   OfficialCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance Instance?      @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+
+  @@index([couponId, userId])
+  @@index([couponId, createdAt(sort: Desc)])
+  @@index([userId])
+  @@index([instanceId])
+  @@map("official_coupon_usages")
 }
 
 // ==================== 积分系统模型 ====================

@@ -160,6 +160,8 @@ const form = ref<InstanceForm>({
 // 优惠码验证状态
 const promoCodeVerifying = ref(false)
 const promoCodeValid = ref<boolean | null>(null)
+const promoCodeType = ref<'aff' | 'official' | null>(null)  // 命中的优惠码类型
+const promoCodeName = ref('')                               // 官方优惠券名称
 const promoCodeDiscount = ref<number>(0)
 const promoCodeCommissionRate = ref<number>(0)  // 返利率
 const promoCodeError = ref('')
@@ -587,8 +589,12 @@ const isHostedMarketPackage = computed<boolean>(() => {
   return selectedPackage.value?.sourceType === 'market' || selectedPackage.value?.sourceType === 'zone'
 })
 
-const affPromoDisabled = computed<boolean>(() => !configStore.affRebateEnabled || isHostedMarketPackage.value)
-const affPromoDisabledMessage = computed<string>(() => {
+/**
+ * AFF 码在当前套餐下是否不可用
+ * 官方优惠券不受此限制，因此输入框仍需保持可编辑状态
+ */
+const affPromoUnavailable = computed<boolean>(() => !configStore.affRebateEnabled || isHostedMarketPackage.value)
+const affPromoUnavailableMessage = computed<string>(() => {
   if (!configStore.affRebateEnabled) return t('aff.promoCodeDisabledByAdmin')
   if (isHostedMarketPackage.value) {
     return configStore.freeSiteMode ? freeSiteCopy.createPromoHostedDisabled : t('aff.promoCodeHostedDisabled')
@@ -596,9 +602,15 @@ const affPromoDisabledMessage = computed<string>(() => {
   return ''
 })
 const affPromoPlaceholder = computed<string>(() => {
-  if (affPromoDisabledMessage.value) return affPromoDisabledMessage.value
   return configStore.freeSiteMode ? freeSiteCopy.createPromoPlaceholder : t('aff.promoCodePlaceholder')
 })
+// 官方优惠券命中时展示平台承担折扣的说明
+const isOfficialCouponApplied = computed<boolean>(() => promoCodeValid.value === true && promoCodeType.value === 'official')
+
+/** 折扣率 -> 百分比文本（去掉多余的 0，如 5、2.5） */
+function formatDiscountPercent(rate: number): string {
+  return String(Number((rate * 100).toFixed(2)))
+}
 
 // 是否正在切换套餐（用于防止 watch 意外触发 loadAvailableHosts）
 const isSwitchingPackage = ref(false)
@@ -761,32 +773,68 @@ function selectPlan(plan: PackagePlan): void {
 function resetPromoCode(): void {
   form.value.promoCode = ''
   promoCodeValid.value = null
+  promoCodeType.value = null
+  promoCodeName.value = ''
   promoCodeDiscount.value = 0
   promoCodeCommissionRate.value = 0
   promoCodeError.value = ''
 }
 
 /**
- * 验证优惠码
+ * 验证优惠码：优先按官方优惠券校验，不是官方券时回退到 AFF 优惠码
+ *
+ * 官方券可用于直营与托管套餐，AFF 码仍遵守托管节点的原有使用限制。
  */
 async function verifyPromoCode(): Promise<void> {
-  if (affPromoDisabled.value) {
+  if (!form.value.promoCode.trim() || !form.value.planId || !form.value.packageId) {
     resetPromoCode()
     return
   }
 
-  if (!form.value.promoCode.trim() || !form.value.planId) {
-    resetPromoCode()
-    return
-  }
-  
+  const code = form.value.promoCode.trim()
+  let isOfficialCoupon = false
+
   promoCodeVerifying.value = true
   promoCodeError.value = ''
-  
+  promoCodeType.value = null
+  promoCodeName.value = ''
+  promoCodeCommissionRate.value = 0
+
   try {
-    const res = await api.aff.validateCode(form.value.promoCode.trim(), form.value.planId)
+    const officialRes = await api.officialCoupons.validate(code, form.value.packageId, form.value.planId)
+    isOfficialCoupon = true
+    promoCodeValid.value = true
+    promoCodeType.value = 'official'
+    promoCodeName.value = officialRes.name || ''
+    promoCodeDiscount.value = Number(officialRes.discountRate) || 0
+  } catch (officialErr: any) {
+    // 代码不是官方券时才继续尝试 AFF 优惠码；官方券自身的失败原因直接展示
+    if (officialErr?.code !== 'COUPON_NOT_FOUND') {
+      promoCodeValid.value = false
+      promoCodeDiscount.value = 0
+      promoCodeError.value = translateError(officialErr)
+    }
+  } finally {
+    promoCodeVerifying.value = false
+  }
+
+  if (isOfficialCoupon) return
+
+  if (promoCodeError.value) return
+
+  if (affPromoUnavailable.value) {
+    promoCodeValid.value = false
+    promoCodeDiscount.value = 0
+    promoCodeError.value = affPromoUnavailableMessage.value
+    return
+  }
+
+  promoCodeVerifying.value = true
+  try {
+    const res = await api.aff.validateCode(code, form.value.planId)
     if ((res as any).valid) {
       promoCodeValid.value = true
+      promoCodeType.value = 'aff'
       promoCodeDiscount.value = parseFloat((res as any).discountRate) || 0
       // 从验证响应中获取返利率（如果有的话）
       const commissionRate = parseFloat((res as any).commissionRate) || 0
@@ -1012,7 +1060,7 @@ async function submitInstance(): Promise<boolean> {
       disk: form.value.disk,
       sshKeyId: form.value.sshKeyId,
       customInitCommandIds: form.value.customInitCommandIds.length > 0 ? form.value.customInitCommandIds : undefined,
-      promoCode: (configStore.affRebateEnabled && isPaidPackage.value && promoCodeValid.value && form.value.promoCode.trim()) ? form.value.promoCode.trim() : undefined
+      promoCode: (isPaidPackage.value && promoCodeValid.value && form.value.promoCode.trim()) ? form.value.promoCode.trim() : undefined
     } as CreateInstanceRequest & { promoCode?: string })
     
     toast.success(t('instance.createPage.createSuccess'))
@@ -1290,22 +1338,23 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
                   <div>
                     <label class="label text-xs uppercase tracking-wide text-themed-muted mb-2">{{ configStore.freeSiteMode ? freeSiteCopy.createPromoCode : $t('aff.promoCode') }}</label>
                     <div class="relative">
-                      <input v-model="form.promoCode" type="text" class="input w-full pr-10" :placeholder="affPromoPlaceholder" :disabled="promoCodeVerifying || affPromoDisabled" @blur="verifyPromoCode" @keyup.enter="verifyPromoCode" />
+                      <input v-model="form.promoCode" type="text" class="input w-full pr-10" :placeholder="affPromoPlaceholder" :disabled="promoCodeVerifying" @blur="verifyPromoCode" @keyup.enter="verifyPromoCode" />
                       <div v-if="promoCodeVerifying" class="absolute right-3 top-1/2 -translate-y-1/2"><svg class="w-5 h-5 animate-spin text-themed-muted" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                       <div v-else-if="promoCodeValid === true" class="absolute right-3 top-1/2 -translate-y-1/2"><svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></div>
                       <div v-else-if="promoCodeValid === false" class="absolute right-3 top-1/2 -translate-y-1/2"><svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></div>
                     </div>
-                    <p v-if="promoCodeValid === true" class="text-xs text-green-500 mt-1.5 flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>{{ configStore.freeSiteMode ? freeSiteCopy.createPromoValid.replace('{rate}', (promoCodeDiscount * 100).toFixed(0) + '%') : $t('aff.promoCodeValid', { rate: (promoCodeDiscount * 100).toFixed(0) + '%' }) }}</p>
-                    <p v-else-if="affPromoDisabledMessage" class="text-xs text-themed-muted mt-1.5">{{ affPromoDisabledMessage }}</p>
+                    <p v-if="promoCodeValid === true" class="text-xs text-green-500 mt-1.5 flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>{{ isOfficialCouponApplied ? $t('officialCoupon.valid', { rate: formatDiscountPercent(promoCodeDiscount) }) : (configStore.freeSiteMode ? freeSiteCopy.createPromoValid.replace('{rate}', (promoCodeDiscount * 100).toFixed(0) + '%') : $t('aff.promoCodeValid', { rate: (promoCodeDiscount * 100).toFixed(0) + '%' })) }}</p>
                     <p v-else-if="promoCodeError" class="text-xs text-red-500 mt-1.5">{{ promoCodeError }}</p>
+                    <p v-else-if="affPromoUnavailableMessage" class="text-xs text-themed-muted mt-1.5">{{ affPromoUnavailableMessage }}</p>
                   </div>
                   <div v-if="promoCodeValid === true" class="p-3 rounded-lg text-sm" :class="themeStore.isDark ? 'bg-blue-900/20 border border-blue-800/30 text-blue-300' : 'bg-blue-50 border border-blue-200 text-blue-700'">
                     <div class="flex items-start gap-2">
                       <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>
                       <div>
-                        <p class="font-medium">{{ configStore.freeSiteMode ? freeSiteCopy.createPromoUsing : $t('aff.usingPromoCode') }}</p>
-                        <p class="text-xs mt-1 opacity-80">{{ configStore.freeSiteMode ? freeSiteCopy.createPromoBenefit : $t('aff.promoCodeBenefit', { discount: (promoCodeDiscount * 100).toFixed(0) + '%', commission: (promoCodeCommissionRate * 100).toFixed(0) }) }}</p>
-                        <p v-if="planPriceInfo && selectedPlan" class="text-xs mt-1 opacity-80">{{ configStore.freeSiteMode ? freeSiteCopy.createCommissionEstimate.replace('{amount}', (planPriceInfo.planPrice * promoCodeCommissionRate).toFixed(2)) : $t('aff.commissionEstimate', { amount: (planPriceInfo.planPrice * promoCodeCommissionRate).toFixed(2) }) }}</p>
+                        <p class="font-medium">{{ isOfficialCouponApplied ? $t('officialCoupon.using') : (configStore.freeSiteMode ? freeSiteCopy.createPromoUsing : $t('aff.usingPromoCode')) }}</p>
+                        <p v-if="isOfficialCouponApplied && promoCodeName" class="text-xs mt-1 opacity-80">{{ $t('officialCoupon.name', { name: promoCodeName }) }}</p>
+                        <p class="text-xs mt-1 opacity-80">{{ isOfficialCouponApplied ? $t('officialCoupon.benefit', { discount: formatDiscountPercent(promoCodeDiscount) }) : (configStore.freeSiteMode ? freeSiteCopy.createPromoBenefit : $t('aff.promoCodeBenefit', { discount: (promoCodeDiscount * 100).toFixed(0) + '%', commission: (promoCodeCommissionRate * 100).toFixed(0) })) }}</p>
+                        <p v-if="!isOfficialCouponApplied && planPriceInfo && selectedPlan" class="text-xs mt-1 opacity-80">{{ configStore.freeSiteMode ? freeSiteCopy.createCommissionEstimate.replace('{amount}', (planPriceInfo.planPrice * promoCodeCommissionRate).toFixed(2)) : $t('aff.commissionEstimate', { amount: (planPriceInfo.planPrice * promoCodeCommissionRate).toFixed(2) }) }}</p>
                       </div>
                     </div>
                   </div>
@@ -1315,7 +1364,7 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
                   <div v-if="promoCodeValid && planPriceInfo.discountAmount > 0" class="p-4 rounded-xl space-y-2" :class="themeStore.isDark ? 'bg-gray-800/50' : 'bg-gray-100'">
                     <div class="flex justify-between text-sm"><span class="text-themed-muted">{{ configStore.freeSiteMode ? freeSiteCopy.createPlanFee : $t('instance.createPage.planFee') }}</span><span class="text-themed font-medium">¥{{ planPriceInfo.planPrice.toFixed(2) }}</span></div>
                     <div v-if="promoCodeValid && planPriceInfo.discountAmount > 0" class="flex justify-between text-sm pt-1 border-t border-themed/20">
-                      <span class="text-green-500 flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 2a2 2 0 00-2 2v14l3.5-2 3.5 2 3.5-2 3.5 2V4a2 2 0 00-2-2H5zm2.5 3a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm6.207.293a1 1 0 00-1.414 0l-6 6a1 1 0 101.414 1.414l6-6a1 1 0 000-1.414zM12.5 10a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clip-rule="evenodd" /></svg>{{ $t('aff.discountAmount') }} (-{{ (planPriceInfo.discountRate * 100).toFixed(0) }}%)</span>
+                      <span class="text-green-500 flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 2a2 2 0 00-2 2v14l3.5-2 3.5 2 3.5-2 3.5 2V4a2 2 0 00-2-2H5zm2.5 3a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm6.207.293a1 1 0 00-1.414 0l-6 6a1 1 0 101.414 1.414l6-6a1 1 0 000-1.414zM12.5 10a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clip-rule="evenodd" /></svg>{{ isOfficialCouponApplied ? $t('officialCoupon.discountAmount') : $t('aff.discountAmount') }} (-{{ (planPriceInfo.discountRate * 100).toFixed(2) }}%)</span>
                       <span class="text-green-600 dark:text-green-400 font-medium">-¥{{ planPriceInfo.discountAmount.toFixed(2) }}</span>
                     </div>
                   </div>

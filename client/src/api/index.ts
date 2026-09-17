@@ -106,7 +106,9 @@ import type {
   TelegramWebhookSetupResponse,
   UserInvite,
   UserInviteSummary,
-  SendCreateUserEmailCodeResponse
+  SendCreateUserEmailCodeResponse,
+  OfficialCoupon,
+  OfficialCouponInput
 } from '@/types/api.js'
 
 export type VipRuleType = 'user' | 'hosting'
@@ -4393,7 +4395,75 @@ const api = {
         expiresAt: string | null
         generatedPrivateKey?: string | null
       }
-    }> => http.post('/admin/instances/create', data)
+    }> => http.post('/admin/instances/create', data),
+
+    // ==================== 官方优惠券管理 ====================
+
+    // 获取官方优惠券列表
+    getOfficialCoupons: (params?: {
+      page?: number
+      pageSize?: number
+      search?: string
+      enabled?: 'true' | 'false' | 'all'
+      scope?: 'all' | 'official_only' | 'hosted_only'
+    }): Promise<{
+      items: OfficialCoupon[]
+      total: number
+      page: number
+      pageSize: number
+      totalPages: number
+    }> => http.get('/admin/official-coupons', { params }),
+
+    // 创建官方优惠券
+    createOfficialCoupon: (data: OfficialCouponInput): Promise<OfficialCoupon> =>
+      http.post('/admin/official-coupons', data),
+
+    // 更新官方优惠券
+    updateOfficialCoupon: (id: number, data: Partial<OfficialCouponInput>): Promise<OfficialCoupon> =>
+      http.patch(`/admin/official-coupons/${id}`, data),
+
+    // 删除官方优惠券（已产生使用记录的优惠券不可删除）
+    deleteOfficialCoupon: (id: number): Promise<{ success: boolean }> =>
+      http.delete(`/admin/official-coupons/${id}`),
+
+    // 获取官方优惠券使用记录
+    getOfficialCouponUsages: (id: number, params?: { page?: number; pageSize?: number }): Promise<{
+      coupon: OfficialCoupon
+      items: Array<{
+        id: number
+        couponId: number
+        userId: number
+        username: string | null
+        userEmail: string | null
+        instanceId: number | null
+        instanceName: string | null
+        instanceStatus: string | null
+        packageName: string | null
+        originalPrice: number
+        discountAmount: number
+        createdAt: string
+      }>
+      total: number
+      page: number
+      pageSize: number
+      totalPages: number
+    }> => http.get(`/admin/official-coupons/${id}/usages`, { params })
+  },
+
+  // ==================== 官方优惠券 ====================
+  officialCoupons: {
+    // 校验官方优惠券（实例开通页调用）
+    validate: (code: string, packageId: number, planId?: number): Promise<{
+      valid: boolean
+      code: string
+      name: string
+      remark: string | null
+      discountRate: number
+      remainingUses: number | null
+      planPrice: number | null
+      discountAmount: number | null
+      finalPrice: number | null
+    }> => http.post('/official-coupons/validate', { code, packageId, planId })
   },
 
   // ==================== AFF 推荐计划 ====================

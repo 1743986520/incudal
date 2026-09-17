@@ -13,6 +13,7 @@ import { calculateDiscountedPrice } from '@/utils/billing'
 const PaymentProvidersView = defineAsyncComponent(() => import('@/views/admin/PaymentProvidersView.vue'))
 const AffReviewView = defineAsyncComponent(() => import('@/views/admin/AffReviewView.vue'))
 const RechargeCardsView = defineAsyncComponent(() => import('@/views/admin/RechargeCardsView.vue'))
+const OfficialCouponsView = defineAsyncComponent(() => import('@/views/admin/OfficialCouponsView.vue'))
 
 type BatchPriceUpdateItemStatus = 'ready' | 'unchanged' | 'failed'
 
@@ -61,15 +62,15 @@ const { t } = useI18n()
 const toast = useToast()
 
 // Tab 切换
-type BillingTab = 'overview' | 'instances' | 'records' | 'rechargeRecords' | 'rechargeCards' | 'affConversions' | 'paymentProviders'
-const allBillingTabs: BillingTab[] = ['overview', 'instances', 'records', 'rechargeRecords', 'rechargeCards', 'affConversions', 'paymentProviders']
+type BillingTab = 'overview' | 'instances' | 'records' | 'rechargeRecords' | 'rechargeCards' | 'affConversions' | 'officialCoupons' | 'paymentProviders'
+const allBillingTabs: BillingTab[] = ['overview', 'instances', 'records', 'rechargeRecords', 'rechargeCards', 'affConversions', 'officialCoupons', 'paymentProviders']
 const hasActiveRechargeCardProvider = ref(false)
 const billingTabs = computed<BillingTab[]>(() => {
   const tabs: BillingTab[] = ['overview', 'instances', 'records', 'rechargeRecords']
   if (hasActiveRechargeCardProvider.value) {
     tabs.push('rechargeCards')
   }
-  tabs.push('affConversions', 'paymentProviders')
+  tabs.push('affConversions', 'officialCoupons', 'paymentProviders')
   return tabs
 })
 function normalizeTab(tab: unknown): BillingTab {
@@ -82,6 +83,7 @@ const activeTab = ref<BillingTab>(normalizeTab(route.query.tab))
 const hasVisitedPaymentProviders = ref(activeTab.value === 'paymentProviders')
 const hasVisitedAffConversions = ref(activeTab.value === 'affConversions')
 const hasVisitedRechargeCards = ref(activeTab.value === 'rechargeCards')
+const hasVisitedOfficialCoupons = ref(activeTab.value === 'officialCoupons')
 
 // 分页大小选项
 const pageSizeOptions = [10, 20, 50, 100]
@@ -529,6 +531,9 @@ function loadTabData(tab: BillingTab) {
   if (tab === 'rechargeCards') {
     hasVisitedRechargeCards.value = true
   }
+  if (tab === 'officialCoupons') {
+    hasVisitedOfficialCoupons.value = true
+  }
 }
 
 onMounted(() => {
@@ -681,6 +686,9 @@ function switchTab(tab: BillingTab) {
   }
   if (tab === 'rechargeCards') {
     hasVisitedRechargeCards.value = true
+  }
+  if (tab === 'officialCoupons') {
+    hasVisitedOfficialCoupons.value = true
   }
   router.replace({
     path: route.path,
@@ -2136,6 +2144,11 @@ function copyToClipboard(text: string) {
     <!-- AFF 转化 Tab -->
     <div v-show="activeTab === 'affConversions'">
       <AffReviewView v-if="hasVisitedAffConversions" embedded />
+    </div>
+
+    <!-- 官方优惠券 Tab -->
+    <div v-show="activeTab === 'officialCoupons'">
+      <OfficialCouponsView v-if="hasVisitedOfficialCoupons" embedded />
     </div>
 
     <!-- 操作弹窗 -->

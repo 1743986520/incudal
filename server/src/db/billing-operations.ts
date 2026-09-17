@@ -6,6 +6,7 @@
 import { prisma } from './prisma.js'
 import type { Instance, PackagePlan, Prisma } from '@prisma/client'
 import { getInstanceAffBinding, isAffRebateEnabled, processAffCommission } from './aff.js'
+import { releaseOfficialCouponUsageByInstance } from './official-coupons.js'
 import { getInstanceBillingLineageIds } from './billing-records.js'
 import {
   calculateDiscountAmount,
@@ -300,6 +301,9 @@ export async function failCreatingInstanceAndRefund(
       .reduce((sum, record) => sum + Math.abs(Number(record.amount)), 0)
     const refundAmount = roundCurrency(Math.max(0, chargedAmount - refundedAmount))
 
+    // 开通失败即未成交：释放官方优惠券使用次数，使用户可以重新下单
+    const releasedCoupon = await releaseOfficialCouponUsageByInstance(instanceId, tx)
+
     if (refundAmount <= 0) {
       return { claimed: true, refundAmount: 0 }
     }
@@ -348,7 +352,9 @@ export async function failCreatingInstanceAndRefund(
 
     await deductHostingBalance(
       instance.hostId,
-      refundAmount,
+      // 官方优惠券的托管收入按原价记账，回退时同样按原价扣除，
+      // 否则托管主会留下平台本应承担的折扣差额
+      roundCurrency(refundAmount + (releasedCoupon?.discountAmount || 0)),
       instance.id,
       `实例开通失败退款扣除托管收入：${instance.name}`,
       tx

@@ -87,6 +87,8 @@ import systemUpdateRoutes from './routes/system-update.js'
 import userInviteRoutes from './routes/user-invites.js'
 import vipLevelRoutes from './routes/vip-levels.js'
 import vipBenefitRoutes from './routes/vip-benefits.js'
+import officialCouponRoutes from './routes/official-coupons.js'
+import adminOfficialCouponRoutes from './routes/admin-official-coupons.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -418,6 +420,9 @@ await fastify.register(adminBillingRoutes)
 await fastify.register(adminStatisticsRoutes)
 await fastify.register(adminHostingRoutes)
 await fastify.register(affRoutes, { prefix: '/api/aff' })
+await fastify.register(officialCouponRoutes, { prefix: '/api/official-coupons' })
+// 管理端路由已包含完整路径（/api/admin/official-coupons），与 adminBillingRoutes 保持一致
+await fastify.register(adminOfficialCouponRoutes)
 await fastify.register(entertainmentRoutes, { prefix: '/api/entertainment' })
 await fastify.register(adminEntertainmentRoutes, { prefix: '/api/admin/entertainment' })
 await fastify.register(mailRoutes, { prefix: '/api/mail' })

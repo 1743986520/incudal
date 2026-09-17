@@ -1904,6 +1904,49 @@ export interface BalanceLog {
   createdAt: string
 }
 
+// ==================== 官方优惠券 ====================
+
+/** 官方优惠券适用范围：全部套餐 / 仅官方直营 / 仅托管 */
+export type OfficialCouponScope = 'all' | 'official_only' | 'hosted_only'
+
+export interface OfficialCoupon {
+  id: number
+  code: string
+  name: string
+  remark: string | null
+  /** 折扣率，0-1，例如 0.05 表示 5% off */
+  discountRate: number
+  scope: OfficialCouponScope
+  /** 同一用户是否可重复使用 */
+  reusable: boolean
+  /** 每位用户最多使用次数，reusable 为 false 时为 null（即仅一次） */
+  maxUsesPerUser: number | null
+  /** 全站总使用次数上限，null 表示不限 */
+  totalUsageLimit: number | null
+  usedCount: number
+  enabled: boolean
+  startsAt: string | null
+  expiresAt: string | null
+  createdById: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OfficialCouponInput {
+  /** 留空时后端自动生成 */
+  code?: string
+  name: string
+  remark?: string | null
+  discountRate: number
+  scope: OfficialCouponScope
+  reusable: boolean
+  maxUsesPerUser?: number | null
+  totalUsageLimit?: number | null
+  enabled: boolean
+  startsAt?: string | null
+  expiresAt?: string | null
+}
+
 // ==================== 通用响应 ====================
 
 export interface ApiResponse<T = unknown> {
@@ -1912,7 +1955,6 @@ export interface ApiResponse<T = unknown> {
   error?: string
   message?: string
 }
-
 export interface PaginatedResponse<T> {
   items: T[]
   total: number

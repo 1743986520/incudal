@@ -5,7 +5,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
-import { apiError, ErrorCode } from '../lib/errors.js'
+import { apiError, ErrorCode, type ErrorCodeType } from '../lib/errors.js'
 import { prisma } from '../db/prisma.js'
 import type { InstanceStatus, Prisma } from '@prisma/client'
 import { getIncusClient } from '../lib/incus/index.js'
@@ -920,6 +920,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // 1.4 计算费用并验证余额（付费方案）
     let billing: ReturnType<typeof calculateCreateBilling> | null = null
     let validatedAffCode: { id: number; userId: number; discountRate: number } | null = null
+    let validatedOfficialCoupon: { id: number; code: string; name: string; discountRate: number } | null = null
     let discountAmount = 0
     let finalPrice = 0
     let actualPrice = 0
@@ -929,19 +930,39 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       finalPrice = billing.totalPrice
       actualPrice = billing.totalPrice
 
-      // 1.4.1 如果提供了优惠码，验证并计算折扣
+      // 1.4.1 如果提供了优惠码，优先按官方优惠券校验，其次回退到 AFF 优惠码
       if (promoCode && promoCode.trim()) {
-        const validation = await db.validateAffCode(promoCode.trim(), selectedPlan.id, user.id)
-        if (!validation.valid) {
-          return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, validation.error || '优惠码无效'))
+        const couponValidation = await db.validateOfficialCoupon({
+          code: promoCode,
+          packageId,
+          userId: user.id
+        })
+
+        if (couponValidation.valid) {
+          validatedOfficialCoupon = {
+            id: couponValidation.coupon.id,
+            code: couponValidation.code,
+            name: couponValidation.name,
+            discountRate: couponValidation.discountRate
+          }
+          discountAmount = calculateDiscountAmount(billing.price, validatedOfficialCoupon.discountRate)
+        } else if (couponValidation.errorCode === ErrorCode.COUPON_NOT_FOUND) {
+          // 不是官方券时才按 AFF 优惠码校验；官方券自身的失效原因直接返回
+          const validation = await db.validateAffCode(promoCode.trim(), selectedPlan.id, user.id)
+          if (!validation.valid) {
+            return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, validation.error || '优惠码无效'))
+          }
+          validatedAffCode = {
+            id: validation.affCode!.id,
+            userId: validation.affCode!.userId,
+            discountRate: validation.discountRate!
+          }
+          // 计算折扣金额（折扣应用于方案价格）
+          discountAmount = calculateDiscountAmount(billing.price, validatedAffCode.discountRate)
+        } else {
+          return reply.code(400).send(apiError(couponValidation.errorCode, couponValidation.error))
         }
-        validatedAffCode = {
-          id: validation.affCode!.id,
-          userId: validation.affCode!.userId,
-          discountRate: validation.discountRate!
-        }
-        // 计算折扣金额（折扣应用于方案价格）
-        discountAmount = calculateDiscountAmount(billing.price, validatedAffCode.discountRate)
+
         finalPrice = Number((billing.totalPrice - discountAmount).toFixed(2))
         actualPrice = finalPrice
       }
@@ -1252,9 +1273,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           })
 
           // 记录余额日志
-          const remarkText = discountAmount > 0
-            ? `开通实例（${billing.billingCycle}个月）：${pkg.name} - ${selectedPlan.name}，优惠码折扣 -¥${discountAmount.toFixed(2)}`
-            : `开通实例（${billing.billingCycle}个月）：${pkg.name} - ${selectedPlan.name}`
+          const discountRemark = validatedOfficialCoupon
+            ? `，官方优惠券 ${validatedOfficialCoupon.code} 折扣 -¥${discountAmount.toFixed(2)}`
+            : discountAmount > 0
+              ? `，优惠码折扣 -¥${discountAmount.toFixed(2)}`
+              : ''
+          const remarkText = `开通实例（${billing.billingCycle}个月）：${pkg.name} - ${selectedPlan.name}${discountRemark}`
 
           const balanceLog = await tx.balanceLog.create({
             data: {
@@ -1362,13 +1386,28 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
               periodStart: new Date(),
               periodEnd: billing.expiresAt,
               balanceLogId,
-              remark: discountAmount > 0
-                ? `新开通 ${billing.billingCycle} 个月，优惠码折扣 -¥${discountAmount.toFixed(2)}`
-                : `新开通 ${billing.billingCycle} 个月`
+              remark: validatedOfficialCoupon
+                ? `新开通 ${billing.billingCycle} 个月，官方优惠券 ${validatedOfficialCoupon.code} 折扣 -¥${discountAmount.toFixed(2)}`
+                : discountAmount > 0
+                  ? `新开通 ${billing.billingCycle} 个月，优惠码折扣 -¥${discountAmount.toFixed(2)}`
+                  : `新开通 ${billing.billingCycle} 个月`
             }
           })
 
-          // 如果使用了优惠码，创建 AFF 绑定并处理返利
+          // 官方优惠券：在事务内重新校验并预占使用次数，失败则整个开通回滚
+          if (validatedOfficialCoupon) {
+            await db.reserveOfficialCouponUsage({
+              code: validatedOfficialCoupon.code,
+              packageId,
+              userId: user.id,
+              instanceId: instance.id,
+              originalPrice: billing.totalPrice,
+              discountAmount,
+              tx
+            })
+          }
+
+          // 如果使用了 AFF 优惠码，创建绑定并处理返利（官方券不产生 AFF 绑定与返利）
           if (validatedAffCode) {
             // 创建实例与优惠码的永久绑定
             await db.createAffBinding(instance.id, validatedAffCode.id, tx as any)
@@ -1384,9 +1423,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           }
 
           // 处理托管收入结算（用户托管节点）
+          // 官方优惠券由平台承担折扣，托管主仍按原价结算
+          const hostingSettlementAmount = validatedOfficialCoupon ? billing.totalPrice : actualPrice
           const hostingIncomeResult = await db.processHostingIncome(
             lockedHost.id,
-            actualPrice,
+            hostingSettlementAmount,
             instance.id,
             'purchase',
             tx
@@ -1482,6 +1523,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // 处理余额不足错误
       if (errorMessage.includes('BALANCE_INSUFFICIENT')) {
         return reply.code(400).send(apiError(ErrorCode.BALANCE_INSUFFICIENT, '余额不足'))
+      }
+
+      // 官方优惠券在事务内复核失败（例如并发下单已用尽次数）
+      const couponError = /^(COUPON_[A-Z_]+): ([\s\S]*)$/.exec(errorMessage)
+      if (couponError) {
+        return reply.code(400).send(apiError(couponError[1] as ErrorCodeType, couponError[2]))
       }
 
       // 处理用户不存在错误
