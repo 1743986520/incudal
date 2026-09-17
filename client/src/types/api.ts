@@ -1772,6 +1772,8 @@ export interface InstanceBillingInfo {
   autoRenew: boolean
   renewPreview: RenewPreview[] | null
   affDiscount: AffDiscount | null
+  // 官方优惠券续期折扣（优先于 AFF 绑定）
+  officialCouponDiscount: OfficialCouponDiscount | null
   // 托管实例相关信息
   isHostedInstance: boolean
   daysUntilExpire: number | null
@@ -1788,6 +1790,13 @@ export interface RenewPreview {
 export interface AffDiscount {
   discountRate: number     // 折扣率，如 0.05
   discountPercent: number  // 百分比，如 5 表示 5%
+}
+
+export interface OfficialCouponDiscount {
+  discountRate: number
+  discountPercent: number
+  couponCode: string
+  couponName: string
 }
 
 // 升降级预览
@@ -1909,6 +1918,9 @@ export interface BalanceLog {
 /** 官方优惠券适用范围：全部套餐 / 仅官方直营 / 仅托管 */
 export type OfficialCouponScope = 'all' | 'official_only' | 'hosted_only'
 
+/** 官方优惠券续期折扣模式 */
+export type OfficialCouponRenewalMode = 'purchase_only' | 'limited' | 'recurring'
+
 export interface OfficialCoupon {
   id: number
   code: string
@@ -1927,6 +1939,10 @@ export interface OfficialCoupon {
   enabled: boolean
   startsAt: string | null
   expiresAt: string | null
+  /** 续期折扣模式 */
+  renewalMode: OfficialCouponRenewalMode
+  /** limited 模式下含首次购买的总折价次数 */
+  discountedChargeLimit: number | null
   createdById: number | null
   createdAt: string
   updatedAt: string
@@ -1945,6 +1961,8 @@ export interface OfficialCouponInput {
   enabled: boolean
   startsAt?: string | null
   expiresAt?: string | null
+  renewalMode?: OfficialCouponRenewalMode
+  discountedChargeLimit?: number | null
 }
 
 // ==================== 通用响应 ====================

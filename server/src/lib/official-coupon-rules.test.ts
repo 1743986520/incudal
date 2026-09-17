@@ -5,7 +5,8 @@ import {
   isCouponScopeMatched,
   isValidDiscountRate,
   normalizeOfficialCouponCode,
-  resolveUserUsageLimit
+  resolveUserUsageLimit,
+  shouldDiscountRenewal
 } from './official-coupon-rules.js'
 
 test('normalizeOfficialCouponCode trims and uppercases input', () => {
@@ -55,4 +56,28 @@ test('discount rate must be between 0 and 1 exclusive', () => {
   assert.equal(isValidDiscountRate(0), false)
   assert.equal(isValidDiscountRate(1), false)
   assert.equal(isValidDiscountRate(Number.NaN), false)
+})
+
+test('purchase_only renewals are never discounted', () => {
+  assert.equal(shouldDiscountRenewal({ renewalMode: 'purchase_only', discountedChargeLimit: null, discountedChargeCount: 0 }), false)
+  assert.equal(shouldDiscountRenewal({ renewalMode: 'purchase_only', discountedChargeLimit: 9, discountedChargeCount: 1 }), false)
+})
+
+test('recurring renewals are always discounted', () => {
+  assert.equal(shouldDiscountRenewal({ renewalMode: 'recurring', discountedChargeLimit: null, discountedChargeCount: 0 }), true)
+  assert.equal(shouldDiscountRenewal({ renewalMode: 'recurring', discountedChargeLimit: null, discountedChargeCount: 999 }), true)
+})
+
+test('limited renewals discount until the charge limit is reached', () => {
+  // 填 9：含首次购买共折价 9 次，第 10 次原价
+  const limited = (count: number) => shouldDiscountRenewal({ renewalMode: 'limited', discountedChargeLimit: 9, discountedChargeCount: count })
+  assert.equal(limited(0), true)   // 首次购买
+  assert.equal(limited(1), true)   // 第 2 次（第 1 次续费）
+  assert.equal(limited(8), true)   // 第 9 次
+  assert.equal(limited(9), false)  // 第 10 次，原价
+})
+
+test('limited renewals with a missing or invalid limit never discount', () => {
+  assert.equal(shouldDiscountRenewal({ renewalMode: 'limited', discountedChargeLimit: null, discountedChargeCount: 1 }), false)
+  assert.equal(shouldDiscountRenewal({ renewalMode: 'limited', discountedChargeLimit: 0, discountedChargeCount: 1 }), false)
 })

@@ -41,14 +41,32 @@ const selectedRenewOption = computed<RenewPreview | null>(() => {
   return renewOptions.value.find(r => r.months === selectedMonths.value) || null
 })
 
-// 是否有折扣
+// 是否有折扣（官方优惠券优先，其次 AFF 绑定）
+const isOfficialCouponDiscount = computed(() => {
+  const info = billingInfo.value?.officialCouponDiscount
+  return !!info && info.discountPercent > 0
+})
+
 const hasDiscount = computed(() => {
-  return billingInfo.value?.affDiscount && billingInfo.value.affDiscount.discountPercent > 0
+  if (isOfficialCouponDiscount.value) return true
+  return !!billingInfo.value?.affDiscount && billingInfo.value.affDiscount.discountPercent > 0
 })
 
 // 折扣百分比
 const discountPercent = computed(() => {
+  if (isOfficialCouponDiscount.value) {
+    return billingInfo.value?.officialCouponDiscount?.discountPercent || 0
+  }
   return billingInfo.value?.affDiscount?.discountPercent || 0
+})
+
+// 折扣标签
+const discountLabel = computed(() => {
+  if (isOfficialCouponDiscount.value) {
+    const code = billingInfo.value?.officialCouponDiscount?.couponCode
+    return code ? `${t('billing.officialCouponDiscount')} (${code})` : t('billing.officialCouponDiscount')
+  }
+  return t('billing.affDiscount')
 })
 
 // 实际支付价格（考虑折扣）
@@ -268,7 +286,7 @@ function handleClose() {
                   <!-- 折扣信息 -->
                   <div v-if="hasDiscount" class="flex justify-between">
                     <span :class="themeStore.isDark ? 'text-gray-400' : 'text-gray-600'">
-                      {{ t('billing.affDiscount') }}
+                      {{ discountLabel }}
                     </span>
                     <span class="text-green-500">
                       -{{ discountPercent }}%

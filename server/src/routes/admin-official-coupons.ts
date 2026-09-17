@@ -6,13 +6,14 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
-import type { OfficialCouponScope } from '@prisma/client'
+import type { OfficialCouponRenewalMode, OfficialCouponScope } from '@prisma/client'
 import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode, type ErrorCodeType } from '../lib/errors.js'
 import { OFFICIAL_COUPON_CODE_MAX_LENGTH, isValidDiscountRate } from '../lib/official-coupon-rules.js'
 
 const COUPON_SCOPES: OfficialCouponScope[] = ['all', 'official_only', 'hosted_only']
+const COUPON_RENEWAL_MODES: OfficialCouponRenewalMode[] = ['purchase_only', 'limited', 'recurring']
 const MAX_NAME_LENGTH = 64
 const MAX_REMARK_LENGTH = 500
 const MAX_USES_LIMIT = 1000000
@@ -29,6 +30,8 @@ interface CouponBody {
   enabled?: boolean
   startsAt?: string | null
   expiresAt?: string | null
+  renewalMode?: string
+  discountedChargeLimit?: number | null
 }
 
 interface ParsedCouponInput {
@@ -43,6 +46,8 @@ interface ParsedCouponInput {
   enabled: boolean
   startsAt: Date | null
   expiresAt: Date | null
+  renewalMode: OfficialCouponRenewalMode
+  discountedChargeLimit: number | null
 }
 
 interface CouponInputOverrides {
@@ -171,6 +176,30 @@ function parseCouponInput(body: CouponBody, overrides: CouponInputOverrides = {}
     result.expiresAt = null
   }
 
+  if (body.renewalMode !== undefined || !partial) {
+    const mode = body.renewalMode === undefined ? 'purchase_only' : body.renewalMode
+    if (!COUPON_RENEWAL_MODES.includes(mode as OfficialCouponRenewalMode)) {
+      throw new Error(`${ErrorCode.INVALID_PARAMS}: renewalMode must be one of ${COUPON_RENEWAL_MODES.join(', ')}`)
+    }
+    result.renewalMode = mode as OfficialCouponRenewalMode
+  }
+
+  // 折价次数上限：仅 limited 模式需要。
+  // 部分更新时若只传 discountedChargeLimit，按 limited 校验并透传，
+  // 由 db.updateOfficialCoupon 依据当前模式决定是否生效。
+  const effectiveRenewalMode = (body.renewalMode ?? (partial ? 'limited' : 'purchase_only')) as OfficialCouponRenewalMode
+  if (!partial || body.discountedChargeLimit !== undefined || body.renewalMode !== undefined) {
+    if (effectiveRenewalMode === 'limited') {
+      const limit = parseOptionalUses(body.discountedChargeLimit, 'discountedChargeLimit')
+      if (limit === null) {
+        throw new Error(`${ErrorCode.INVALID_PARAMS}: discountedChargeLimit is required when renewalMode is limited`)
+      }
+      result.discountedChargeLimit = limit
+    } else {
+      result.discountedChargeLimit = null
+    }
+  }
+
   if (result.startsAt && result.expiresAt && result.startsAt >= result.expiresAt) {
     throw new Error(`${ErrorCode.INVALID_PARAMS}: expiresAt must be later than startsAt`)
   }
@@ -248,6 +277,8 @@ export default async function adminOfficialCouponRoutes(app: FastifyInstance): P
         enabled: input.enabled!,
         startsAt: input.startsAt,
         expiresAt: input.expiresAt,
+        renewalMode: input.renewalMode,
+        discountedChargeLimit: input.discountedChargeLimit,
         createdById: user.id
       })
 

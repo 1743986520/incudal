@@ -8,7 +8,7 @@
  */
 
 import crypto from 'crypto'
-import type { OfficialCouponScope } from '@prisma/client'
+import type { OfficialCouponRenewalMode, OfficialCouponScope } from '@prisma/client'
 
 // 自动生成的优惠券代码字符集（去除易混淆字符）
 const COUPON_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -64,4 +64,32 @@ export function resolveUserUsageLimit(coupon: { reusable: boolean; maxUsesPerUse
  */
 export function isValidDiscountRate(discountRate: number): boolean {
   return Number.isFinite(discountRate) && discountRate > 0 && discountRate < 1
+}
+
+/**
+ * 判断本次续费是否享受官方券折扣
+ *
+ * - purchase_only：仅首购折价，续费一律原价
+ * - limited：含首次购买在内共折价 discountedChargeLimit 次，用满后原价
+ * - recurring：续费一律按折扣价（仍受券的启用状态、有效期与总次数上限约束）
+ *
+ * @param discountedChargeCount 该实例目前已折价的次数（含首次购买）
+ */
+export function shouldDiscountRenewal(input: {
+  renewalMode: OfficialCouponRenewalMode
+  discountedChargeLimit: number | null
+  discountedChargeCount: number
+}): boolean {
+  switch (input.renewalMode) {
+    case 'recurring':
+      return true
+    case 'limited': {
+      const limit = input.discountedChargeLimit
+      if (limit === null || !Number.isInteger(limit) || limit < 1) return false
+      return input.discountedChargeCount < limit
+    }
+    case 'purchase_only':
+    default:
+      return false
+  }
 }

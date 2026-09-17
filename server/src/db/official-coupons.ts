@@ -8,7 +8,7 @@
  * - 次数控制在使用事务内通过 advisory lock + 条件更新完成，避免并发超发
  */
 
-import { Prisma, type OfficialCoupon, type OfficialCouponScope } from '@prisma/client'
+import { Prisma, type OfficialCoupon, type OfficialCouponRenewalMode, type OfficialCouponScope } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { OFFICIAL_COUPON_LOCK_NAMESPACE, tryAdvisoryTransactionLock } from './advisory-locks.js'
 import { ErrorCode, type ErrorCodeType } from '../lib/errors.js'
@@ -85,14 +85,19 @@ export type OfficialCouponValidationResult = OfficialCouponValidationSuccess | O
  * 校验官方优惠券（不写入任何数据）
  *
  * 校验项：是否存在、是否启用、是否在有效期内、是否适用于当前套餐、用户次数、全站总次数
+ *
+ * @param checkUserLimit 是否检查「每用户使用次数」上限。续费场景传入 false，
+ *                       因为每用户次数只约束新购次数，不应阻断实例的后续续费折扣。
  */
 export async function validateOfficialCoupon(params: {
   code: string
   packageId: number
   userId: number
   client?: DbClient
+  checkUserLimit?: boolean
 }): Promise<OfficialCouponValidationResult> {
   const client = params.client || prisma
+  const checkUserLimit = params.checkUserLimit !== false
   const code = normalizeOfficialCouponCode(params.code)
 
   if (!code) {
@@ -161,7 +166,7 @@ export async function validateOfficialCoupon(params: {
   }
 
   const userUsageLimit = resolveUserUsageLimit(coupon)
-  if (userUsageLimit !== null) {
+  if (checkUserLimit && userUsageLimit !== null) {
     const userUsageCount = await client.officialCouponUsage.count({
       where: { couponId: coupon.id, userId: params.userId }
     })
@@ -207,6 +212,8 @@ export async function reserveOfficialCouponUsage(params: {
   instanceId: number
   originalPrice: number
   discountAmount: number
+  /** purchase=新购占次；renewal=续费占次（跳过每用户新购次数检查） */
+  mode?: 'purchase' | 'renewal'
   tx: Prisma.TransactionClient
 }): Promise<{ couponId: number; usageId: number }> {
   const { tx } = params
@@ -231,7 +238,8 @@ export async function reserveOfficialCouponUsage(params: {
     code,
     packageId: params.packageId,
     userId: params.userId,
-    client: tx
+    client: tx,
+    checkUserLimit: params.mode !== 'renewal'
   })
   if (!validation.valid) {
     throw new Error(`${validation.errorCode}: ${validation.error}`)
@@ -256,12 +264,45 @@ export async function reserveOfficialCouponUsage(params: {
       couponId: coupon.id,
       userId: params.userId,
       instanceId: params.instanceId,
+      type: params.mode === 'renewal' ? 'renewal' : 'purchase',
       originalPrice: new Prisma.Decimal(params.originalPrice),
       discountAmount: new Prisma.Decimal(params.discountAmount)
     }
   })
 
   return { couponId: coupon.id, usageId: usage.id }
+}
+
+/**
+ * 查询实例购买时使用的官方优惠券（新购记录）
+ *
+ * 只有购买记录（type=purchase）才参与续期折扣判定，
+ * 避免续费产生的使用记录被误当成"该实例的券"。
+ */
+export async function getInstancePurchaseCoupon(
+  instanceId: number,
+  client: DbClient = prisma
+): Promise<{ coupon: OfficialCoupon; usageId: number } | null> {
+  const usage = await client.officialCouponUsage.findFirst({
+    where: { instanceId, type: 'purchase' },
+    include: { coupon: true }
+  })
+
+  if (!usage) return null
+  return { coupon: usage.coupon, usageId: usage.id }
+}
+
+/**
+ * 统计某实例对该券已折价的次数（含首次购买与已折价的续费）
+ */
+export async function countDiscountedChargesForInstance(
+  couponId: number,
+  instanceId: number,
+  client: DbClient = prisma
+): Promise<number> {
+  return client.officialCouponUsage.count({
+    where: { couponId, instanceId }
+  })
 }
 
 /**
@@ -375,6 +416,8 @@ export function serializeOfficialCoupon(coupon: OfficialCoupon) {
     enabled: coupon.enabled,
     startsAt: coupon.startsAt ? coupon.startsAt.toISOString() : null,
     expiresAt: coupon.expiresAt ? coupon.expiresAt.toISOString() : null,
+    renewalMode: coupon.renewalMode,
+    discountedChargeLimit: coupon.discountedChargeLimit,
     createdById: coupon.createdById,
     createdAt: coupon.createdAt.toISOString(),
     updatedAt: coupon.updatedAt.toISOString()
@@ -402,6 +445,8 @@ export async function createOfficialCoupon(data: {
   enabled: boolean
   startsAt?: Date | null
   expiresAt?: Date | null
+  renewalMode?: OfficialCouponRenewalMode
+  discountedChargeLimit?: number | null
   createdById: number
 }) {
   const code = normalizeOfficialCouponCode(data.code && data.code.trim() ? data.code : generateOfficialCouponCode())
@@ -410,6 +455,8 @@ export async function createOfficialCoupon(data: {
   if (existing) {
     throw new Error(`${ErrorCode.COUPON_CODE_EXISTS}: ${code}`)
   }
+
+  const renewalMode = data.renewalMode ?? 'purchase_only'
 
   const coupon = await prisma.officialCoupon.create({
     data: {
@@ -425,6 +472,9 @@ export async function createOfficialCoupon(data: {
       enabled: data.enabled,
       startsAt: data.startsAt ?? null,
       expiresAt: data.expiresAt ?? null,
+      renewalMode,
+      // 仅 limited 模式使用该字段，其余模式统一留空避免误读
+      discountedChargeLimit: renewalMode === 'limited' ? data.discountedChargeLimit ?? null : null,
       createdById: data.createdById
     }
   })
@@ -451,6 +501,8 @@ export async function updateOfficialCoupon(
     enabled?: boolean
     startsAt?: Date | null
     expiresAt?: Date | null
+    renewalMode?: OfficialCouponRenewalMode
+    discountedChargeLimit?: number | null
   }
 ) {
   const current = await prisma.officialCoupon.findUnique({ where: { id } })
@@ -488,6 +540,15 @@ export async function updateOfficialCoupon(
     updateData.maxUsesPerUser = null
   } else if (data.maxUsesPerUser !== undefined) {
     updateData.maxUsesPerUser = data.maxUsesPerUser
+  }
+
+  const nextRenewalMode = data.renewalMode !== undefined ? data.renewalMode : current.renewalMode
+  if (data.renewalMode !== undefined) updateData.renewalMode = data.renewalMode
+  // 仅 limited 模式使用折价次数上限，其余模式统一留空避免误读
+  if (nextRenewalMode !== 'limited') {
+    updateData.discountedChargeLimit = null
+  } else if (data.discountedChargeLimit !== undefined) {
+    updateData.discountedChargeLimit = data.discountedChargeLimit
   }
 
   const coupon = await prisma.officialCoupon.update({ where: { id }, data: updateData })

@@ -5,7 +5,7 @@ import api from '@/api'
 import { useToast } from '@/stores/toast'
 import { translateError } from '@/utils/errorHandler'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
-import type { OfficialCoupon, OfficialCouponScope } from '@/types/api'
+import type { OfficialCoupon, OfficialCouponRenewalMode, OfficialCouponScope } from '@/types/api'
 
 const props = withDefaults(defineProps<{
   embedded?: boolean
@@ -28,6 +28,8 @@ interface CouponForm {
   enabled: boolean
   startsAt: string
   expiresAt: string
+  renewalMode: OfficialCouponRenewalMode
+  discountedChargeLimit: number | null
 }
 
 interface CouponUsage {
@@ -74,7 +76,9 @@ const emptyForm = (): CouponForm => ({
   totalUsageLimit: null,
   enabled: true,
   startsAt: '',
-  expiresAt: ''
+  expiresAt: '',
+  renewalMode: 'purchase_only',
+  discountedChargeLimit: null
 })
 
 const form = ref<CouponForm>(emptyForm())
@@ -149,6 +153,16 @@ function userLimitLabel(coupon: OfficialCoupon): string {
   return t('admin.officialCoupons.perUserTimes', { count: coupon.maxUsesPerUser })
 }
 
+function renewalModeLabel(coupon: OfficialCoupon): string {
+  const mode = coupon.renewalMode
+  if (mode === 'limited') {
+    const limit = coupon.discountedChargeLimit
+    if (limit === null) return t('admin.officialCoupons.renewalMode.limited')
+    return t('admin.officialCoupons.renewalModeLimitedTimes', { count: limit })
+  }
+  return t(`admin.officialCoupons.renewalMode.${mode}`)
+}
+
 function validityLabel(coupon: OfficialCoupon): string {
   if (!coupon.startsAt && !coupon.expiresAt) return t('admin.officialCoupons.alwaysValid')
   const start = coupon.startsAt ? formatDate(coupon.startsAt) : t('admin.officialCoupons.noStart')
@@ -205,9 +219,18 @@ function openEditModal(coupon: OfficialCoupon) {
     totalUsageLimit: coupon.totalUsageLimit,
     enabled: coupon.enabled,
     startsAt: toDateTimeLocal(coupon.startsAt),
-    expiresAt: toDateTimeLocal(coupon.expiresAt)
+    expiresAt: toDateTimeLocal(coupon.expiresAt),
+    renewalMode: coupon.renewalMode,
+    discountedChargeLimit: coupon.discountedChargeLimit
   }
   showEditModal.value = true
+}
+
+/** 切换到 limited 模式时给折价次数一个默认值，方便直接修改 */
+function onRenewalModeChange() {
+  if (form.value.renewalMode === 'limited' && form.value.discountedChargeLimit === null) {
+    form.value.discountedChargeLimit = 3
+  }
 }
 
 function validateForm(): string | null {
@@ -224,6 +247,11 @@ function validateForm(): string | null {
   if (current.totalUsageLimit !== null) {
     if (!Number.isInteger(current.totalUsageLimit) || current.totalUsageLimit < 1) {
       return t('admin.officialCoupons.validation.totalUsageInvalid')
+    }
+  }
+  if (current.renewalMode === 'limited') {
+    if (current.discountedChargeLimit === null || !Number.isInteger(current.discountedChargeLimit) || current.discountedChargeLimit < 1) {
+      return t('admin.officialCoupons.validation.chargeLimitRequired')
     }
   }
   if (current.startsAt && current.expiresAt && new Date(current.startsAt) >= new Date(current.expiresAt)) {
@@ -251,7 +279,9 @@ async function saveCoupon() {
     totalUsageLimit: current.totalUsageLimit,
     enabled: current.enabled,
     startsAt: fromDateTimeLocal(current.startsAt),
-    expiresAt: fromDateTimeLocal(current.expiresAt)
+    expiresAt: fromDateTimeLocal(current.expiresAt),
+    renewalMode: current.renewalMode,
+    discountedChargeLimit: current.renewalMode === 'limited' ? current.discountedChargeLimit : null
   }
 
   saving.value = true
@@ -395,7 +425,7 @@ onMounted(() => {
 
     <div v-else-if="coupons.length > 0" class="card overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full min-w-[1100px] text-sm">
+        <table class="w-full min-w-[1250px] text-sm">
           <thead class="bg-themed-secondary/80">
             <tr>
               <th class="p-3 text-left whitespace-nowrap">{{ $t('admin.officialCoupons.code') }}</th>
@@ -404,6 +434,7 @@ onMounted(() => {
               <th class="p-3 text-left whitespace-nowrap">{{ $t('admin.officialCoupons.scopeLabel') }}</th>
               <th class="p-3 text-left whitespace-nowrap">{{ $t('admin.officialCoupons.usage') }}</th>
               <th class="p-3 text-left whitespace-nowrap">{{ $t('admin.officialCoupons.perUser') }}</th>
+              <th class="p-3 text-left whitespace-nowrap">{{ $t('admin.officialCoupons.renewalLabel') }}</th>
               <th class="p-3 text-left whitespace-nowrap">{{ $t('admin.officialCoupons.validity') }}</th>
               <th class="p-3 text-left whitespace-nowrap">{{ $t('admin.officialCoupons.statusLabel') }}</th>
               <th class="p-3 text-left whitespace-nowrap">{{ $t('common.actions') }}</th>
@@ -426,6 +457,7 @@ onMounted(() => {
               </td>
               <td class="p-3 whitespace-nowrap text-themed-muted">{{ usageLabel(coupon) }}</td>
               <td class="p-3 whitespace-nowrap text-themed-muted">{{ userLimitLabel(coupon) }}</td>
+              <td class="p-3 whitespace-nowrap text-themed-muted">{{ renewalModeLabel(coupon) }}</td>
               <td class="p-3 whitespace-nowrap text-xs text-themed-muted">{{ validityLabel(coupon) }}</td>
               <td class="p-3 whitespace-nowrap">
                 <span :class="['badge', coupon.enabled ? 'badge-success' : 'badge-default']">
@@ -524,6 +556,20 @@ onMounted(() => {
                   <option value="hosted_only">{{ $t('admin.officialCoupons.scope.hosted_only') }}</option>
                 </select>
               </div>
+              <div>
+                <label class="label">{{ $t('admin.officialCoupons.renewalLabel') }}</label>
+                <select v-model="form.renewalMode" class="input w-full" @change="onRenewalModeChange">
+                  <option value="purchase_only">{{ $t('admin.officialCoupons.renewalMode.purchase_only') }}</option>
+                  <option value="limited">{{ $t('admin.officialCoupons.renewalMode.limited') }}</option>
+                  <option value="recurring">{{ $t('admin.officialCoupons.renewalMode.recurring') }}</option>
+                </select>
+              </div>
+              <div v-if="form.renewalMode === 'limited'">
+                <label class="label">{{ $t('admin.officialCoupons.discountedChargeLimit') }}</label>
+                <input v-model.number="form.discountedChargeLimit" type="number" min="1" step="1" class="input w-full" />
+                <p class="mt-1 text-xs text-themed-muted">{{ $t('admin.officialCoupons.discountedChargeLimitHint') }}</p>
+              </div>
+              <div v-else class="hidden sm:block"></div>
               <div class="sm:col-span-2">
                 <label class="label">{{ $t('admin.officialCoupons.remark') }}</label>
                 <textarea v-model="form.remark" rows="2" maxlength="500" class="input w-full resize-y" :placeholder="$t('admin.officialCoupons.remarkPlaceholder')"></textarea>

@@ -341,6 +341,13 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
           discountRate: billingInfo.affDiscount.discountRate,
           discountPercent: Math.round(billingInfo.affDiscount.discountRate * 100)  // 百分比，如 5 表示 5%
         } : null,
+        // 官方优惠券续期折扣信息（优先于 AFF）
+        officialCouponDiscount: billingInfo.officialCouponDiscount ? {
+          discountRate: billingInfo.officialCouponDiscount.discountRate,
+          discountPercent: billingInfo.officialCouponDiscount.discountPercent,
+          couponCode: billingInfo.officialCouponDiscount.couponCode,
+          couponName: billingInfo.officialCouponDiscount.couponName
+        } : null,
         // 托管实例相关信息
         isHostedInstance: billingInfo.isHostedInstance,
         daysUntilExpire: billingInfo.daysUntilExpire,

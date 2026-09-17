@@ -331,6 +331,19 @@ enum OfficialCouponScope {
   hosted_only   // 仅托管套餐（普通用户创建的套餐）
 }
 
+// 官方优惠券续期折扣模式
+enum OfficialCouponRenewalMode {
+  purchase_only // 仅首购折价，续费按原价
+  limited       // 限定折价次数（含首次购买）
+  recurring     // 永久循环：续费一律按折扣价
+}
+
+// 官方优惠券使用记录类型
+enum OfficialCouponUsageType {
+  purchase // 新购
+  renewal  // 续费
+}
+
 // 流量状态枚举
 enum TrafficStatus {
   NORMAL // 正常
@@ -2596,6 +2609,8 @@ model OfficialCoupon {
   enabled         Boolean             @default(true)                         // 是否启用
   startsAt        DateTime?           @map("starts_at")                      // 生效时间
   expiresAt       DateTime?           @map("expires_at")                     // 失效时间
+  renewalMode     OfficialCouponRenewalMode @default(purchase_only) @map("renewal_mode") // 续期折扣模式
+  discountedChargeLimit Int?          @map("discounted_charge_limit")        // limited 模式下含首次购买的总折价次数
   createdById     Int?                @map("created_by_id")                  // 创建管理员ID
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
@@ -2615,6 +2630,7 @@ model OfficialCouponUsage {
   couponId       Int      @map("coupon_id")
   userId         Int      @map("user_id")
   instanceId     Int?     @map("instance_id")
+  type           OfficialCouponUsageType @default(purchase)                // 新购 / 续费
   originalPrice  Decimal  @map("original_price") @db.Decimal(10, 2)  // 订单原价
   discountAmount Decimal  @map("discount_amount") @db.Decimal(10, 2) // 平台承担的折扣金额
   createdAt      DateTime @default(now()) @map("created_at")
