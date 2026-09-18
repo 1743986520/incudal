@@ -4,6 +4,9 @@
  */
 
 import { Agent, request as undiciRequest } from 'undici'
+import { createHash } from 'crypto'
+import { readFileSync } from 'fs'
+import type { PeerCertificate } from 'tls'
 import { formatHostForUrl } from './network-address.js'
 
 // 请求超时配置（毫秒）
@@ -29,6 +32,50 @@ export interface CaddyRoute {
 }
 
 /**
+ * 构建 Caddy API 的 TLS 连接选项。
+ *
+ * 宿主机 Caddy API 通常使用自签名证书，默认保持兼容（不校验证书）。
+ * 需要加固的部署可通过环境变量显式启用证书校验：
+ * - CADDY_API_CA_PATH：自定义 CA 证书（PEM）路径，按标准 TLS 规则校验
+ * - CADDY_API_FINGERPRINT：固定宿主机 Caddy API 证书的 SHA-256 指纹，
+ *   适用于 SAN 不含宿主机 IP 的自签名证书
+ */
+function buildCaddyTlsConnectOptions(): {
+  rejectUnauthorized: boolean
+  timeout: number
+  ca?: Buffer
+  checkServerIdentity?: (hostname: string, certificate: PeerCertificate) => Error | undefined
+} {
+  const caPath = process.env.CADDY_API_CA_PATH?.trim()
+  const fingerprint = process.env.CADDY_API_FINGERPRINT?.replaceAll(':', '').trim().toLowerCase()
+
+  if (fingerprint !== undefined && !/^[a-f0-9]{64}$/.test(fingerprint)) {
+    throw new Error('CADDY_API_FINGERPRINT must be a SHA-256 certificate fingerprint (64 hex characters)')
+  }
+
+  // 未配置信任来源时保持自签名证书兼容行为
+  if (!caPath && !fingerprint) {
+    return { rejectUnauthorized: false, timeout: CONNECT_TIMEOUT }
+  }
+
+  return {
+    rejectUnauthorized: true,
+    timeout: CONNECT_TIMEOUT,
+    ...(caPath ? { ca: readFileSync(caPath) } : {}),
+    ...(fingerprint ? {
+      // 自签名证书的 SAN 通常不含宿主机 IP，固定指纹时按指纹匹配而非主机名
+      checkServerIdentity: (_hostname: string, certificate: PeerCertificate): Error | undefined => {
+        if (!certificate.raw) return new Error('Caddy API did not provide a certificate')
+        const actual = createHash('sha256').update(certificate.raw).digest('hex')
+        return actual === fingerprint
+          ? undefined
+          : new Error('Caddy API certificate does not match CADDY_API_FINGERPRINT')
+      }
+    } : {})
+  }
+}
+
+/**
  * Caddy API 客户端类
  */
 export class CaddyClient {
@@ -39,13 +86,10 @@ export class CaddyClient {
   constructor(config: CaddyClientConfig) {
     this.baseUrl = `https://${formatHostForUrl(config.host)}:${config.port}`
     this.authHeader = 'Basic ' + Buffer.from(`${config.username}:${config.password}`).toString('base64')
-    
-    // 创建 undici Agent，忽略自签名证书错误，配置超时
+
+    // 创建 undici Agent：默认兼容自签名证书，配置 CA/指纹后启用校验，配置超时
     this.agent = new Agent({
-      connect: {
-        rejectUnauthorized: false,
-        timeout: CONNECT_TIMEOUT
-      }
+      connect: buildCaddyTlsConnectOptions()
     })
   }
 
