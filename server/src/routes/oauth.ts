@@ -10,7 +10,7 @@ import * as db from '../db/index.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { generateOAuthState, verifyAndConsumeOAuthState, logSecurityEvent, SecurityEventType, generateRefreshToken, detectNewLoginLocation, generateOAuthLoginCode, verifyAndConsumeOAuthLoginCode, isAccessTokenInvalidated } from '../lib/security.js'
 import { sendLoginAlertEmail } from '../lib/mailer.js'
-import { getRefreshTokenCookieOptions } from '../lib/cookie-config.js'
+import { getOAuthStateCookieOptions, getRefreshTokenCookieOptions, OAUTH_STATE_COOKIE_NAME } from '../lib/cookie-config.js'
 import { getSafeRedirectUrl } from '../lib/redirect-validator.js'
 import { consumeOAuthBindTicket, generateOAuthBindTicket } from '../lib/action-ticket.js'
 
@@ -168,7 +168,6 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
 
     // 生成安全的一次性 state token（存储到 Redis）
     const validMode = mode === 'bind' ? 'bind' : 'login'
-
     // 绑定模式下需要验证短期票据
     let userId: number | undefined
     if (validMode === 'bind') {
@@ -198,7 +197,11 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
       userId = bindUser.id
     }
 
-    const state = await generateOAuthState(validMode, getSafeRedirectUrl(redirect, '/'), userId)
+    // 生成 state 并把其中的 nonce 写入浏览器 Cookie：
+    // 回调时必须携带同一 nonce，防止攻击者把自己的 OAuth 回调 URL 引诱受害者访问完成 Login CSRF
+    const { state, nonce } = await generateOAuthState(validMode, getSafeRedirectUrl(redirect, '/'), userId)
+
+    reply.setCookie(OAUTH_STATE_COOKIE_NAME, nonce, getOAuthStateCookieOptions())
 
     // 构建回调 URL
     const callbackUrl = `${request.protocol}://${request.hostname}/api/oauth/callback/${provider}`
@@ -257,13 +260,19 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
       return reply.redirect(`/login?error=invalid_state`)
     }
 
-    // 验证并消费一次性 state token
-    const stateData = await verifyAndConsumeOAuthState(state)
+    // 读取发起授权时写入浏览器的 nonce，绑定 state 与浏览器，防止 Login CSRF
+    const cookieNonce = request.cookies?.[OAUTH_STATE_COOKIE_NAME]
+
+    // 无论校验是否通过都清除 state Cookie，Cookie 消费后不可复用
+    reply.clearCookie(OAUTH_STATE_COOKIE_NAME, getOAuthStateCookieOptions())
+
+    // 验证并消费一次性 state token（同时比对 Cookie nonce）
+    const stateData = await verifyAndConsumeOAuthState(state, cookieNonce || '')
     if (!stateData) {
       await logSecurityEvent(SecurityEventType.SUSPICIOUS_ACTIVITY, null, {
         ip: request.ip,
         action: 'oauth_callback',
-        reason: 'Invalid or expired state token'
+        reason: cookieNonce ? 'Invalid state token or nonce mismatch' : 'Missing OAuth state cookie (Login CSRF suspected)'
       })
       return reply.redirect(`/login?error=state_expired`)
     }

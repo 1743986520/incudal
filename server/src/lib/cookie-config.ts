@@ -121,6 +121,40 @@ export function getClearCookieOptions(): { path: string; domain?: string } {
 }
 
 /**
+ * OAuth state 绑定 Cookie 的有效期（秒）
+ * 与 OAuth state 的 10 分钟 TTL 保持一致。
+ */
+export const OAUTH_STATE_COOKIE_MAX_AGE_SECONDS = 10 * 60
+
+/**
+ * OAuth state 绑定 Cookie 的名称
+ * 用于把 OAuth state 的 nonce 绑定到发起登录的浏览器，防止 Login CSRF。
+ */
+export const OAUTH_STATE_COOKIE_NAME = 'oauthState'
+
+/**
+ * 获取 OAuth state 绑定 Cookie 的完整配置
+ *
+ * SameSite 必须为 'lax'：OAuth 回调是跨站顶级 GET 导航，
+ * 'strict' 会导致回调收不到 Cookie 而 'none' 会扩大暴露面。
+ * path 限定在 /api/oauth，只在发起授权与回调时携带。
+ *
+ * @returns Fastify Cookie 序列化选项
+ */
+export function getOAuthStateCookieOptions(): CookieSerializeOptions {
+  const domain = getCookieDomain()
+
+  return {
+    httpOnly: true,
+    secure: getCookieSecure(),
+    sameSite: 'lax',
+    path: '/api/oauth',
+    maxAge: OAUTH_STATE_COOKIE_MAX_AGE_SECONDS,
+    ...(domain ? { domain } : {}),
+  }
+}
+
+/**
  * 在启动时打印 Cookie 配置（用于调试）
  */
 export function logCookieConfig(): void {

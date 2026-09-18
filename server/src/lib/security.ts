@@ -1319,8 +1319,12 @@ function getOAuthStateSecret(): string {
 
 /**
  * 生成 OAuth State（使用 JWT 签名，无需存储）
+ *
+ * 返回 state 与其中的 nonce：nonce 必须同时写入发起授权的浏览器 Cookie，
+ * 回调时通过 verifyAndConsumeOAuthState 的 expectedNonce 参数比对，
+ * 使 state 绑定到浏览器本身，防止攻击者用自己的 OAuth 回调 URL 实现 Login CSRF。
  */
-export async function generateOAuthState(mode: 'login' | 'bind', redirect: string, userId?: number): Promise<string> {
+export async function generateOAuthState(mode: 'login' | 'bind', redirect: string, userId?: number): Promise<{ state: string; nonce: string }> {
     const nonce = crypto.randomBytes(16).toString('hex')
     const timestamp = Date.now()
 
@@ -1334,7 +1338,7 @@ export async function generateOAuthState(mode: 'login' | 'bind', redirect: strin
 
     // 将数据编码为 Base64
     const payload = Buffer.from(JSON.stringify(data)).toString('base64url')
-    
+
     // 生成 HMAC 签名
     const signature = crypto
         .createHmac('sha256', getOAuthStateSecret())
@@ -1342,7 +1346,7 @@ export async function generateOAuthState(mode: 'login' | 'bind', redirect: strin
         .digest('base64url')
 
     // 返回签名后的 state: payload.signature
-    return `${payload}.${signature}`
+    return { state: `${payload}.${signature}`, nonce }
 }
 
 // 已使用的 nonce 集合（防止重放攻击）
@@ -1355,10 +1359,18 @@ setInterval(() => {
 
 /**
  * 验证并消费 OAuth State
- * 验证签名和时戳，并检查 nonce 防止重放攻击
+ * 验证签名和时戳，检查 nonce 防止重放攻击，并比对浏览器 Cookie 中的 nonce
+ * 绑定发起授权的浏览器（防止 Login CSRF）。
+ *
+ * @param stateToken 回调携带的 state 参数
+ * @param expectedNonce 发起授权时写入浏览器 Cookie 的 nonce，必须与 state 中的 nonce 一致
  */
-export async function verifyAndConsumeOAuthState(stateToken: string): Promise<OAuthStateData | null> {
+export async function verifyAndConsumeOAuthState(stateToken: string, expectedNonce: string): Promise<OAuthStateData | null> {
     try {
+        if (!expectedNonce) {
+            return null
+        }
+
         const parts = stateToken.split('.')
         if (parts.length !== 2) {
             return null
@@ -1381,6 +1393,11 @@ export async function verifyAndConsumeOAuthState(stateToken: string): Promise<OA
 
         // 检查时戳是否过期
         if (Date.now() - data.timestamp > OAUTH_STATE_TTL_MS) {
+            return null
+        }
+
+        // 检查 nonce 是否与浏览器 Cookie 一致（防止 Login CSRF：state 必须属于当前浏览器）
+        if (data.nonce !== expectedNonce) {
             return null
         }
 
