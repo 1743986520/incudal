@@ -96,31 +96,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
     return true
   }
 
-  // 检查用户是否启用了 2FA（登录前检查）
-  fastify.post<{ Body: { username: string } }>('/check-2fa', {
-    schema: {
-      body: {
-        type: 'object',
-        required: ['username'],
-        properties: {
-          username: { type: 'string', minLength: 3, maxLength: 254 }
-        }
-      }
-    }
-  }, async (request: FastifyRequest<{ Body: { username: string } }>, _reply: FastifyReply) => {
-    const { username } = request.body
-
-    // 查询用户（支持用户名或邮箱）
-    const user = await db.findUserByUsernameOrEmail(username)
-    if (!user) {
-      // 为了安全，不透露用户是否存在，统一返回不需要2FA
-      return { requires2FA: false }
-    }
-
-    // 检查是否启用了 2FA
-    const twoFAEnabled = await db.is2FAEnabled(user.id)
-    return { requires2FA: twoFAEnabled }
-  })
+  // 说明：不再提供 /check-2fa 预检查接口。该接口会泄露“用户名是否存在”与“是否启用 2FA”，
+  // 可被用于账号枚举。前端应直接提交登录请求，密码正确但缺少 2FA 时由登录接口
+  // 统一返回 TWO_FA_REQUIRED，再提示用户输入验证码。
 
   // 用户登录 (支持 2FA)
   fastify.post<{ Body: LoginWith2FARequest }>('/login', {

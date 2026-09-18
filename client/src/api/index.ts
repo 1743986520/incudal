@@ -554,11 +554,10 @@ http.interceptors.response.use(
 
     // 401 未授权，尝试刷新 token
     if (error.response?.status === 401) {
-      // 排除登录、注册、刷新和check-2fa接口本身
+      // 排除登录、注册、刷新接口本身
       const isAuthEndpoint = requestUrl.startsWith('/auth/login') ||
         requestUrl.startsWith('/auth/register') ||
-        requestUrl.startsWith('/auth/refresh') ||
-        requestUrl.startsWith('/auth/check-2fa')
+        requestUrl.startsWith('/auth/refresh')
 
       // 如果是认证相关接口的 401，不尝试刷新，直接返回错误
       if (isAuthEndpoint) {
@@ -751,8 +750,8 @@ const _originalGet = http.get.bind(http)
 const api = {
   // 认证
   auth: {
-    check2FA: (username: string): Promise<{ requires2FA: boolean }> =>
-      http.post('/auth/check-2fa', { username }),
+    // 说明：check2FA 预检查已随服务端 /auth/check-2fa 端点一并移除（存在账号枚举风险）。
+    // 登录时密码正确但缺少 2FA 会返回 TWO_FA_REQUIRED 错误码。
     login: (username: string, password: string, totpCode?: string, recoveryCode?: string, turnstileToken?: string): Promise<LoginResponse> =>
       http.post('/auth/login', { username, password, totpCode, recoveryCode, turnstileToken } as LoginRequest & { totpCode?: string; recoveryCode?: string; turnstileToken?: string }),
     register: (data: RegisterRequest & { emailCode?: string }): Promise<RegisterResponse> =>

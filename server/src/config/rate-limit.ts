@@ -41,13 +41,7 @@ export const globalRateLimit = {
 
 export const rateLimitRules: RateLimitRule[] = [
     // ========== 认证相关 (严格限制) ==========
-    {
-        path: '/api/auth/check-2fa',
-        method: 'POST',
-        max: 10,
-        timeWindow: '1 minute',
-        description: '检查2FA状态 - 防止用户名枚举'
-    },
+    // 说明：/api/auth/check-2fa 预检查接口已移除（存在账号枚举风险），无需限速规则。
     {
         path: '/api/auth/login',
         method: 'POST',
