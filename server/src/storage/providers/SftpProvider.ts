@@ -5,7 +5,7 @@
 import SftpClient from 'ssh2-sftp-client'
 import { Readable } from 'stream'
 import type { IStorageProvider, StorageConfigData } from '../types.js'
-import { assertSafeStorageTarget } from '../../lib/outbound-security.js'
+import { assertSafeStorageTarget, resolveSafeStorageEndpoint } from '../../lib/outbound-security.js'
 
 // SFTP 超时配置（6小时，适合大型备份）
 const SFTP_TIMEOUT = 6 * 60 * 60 * 1000
@@ -22,11 +22,15 @@ export class SftpProvider implements IStorageProvider {
     }
 
     private async getClient(): Promise<SftpClient> {
+        // 先做一次快速校验，失败时尽早给出可读错误
         await assertSafeStorageTarget('SFTP', this.config.host)
+        // ssh2 不支持自定义 DNS lookup，必须固定连接到刚校验过的 IP，
+        // 否则“校验时解析公网、建连时被 Rebinding 到内网”存在竞态窗口。
+        const endpoint = await resolveSafeStorageEndpoint('SFTP', this.config.host)
         const client = new SftpClient()
 
         await client.connect({
-            host: this.config.host.replace(/^sftp:\/\//, ''),
+            host: endpoint.address,
             port: this.config.port || 22,
             username: this.config.username || '',
             password: this.config.password || '',

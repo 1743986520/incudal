@@ -2,10 +2,15 @@
  * WebDAV 存储适配器
  */
 
+import { Agent as HttpAgent } from 'http'
+import { Agent as HttpsAgent } from 'https'
 import { createClient, WebDAVClient } from 'webdav'
 import { Readable } from 'stream'
 import type { IStorageProvider, StorageConfigData } from '../types.js'
-import { assertSafeStorageTarget } from '../../lib/outbound-security.js'
+import { assertSafeStorageTarget, createSafeDnsLookup } from '../../lib/outbound-security.js'
+
+type HttpAgentOptions = NonNullable<ConstructorParameters<typeof HttpAgent>[0]>
+type HttpsAgentOptions = NonNullable<ConstructorParameters<typeof HttpsAgent>[0]>
 
 export class WebDavProvider implements IStorageProvider {
     private client: WebDAVClient
@@ -25,12 +30,18 @@ export class WebDavProvider implements IStorageProvider {
             ? config.basePath
             : `${config.basePath || ''}/`
 
+        // 连接层逐主机校验 DNS：无论是初始请求还是服务端重定向到的新主机名，
+        // 建连前都会重新解析并校验公网地址，防止 DNS Rebinding 与重定向 SSRF。
+        const safeLookup = createSafeDnsLookup()
+
         this.client = createClient(baseUrl, {
             username: config.username || undefined,
             password: config.password || undefined,
             // 大文件上传需要更长的超时时间
             maxBodyLength: Infinity,
-            maxContentLength: Infinity
+            maxContentLength: Infinity,
+            httpAgent: new HttpAgent({ lookup: safeLookup as unknown as HttpAgentOptions['lookup'] }),
+            httpsAgent: new HttpsAgent({ lookup: safeLookup as unknown as HttpsAgentOptions['lookup'] })
         })
     }
 

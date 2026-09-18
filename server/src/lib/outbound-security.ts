@@ -95,6 +95,72 @@ async function resolvePublicAddresses(hostname: string): Promise<Array<{ address
 }
 
 /**
+ * 创建一个在连接层做安全校验的 DNS lookup 函数。
+ *
+ * 每当底层 socket 需要解析主机名时（包括跟随重定向后的新主机名），
+ * 都会重新解析并校验公网地址，然后把校验通过的 IP 直接交给连接层，
+ * 从而消除“先校验、后连接”之间的 DNS Rebinding 窗口。
+ */
+export function createSafeDnsLookup(): (
+  hostname: string,
+  options: { family?: number } | number,
+  callback: (err: Error | null, address?: string, family?: number) => void
+) => void {
+  return (hostname, options, callback) => {
+    resolvePublicAddresses(hostname)
+      .then(records => {
+        const requestedFamily = typeof options === 'number' ? options : options?.family
+        const candidates = requestedFamily === 4 || requestedFamily === 6
+          ? records.filter(item => item.family === requestedFamily)
+          : records
+        const selected = candidates[0] || records[0]
+        if (!selected) {
+          callback(new OutboundTargetValidationError('Unable to resolve hostname'))
+          return
+        }
+        callback(null, selected.address, selected.family)
+      })
+      .catch(error => {
+        callback(error instanceof Error ? error : new Error(String(error)))
+      })
+  }
+}
+
+export interface SafeStorageEndpoint {
+  /** 用户配置中的原始主机名（用于日志与 TLS 场景） */
+  hostname: string
+  /** 校验通过的、应当实际连接的 IP */
+  address: string
+  family: 4 | 6
+}
+
+/**
+ * 解析并校验存储目标主机，返回可直接用于建连的地址。
+ *
+ * FTP/SFTP 客户端库不支持自定义 DNS lookup，必须用固定 IP 建连来防止
+ * “校验时解析到公网、连接时被 Rebinding 到内网”的竞态。
+ */
+export async function resolveSafeStorageEndpoint(
+  type: 'FTP' | 'SFTP',
+  host: string
+): Promise<SafeStorageEndpoint> {
+  const defaultProtocol: Record<'FTP' | 'SFTP', SupportedProtocol> = {
+    FTP: 'ftp',
+    SFTP: 'sftp'
+  }
+
+  const parsed = buildUrl(host, defaultProtocol[type])
+  const records = await resolvePublicAddresses(parsed.hostname)
+  // 优先使用 IPv4：FTP/SFTP 的控制与数据通道对 IPv4 兼容性最好
+  const selected = records.find(record => record.family === 4) || records[0]
+  return {
+    hostname: parsed.hostname,
+    address: selected.address,
+    family: selected.family
+  }
+}
+
+/**
  * Execute an HTTP request while pinning DNS resolution to the public addresses
  * that were validated immediately beforehand. Redirects are deliberately
  * disabled so every destination must pass a fresh validation.

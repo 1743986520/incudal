@@ -5,7 +5,7 @@
 import * as ftp from 'basic-ftp'
 import { Readable } from 'stream'
 import type { IStorageProvider, StorageConfigData } from '../types.js'
-import { assertSafeStorageTarget } from '../../lib/outbound-security.js'
+import { assertSafeStorageTarget, resolveSafeStorageEndpoint } from '../../lib/outbound-security.js'
 
 // FTP 超时配置（6小时，适合大型备份）
 const FTP_TIMEOUT = 6 * 60 * 60 * 1000
@@ -22,12 +22,16 @@ export class FtpProvider implements IStorageProvider {
     }
 
     private async getClient(): Promise<ftp.Client> {
+        // 先做一次快速校验，失败时尽早给出可读错误
         await assertSafeStorageTarget('FTP', this.config.host)
+        // basic-ftp 不支持自定义 DNS lookup，必须固定连接到刚校验过的 IP，
+        // 否则“校验时解析公网、建连时被 Rebinding 到内网”存在竞态窗口。
+        const endpoint = await resolveSafeStorageEndpoint('FTP', this.config.host)
         const client = new ftp.Client(FTP_TIMEOUT)
         client.ftp.verbose = false
 
         await client.access({
-            host: this.config.host.replace(/^ftp:\/\//, ''),
+            host: endpoint.address,
             port: this.config.port || 21,
             user: this.config.username || 'anonymous',
             password: this.config.password || '',
