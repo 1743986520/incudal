@@ -11,6 +11,12 @@ const CODE_EXPIRATION_MINUTES = 10
 // Rate limit: max codes per email per hour
 const MAX_CODES_PER_HOUR = 5
 
+// 验证失败上限：超过后立即作废该邮箱的验证码，防止 6 位验证码被暴力尝试
+const MAX_VERIFY_FAILURES = 5
+
+// 验证失败计数的统计窗口
+const VERIFY_FAILURE_WINDOW_MS = 60 * 60 * 1000
+
 /**
  * Generate a cryptographically secure random 6-digit verification code
  */
@@ -22,11 +28,52 @@ export function generateVerificationCode(): string {
 }
 
 /**
+ * 验证码哈希（HMAC-SHA256）
+ *
+ * 验证码只有 6 位数字，直接明文落库会在数据库泄露后被离线穷举；
+ * 使用服务端密钥做 HMAC 提升 offline 破解成本。
+ */
+function getVerificationPepper(): string {
+    return process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'incudal-verification-pepper'
+}
+
+function hashVerificationCode(normalizedEmail: string, code: string): string {
+    return crypto
+        .createHmac('sha256', getVerificationPepper())
+        .update(`${normalizedEmail}:${code}`)
+        .digest('hex')
+}
+
+// 验证失败计数（按邮箱，进程内存）。
+// 注意：多副本部署时计数不共享，应随审查项 8 一并迁移到 Redis 等共享存储。
+const verifyFailures = new Map<string, { count: number; firstAt: number }>()
+
+async function registerVerifyFailure(normalizedEmail: string): Promise<void> {
+    const now = Date.now()
+    const entry = verifyFailures.get(normalizedEmail)
+
+    if (!entry || now - entry.firstAt > VERIFY_FAILURE_WINDOW_MS) {
+        verifyFailures.set(normalizedEmail, { count: 1, firstAt: now })
+        return
+    }
+
+    entry.count++
+
+    if (entry.count >= MAX_VERIFY_FAILURES) {
+        // 立即作废该邮箱的所有验证码，让继续暴力尝试失去意义
+        verifyFailures.delete(normalizedEmail)
+        await prisma.emailVerificationCode.deleteMany({
+            where: { email: normalizedEmail }
+        }).catch(() => {})
+    }
+}
+
+/**
  * Create a new email verification code
  */
 export async function createVerificationCode(email: string): Promise<{ code: string; expiresAt: Date } | null> {
     const normalizedEmail = email.toLowerCase().trim()
-    
+
     // Check rate limit
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
     const recentCount = await prisma.emailVerificationCode.count({
@@ -45,14 +92,14 @@ export async function createVerificationCode(email: string): Promise<{ code: str
         where: { email: normalizedEmail }
     })
 
-    // Generate new code
+    // Generate new code（明文只返回给调用方用于发送邮件，落库的是 HMAC 哈希）
     const code = generateVerificationCode()
     const expiresAt = new Date(Date.now() + CODE_EXPIRATION_MINUTES * 60 * 1000)
 
     await prisma.emailVerificationCode.create({
         data: {
             email: normalizedEmail,
-            code,
+            code: hashVerificationCode(normalizedEmail, code),
             expiresAt
         }
     })
@@ -62,28 +109,32 @@ export async function createVerificationCode(email: string): Promise<{ code: str
 
 /**
  * Verify an email verification code
+ *
+ * 使用 deleteMany 原子地“匹配并消费”验证码：并发验证同一验证码时只有一个请求
+ * 能成功（count > 0），其余请求自然失败，不会出现先 find 后 delete 的竞态。
  */
 export async function verifyCode(email: string, code: string): Promise<boolean> {
     const normalizedEmail = email.toLowerCase().trim()
-    
-    const record = await prisma.emailVerificationCode.findFirst({
+
+    if (!code || !/^\d{6}$/.test(code)) {
+        return false
+    }
+
+    const result = await prisma.emailVerificationCode.deleteMany({
         where: {
             email: normalizedEmail,
-            code,
+            code: hashVerificationCode(normalizedEmail, code),
             expiresAt: { gt: new Date() }
         }
     })
 
-    if (!record) {
-        return false
+    if (result.count > 0) {
+        verifyFailures.delete(normalizedEmail)
+        return true
     }
 
-    // Delete the code after successful verification
-    await prisma.emailVerificationCode.delete({
-        where: { id: record.id }
-    })
-
-    return true
+    await registerVerifyFailure(normalizedEmail)
+    return false
 }
 
 /**

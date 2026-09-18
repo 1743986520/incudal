@@ -87,7 +87,7 @@ export const rateLimitRules: RateLimitRule[] = [
     {
         path: '/api/auth/forgot-password/reset',
         method: 'POST',
-        max: 10,
+        max: 5,
         timeWindow: '1 minute',
         description: '重置密码 - 防止暴力破解验证码'
     },
