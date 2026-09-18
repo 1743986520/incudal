@@ -330,6 +330,60 @@ export function getActiveSessionStats(): {
     }
 }
 
+// 终端连接槽位预留（防止限额检查与会话注册之间的 TOCTOU 竞态）
+// 会话只有在 Incus WebSocket 握手完成后才会进入 activeSessions，
+// 期间其他并发连接如果只做只读限额检查，可以同时通过检查并超开。
+// 预留是纯同步操作，Node 单线程下“检查并占用”天然原子。
+const pendingSlotsByUser = new Map<number, number>()
+const pendingSlotsByInstance = new Map<number, number>()
+
+export interface TerminalSlotReservation {
+    allowed: boolean
+    reason?: 'user' | 'instance'
+}
+
+export function reserveTerminalSlot(
+    userId: number,
+    instanceId: number,
+    limits: { maxPerUser: number; maxPerInstance: number }
+): TerminalSlotReservation {
+    const stats = getActiveSessionStats()
+    const userCount = (stats.byUser.get(userId) || 0) + (pendingSlotsByUser.get(userId) || 0)
+    if (userCount >= limits.maxPerUser) {
+        return { allowed: false, reason: 'user' }
+    }
+
+    const instanceCount = (stats.byInstance.get(instanceId) || 0) + (pendingSlotsByInstance.get(instanceId) || 0)
+    if (instanceCount >= limits.maxPerInstance) {
+        return { allowed: false, reason: 'instance' }
+    }
+
+    pendingSlotsByUser.set(userId, (pendingSlotsByUser.get(userId) || 0) + 1)
+    pendingSlotsByInstance.set(instanceId, (pendingSlotsByInstance.get(instanceId) || 0) + 1)
+    return { allowed: true }
+}
+
+/**
+ * 释放终端连接槽位预留。
+ * 连接失败时释放未使用的预留；连接成功时由调用方在会话注册进
+ * activeSessions 之后调用，让计数从“预留”切换为“活跃会话”。
+ */
+export function releaseTerminalSlot(userId: number, instanceId: number): void {
+    const userPending = (pendingSlotsByUser.get(userId) || 0) - 1
+    if (userPending > 0) {
+        pendingSlotsByUser.set(userId, userPending)
+    } else {
+        pendingSlotsByUser.delete(userId)
+    }
+
+    const instancePending = (pendingSlotsByInstance.get(instanceId) || 0) - 1
+    if (instancePending > 0) {
+        pendingSlotsByInstance.set(instanceId, instancePending)
+    } else {
+        pendingSlotsByInstance.delete(instanceId)
+    }
+}
+
 /**
  * 创建 Incus Console WebSocket 连接
  */

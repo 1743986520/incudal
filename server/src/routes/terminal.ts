@@ -15,7 +15,9 @@ import {
 } from '../lib/websocket-security.js'
 import {
     createTerminalSession,
-    getActiveSessionStats
+    getActiveSessionStats,
+    reserveTerminalSlot,
+    releaseTerminalSlot
 } from '../lib/terminal-proxy.js'
 import type { WebSocket } from 'ws'
 import { consumeTerminalAccessTicket, generateTerminalAccessTicket } from '../lib/action-ticket.js'
@@ -196,18 +198,8 @@ export default async function terminalRoutes(fastify: FastifyInstance) {
             role: dbUser.role
         }
 
-        // 4. 用户终端连接数检查（使用终端专用统计，更精确）
-        const sessionStats = getActiveSessionStats()
-        const currentUserTerminals = sessionStats.byUser.get(user.id) || 0
-        if (currentUserTerminals >= TERMINAL_LIMITS.maxPerUser) {
-            safeSend(socket, JSON.stringify({
-                type: 'error',
-                code: 'USER_LIMIT_EXCEEDED',
-                message: `Too many terminal connections (${currentUserTerminals}/${TERMINAL_LIMITS.maxPerUser})`
-            }))
-            socket.close(4003, 'User terminal limit exceeded')
-            return
-        }
+        // 用户/实例终端连接数限额由下方 reserveTerminalSlot 原子预留统一执行，
+        // 这里不再做只读检查（只读检查在并发下存在 TOCTOU 竞态）。
 
         // 通用 WebSocket 连接限制检查（防止单用户占用过多资源）
         const userWsCheck = checkUserConnectionLimit(user.id)
@@ -256,144 +248,131 @@ export default async function terminalRoutes(fastify: FastifyInstance) {
             return
         }
 
-        // 8. 实例终端连接数检查（复用前面获取的统计数据）
-        const currentInstanceConnections = sessionStats.byInstance.get(instanceId) || 0
-        if (currentInstanceConnections >= TERMINAL_LIMITS.maxPerInstance) {
-            safeSend(socket, JSON.stringify({
-                type: 'error',
-                code: 'INSTANCE_LIMIT_EXCEEDED',
-                message: `Too many terminal connections for this instance (${currentInstanceConnections}/${TERMINAL_LIMITS.maxPerInstance})`
-            }))
-            socket.close(4003, 'Instance terminal limit exceeded')
+        // 8. 原子预留终端连接槽位（覆盖限额检查到会话注册进 activeSessions 的整个异步窗口）
+        const slot = reserveTerminalSlot(user.id, instanceId, TERMINAL_LIMITS)
+        if (!slot.allowed) {
+            if (slot.reason === 'user') {
+                safeSend(socket, JSON.stringify({
+                    type: 'error',
+                    code: 'USER_LIMIT_EXCEEDED',
+                    message: `Too many terminal connections (limit ${TERMINAL_LIMITS.maxPerUser})`
+                }))
+                socket.close(4003, 'User terminal limit exceeded')
+            } else {
+                safeSend(socket, JSON.stringify({
+                    type: 'error',
+                    code: 'INSTANCE_LIMIT_EXCEEDED',
+                    message: `Too many terminal connections for this instance (limit ${TERMINAL_LIMITS.maxPerInstance})`
+                }))
+                socket.close(4003, 'Instance terminal limit exceeded')
+            }
             return
         }
 
-        // 9. 获取宿主机信息
-        const host = await db.getHostById(instance.host_id)
-        if (!host) {
-            safeSend(socket, JSON.stringify({
-                type: 'error',
-                code: 'HOST_NOT_FOUND',
-                message: 'Host not found'
-            }))
-            socket.close(4004, 'Host not found')
-            return
-        }
-
-        // 10. 注册连接（连接计数由 terminal-proxy 统一管理）
-        registerConnection(clientIP, socket, user.id)
-
-        // 11. 创建终端会话前的最终检查（防止 TOCTOU 竞态条件）
-        // 重新获取最新统计数据，确保在异步操作期间没有其他连接建立
-        const finalStats = getActiveSessionStats()
-        const finalUserTerminals = finalStats.byUser.get(user.id) || 0
-        const finalInstanceConnections = finalStats.byInstance.get(instanceId) || 0
-        
-        if (finalUserTerminals >= TERMINAL_LIMITS.maxPerUser) {
-            safeSend(socket, JSON.stringify({
-                type: 'error',
-                code: 'USER_LIMIT_EXCEEDED',
-                message: `Too many terminal connections (${finalUserTerminals}/${TERMINAL_LIMITS.maxPerUser})`
-            }))
-            socket.close(4003, 'User terminal limit exceeded')
-            return
-        }
-        
-        if (finalInstanceConnections >= TERMINAL_LIMITS.maxPerInstance) {
-            safeSend(socket, JSON.stringify({
-                type: 'error',
-                code: 'INSTANCE_LIMIT_EXCEEDED',
-                message: `Too many terminal connections for this instance (${finalInstanceConnections}/${TERMINAL_LIMITS.maxPerInstance})`
-            }))
-            socket.close(4003, 'Instance terminal limit exceeded')
-            return
-        }
-
-        // 12. 创建终端会话
-        // 获取套餐信息以确定实例类型（提前到 try 外以便 catch 块访问）
-        let instanceType: 'vm' | 'container' = 'container'
+        // 预留之后的所有退出路径都必须释放槽位：
+        // 失败时释放的是预留本身；成功时会话已计入 activeSessions，释放让计数切换为活跃会话。
         try {
-            const pkg = instance.package_id ? await db.getPackageById(instance.package_id) : null
-            instanceType = (pkg?.instance_type === 'vm') ? 'vm' : 'container'
-        } catch {
-            // 获取套餐失败时默认使用 container
-        }
+            // 9. 获取宿主机信息
+            const host = await db.getHostById(instance.host_id)
+            if (!host) {
+                safeSend(socket, JSON.stringify({
+                    type: 'error',
+                    code: 'HOST_NOT_FOUND',
+                    message: 'Host not found'
+                }))
+                socket.close(4004, 'Host not found')
+                return
+            }
 
-        try {
-            const session = await createTerminalSession(
-                socket as any,
-                host,
-                instanceId,
-                instance.incus_id,
-                user.id,
-                instanceType,
-                authResult.sessionId
-            )
+            // 10. 注册连接（IP/用户级 WebSocket 计数由 websocket-security 统一管理）
+            registerConnection(clientIP, socket, user.id)
 
-            // 记录连接日志（包含详细信息）
-            const logDetails = [
-                `instance: ${instance.name} (#${instanceId})`,
-                `host: ${host.name}`,
-                `type: ${instanceType}`,
-                `mode: ${session.connectionMode}`,
-                `ip: ${clientIP}`,
-                `session: ${session.id}`
-            ].join(' | ')
+            // 11. 创建终端会话
+            // 获取套餐信息以确定实例类型（提前到 try 外以便 catch 块访问）
+            let instanceType: 'vm' | 'container' = 'container'
+            try {
+                const pkg = instance.package_id ? await db.getPackageById(instance.package_id) : null
+                instanceType = (pkg?.instance_type === 'vm') ? 'vm' : 'container'
+            } catch {
+                // 获取套餐失败时默认使用 container
+            }
 
-            await createLog(
-                user.id,
-                'terminal',
-                'terminal.connect',
-                `Terminal connected | ${logDetails}`,
-                'success',
-                { instanceId }
-            )
+            try {
+                const session = await createTerminalSession(
+                    socket as any,
+                    host,
+                    instanceId,
+                    instance.incus_id,
+                    user.id,
+                    instanceType,
+                    authResult.sessionId
+                )
 
-            // 监听断开连接（连接计数由 terminal-proxy 统一管理）
-            socket.on('close', async () => {
-                // 记录断开日志（包含详细信息）
+                // 记录连接日志（包含详细信息）
+                const logDetails = [
+                    `instance: ${instance.name} (#${instanceId})`,
+                    `host: ${host.name}`,
+                    `type: ${instanceType}`,
+                    `mode: ${session.connectionMode}`,
+                    `ip: ${clientIP}`,
+                    `session: ${session.id}`
+                ].join(' | ')
+
                 await createLog(
                     user.id,
                     'terminal',
-                    'terminal.disconnect',
-                    `Terminal disconnected | ${logDetails}`,
+                    'terminal.connect',
+                    `Terminal connected | ${logDetails}`,
                     'success',
                     { instanceId }
                 )
-            })
 
-        } catch (error) {
-            // 内部错误信息仅记录日志，不暴露给客户端
-            const internalError = error instanceof Error ? error.message : String(error)
-            console.error(`[Terminal] Failed to create session for instance ${instanceId}:`, internalError)
+                // 监听断开连接（连接计数由 terminal-proxy 统一管理）
+                socket.on('close', async () => {
+                    // 记录断开日志（包含详细信息）
+                    await createLog(
+                        user.id,
+                        'terminal',
+                        'terminal.disconnect',
+                        `Terminal disconnected | ${logDetails}`,
+                        'success',
+                        { instanceId }
+                    )
+                })
 
-            // 无需手动回滚连接计数，terminal-proxy 统一管理
+            } catch (error) {
+                // 内部错误信息仅记录日志，不暴露给客户端
+                const internalError = error instanceof Error ? error.message : String(error)
+                console.error(`[Terminal] Failed to create session for instance ${instanceId}:`, internalError)
 
-            // 向客户端返回通用错误消息，避免泄露内部信息
-            safeSend(socket, JSON.stringify({
-                type: 'error',
-                code: 'CONNECTION_FAILED',
-                message: 'Failed to connect to terminal. Please try again later.'
-            }))
-            socket.close(4000, 'Connection failed')
+                // 向客户端返回通用错误消息，避免泄露内部信息
+                safeSend(socket, JSON.stringify({
+                    type: 'error',
+                    code: 'CONNECTION_FAILED',
+                    message: 'Failed to connect to terminal. Please try again later.'
+                }))
+                socket.close(4000, 'Connection failed')
 
-            // 记录失败日志（包含详细信息，仅服务端可见）
-            const failLogDetails = [
-                `instance: ${instance.name} (#${instanceId})`,
-                `host: ${host.name}`,
-                `type: ${instanceType}`,
-                `ip: ${clientIP}`,
-                `error: ${internalError}`
-            ].join(' | ')
+                // 记录失败日志（包含详细信息，仅服务端可见）
+                const failLogDetails = [
+                    `instance: ${instance.name} (#${instanceId})`,
+                    `host: ${host.name}`,
+                    `type: ${instanceType}`,
+                    `ip: ${clientIP}`,
+                    `error: ${internalError}`
+                ].join(' | ')
 
-            await createLog(
-                user.id,
-                'terminal',
-                'terminal.connect',
-                `Terminal connection failed | ${failLogDetails}`,
-                'failed',
-                { instanceId }
-            )
+                await createLog(
+                    user.id,
+                    'terminal',
+                    'terminal.connect',
+                    `Terminal connection failed | ${failLogDetails}`,
+                    'failed',
+                    { instanceId }
+                )
+            }
+        } finally {
+            releaseTerminalSlot(user.id, instanceId)
         }
     })
 
