@@ -9,6 +9,7 @@ import { getImageDisplayNames } from './images.js'
 import type { Host, User, Instance } from '../types/database.js'
 import { getSafeHttpUrl } from '../lib/external-url.js'
 import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
+import { getHostIdsWithInstanceDataPool } from './storage-pools.js'
 
 export const USER_SEARCH_FIELDS = ['username', 'id', 'email'] as const
 export type UserSearchField = (typeof USER_SEARCH_FIELDS)[number]
@@ -665,6 +666,9 @@ export async function getAvailableHosts(
     }
   })
 
+  // 存储池就绪集合：至少存在一个系统盘存储池的宿主机
+  const hostsWithInstanceDataPool = await getHostIdsWithInstanceDataPool(hosts.map(host => host.id))
+
   const availableHosts = hostsWithResources
     .filter(host => {
       // 检查 CPU 配额
@@ -696,7 +700,9 @@ export async function getAvailableHosts(
       }
 
       // 磁盘配额检查已移除：不再限制磁盘空间
-      return true
+
+      // 存储池就绪检查：没有任何系统盘存储池的节点不参与实例创建
+      return hostsWithInstanceDataPool.has(host.id)
     })
     .sort((a, b) => (b.memoryMax - b.memoryUsedCalculated) - (a.memoryMax - a.memoryUsedCalculated))
 

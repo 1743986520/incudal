@@ -222,6 +222,14 @@ async function reserveHostResources(
     throw new Error('Host not found')
   }
 
+  // 存储池硬闸：宿主机没有任何系统盘存储池时不允许预占资源创建实例
+  const instanceDataPoolCount = await tx.storagePool.count({
+    where: { hostId, purpose: 'instance_data' }
+  })
+  if (instanceDataPoolCount === 0) {
+    throw new Error('STORAGE_POOL_NOT_CONFIGURED: 宿主机尚未创建可用的系统盘存储池')
+  }
+
   // 检查资源是否超限（与 selectAvailableHost 逻辑保持一致）
   const cpuLimit = host.cpuAllowanceMax || 0
   const memoryLimit = host.memoryMax || 0

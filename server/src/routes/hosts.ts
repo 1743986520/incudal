@@ -15,6 +15,7 @@ import { checkHostingAccess } from '../lib/hosting-access.js'
 import { createInboxMessage } from '../db/inbox.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode, type ErrorCodeType } from '../lib/errors.js'
+import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
 import { createInstanceTask, getActiveTaskForInstance } from '../db/instance-tasks.js'
 import { getSSHKeyById, getSSHKeysByUserId } from '../db/ssh-keys.js'
 import { getEnabledCommandsByDistro, validateCommandsOwnership } from '../db/custom-init-commands.js'
@@ -5540,9 +5541,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           finalConfigPayload = containerResult.configPayload
         }
 
-        // 10. 选择存储池
+        // 10. 选择存储池：目标节点没有可用的系统盘存储池时中断转移
         let selectedStoragePool = await db.resolveStoragePoolForNewInstance(targetHostId, { packageId: targetPackage?.id ?? instance.packageId })
-        if (!selectedStoragePool) selectedStoragePool = 'default'
+        if (!selectedStoragePool) {
+          results.push({ id: instance.id, name: instance.name, success: false, error: '目标节点尚未创建可用的系统盘存储池，无法转移' })
+          continue
+        }
 
         // 11. 获取套餐配置
         const pkgConfig = pkg as typeof pkg & {
@@ -6016,6 +6020,18 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       boot_host_shutdown_timeout?: number | null
     }
 
+    // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝，
+    // 不扣款、不扣配额、不创建实例记录、不生成部署任务
+    if (!(await db.hostHasInstanceDataPool(hostId))) {
+      void notifyStoragePoolMissing({
+        userId: targetUser.id,
+        hostId,
+        hostName: `#${hostId}`,
+        source: 'hosting.create'
+      }).catch(() => {})
+      return reply.code(400).send({ error: '当前节点尚未创建存储池，请创建存储池后再创建实例', code: 'STORAGE_POOL_NOT_CONFIGURED' })
+    }
+
     const preCheckHost = await db.selectAvailableHost({
       packageHostIds: packageHostIds.length > 0 ? packageHostIds : undefined,
       nodeSelectors: JSON.parse(pkgWithExtras.node_selectors || '[]'),
@@ -6483,6 +6499,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
 
       if (error.message?.includes('HOST_RESOURCES_INSUFFICIENT')) {
         return reply.status(503).send({ error: '当前节点资源不足或已被占用' })
+      }
+      if (error.message?.includes('STORAGE_POOL_NOT_CONFIGURED')) {
+        return reply.status(400).send({ error: '当前节点尚未创建存储池，请创建存储池后再创建实例', code: 'STORAGE_POOL_NOT_CONFIGURED' })
       }
       if (error.message?.includes('USER_NOT_FOUND')) {
         return reply.status(400).send({ error: '用户不存在' })

@@ -652,6 +652,14 @@ export async function selectAvailableHost(options: {
 
   // 过滤和评�?
   for (const host of hosts) {
+    // storage pool gate: a host without any instance_data pool cannot host new instances
+    const instanceDataPoolCount = await prisma.storagePool.count({
+      where: { hostId: host.id, purpose: 'instance_data' }
+    })
+    if (instanceDataPoolCount === 0) {
+      console.log(`[selectAvailableHost] host ${host.name} has no instance_data storage pool, skip`)
+      continue
+    }
     // 检查标签选择�?
     if (nodeSelectors.length > 0) {
       const hostTags = (host.tags as string[]) || []
@@ -843,6 +851,14 @@ export async function selectAndReserveHostWithLock(
 
   // 遍历候选宿主机，检查资源并预占
   for (const host of hosts) {
+    // storage pool gate: a host without any instance_data pool cannot host new instances
+    const instanceDataPoolCount = await tx.storagePool.count({
+      where: { hostId: host.id, purpose: 'instance_data' }
+    })
+    if (instanceDataPoolCount === 0) {
+      console.log(`[selectAndReserveHostWithLock] host ${host.name} has no instance_data storage pool, skip`)
+      continue
+    }
     // 检查标签选择�?
     if (nodeSelectors.length > 0) {
       const hostTags = (host.tags as string[]) || []

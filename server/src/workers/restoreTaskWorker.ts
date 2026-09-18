@@ -28,6 +28,7 @@ import {
     tryAdvisoryTransactionLock
 } from '../db/advisory-locks.js'
 import { createWorkerDbBackoff } from './db-failure-backoff.js'
+import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
 
 // 恢复任务超时时间 (10 分钟)
 const RESTORE_TIMEOUT = 10 * 60 * 1000
@@ -248,6 +249,13 @@ async function executeRestoreTask(taskId: number): Promise<void> {
             packageId: instance.packageId
         })
         if (!storagePool) {
+            await notifyStoragePoolMissing({
+                userId: task.userId,
+                hostId: task.hostId,
+                hostName: `#${task.hostId}`,
+                source: 'task.restore',
+                instanceId: task.instanceId
+            })
             throw new Error('宿主机未配置系统盘存储池，无法恢复实例')
         }
         console.log(`[RestoreWorker] Task ${taskId}: 使用存储池 ${storagePool}`)

@@ -1664,6 +1664,64 @@ export async function sendBanNotificationEmail(
 }
 
 /**
+ * 发送节点存储池缺失提醒邮件
+ */
+export async function sendStoragePoolMissingEmail(
+    email: string,
+    data: {
+        username: string
+        hostName: string
+        action: string
+    }
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const transporter = await getTransporter()
+
+        if (!transporter) {
+            return { success: false, error: 'SMTP not configured' }
+        }
+
+        const { config, brandName, brandLogoUrl } = await getMailContext()
+        const title = '实例创建失败：节点尚未创建存储池'
+        const template = {
+            title,
+            alertType: 'warning' as const,
+            alertTitle: title,
+            alertMessage: '你的节点尚未创建存储池，请创建存储池后再创建实例。',
+            greeting: `您好，${data.username}`,
+            paragraphs: [
+                `你的节点「${data.hostName}」尚未创建存储池，请创建存储池后再创建实例。`,
+                '',
+                `本次「${data.action}」操作已被系统拦截：未创建实例、未扣除余额，也未启动部署任务。`,
+                '请先在节点管理页面创建并配置存储池，确认存储池状态正常后，再重新创建实例。'
+            ],
+            infoTitle: '拦截详情',
+            infoItems: [
+                { label: '节点', value: data.hostName },
+                { label: '操作', value: data.action }
+            ],
+            actionTip: '存储池配置完成并可用后，即可正常购买和创建实例。',
+            brandName,
+            brandLogoUrl
+        }
+
+        await transporter.sendMail({
+            from: config.fromName ? `"${config.fromName}" <${config.fromEmail}>` : config.fromEmail,
+            to: email,
+            subject: formatBrandSubject(brandName, title),
+            text: generateEmailText(template),
+            html: generateEmailHtml(template)
+        })
+
+        return { success: true }
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('Failed to send storage pool missing email:', errorMessage)
+        return { success: false, error: errorMessage }
+    }
+}
+
+/**
  * 发送实例安全事件自动封锁通知邮件
  */
 export async function sendInstanceSecuritySuspensionEmail(

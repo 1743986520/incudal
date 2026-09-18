@@ -8,6 +8,7 @@ import { Prisma, type InstanceStatus } from '@prisma/client'
 import type { Package } from '../types/database.js'
 import { normalizeTrafficMultiplier } from '../lib/traffic-multiplier.js'
 import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
+import { getHostIdsWithInstanceDataPool } from './storage-pools.js'
 
 const NORMAL_PACKAGE_INSTANCE_STATUSES: InstanceStatus[] = ['running', 'stopped']
 const PACKAGE_PREREQUISITE_LOCK_NAMESPACE = 4201
@@ -1402,6 +1403,12 @@ export async function checkPackageSoldOut(packageId: number): Promise<boolean> {
     return true
   }
 
+  // 没有任何系统盘存储池就绪的宿主机，视为售罄
+  const poolReadyHostIds = await getHostIdsWithInstanceDataPool(packageHosts.map(ph => ph.host.id))
+  if (poolReadyHostIds.size === 0) {
+    return true
+  }
+
   // 2. 检查是否为付费套餐，并获取最低配置
   const plans = await prisma.packagePlan.findMany({
     where: { packageId, isActive: true },
@@ -1436,8 +1443,8 @@ export async function checkPackageSoldOut(packageId: number): Promise<boolean> {
       continue
     }
 
-    // 检查是否设置了配额
-    if (!host.cpuAllowanceMax || !host.memoryMax) {
+    // 检查是否设置了配额，且节点存储池就绪
+    if (!host.cpuAllowanceMax || !host.memoryMax || !poolReadyHostIds.has(host.id)) {
       continue
     }
 
@@ -1510,7 +1517,10 @@ export async function checkPackagesSoldOut(packageIds: number[]): Promise<Map<nu
 
   // 4. 计算每个套餐的售罄状态
   const result = new Map<number, boolean>()
-  
+
+  const allHostIds = [...new Set(allPackageHosts.map(ph => ph.host.id))]
+  const poolReadyHostIds = await getHostIdsWithInstanceDataPool(allHostIds)
+
   for (const packageId of packageIds) {
     const packageHosts = hostsByPackage.get(packageId) || []
     const plans = plansByPackage.get(packageId) || []
@@ -1542,8 +1552,8 @@ export async function checkPackagesSoldOut(packageIds: number[]): Promise<Map<nu
     let hasAvailableHost = false
     for (const ph of packageHosts) {
       const host = ph.host
-      
-      if (host.status !== 'online' || !host.cpuAllowanceMax || !host.memoryMax) {
+
+      if (host.status !== 'online' || !host.cpuAllowanceMax || !host.memoryMax || !poolReadyHostIds.has(host.id)) {
         continue
       }
 

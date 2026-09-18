@@ -60,6 +60,7 @@ import {
   updateInstanceTaskExecutionProgress
 } from './instance-task-lease.js'
 import { runWithIncusExecutionGuard, throwIfIncusExecutionAborted } from '../lib/incus/incus-execution-guard.js'
+import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
 
 // Worker 轮询间隔 (3 秒)
 const POLL_INTERVAL = 3000
@@ -1494,9 +1495,18 @@ async function executeRecreateTask(
     console.log(`[Recreate] Container network-config 已更新: IPv4=${newIPv4}, IPv6=${instance.ipv6 || 'none'}`)
   }
 
-  // 10. 选择存储池
+  // 10. 选择存储池：节点没有可用的系统盘存储池时终止重建任务
   let storagePool = await db.resolveStoragePoolForExistingInstance(task.instanceId, host.id, { packageId: instance.package_id })
-  if (!storagePool) storagePool = 'default'
+  if (!storagePool) {
+    await notifyStoragePoolMissing({
+      userId: task.userId,
+      hostId: host.id,
+      hostName: host.name,
+      source: 'task.rebuild',
+      instanceId: task.instanceId
+    })
+    throw new Error('宿主机尚未创建可用的系统盘存储池，无法重建实例')
+  }
 
   // 11. 构建实例配置（使用新分配的 IPv4）
   const { buildInstanceConfig } = await import('../lib/incus/incus-instances.js')
@@ -1843,7 +1853,16 @@ async function executeChangeHostTask(
     }
 
     let storagePool = await db.resolveStoragePoolForNewInstance(targetHostId, { packageId: instance.package_id })
-    if (!storagePool) storagePool = 'default'
+    if (!storagePool) {
+      await notifyStoragePoolMissing({
+        userId: task.userId,
+        hostId: targetHostId,
+        hostName: targetHost.name,
+        source: 'task.change_host',
+        instanceId: task.instanceId
+      })
+      throw new Error('目标节点尚未创建可用的系统盘存储池，无法更换节点')
+    }
 
     const { buildInstanceConfig } = await import('../lib/incus/incus-instances.js')
     const ioMode = (pkg as any)?.io_limit_mode || (pkg as any)?.ioLimitMode || 'throughput'

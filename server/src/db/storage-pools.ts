@@ -69,6 +69,30 @@ export async function getSystemDiskPoolsByHostId(hostId: number) {
 }
 
 /**
+ * 检查宿主机是否具备创建实例的存储条件。
+ * 创建实例的前置条件：宿主机至少存在一个 purpose = instance_data 的存储池。
+ */
+export async function hostHasInstanceDataPool(hostId: number): Promise<boolean> {
+  const count = await prisma.storagePool.count({
+    where: { hostId, purpose: 'instance_data' }
+  })
+  return count > 0
+}
+
+/**
+ * 批量检查多台宿主机的存储池就绪状态。
+ * 返回存在至少一个 purpose = instance_data 存储池的宿主机 ID 集合。
+ */
+export async function getHostIdsWithInstanceDataPool(hostIds: number[]): Promise<Set<number>> {
+  if (hostIds.length === 0) return new Set()
+  const pools = await prisma.storagePool.findMany({
+    where: { hostId: { in: hostIds }, purpose: 'instance_data' },
+    select: { hostId: true }
+  })
+  return new Set(pools.map(pool => pool.hostId))
+}
+
+/**
  * 随机选择一个系统盘存储池
  * 返回存储池名称，如果没有配置系统盘存储池则返回 null
  */

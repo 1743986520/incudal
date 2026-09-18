@@ -79,6 +79,7 @@ import {
   buildChangeHostOptions
 } from './instances/helpers.js'
 import { createInstanceAsync } from './instances/create-async.js'
+import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
 
 function resolveInstanceTargetIpv4FromIncusDevice(
   incusInstance: { devices?: Record<string, Record<string, unknown> | undefined> }
@@ -1033,6 +1034,21 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // 注意：这里只是预检查，实际的资源预占在事务中完成
     // 安全：必须传入套餐所有者ID，确保实例只能创建在套餐所有者的宿主机上
     const pkgWithExtras = pkg as typeof pkg & { node_selectors?: string }
+
+    // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝，
+    // 不扣款、不扣配额、不创建实例记录、不生成部署任务
+    if (hostId && !(await db.hostHasInstanceDataPool(hostId))) {
+      const blockedHost = allHosts.find(h => h.id === hostId)
+      void notifyStoragePoolMissing({
+        userId: user.id,
+        hostId,
+        hostName: blockedHost?.name || `#${hostId}`,
+        source: 'instance.create'
+      }).catch(() => {})
+      return reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED,
+        '当前节点尚未创建存储池，请创建存储池后再创建实例'))
+    }
+
     const preCheckHost = await db.selectAvailableHost({
       packageHostIds: packageHostIds.length > 0 ? packageHostIds : undefined,
       nodeSelectors: JSON.parse(pkgWithExtras.node_selectors || '[]'),
@@ -1502,6 +1518,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           '宿主机资源不足或已被其他请求占用，请稍后重试'))
       }
 
+      // 处理存储池缺失错误（事务内兜底拦截）
+      if (errorMessage.includes('STORAGE_POOL_NOT_CONFIGURED')) {
+        return reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED,
+          '当前节点尚未创建存储池，请创建存储池后再创建实例'))
+      }
+
       // 处理配额检查错误
       if (errorMessage.includes('PACKAGE_PREREQUISITE_MISSING')) {
         return reply.code(400).send(apiError(ErrorCode.PACKAGE_PREREQUISITE_MISSING,
@@ -1741,6 +1763,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(503).send({ error: '原节点当前不在线，暂时无法重试', code: 'HOST_UNAVAILABLE' })
     }
 
+    // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝重试创建
+    if (!(await db.hostHasInstanceDataPool(instance.hostId))) {
+      void notifyStoragePoolMissing({
+        userId: request.user.id,
+        hostId: instance.hostId,
+        hostName: (instance.host as { name?: string }).name || `#${instance.hostId}`,
+        source: 'retry-provision',
+        instanceId: instance.id
+      }).catch(() => {})
+      return reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED,
+        '当前节点尚未创建存储池，请创建存储池后再创建实例'))
+    }
+
     const snapshot = (instance.snapshottedSpecs || {}) as Record<string, unknown>
     const instanceType = ((instance.package as any).instanceType || (instance.package as any).instance_type || 'container') as 'container' | 'vm'
     const networkMode = instance.networkMode as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
@@ -1844,8 +1879,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           return reply.code(409).send({ error: '实例状态已变化，请刷新后重试', code: 'INSTANCE_STATE_CHANGED' })
         }
       }
-      const message = error instanceof Error && error.message === 'BALANCE_INSUFFICIENT' ? '余额不足，无法重试创建' : (error instanceof Error ? error.message : String(error))
-      return reply.code(error instanceof Error && error.message === 'BALANCE_INSUFFICIENT' ? 400 : 503).send({ error: message })
+      const isPoolMissing = error instanceof Error && error.message.includes('STORAGE_POOL_NOT_CONFIGURED')
+      const message = error instanceof Error && error.message === 'BALANCE_INSUFFICIENT'
+        ? '余额不足，无法重试创建'
+        : isPoolMissing
+          ? '当前节点尚未创建存储池，请创建存储池后再创建实例'
+          : (error instanceof Error ? error.message : String(error))
+      return reply.code(error instanceof Error && (error.message === 'BALANCE_INSUFFICIENT' || isPoolMissing) ? 400 : 503).send({ error: message })
     }
 
     createInstanceAsync(instanceId, hostRecord, {
