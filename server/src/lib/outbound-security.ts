@@ -1,6 +1,9 @@
 import { lookup as dnsLookup } from 'dns/promises'
 import { isIP } from 'net'
 import { Agent, fetch as undiciFetch, type RequestInit, type Response } from 'undici'
+// 统一复用 Incus TLS 模块的公网地址判断，确保 IPv4-mapped IPv6（点分与十六进制形式）、
+// NAT64（64:ff9b::/96）、IPv4-compatible（::/96）等特殊范围不会被当作公网地址放行。
+import { isPublicHostAddress } from './incus/incus-tls.js'
 
 export class OutboundTargetValidationError extends Error {
   constructor(message: string) {
@@ -27,72 +30,13 @@ function buildUrl(input: string, defaultProtocol: SupportedProtocol): URL {
   }
 }
 
-function ipv4ToInt(ip: string): number {
-  return ip.split('.').reduce((acc, item) => (acc << 8) + Number(item), 0) >>> 0
-}
-
-function isIpv4InCidr(ip: string, baseIp: string, prefixLength: number): boolean {
-  const ipInt = ipv4ToInt(ip)
-  const baseInt = ipv4ToInt(baseIp)
-  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0
-  return (ipInt & mask) === (baseInt & mask)
-}
-
-function normalizeIpv6(ip: string): string {
-  return ip.toLowerCase().replace(/^\[|\]$/g, '')
-}
-
-function isIpv6PrivateOrReserved(ip: string): boolean {
-  const normalized = normalizeIpv6(ip)
-
-  if (
-    normalized === '::' ||
-    normalized === '::1' ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    /^fe[89ab]/i.test(normalized) ||
-    normalized.startsWith('ff') ||
-    normalized.startsWith('2001:db8')
-  ) {
+export function isIpPrivateOrReserved(ip: string): boolean {
+  // 无法解析的地址按保留地址处理（fail closed），避免异常输入被放行。
+  try {
+    return !isPublicHostAddress(ip)
+  } catch {
     return true
   }
-
-  const mappedIpv4Match = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i)
-  if (mappedIpv4Match) {
-    return isIpPrivateOrReserved(mappedIpv4Match[1])
-  }
-
-  return false
-}
-
-export function isIpPrivateOrReserved(ip: string): boolean {
-  const family = isIP(ip)
-  if (family === 4) {
-    const ranges: Array<[string, number]> = [
-      ['0.0.0.0', 8],
-      ['10.0.0.0', 8],
-      ['100.64.0.0', 10],
-      ['127.0.0.0', 8],
-      ['169.254.0.0', 16],
-      ['172.16.0.0', 12],
-      ['192.0.0.0', 24],
-      ['192.0.2.0', 24],
-      ['192.168.0.0', 16],
-      ['198.18.0.0', 15],
-      ['198.51.100.0', 24],
-      ['203.0.113.0', 24],
-      ['224.0.0.0', 4],
-      ['240.0.0.0', 4]
-    ]
-
-    return ranges.some(([baseIp, prefixLength]) => isIpv4InCidr(ip, baseIp, prefixLength))
-  }
-
-  if (family === 6) {
-    return isIpv6PrivateOrReserved(ip)
-  }
-
-  return true
 }
 
 async function assertPublicHostname(hostname: string): Promise<void> {
