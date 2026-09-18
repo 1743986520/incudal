@@ -524,6 +524,7 @@ export { checkJwtConfig } from './security-config.js'
 // ==================== Refresh Token 管理 (数据库) ====================
 
 import { prisma } from '../db/prisma.js'
+import { REFRESH_TOKEN_LIFETIME_SECONDS } from './cookie-config.js'
 
 interface RefreshTokenData {
     userId: number
@@ -547,8 +548,9 @@ export interface SessionInfo {
 }
 
 // Refresh Token 配置（简化版：延长有效期，减少刷新频率）
+// 有效期统一定义在 cookie-config.ts，数据库过期时间与 Cookie maxAge 共用同一常量。
 const REFRESH_TOKEN_CONFIG = {
-    expiresInSeconds: 62 * 24 * 60 * 60,  // 30天
+    expiresInSeconds: REFRESH_TOKEN_LIFETIME_SECONDS,  // 30天
 }
 
 // 导出任务 TTL（数据库存储）
@@ -834,7 +836,7 @@ export async function revokeSessionByTokenPrefix(userId: number, tokenPrefix: st
 
 /**
  * 更新会话的最后活跃时间并延长过期时间
- * 每次用户活跃时，将会话有效期延长至新的3天周期
+ * 每次用户活跃时，将会话有效期延长至新的 30 天周期
  */
 export async function updateSessionActivity(token: string): Promise<{ expiresAt: Date } | null> {
     try {

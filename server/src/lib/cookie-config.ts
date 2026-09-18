@@ -21,13 +21,20 @@ export interface CookieSecurityConfig {
 }
 
 /**
+ * Refresh Token 会话有效期（秒）
+ * Refresh Token 数据库过期时间与 Cookie maxAge 必须使用同一个值，
+ * 避免出现 Cookie 仍在但服务端会话已过期（或反之）的不一致。
+ */
+export const REFRESH_TOKEN_LIFETIME_SECONDS = 30 * 24 * 60 * 60 // 30天
+
+/**
  * Cookie 类型配置
  */
 export const COOKIE_CONFIG = {
-  // Refresh Token Cookie 配置（简化版：延长到 30 天）
+  // Refresh Token Cookie 配置
   REFRESH_TOKEN: {
     name: 'refreshToken',
-    maxAge: 62 * 24 * 60 * 60,  // 30天（秒）
+    maxAge: REFRESH_TOKEN_LIFETIME_SECONDS,
     path: '/',
   },
 } as const
@@ -109,7 +116,7 @@ export function getRefreshTokenCookieOptions(): CookieSerializeOptions {
 
 /**
  * 获取清除 Cookie 的选项
- * 
+ *
  * @returns 清除 Cookie 所需的选项
  */
 export function getClearCookieOptions(): { path: string; domain?: string } {
