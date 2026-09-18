@@ -27,23 +27,6 @@ export function generateVerificationCode(): string {
     return crypto.randomInt(min, max + 1).toString()
 }
 
-/**
- * 验证码哈希（HMAC-SHA256）
- *
- * 验证码只有 6 位数字，直接明文落库会在数据库泄露后被离线穷举；
- * 使用服务端密钥做 HMAC 提升 offline 破解成本。
- */
-function getVerificationPepper(): string {
-    return process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'incudal-verification-pepper'
-}
-
-function hashVerificationCode(normalizedEmail: string, code: string): string {
-    return crypto
-        .createHmac('sha256', getVerificationPepper())
-        .update(`${normalizedEmail}:${code}`)
-        .digest('hex')
-}
-
 // 验证失败计数（按邮箱，进程内存）。
 // 注意：多副本部署时计数不共享，应随审查项 8 一并迁移到 Redis 等共享存储。
 const verifyFailures = new Map<string, { count: number; firstAt: number }>()
@@ -92,14 +75,14 @@ export async function createVerificationCode(email: string): Promise<{ code: str
         where: { email: normalizedEmail }
     })
 
-    // Generate new code（明文只返回给调用方用于发送邮件，落库的是 HMAC 哈希）
+    // Generate new code
     const code = generateVerificationCode()
     const expiresAt = new Date(Date.now() + CODE_EXPIRATION_MINUTES * 60 * 1000)
 
     await prisma.emailVerificationCode.create({
         data: {
             email: normalizedEmail,
-            code: hashVerificationCode(normalizedEmail, code),
+            code,
             expiresAt
         }
     })
@@ -112,6 +95,7 @@ export async function createVerificationCode(email: string): Promise<{ code: str
  *
  * 使用 deleteMany 原子地“匹配并消费”验证码：并发验证同一验证码时只有一个请求
  * 能成功（count > 0），其余请求自然失败，不会出现先 find 后 delete 的竞态。
+ * 失败计入按邮箱的计数，达到上限后立即作废该邮箱的验证码，防止暴力尝试。
  */
 export async function verifyCode(email: string, code: string): Promise<boolean> {
     const normalizedEmail = email.toLowerCase().trim()
@@ -123,7 +107,7 @@ export async function verifyCode(email: string, code: string): Promise<boolean> 
     const result = await prisma.emailVerificationCode.deleteMany({
         where: {
             email: normalizedEmail,
-            code: hashVerificationCode(normalizedEmail, code),
+            code,
             expiresAt: { gt: new Date() }
         }
     })
