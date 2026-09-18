@@ -693,20 +693,39 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           reply.header('Content-Length', contentLength)
         }
 
-        // 监听响应完成，更新任务状态
-        reply.raw.on('close', async () => {
-          await updateExportTaskStatus(taskId, 'completed')
+        // 监听响应收尾：必须区分“完整传输完成”与“连接中断”。
+        // 'close' 在用户取消、浏览器关闭、网络断开时同样会触发，
+        // 直接把 close 当作 completed 会把不完整的下载标记为成功。
+        let exportFailed = false
+
+        reply.raw.on('error', (err) => {
+          exportFailed = true
+          void updateExportTaskStatus(taskId, 'error', err.message)
+          fastify.log.error(`Backup export error: ${err.message}`)
+        })
+
+        reply.raw.on('finish', () => {
+          // 响应体已完整写出并冲刷，备份确实下载完成
+          void updateExportTaskStatus(taskId, 'completed')
           // 下载完成后删除任务
-          setTimeout(async () => {
-            await deleteExportTask(taskId)
+          setTimeout(() => {
+            void deleteExportTask(taskId)
           }, 5000)
 
           fastify.log.info(`Backup export completed: ${taskId}`)
         })
 
-        reply.raw.on('error', async (err) => {
-          await updateExportTaskStatus(taskId, 'error', err.message)
-          fastify.log.error(`Backup export error: ${err.message}`)
+        reply.raw.on('close', () => {
+          if (reply.raw.writableFinished || reply.raw.writableEnded) {
+            return // 正常完成，由 finish 处理
+          }
+          if (exportFailed) {
+            return // 传输失败，由 error 处理
+          }
+          // 下载被中断（用户取消/网络断开）：回滚为 ready，
+          // 用户重新生成一次性下载令牌后可直接重试，无需重建导出任务
+          void updateExportTaskStatus(taskId, 'ready')
+          fastify.log.warn(`Backup export download interrupted, task reset for retry: ${taskId}`)
         })
 
         // 将 Web ReadableStream 转换为 Node.js Readable
