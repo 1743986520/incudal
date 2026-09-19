@@ -15,7 +15,6 @@ import { checkHostingAccess } from '../lib/hosting-access.js'
 import { createInboxMessage } from '../db/inbox.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode, type ErrorCodeType } from '../lib/errors.js'
-import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
 import { createInstanceTask, InstanceTaskConflictError, getActiveTaskForInstance } from '../db/instance-tasks.js'
 import { getSSHKeyById, getSSHKeysByUserId } from '../db/ssh-keys.js'
 import { getEnabledCommandsByDistro, validateCommandsOwnership } from '../db/custom-init-commands.js'
@@ -74,7 +73,7 @@ import crypto from 'crypto'
 import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { checkInstanceOwnerOrAdminPermission } from '../lib/permission.js'
-import { ensureInstanceNotSuspended } from './instances/helpers.js'
+import { ensureInstanceNotSuspended, ensureHostStoragePoolOrReply } from './instances/helpers.js'
 import { assertAllowedHostUrl, buildIncusTlsConnectOptions, captureIncusServerCertificate, panelCertificatePaths, resolveIncusTarget } from '../lib/incus/incus-tls.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -6018,16 +6017,13 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       boot_host_shutdown_timeout?: number | null
     }
 
-    // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝，
-    // 不扣款、不扣配额、不创建实例记录、不生成部署任务
-    if (!(await db.hostHasInstanceDataPool(hostId))) {
-      void notifyStoragePoolMissing({
-        userId: targetUser.id,
-        hostId,
-        hostName: `#${hostId}`,
-        source: 'hosting.create'
-      }).catch(() => {})
-      return reply.code(400).send({ error: '当前节点尚未创建存储池，请创建存储池后再创建实例', code: 'STORAGE_POOL_NOT_CONFIGURED' })
+    // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝（通知与审计在守卫内完成）
+    if (!(await ensureHostStoragePoolOrReply(reply, {
+      userId: targetUser.id,
+      hostId,
+      source: 'hosting.create'
+    }))) {
+      return
     }
 
     const preCheckHost = await db.selectAvailableHost({

@@ -77,10 +77,10 @@ import {
   checkTransferLock,
   claimInstanceForDelete,
   ensureInstanceNotSuspended,
+  ensureHostStoragePoolOrReply,
   buildChangeHostOptions
 } from './instances/helpers.js'
 import { createInstanceAsync } from './instances/create-async.js'
-import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
 
 /**
  * 创建实例任务；并发请求同时通过"是否有活跃任务"检查时，
@@ -1061,18 +1061,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // 安全：必须传入套餐所有者ID，确保实例只能创建在套餐所有者的宿主机上
     const pkgWithExtras = pkg as typeof pkg & { node_selectors?: string }
 
-    // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝，
-    // 不扣款、不扣配额、不创建实例记录、不生成部署任务
-    if (hostId && !(await db.hostHasInstanceDataPool(hostId))) {
-      const blockedHost = allHosts.find(h => h.id === hostId)
-      void notifyStoragePoolMissing({
-        userId: user.id,
-        hostId,
-        hostName: blockedHost?.name || `#${hostId}`,
-        source: 'instance.create'
-      }).catch(() => {})
-      return reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED,
-        '当前节点尚未创建存储池，请创建存储池后再创建实例'))
+    // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝（通知与审计在守卫内完成）
+    if (hostId && !(await ensureHostStoragePoolOrReply(reply, {
+      userId: user.id,
+      hostId,
+      source: 'instance.create'
+    }))) {
+      return
     }
 
     const preCheckHost = await db.selectAvailableHost({
@@ -1790,16 +1785,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝重试创建
-    if (!(await db.hostHasInstanceDataPool(instance.hostId))) {
-      void notifyStoragePoolMissing({
-        userId: request.user.id,
-        hostId: instance.hostId,
-        hostName: (instance.host as { name?: string }).name || `#${instance.hostId}`,
-        source: 'retry-provision',
-        instanceId: instance.id
-      }).catch(() => {})
-      return reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED,
-        '当前节点尚未创建存储池，请创建存储池后再创建实例'))
+    if (!(await ensureHostStoragePoolOrReply(reply, {
+      userId: request.user.id,
+      hostId: instance.hostId,
+      source: 'retry-provision',
+      instanceId: instance.id
+    }))) {
+      return
     }
 
     const snapshot = (instance.snapshottedSpecs || {}) as Record<string, unknown>

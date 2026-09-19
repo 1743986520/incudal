@@ -6,12 +6,13 @@
  * 邮件发送失败只记录日志，不影响拦截结果。
  */
 
-import { prisma } from '../db/prisma.js'
 import { createLog } from '../db/logs.js'
 import { findUserById } from '../db/users.js'
+import { sharedAddOnce } from './shared-state.js'
 import { sendStoragePoolMissingEmail } from './mailer.js'
 
 const NOTIFY_COOLDOWN_MS = 30 * 60 * 1000
+const NOTIFY_COOLDOWN_KEY_PREFIX = 'storage-pool-notify:'
 const LOG_ACTION = 'storage_pool.missing'
 
 export interface StoragePoolMissingContext {
@@ -29,20 +30,6 @@ export interface StoragePoolMissingContext {
  */
 export async function notifyStoragePoolMissing(ctx: StoragePoolMissingContext): Promise<void> {
   try {
-    // 冷却判断必须先于本次日志写入，否则刚写入的日志会立刻命中冷却条件
-    const since = new Date(Date.now() - NOTIFY_COOLDOWN_MS)
-    const recent = await prisma.log.findFirst({
-      where: {
-        userId: ctx.userId,
-        module: 'instance',
-        action: LOG_ACTION,
-        createdAt: { gt: since },
-        // 内容中携带 hostId（带尾随逗号避免 hostId=12 命中 hostId=123）
-        content: { contains: `hostId=${ctx.hostId},` }
-      },
-      select: { id: true }
-    })
-
     await createLog(
       ctx.userId,
       'instance',
@@ -52,7 +39,10 @@ export async function notifyStoragePoolMissing(ctx: StoragePoolMissingContext): 
       ctx.instanceId !== undefined ? { instanceId: ctx.instanceId } : {}
     )
 
-    if (recent) {
+    // 冷却窗口走共享状态（SET NX）：同一用户+同一节点在窗口内只发送一封邮件，
+    // 并发请求中也只有一个能抢占到发送资格（多副本部署下同样生效）。
+    const shouldNotify = await sharedAddOnce(`${NOTIFY_COOLDOWN_KEY_PREFIX}${ctx.userId}:${ctx.hostId}`, NOTIFY_COOLDOWN_MS)
+    if (!shouldNotify) {
       return
     }
 

@@ -20,6 +20,7 @@ import {
   normalizeTrafficMultiplier
 } from '../../lib/traffic-multiplier.js'
 import { getSafeHttpUrl } from '../../lib/external-url.js'
+import { notifyStoragePoolMissing } from '../../lib/storage-pool-notify.js'
 
 // 检查实例是否被转移锁定
 export async function checkTransferLock(instanceId: number, reply: FastifyReply): Promise<boolean> {
@@ -62,6 +63,33 @@ export async function claimInstanceForDelete(instanceId: number, currentStatus: 
 
     return result.count === 1
   })
+}
+
+/**
+ * 存储池前置校验守卫：节点没有可用的系统盘存储池时直接拒绝创建/重试，
+ * 不扣款、不扣配额、不创建实例记录、不生成部署任务。
+ * 拦截时记录审计日志，并在冷却窗口内向操作用户发送提醒邮件。
+ * @returns true 表示校验通过；false 表示已发送 400 响应
+ */
+export async function ensureHostStoragePoolOrReply(
+  reply: FastifyReply,
+  opts: { userId: number; hostId: number; source: string; instanceId?: number }
+): Promise<boolean> {
+  if (await db.hostHasInstanceDataPool(opts.hostId)) {
+    return true
+  }
+  const host = await db.getHostById(opts.hostId)
+  // notifyStoragePoolMissing 内部已捕获全部异常，fire-and-forget 即可
+  void notifyStoragePoolMissing({
+    userId: opts.userId,
+    hostId: opts.hostId,
+    hostName: host?.name || `#${opts.hostId}`,
+    source: opts.source,
+    instanceId: opts.instanceId
+  })
+  reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED,
+    '当前节点尚未创建存储池，请创建存储池后再创建实例'))
+  return false
 }
 
 /**

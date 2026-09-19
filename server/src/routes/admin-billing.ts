@@ -6,6 +6,7 @@ import { FastifyInstance } from 'fastify'
 import { Prisma, type InstanceStatus } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
 import * as db from '../db/index.js'
+import { ensureHostStoragePoolOrReply } from './instances/helpers.js'
 import { createLog } from '../db/logs.js'
 import { sendNotification } from '../lib/notifier.js'
 import { createEpayClient, type EpayConfig, type EpayConfigV1, type EpayConfigV2, type EpayVersion } from '../lib/epay.js'
@@ -28,7 +29,6 @@ import { getTodayRange, getThisMonthStart, getLastMonthRange } from '../lib/time
 import { validateName, encryptSensitiveData } from '../lib/security.js'
 import { generateIncusConfig, generateRandomPassword } from '../lib/incus-config-generator.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
-import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
 import {
   getSystemImageAvailabilityForHost,
   isImageCompatibleWithInstanceType,
@@ -2916,16 +2916,13 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       const packageHostIds = (pkg as { host_ids?: number[] }).host_ids || []
       const pkgWithExtras = pkg as typeof pkg & { node_selectors?: string; port_limit?: number; snapshot_limit?: number; backup_limit?: number; site_limit?: number }
 
-      // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝，
-      // 不扣款、不扣配额、不创建实例记录、不生成部署任务
-      if (hostId && !(await db.hostHasInstanceDataPool(hostId))) {
-        void notifyStoragePoolMissing({
-          userId: targetUser.id,
-          hostId,
-          hostName: `#${hostId}`,
-          source: 'admin.create'
-        }).catch(() => {})
-        return reply.status(400).send({ error: '当前节点尚未创建存储池，请创建存储池后再创建实例', code: 'STORAGE_POOL_NOT_CONFIGURED' })
+      // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝（通知与审计在守卫内完成）
+      if (hostId && !(await ensureHostStoragePoolOrReply(reply, {
+        userId: targetUser.id,
+        hostId,
+        source: 'admin.create'
+      }))) {
+        return
       }
 
       const preCheckHost = await db.selectAvailableHost({
