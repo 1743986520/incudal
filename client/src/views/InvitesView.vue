@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import api from '@/api'
@@ -117,21 +119,15 @@ function getStatus(invite: UserInvite): { label: string; className: string } {
   return { label: '未使用', className: 'badge-warning' }
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return '-'
-  return new Date(value).toLocaleString()
-}
-
 function getInviteLink(invite: UserInvite): string {
   const origin = window.location.origin
   return `${origin}${invite.registerUrl}`
 }
 
 async function copyText(text: string, successMessage: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text)
+  if (await copyToClipboard(text)) {
     toast.success(successMessage)
-  } catch {
+  } else {
     toast.error('复制失败')
   }
 }

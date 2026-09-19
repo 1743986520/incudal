@@ -2,6 +2,7 @@
 /**
  * InitCommandDetailModal - 初始化命令详情弹窗
  */
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -94,9 +95,6 @@ async function copyCommand(): Promise<void> {
 }
 
 // 格式化日期
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString()
-}
 
 // 弹窗可见性（用于过渡动画）
 const visible = ref(true)

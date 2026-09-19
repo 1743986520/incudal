@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -364,10 +365,6 @@ async function savePrizes() {
   } finally {
     savingPrizes.value = false
   }
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString()
 }
 
 function getPrizeTypeName(type: string): string {

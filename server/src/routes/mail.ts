@@ -9,6 +9,7 @@ import { prisma } from '../db/prisma.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import * as db from '../db/mail.js'
+import { parsePagination } from '../db/pagination.js'
 import { calculateDiscountAmount, calculateDiscountedPrice } from '../lib/billing-calc.js'
 import * as craneMailService from '../services/cranemail.js'
 import * as smarterMailService from '../services/smartermail.js'
@@ -313,14 +314,13 @@ export default async function mailRoutes(fastify: FastifyInstance) {
   }>('/admin/subscriptions', {
     onRequest: [fastify.authenticate, fastify.requireAdmin]
   }, async (request) => {
-    const { sourceId, status, search, page, pageSize } = request.query
+    const { sourceId, status, search } = request.query
     
     const result = await db.getAllMailSubscriptions({
       sourceId: sourceId ? parseInt(sourceId) : undefined,
       status: status as any,
       search: search || undefined,
-      page: parseInt(page || '1'),
-      pageSize: parseInt(pageSize || '20')
+      ...parsePagination(request.query)
     })
     
     return result
@@ -450,14 +450,13 @@ export default async function mailRoutes(fastify: FastifyInstance) {
   }>('/admin/domains', {
     onRequest: [fastify.authenticate, fastify.requireAdmin]
   }, async (request) => {
-    const { sourceId, status, search, page, pageSize } = request.query
+    const { sourceId, status, search } = request.query
     
     const result = await db.getAllMailDomains({
       sourceId: sourceId ? parseInt(sourceId) : undefined,
       status: status as any,
       search: search || undefined,
-      page: parseInt(page || '1'),
-      pageSize: parseInt(pageSize || '20')
+      ...parsePagination(request.query)
     })
     
     return result

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -118,11 +119,10 @@ async function generateKey(): Promise<void> {
 
 // 复制私钥到剪贴板
 async function copyPrivateKey(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(generatedPrivateKey.value)
+  if (await copyToClipboard(generatedPrivateKey.value)) {
     privateKeyCopied.value = true
     setTimeout(() => privateKeyCopied.value = false, 2000)
-  } catch {
+  } else {
     toast.error(t('profile.sshKeys.copyFailed'))
   }
 }

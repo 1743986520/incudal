@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { ref, computed, onMounted, onActivated, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -223,17 +224,17 @@ function isPackagePublic(pkg: Package): boolean {
   return isActive && (globalShared === true || globalShared === 1 || pkg.isGlobalShared === true)
 }
 
-function copyShareLink(pkg: Package): void {
+async function copyShareLink(pkg: Package): Promise<void> {
   const hostNames = getHostNames(pkg)
   const isHostedPackage = hostNames.split(', ').some(name => name.toUpperCase().startsWith('PEER'))
   const source = isHostedPackage ? 'market' : 'official'
   const link = `${window.location.origin}/instances/create?source=${source}&package=${pkg.id}`
 
-  navigator.clipboard.writeText(link).then(() => {
+  if (await copyToClipboard(link)) {
     toast.success(t('resources.packages.shareLinkCopied'))
-  }).catch(() => {
+  } else {
     toast.error(t('common.copyFailed'))
-  })
+  }
 }
 </script>
 

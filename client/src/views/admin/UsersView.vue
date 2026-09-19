@@ -1,4 +1,6 @@
 <script setup>
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateShort as formatDate } from '@/utils/formatters'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -297,27 +299,17 @@ async function copyCode() {
     ? newInviteCodes.value.join('\n')
     : newInviteCode.value
   
-  try {
-    await navigator.clipboard.writeText(textToCopy)
-    copied.value = true
-    setTimeout(() => copied.value = false, 2000)
-  } catch {
-    const input = document.createElement('textarea')
-    input.value = textToCopy
-    document.body.appendChild(input)
-    input.select()
-    document.execCommand('copy')
-    document.body.removeChild(input)
+  if (await copyToClipboard(textToCopy)) {
     copied.value = true
     setTimeout(() => copied.value = false, 2000)
   }
 }
 
-function copyLink() {
-  navigator.clipboard.writeText(registerLink.value).then(() => {
+async function copyLink() {
+  if (await copyToClipboard(registerLink.value)) {
     copied.value = true
     setTimeout(() => copied.value = false, 2000)
-  })
+  }
 }
 
 // 切换用户状态（封禁/解封）
@@ -403,18 +395,7 @@ async function resetPassword() {
 
 // 复制生成的密码
 async function copyGeneratedPassword() {
-  try {
-    await navigator.clipboard.writeText(generatedPassword.value)
-    passwordCopied.value = true
-    setTimeout(() => passwordCopied.value = false, 2000)
-  } catch {
-    // 降级方案
-    const input = document.createElement('textarea')
-    input.value = generatedPassword.value
-    document.body.appendChild(input)
-    input.select()
-    document.execCommand('copy')
-    document.body.removeChild(input)
+  if (await copyToClipboard(generatedPassword.value)) {
     passwordCopied.value = true
     setTimeout(() => passwordCopied.value = false, 2000)
   }
@@ -961,12 +942,6 @@ function getInviteStatus(invite) {
     }
   }
   return { label: t('admin.users.inviteUnused'), class: 'badge-warning' }
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 function formatRegisteredAge(createdAt) {

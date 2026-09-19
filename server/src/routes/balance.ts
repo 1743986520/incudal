@@ -66,14 +66,10 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; type?: string; lotteryGift?: string } }>) => {
     const { user } = request
-    const { page = '1', pageSize = '20', type, lotteryGift } = request.query
-
-    // 限制 pageSize 最大值防止性能攻击
-    const safePageSize = Math.min(Number(pageSize) || 20, 100)
+    const { type, lotteryGift } = request.query
 
     const result = await db.getBalanceLogs(user.id, {
-      page: Number(page) || 1,
-      pageSize: safePageSize,
+      ...db.parsePagination(request.query, { maxPageSize: 100 }),
       type: type as any,
       lotteryGift: (lotteryGift === 'exclude' || lotteryGift === 'only') ? lotteryGift : undefined
     })
@@ -336,14 +332,10 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    const { page = '1', pageSize = '20', type, lotteryGift } = request.query
-
-    // 限制 pageSize 最大值防止性能攻击
-    const safePageSize = Math.min(Number(pageSize) || 20, 100)
+    const { type, lotteryGift } = request.query
 
     const result = await db.getBalanceLogs(userId, {
-      page: Number(page) || 1,
-      pageSize: safePageSize,
+      ...db.parsePagination(request.query, { maxPageSize: 100 }),
       type: type as any,
       lotteryGift: (lotteryGift === 'exclude' || lotteryGift === 'only') ? lotteryGift : undefined
     })

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly as formatDate } from '@/utils/formatters'
 import { ref, onMounted, onActivated, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -460,10 +461,6 @@ async function removeFriend(friend: Friend) {
 }
 
 // 格式化时间
-function formatDate(dateStr: string | null | undefined) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString()
-}
 
 // 切换tab时加载数据
 function switchTab(tab: string) {

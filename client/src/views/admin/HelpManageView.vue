@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateShort as formatDate } from '@/utils/formatters'
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -352,12 +353,6 @@ function getCategoryColor(catId: string): string {
   return cat ? cat.color : '#6b7280'
 }
 
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('zh-CN', { 
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' 
-  })
-}
 </script>
 
 <template>

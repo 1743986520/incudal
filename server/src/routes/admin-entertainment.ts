@@ -46,11 +46,10 @@ export default async function adminEntertainmentRoutes(fastify: FastifyInstance)
   }>('/lotteries', {
     onRequest: [fastify.authenticate, fastify.requireAdmin]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; isActive?: string } }>) => {
-    const { page = '1', pageSize = '20', isActive } = request.query
+    const { isActive } = request.query
 
     const result = await db.getAllLotteries({
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined
     })
 
@@ -562,11 +561,10 @@ export default async function adminEntertainmentRoutes(fastify: FastifyInstance)
       search?: string
     }
   }>) => {
-    const { page = '1', pageSize = '20', lotteryId, prizeType, status, search } = request.query
+    const { lotteryId, prizeType, status, search } = request.query
 
     const result = await db.getAllLotteryRecords({
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       lotteryId: lotteryId ? Number(lotteryId) : undefined,
       prizeType: prizeType as LotteryPrizeType | undefined,
       status: status as LotteryRecordStatus | undefined,
@@ -677,11 +675,10 @@ export default async function adminEntertainmentRoutes(fastify: FastifyInstance)
       order?: string
     }
   }>) => {
-    const { page = '1', pageSize = '20', search, orderBy = 'points', order = 'desc' } = request.query
+    const { search, orderBy = 'points', order = 'desc' } = request.query
 
     const result = await db.getAllUserPoints({
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       search,
       orderBy: orderBy as 'points' | 'totalEarned' | 'totalSpent',
       order: order as 'asc' | 'desc'
@@ -827,11 +824,8 @@ export default async function adminEntertainmentRoutes(fastify: FastifyInstance)
       return reply.code(400).send({ error: 'INVALID_ID', message: 'Invalid user ID' })
     }
 
-    const { page = '1', pageSize = '20' } = request.query
-
     const result = await db.getPointsLogs(userId, {
-      page: Number(page),
-      pageSize: Number(pageSize)
+      ...db.parsePagination(request.query)
     })
 
     return {

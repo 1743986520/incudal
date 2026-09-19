@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -97,11 +98,6 @@ async function submitReject() {
   } finally {
     rejectLoading.value = false
   }
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString()
 }
 
 function formatMoney(amount: string | number): string {

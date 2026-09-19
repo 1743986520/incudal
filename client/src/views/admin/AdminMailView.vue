@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -349,10 +350,6 @@ async function handleUnsubscribe() {
 function formatPrice(price: number | string | null | undefined) {
   const num = Number(price) || 0
   return `¥${num.toFixed(2)}`
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString()
 }
 
 function getStatusBadge(status: string) {

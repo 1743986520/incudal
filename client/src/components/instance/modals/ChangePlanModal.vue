@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateYMD as formatDate } from '@/utils/formatters'
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -137,14 +138,6 @@ function formatDisk(mb: number): string {
 }
 
 // 格式化日期
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
-}
 
 // 获取账期文本
 function getBillingCycleText(months: number): string {
@@ -154,7 +147,6 @@ function getBillingCycleText(months: number): string {
   if (months === 12) return t('billing.billingCycleYearly')
   return `${months}${t('billing.months')}`
 }
-
 
 // 加载方案列表
 async function loadPlans() {

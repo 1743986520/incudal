@@ -312,8 +312,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest<{
     Querystring: { page?: string; pageSize?: string; status?: 'pending' | 'sent' | 'failed' }
   }>) => {
-    const page = parseInt(request.query.page || '1', 10)
-    const pageSize = Math.min(parseInt(request.query.pageSize || '20', 10), 100)
+    const { page, pageSize } = db.parsePagination(request.query, { maxPageSize: 100 })
     const status = request.query.status
 
     const result = await db.getNotificationLogsByUserId(request.user.id, {

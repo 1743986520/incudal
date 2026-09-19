@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateYMD as formatDate } from '@/utils/formatters'
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -113,14 +114,6 @@ function formatMoney(amount: number): string {
 }
 
 // 格式化日期
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
-}
 
 // 加载计费信息
 async function loadBillingInfo() {

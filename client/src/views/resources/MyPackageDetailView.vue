@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -231,17 +232,17 @@ function getPackageTrafficMultiplierLabel(packageItem: Package): string {
   return [...new Set(getPackageTrafficMultiplierItems(packageItem).map(item => item.multiplier))].join(' / ')
 }
 
-function copyShareLink(packageItem: Package): void {
+async function copyShareLink(packageItem: Package): Promise<void> {
   const hostNames = getHostNames(packageItem)
   const isHostedPackage = hostNames.split(', ').some(name => name.toUpperCase().startsWith('PEER'))
   const source = isHostedPackage ? 'market' : 'official'
   const link = `${window.location.origin}/instances/create?source=${source}&package=${packageItem.id}`
 
-  navigator.clipboard.writeText(link).then(() => {
+  if (await copyToClipboard(link)) {
     toast.success(t('resources.packages.shareLinkCopied'))
-  }).catch(() => {
+  } else {
     toast.error(t('common.copyFailed'))
-  })
+  }
 }
 
 async function deletePackage(): Promise<void> {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -488,10 +489,6 @@ async function unblockUser(userId: number) {
 // 格式化函数
 function formatMoney(amount: number): string {
   return `¥${amount.toFixed(2)}`
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString()
 }
 
 function formatShortDate(dateStr: string): string {

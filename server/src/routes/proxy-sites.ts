@@ -12,6 +12,7 @@ import { apiError, ErrorCode } from '../lib/errors.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
 import { getDnsRecordType } from '../lib/network-address.js'
 import { requireInstanceViewPermission } from '../lib/permission.js'
+import { ensureInstanceNotSuspended } from './instances/helpers.js'
 import {
   createProxySite,
   getProxySitesByInstanceId,
@@ -151,12 +152,7 @@ export default async function proxySitesRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许操作
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     // 权限检查
     if (instance.user_id !== user.id) {

@@ -829,17 +829,13 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
     onRequest: [app.authenticate, app.requireAdmin]
   }, async (request, reply) => {
     try {
-      const { page, pageSize, type, userId, instanceId } = request.query as {
-        page?: string
-        pageSize?: string
+      const { type, userId, instanceId } = request.query as {
         type?: string
         userId?: string
         instanceId?: string
       }
 
-      const pageNum = page ? parseInt(page, 10) : 1
-      const size = Math.min(pageSize ? parseInt(pageSize, 10) : 20, 100)
-      const skip = (pageNum - 1) * size
+      const { page: pageNum, pageSize: size, skip } = db.parsePagination(request.query as { page?: string; pageSize?: string }, { maxPageSize: 100 })
 
       const where: Record<string, unknown> = {}
       if (type) where.type = type
@@ -2238,18 +2234,14 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
     onRequest: [app.authenticate, app.requireAdmin]
   }, async (request, reply) => {
     try {
-      const { page, pageSize, status, expiring, hostId, search } = request.query as {
-        page?: string
-        pageSize?: string
+      const { status, expiring, hostId, search } = request.query as {
         status?: string
         expiring?: string  // 'true' 表示只显示即将到期的实例
         hostId?: string    // 宿主机筛选
         search?: string    // 搜索关键词（用户名/节点/实例名/方案/套餐）
       }
 
-      const pageNum = page ? parseInt(page, 10) : 1
-      const size = Math.min(pageSize ? parseInt(pageSize, 10) : 20, 100)
-      const skip = (pageNum - 1) * size
+      const { page: pageNum, pageSize: size, skip } = db.parsePagination(request.query as { page?: string; pageSize?: string }, { maxPageSize: 100 })
 
       const where: Record<string, unknown> = {
         packagePlanId: { not: null }
@@ -2417,16 +2409,12 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
     onRequest: [app.authenticate, app.requireAdmin]
   }, async (request, reply) => {
     try {
-      const { page, pageSize, status, userId } = request.query as {
-        page?: string
-        pageSize?: string
+      const { status, userId } = request.query as {
         status?: string
         userId?: string
       }
 
-      const pageNum = page ? parseInt(page, 10) : 1
-      const size = Math.min(pageSize ? parseInt(pageSize, 10) : 20, 100)
-      const skip = (pageNum - 1) * size
+      const { page: pageNum, pageSize: size, skip } = db.parsePagination(request.query as { page?: string; pageSize?: string }, { maxPageSize: 100 })
 
       const where: Record<string, unknown> = {}
       if (status) where.status = status

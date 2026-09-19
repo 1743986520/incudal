@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime, formatDateOnly } from '@/utils/formatters'
 import { ref, onMounted, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -20,7 +21,6 @@ const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const toast = useToast()
-
 
 interface Props {
   hostId: number
@@ -198,8 +198,6 @@ const notifyTitle = ref('')
 const notifyContent = ref('')
 const notifySendEmail = ref(false)
 const isSendingNotify = ref(false)
-
-
 
 // 重置流量
 const resettingTrafficId = ref<number | null>(null)
@@ -668,8 +666,6 @@ async function sendNotify() {
   }
 }
 
-
-
 // 打开修改续费价格弹窗
 function openPriceModal(instance: Instance) {
   priceModalTarget.value = instance
@@ -968,20 +964,6 @@ function formatDisk(mb: number): string {
 function formatMoney(value?: number | null): string {
   if (value === null || value === undefined) return '-'
   return `¥${Number(value).toFixed(2)}`
-}
-
-function formatDateTime(value?: string | null): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString()
-}
-
-function formatDateOnly(value?: string | null): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleDateString()
 }
 
 function formatBoolean(value?: boolean | null): string {
@@ -1892,8 +1874,6 @@ function goToInstance(id: number) {
           </div>
         </Transition>
       </Teleport>
-
-
 
       <!-- 修改续费价格弹窗 -->
       <Teleport to="body">

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -95,11 +97,6 @@ const usagesTotalPages = ref(1)
 const pageSizeOptions = [20, 50, 100]
 
 const discountPercentSuffix = computed(() => '%')
-
-function formatDate(value: string | null): string {
-  if (!value) return '-'
-  return new Date(value).toLocaleString()
-}
 
 function formatMoney(amount: number): string {
   return `¥${Number(amount || 0).toFixed(2)}`
@@ -371,8 +368,9 @@ function changeUsagesPage(targetPage: number) {
 }
 
 async function copyText(text: string) {
-  await navigator.clipboard.writeText(text)
-  toast.success(t('common.copied'))
+  if (await copyToClipboard(text)) {
+    toast.success(t('common.copied'))
+  }
 }
 
 onMounted(() => {

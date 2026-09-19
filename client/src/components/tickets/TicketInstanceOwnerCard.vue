@@ -8,7 +8,7 @@ import TerminalModal from '@/components/instance/TerminalModal.vue'
 import { useToast } from '@/stores/toast'
 import type { InstanceConfigResponse, InstanceWithDetails } from '@/types/api'
 import { translateError } from '@/utils/errorHandler'
-import { formatBytes, formatDisk, formatMemory, getStatusInfo } from '@/utils/formatters'
+import { formatBytes, formatDisk, formatMemory, getStatusInfo, formatDateTime } from '@/utils/formatters'
 
 interface TicketInstanceSummary {
   id: number
@@ -189,13 +189,6 @@ function clearTaskPollingInterval(): void {
     clearInterval(taskPollingInterval)
     taskPollingInterval = null
   }
-}
-
-function formatDateTime(value?: string | null): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString()
 }
 
 function formatBooleanValue(value?: boolean | null): string {

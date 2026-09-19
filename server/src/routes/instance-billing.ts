@@ -1274,7 +1274,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { user } = request
     const instanceId = Number(request.params.id)
-    const { page = '1', pageSize = '20', type } = request.query
+    const { type } = request.query
 
     if (isNaN(instanceId)) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
@@ -1295,8 +1295,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
 
     const result = await db.getInstanceBillingRecords(instanceId, {
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       type: type as any
     })
 

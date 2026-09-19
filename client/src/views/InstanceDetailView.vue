@@ -4,6 +4,7 @@ defineOptions({
   name: 'InstanceDetailView'
 })
 
+import { copyToClipboard as writeToClipboard } from '@/utils/clipboard'
 import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -1700,7 +1701,6 @@ async function handleReassignIpv6(): Promise<void> {
   }
 }
 
-
 // 加载用户配额
 async function loadUserQuota(): Promise<void> {
   if (!instance.value) return
@@ -1902,16 +1902,15 @@ async function saveInstanceQuota(): Promise<void> {
 
 // 实用函数
 async function copyToClipboard(text: string, key?: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text)
-    if (key) {
-      copied.value = key
-      setTimeout(() => copied.value = '', 2000)
-    } else {
-      toast.success(t('instance.detail.copy.success'))
-    }
-  } catch {
+  if (!(await writeToClipboard(text))) {
     toast.error(t('instance.detail.copy.failed'))
+    return
+  }
+  if (key) {
+    copied.value = key
+    setTimeout(() => copied.value = '', 2000)
+  } else {
+    toast.success(t('instance.detail.copy.success'))
   }
 }
 

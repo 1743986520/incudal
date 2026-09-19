@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -307,13 +309,13 @@ async function confirmDelete() {
   }
 }
 
-function copyCode(code: string, id: number) {
-  navigator.clipboard.writeText(code).then(() => {
+async function copyCode(code: string, id: number) {
+  if (await copyToClipboard(code)) {
     copiedCode.value = id
     setTimeout(() => {
       copiedCode.value = null
     }, 2000)
-  })
+  }
 }
 
 function copyBatchCodes() {
@@ -344,10 +346,6 @@ function formatValue(type: string, value: number): string {
     }
   }
   return `${value} ${unit}`
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString()
 }
 
 function isExpired(expiresAt: string | null): boolean {

@@ -41,11 +41,10 @@ export default async function helpRoutes(fastify: FastifyInstance) {
       category?: string
     }
   }>) => {
-    const { page = '1', pageSize = '20', category } = request.query
+    const { category } = request.query
 
     const result = await db.getHelpArticles({
-      page: parseInt(page, 10),
-      pageSize: parseInt(pageSize, 10),
+      ...db.parsePagination(request.query),
       publishedOnly: true,
       category: category || undefined
     })
@@ -207,11 +206,10 @@ export default async function helpRoutes(fastify: FastifyInstance) {
       category?: string
     }
   }>, _reply: FastifyReply) => {
-    const { page = '1', pageSize = '20', category } = request.query
+    const { category } = request.query
 
     const result = await db.getHelpArticles({
-      page: parseInt(page, 10),
-      pageSize: parseInt(pageSize, 10),
+      ...db.parsePagination(request.query),
       publishedOnly: false,
       category: category || undefined
     })

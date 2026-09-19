@@ -14,6 +14,7 @@ import {
   removeHostingUserBlock
 } from '../db/hosting-blocks.js'
 import { HOSTING_BALANCE_LOG_LOCK_NAMESPACE, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
+import { parsePagination } from '../db/pagination.js'
 import { calculateVipLevel, getVipBadgeStyleForLevel, getVipRules } from '../services/vip-levels.js'
 
 // 提现配置常量
@@ -283,11 +284,8 @@ export default async function hostingRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; actionType?: string; frozen?: string; search?: string } }>) => {
     const { user } = request
-    const { page = '1', pageSize = '30', actionType, frozen, search } = request.query
-
-    const safePageSize = Math.min(Number(pageSize) || 30, 100)
-    const pageNum = Number(page) || 1
-    const skip = (pageNum - 1) * safePageSize
+    const { actionType, frozen, search } = request.query
+    const { page: pageNum, pageSize: safePageSize, skip } = parsePagination(request.query, { defaultPageSize: 30, maxPageSize: 100 })
 
     // 构建基础查询条件
     const baseWhere: any = { userId: user.id }
@@ -652,11 +650,8 @@ export default async function hostingRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; status?: string } }>) => {
     const { user } = request
-    const { page = '1', pageSize = '20', status } = request.query
-
-    const safePageSize = Math.min(Number(pageSize) || 20, 100)
-    const pageNum = Number(page) || 1
-    const skip = (pageNum - 1) * safePageSize
+    const { status } = request.query
+    const { page: pageNum, pageSize: safePageSize, skip } = parsePagination(request.query, { maxPageSize: 100 })
 
     const where: any = { userId: user.id }
     if (status) {

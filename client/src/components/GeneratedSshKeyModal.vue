@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/stores/toast'
@@ -25,11 +26,10 @@ watch(() => props.visible, (visible) => {
 })
 
 async function copyPrivateKey(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(props.privateKey)
+  if (await copyToClipboard(props.privateKey)) {
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
-  } catch {
+  } else {
     toast.error(t('profile.sshKeys.copyFailed'))
   }
 }

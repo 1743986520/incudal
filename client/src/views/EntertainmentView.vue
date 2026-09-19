@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed, onUnmounted, onActivated, onDeactivated, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -736,10 +737,6 @@ const multiDrawSummary = computed(() => {
 function multiDrawAgain() {
   closeMultiDrawModal()
   multiDraw()
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString()
 }
 
 function getPrizeTypeName(type: string): string {

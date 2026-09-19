@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid'
 import type { Prisma } from '@prisma/client'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '../db/prisma.js'
+import { parsePagination } from '../db/pagination.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import {
   chargeInviteGenerationCost,
@@ -90,8 +91,7 @@ export default async function userInviteRoutes(fastify: FastifyInstance) {
   }>('/', {
     onRequest: [fastify.authenticateUser]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string } }>) => {
-    const page = Math.max(1, parseInt(request.query.page || '1', 10))
-    const pageSize = Math.min(100, Math.max(1, parseInt(request.query.pageSize || '20', 10)))
+    const { page, pageSize } = parsePagination(request.query, { maxPageSize: 100 })
     const userId = request.user.id
 
     const [total, invites] = await Promise.all([

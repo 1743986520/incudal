@@ -8,6 +8,7 @@ import { customAlphabet } from 'nanoid'
 import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
+import { ensureInstanceNotSuspended } from './instances/helpers.js'
 import type { TransferSnapshot } from '../db/transfers.js'
 import { createTransferWithFee, getTransferByIdWithFee } from '../db/transfers.js'
 import { sendNotification } from '../lib/notifier.js'
@@ -117,12 +118,7 @@ export default async function transferRoutes(fastify: FastifyInstance) {
 
         // 封禁状态不允许转移
         // 安全措施：防止用户绕过前端禁用通过API转移封禁实例
-        if (instance.status === 'suspended') {
-            if (instance.suspend_reason === 'expired') {
-                return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-            }
-            return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-        }
+        if (!ensureInstanceNotSuspended(instance, reply)) return
 
         // 检查宿主机是否允许转移
         const host = await db.getHostById(instance.host_id)
@@ -257,16 +253,17 @@ export default async function transferRoutes(fastify: FastifyInstance) {
             search?: string
         }
     }>, reply: FastifyReply) => {
-        const { type, status, page = '1', pageSize = '20', search } = request.query
+        const { type, status, search } = request.query
         const { user } = request
+        const { page, pageSize } = db.parsePagination(request.query)
 
         if (!type || !['sent', 'received'].includes(type)) {
             return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'type must be "sent" or "received"'))
         }
 
         const options = {
-            page: parseInt(page, 10),
-            pageSize: parseInt(pageSize, 10),
+            page,
+            pageSize,
             status: status as any,
             search: search as string | undefined
         }

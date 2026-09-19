@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -324,11 +325,9 @@ async function verifyAfterReinstall() {
 
 // 复制重新安装命令
 function copyReinstallCommand() {
-  navigator.clipboard.writeText(reinstallCommand.value)
+  void copyToClipboard(reinstallCommand.value)
   toast.success(t('common.copied'))
 }
-
-
 
 // 关闭重新安装弹窗
 function closeReinstallModal() {

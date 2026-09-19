@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -273,10 +274,6 @@ function getStatusBadge(status: string) {
     case 'suspended': return 'badge-error'
     default: return 'badge-ghost'
   }
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString()
 }
 
 function formatPrice(price: number | string | null | undefined) {

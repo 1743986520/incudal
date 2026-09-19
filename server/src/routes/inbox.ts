@@ -30,7 +30,7 @@ export default async function inboxRoutes(fastify: FastifyInstance) {
       isRead?: string
     }
   }>) => {
-    const { page = '1', pageSize = '20', isRead } = request.query
+    const { isRead } = request.query
     const userId = request.user.id
 
     // 解析 isRead 参数
@@ -42,8 +42,7 @@ export default async function inboxRoutes(fastify: FastifyInstance) {
     }
 
     const result = await inboxDb.getInboxMessages(userId, {
-      page: parseInt(page, 10) || 1,
-      pageSize: parseInt(pageSize, 10) || 20,
+      ...db.parsePagination(request.query),
       isRead: isReadFilter
     })
 

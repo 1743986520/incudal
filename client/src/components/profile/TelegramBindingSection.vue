@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -74,10 +75,9 @@ async function createBindToken(): Promise<void> {
 
 async function copyBindUrl(): Promise<void> {
   if (!bindUrl.value) return
-  try {
-    await navigator.clipboard.writeText(bindUrl.value)
+  if (await copyToClipboard(bindUrl.value)) {
     toast.success(t('profile.telegramBinding.copied'))
-  } catch {
+  } else {
     toast.error(t('profile.telegramBinding.copyFailed'))
   }
 }

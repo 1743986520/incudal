@@ -169,11 +169,10 @@ export default async function affRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; type?: string } }>) => {
     const { user } = request
-    const { page = '1', pageSize = '20', type } = request.query
+    const { type } = request.query
 
     const result = await db.getAffLogs(user.id, {
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       type: type as any
     })
 
@@ -296,11 +295,10 @@ export default async function affRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; status?: string } }>) => {
     const { user } = request
-    const { page = '1', pageSize = '20', status } = request.query
+    const { status } = request.query
 
     const result = await db.getUserAffWithdrawals(user.id, {
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       status: status as any
     })
 
@@ -331,11 +329,10 @@ export default async function affRoutes(fastify: FastifyInstance) {
   }>('/admin/withdrawals', {
     onRequest: [fastify.authenticate, fastify.requireAdmin]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; status?: string } }>) => {
-    const { page = '1', pageSize = '20', status } = request.query
+    const { status } = request.query
 
     const result = await db.getPendingAffWithdrawals({
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       status: status as any
     })
 

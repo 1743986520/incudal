@@ -96,11 +96,10 @@ export default async function entertainmentRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; type?: string } }>) => {
     const userId = request.user.id
-    const { page = '1', pageSize = '20', type } = request.query
+    const { type } = request.query
 
     const result = await db.getPointsLogs(userId, {
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       type: type as any
     })
 
@@ -480,11 +479,10 @@ export default async function entertainmentRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; prizeType?: string } }>) => {
     const userId = request.user.id
-    const { page = '1', pageSize = '20', prizeType } = request.query
+    const { prizeType } = request.query
 
     const result = await db.getUserLotteryRecords(userId, {
-      page: Number(page),
-      pageSize: Number(pageSize),
+      ...db.parsePagination(request.query),
       prizeType: prizeType || undefined
     })
 

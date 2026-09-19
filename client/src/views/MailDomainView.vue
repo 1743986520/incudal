@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateOnly as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -105,7 +107,7 @@ const webmailUrl = computed(() => {
 })
 
 function copyValue(text: string, key: string) {
-  navigator.clipboard.writeText(text)
+  void copyToClipboard(text)
   copiedKey.value = key
   toast.success(t('common.copied'))
   setTimeout(() => {
@@ -149,10 +151,6 @@ function getStatusBadge(status: string) {
     case 'suspended': return 'badge-error'
     default: return 'badge-ghost'
   }
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString()
 }
 
 // 切换到 DNS 配置 TAB 时加载配置

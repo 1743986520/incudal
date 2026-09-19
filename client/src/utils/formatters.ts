@@ -37,11 +37,56 @@ export function formatBytes(bytes: number | null | undefined): string {
 }
 
 /**
+ * 格式化字节大小（图表紧凑格式：B/K/M/G，无空格）
+ */
+export function formatBytesCompact(bytes: number): string {
+    if (!bytes) return '0'
+    if (bytes < 1024) return bytes + 'B'
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'K'
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + 'M'
+    return (bytes / 1073741824).toFixed(1) + 'G'
+}
+
+/**
  * 格式化日期
  */
 export function formatDate(dateStr: string | null | undefined): string {
     if (!dateStr) return '-'
     return new Date(dateStr).toLocaleString('zh-CN')
+}
+
+/**
+ * 格式化日期时间（跟随浏览器语言）
+ */
+export function formatDateTime(dateStr: string | null | undefined): string {
+    if (!dateStr) return '-'
+    const date = new Date(dateStr)
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleString()
+}
+
+/**
+ * 格式化日期（仅年月日，跟随浏览器语言）
+ */
+export function formatDateOnly(dateStr: string | null | undefined): string {
+    if (!dateStr) return '-'
+    const date = new Date(dateStr)
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleDateString()
+}
+
+/**
+ * 格式化日期（zh-CN 年/月/日）
+ */
+export function formatDateYMD(dateStr: string | null | undefined): string {
+    if (!dateStr) return '-'
+    const date = new Date(dateStr)
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    })
 }
 
 /**

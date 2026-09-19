@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -81,11 +83,6 @@ const selectedCount = computed(() => selectedIds.value.length)
 
 function formatMoney(amount: number): string {
   return `¥${Number(amount || 0).toFixed(2)}`
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '-'
-  return new Date(value).toLocaleString()
 }
 
 function getStatusClass(status: RechargeCard['status']): string {
@@ -193,8 +190,9 @@ function generatedCardsText(): string {
 }
 
 async function copyText(text: string) {
-  await navigator.clipboard.writeText(text)
-  toast.success(t('common.copied'))
+  if (await copyToClipboard(text)) {
+    toast.success(t('common.copied'))
+  }
 }
 
 function escapeCsvField(value: string | number): string {

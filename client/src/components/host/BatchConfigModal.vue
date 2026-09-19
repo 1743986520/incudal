@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -288,14 +289,14 @@ async function handleRetry() {
 }
 
 // 复制失败的 Incus ID
-function copyFailedIncusIds() {
+async function copyFailedIncusIds() {
   if (!result.value?.failedItems) return
   const ids = result.value.failedItems.map(item => item.incusId).join('\n')
-  navigator.clipboard.writeText(ids).then(() => {
-    toast.success(t('host.batchConfig.copiedIncusIds', { count: result.value!.failedItems.length }))
-  }).catch(() => {
+  if (await copyToClipboard(ids)) {
+    toast.success(t('host.batchConfig.copiedIncusIds', { count: result.value.failedItems.length }))
+  } else {
     toast.error(t('common.copyFailed'))
-  })
+  }
 }
 
 // 关闭弹窗

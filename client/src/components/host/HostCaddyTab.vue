@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -258,7 +259,7 @@ async function testConnection() {
 }
 
 function copyCommand() {
-  navigator.clipboard.writeText(installInfo.value.command)
+  void copyToClipboard(installInfo.value.command)
   copied.value = true
   toast.success(t('common.copied'))
   setTimeout(() => { copied.value = false }, 2000)

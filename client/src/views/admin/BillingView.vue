@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard as writeToClipboard } from '@/utils/clipboard'
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -1038,11 +1040,6 @@ function formatBillingCycle(cycle: number): string {
   return map[cycle] || `${cycle} ${t('admin.billing.months')}`
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString()
-}
-
 const currencyFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
@@ -1179,7 +1176,7 @@ function getRechargeGatewayStatusText(rec: any): string {
 }
 
 function copyToClipboard(text: string) {
-  window.navigator.clipboard.writeText(text)
+  void writeToClipboard(text)
   toast.success(t('common.copied'))
 }
 </script>

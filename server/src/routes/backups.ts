@@ -43,17 +43,8 @@ import {
     generateDownloadToken,
     consumeDownloadToken
 } from '../lib/download-token.js'
-import { checkInstancePermission } from '../lib/permission.js'
-
-// 检查实例是否被转移锁定
-async function checkTransferLock(instanceId: number, reply: FastifyReply): Promise<boolean> {
-  const hasPending = await db.hasPendingTransfer(instanceId)
-  if (hasPending) {
-    reply.code(400).send(apiError(ErrorCode.TRANSFER_INSTANCE_LOCKED))
-    return true
-  }
-  return false
-}
+import { getInstanceWithPermission } from '../lib/permission.js'
+import { checkTransferLock, ensureInstanceNotSuspended } from './instances/helpers.js'
 
 // 恢复任务现在使用数据库存储，由 restoreTaskWorker 处理
 
@@ -70,17 +61,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 从数据库获取备份列表
     const backups = await db.getBackupsByInstanceId(instanceIdNum)
@@ -126,25 +109,12 @@ export default async function backupRoutes(fastify: FastifyInstance) {
 
     const { name, description } = request.body
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 封停状态不允许创建备份
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     // 检查配额
     const quotaCheck = await checkBackupQuota(instance.user_id, instanceIdNum)
@@ -229,17 +199,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 获取备份信息
     const backup = await db.getBackupById(backupIdNum)
@@ -300,17 +262,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     const policy = await db.getBackupPolicy(instanceIdNum)
 
@@ -356,17 +310,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
 
     const { enabled, intervalMinutes = 1440 } = request.body
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // AUTH004: 实例所有者和节点所有者都可以操作备份策略
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（AUTH004：实例所有者和节点所有者都可以操作备份策略）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 如果启用自动备份，检查配额
     if (enabled) {
@@ -767,17 +713,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
       }
 
-      // 验证实例归属
-      const instance = await db.getInstanceById(instanceIdNum)
-      if (!instance) {
-        return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-      }
-
-      // 权限检查：管理员、实例所有者、宿主机所有者
-      const permResult = await checkInstancePermission(request.user, instance)
-      if (!permResult.allowed) {
-        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-      }
+      // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+      const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+      if (!instance) return
 
       // 获取备份信息
       const backup = await db.getBackupById(backupIdNum)
@@ -865,17 +803,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
       }
 
-      // 验证实例归属
-      const instance = await db.getInstanceById(instanceIdNum)
-      if (!instance) {
-        return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-      }
-
-      // 权限检查：管理员、实例所有者、宿主机所有者
-      const permResult = await checkInstancePermission(request.user, instance)
-      if (!permResult.allowed) {
-        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-      }
+      // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+      const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+      if (!instance) return
 
       const task = await db.getRestoreTaskById(taskIdNum)
       if (!task || task.instanceId !== instanceIdNum) {
@@ -925,17 +855,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
       }
 
-      // 验证实例归属
-      const instance = await db.getInstanceById(instanceIdNum)
-      if (!instance) {
-        return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-      }
-
-      // 权限检查：管理员、实例所有者、宿主机所有者
-      const permResult = await checkInstancePermission(request.user, instance)
-      if (!permResult.allowed) {
-        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-      }
+      // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+      const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+      if (!instance) return
 
       const task = await db.getRestoreTaskById(taskIdNum)
       if (!task || task.instanceId !== instanceIdNum) {
@@ -1027,17 +949,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
       }
 
-      // 验证实例归属
-      const instance = await db.getInstanceById(instanceIdNum)
-      if (!instance) {
-        return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-      }
-
-      // 权限检查：管理员、实例所有者、宿主机所有者
-      const permResult = await checkInstancePermission(request.user, instance)
-      if (!permResult.allowed) {
-        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-      }
+      // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+      const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+      if (!instance) return
 
       const task = await db.getRestoreTaskById(taskIdNum)
       if (!task || task.instanceId !== instanceIdNum) {

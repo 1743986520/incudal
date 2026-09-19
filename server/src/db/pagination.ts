@@ -11,6 +11,53 @@ import { getSafeHttpUrl } from '../lib/external-url.js'
 import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
 import { getHostIdsWithInstanceDataPool } from './storage-pools.js'
 
+/**
+ * 通用分页参数解析
+ *
+ * 统一各路由手写的 page/pageSize 解析：
+ * - 非法（NaN/负数/0）回退默认值
+ * - 可选 maxPageSize 上限，防止性能攻击
+ */
+export interface PaginationQuery {
+  page?: string
+  pageSize?: string
+}
+
+export interface ParsedPagination {
+  page: number
+  pageSize: number
+  skip: number
+  take: number
+}
+
+export function parsePagination(
+  query: PaginationQuery,
+  options: { defaultPageSize?: number; maxPageSize?: number } = {}
+): ParsedPagination {
+  const defaultPageSize = options.defaultPageSize ?? 20
+  const maxPageSize = options.maxPageSize
+
+  let page = parseInt(String(query.page ?? ''), 10)
+  if (!Number.isFinite(page) || page < 1) {
+    page = 1
+  }
+
+  let pageSize = parseInt(String(query.pageSize ?? ''), 10)
+  if (!Number.isFinite(pageSize) || pageSize < 1) {
+    pageSize = defaultPageSize
+  }
+  if (maxPageSize && pageSize > maxPageSize) {
+    pageSize = maxPageSize
+  }
+
+  return {
+    page,
+    pageSize,
+    skip: (page - 1) * pageSize,
+    take: pageSize
+  }
+}
+
 export const USER_SEARCH_FIELDS = ['username', 'id', 'email'] as const
 export type UserSearchField = (typeof USER_SEARCH_FIELDS)[number]
 
@@ -753,103 +800,3 @@ export async function getAvailableHosts(
   })
 }
 
-/**
- * 获取可用宿主机（用于实例创建，支持用户指定）
- */
-export async function getAvailableHostsForInstance(
-  packageHostIds: number[] | null = null,
-  cpu: number,
-  memory: number,
-  _disk: number
-): Promise<any[]> {
-  const where: any = {
-    status: 'online'
-  }
-
-  if (packageHostIds && packageHostIds.length > 0) {
-    where.id = { in: packageHostIds }
-  }
-
-  const hosts = await prisma.host.findMany({
-    where,
-    select: {
-      id: true,
-      name: true,
-      url: true,
-      location: true,
-      countryCode: true,
-      architecture: true,
-      status: true,
-      certPath: true,
-      keyPath: true,
-      natPublicIp: true,
-      natPortStart: true,
-      natPortEnd: true,
-      natPortsUsedCount: true,
-      cpuUsed: true,
-      memoryUsed: true,
-      diskUsed: true,
-      cpuAllowanceMax: true,
-      memoryMax: true,
-      instanceType: true,
-      storageSize: true,
-      tags: true,
-      createdAt: true,
-      updatedAt: true
-    },
-    orderBy: {
-      cpuAllowanceMax: 'desc'
-    }
-  })
-
-  // 过滤可用主机
-  const availableHosts = hosts.filter(host => {
-    // 检查 CPU 配额
-    const cpuAllowanceMax = host.cpuAllowanceMax
-    if (cpuAllowanceMax != null && cpuAllowanceMax > 0) {
-      if ((host.cpuUsed + cpu) > cpuAllowanceMax) {
-        return false // CPU配额不足
-      }
-    } else {
-      // 如果没有设置CPU配额上限，该宿主机不可用
-      return false
-    }
-
-    // 检查内存配额
-    const memoryMax = host.memoryMax
-    if (memoryMax != null && memoryMax > 0) {
-      if ((host.memoryUsed + memory) > memoryMax) {
-        return false // 内存配额不足
-      }
-    } else {
-      // 如果没有设置内存配额上限，该宿主机不可用
-      return false
-    }
-
-    // 磁盘配额检查已移除：不再限制磁盘空间
-    return true
-  })
-
-  return availableHosts.map(h => ({
-    id: h.id,
-    name: h.name,
-    url: h.url,
-    location: h.location,
-    country_code: h.countryCode,
-    architecture: h.architecture,
-    status: h.status,
-    cert_path: h.certPath,
-    key_path: h.keyPath,
-    nat_public_ip: h.natPublicIp,
-    nat_port_start: h.natPortStart,
-    nat_port_end: h.natPortEnd,
-    cpu_used: h.cpuUsed,
-    cpu_allowance_max: h.cpuAllowanceMax,
-    memory_used: h.memoryUsed,
-    memory_max: h.memoryMax,
-    disk_total: h.storageSize ? h.storageSize * 1024 : 0,
-    disk_used: h.diskUsed,
-    created_at: h.createdAt.toISOString(),
-    updated_at: h.updatedAt.toISOString()
-  }))
-}

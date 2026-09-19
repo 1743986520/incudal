@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -25,7 +26,6 @@ const hostNamePrefix = computed(() => `PEER${authStore.user?.id}-`)
 const saving = ref(false)
 const showInstallScript = ref(false)
 const installCommand = ref('')
-
 
 const hostId = ref<number>(0)
 const installStatus = ref<'waiting' | 'verifying' | 'success' | 'error'>('waiting')
@@ -268,7 +268,7 @@ async function createHost() {
 }
 
 function copyCommand() {
-  navigator.clipboard.writeText(installCommand.value)
+  void copyToClipboard(installCommand.value)
   toast.success(t('common.copied'))
 }
 
@@ -470,7 +470,6 @@ function closeAndGoBack() {
               </div>
             </div>
 
-
             <!-- 资源限制 -->
             <div class="border-t border-themed pt-6">
               <h3 class="text-sm font-medium text-themed mb-4">{{ t('admin.hosts.resourceLimits') }}</h3>
@@ -493,7 +492,6 @@ function closeAndGoBack() {
                 </div>
               </div>
             </div>
-
 
             <div
               class="rounded-lg border px-4 py-3"

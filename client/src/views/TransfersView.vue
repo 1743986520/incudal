@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -241,11 +242,6 @@ function getStatusClass(status: string) {
     case 'cancelled': return 'badge-default'
     default: return 'badge-default'
   }
-}
-
-function formatDate(dateStr: string | null) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString()
 }
 
 function formatMemory(mb: number) {

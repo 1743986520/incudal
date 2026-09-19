@@ -1592,8 +1592,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.USER_NOT_FOUND))
     }
 
-    const page = parseInt(request.query.page || '1', 10)
-    const pageSize = parseInt(request.query.pageSize || '20', 10)
+    const { page, pageSize } = db.parsePagination(request.query)
 
     const { records, total } = await db.getUserLoginRecords(userId, page, pageSize)
 
@@ -1707,10 +1706,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'Invalid user ID'))
     }
 
-    const { page = '1', pageSize = '20' } = request.query
-    const pageNum = parseInt(page, 10)
-    const size = Math.min(parseInt(pageSize, 10), 100)
-    const skip = (pageNum - 1) * size
+    const { page: pageNum, pageSize: size, skip } = db.parsePagination(request.query, { maxPageSize: 100 })
 
     // 检查用户是否存在
     const user = await prisma.user.findUnique({

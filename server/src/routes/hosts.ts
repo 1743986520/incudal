@@ -74,6 +74,7 @@ import crypto from 'crypto'
 import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { checkInstanceOwnerOrAdminPermission } from '../lib/permission.js'
+import { ensureInstanceNotSuspended } from './instances/helpers.js'
 import { assertAllowedHostUrl, buildIncusTlsConnectOptions, captureIncusServerCertificate, panelCertificatePaths, resolveIncusTarget } from '../lib/incus/incus-tls.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -4168,10 +4169,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     const { user } = request
     const hostId = parseInt(request.params.id, 10)
     // 分页参数边界验证：page >= 1, pageSize 在 1-100 之间
-    const rawPage = parseInt(request.query.page || '1', 10)
-    const rawPageSize = parseInt(request.query.pageSize || '10', 10)
-    const page = isNaN(rawPage) || rawPage < 1 ? 1 : rawPage
-    const pageSize = isNaN(rawPageSize) ? 10 : Math.min(100, Math.max(1, rawPageSize))
+    const { page, pageSize } = db.parsePagination(request.query, { defaultPageSize: 10, maxPageSize: 100 })
 
     if (isNaN(hostId)) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
@@ -8228,12 +8226,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '实例不属于该节点' })
     }
 
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     const activeTask = await getActiveTaskForInstance(instanceId)
     if (activeTask) {
@@ -8328,12 +8321,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '确认文本不匹配实例名称' })
     }
 
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     if (action === 'rebuild' && instance.status !== 'stopped') {
       return reply.code(400).send(apiError(ErrorCode.INSTANCE_STOP_REQUIRED))

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -308,10 +309,6 @@ function getCertStatusText(status: string) {
     default:
       return status
   }
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString()
 }
 
 function getStatusColor(status: string) {

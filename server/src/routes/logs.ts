@@ -4,6 +4,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { getLogsPaginated, getLogModules } from '../db/logs.js'
+import { parsePagination } from '../db/pagination.js'
 import { ErrorCode, apiError } from '../lib/errors.js'
 
 export default async function logRoutes(fastify: FastifyInstance) {
@@ -31,7 +32,7 @@ export default async function logRoutes(fastify: FastifyInstance) {
       instanceName?: string | null
     }
   }>, reply: FastifyReply) => {
-    const { page = '1', pageSize = '20', module = null, search = null, instanceId = null, instanceName = null } = request.query
+    const { module = null, search = null, instanceId = null, instanceName = null } = request.query
     const userId = request.user.role === 'admin' ? null : request.user.id
     const instanceIdNum = instanceId ? Number(instanceId) : undefined
 
@@ -42,8 +43,7 @@ export default async function logRoutes(fastify: FastifyInstance) {
     const result = await getLogsPaginated({
       userId: userId || undefined,
       module: module || undefined,
-      page: parseInt(page, 10),
-      pageSize: parseInt(pageSize, 10),
+      ...parsePagination(request.query),
       search: search || undefined,
       instanceId: instanceIdNum,
       instanceName: instanceName || undefined

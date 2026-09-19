@@ -5618,8 +5618,4 @@ const api = {
 
 export default api
 
-// 导出各模块方便单独使用
-export const authApi = api.auth
-export const usersApi = api.users
-export const instancesApi = api.instances
-export const transfersApi = api.transfers
+

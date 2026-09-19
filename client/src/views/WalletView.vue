@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
@@ -604,10 +606,6 @@ function formatMoney(amount: number): string {
   return `¥${amount.toFixed(2)}`
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString()
-}
-
 function getLogTypeName(type: string): string {
   const map: Record<string, string> = {
     recharge: t('wallet.logTypes.recharge'),
@@ -1057,10 +1055,9 @@ function getWithdrawalStatusName(status: string): string {
 // AFF 转化状态样式
 // 复制优惠码
 async function copyCode(code: string) {
-  try {
-    await navigator.clipboard.writeText(code)
+  if (await copyToClipboard(code)) {
     toast.success(t('common.copied'))
-  } catch {
+  } else {
     toast.error(t('common.copyFailed'))
   }
 }

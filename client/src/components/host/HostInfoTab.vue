@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatDateTime as formatDate, formatBytesCompact as formatBytes } from '@/utils/formatters'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -279,11 +281,6 @@ function formatDisk(mb: number | undefined): string {
   return mb + ' MB'
 }
 
-function formatDate(dateStr: string | undefined): string {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString()
-}
-
 function formatPercent(value: number | undefined): string {
   if (value === undefined || value === null || Number.isNaN(value)) return '-'
   return `${value.toFixed(1)}%`
@@ -366,7 +363,7 @@ async function generateAgentInstallCommand() {
 
 function copyAgentInstallCommand() {
   if (!agentInstallCommand.value) return
-  navigator.clipboard.writeText(agentInstallCommand.value)
+  void copyToClipboard(agentInstallCommand.value)
   toast.success(t('admin.hosts.agentInstallCommandCopied'))
 }
 
@@ -421,13 +418,6 @@ const chartMaxValue = computed(() => {
 })
 
 // 格式化字节数为可读字符串
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0'
-  if (bytes < 1024) return bytes + 'B'
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'K'
-  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + 'M'
-  return (bytes / 1073741824).toFixed(1) + 'G'
-}
 
 // Y 轴刻度标�?
 const yAxisLabels = computed(() => {

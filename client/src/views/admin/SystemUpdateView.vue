@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { copyToClipboard } from '@/utils/clipboard'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
@@ -138,10 +139,9 @@ function formatDate(value: string | null | undefined): string {
 
 async function copyCommand() {
   if (!manualCommand.value) return
-  try {
-    await navigator.clipboard.writeText(manualCommand.value)
+  if (await copyToClipboard(manualCommand.value)) {
     toast.success(t('admin.systemUpdate.commandCopied'))
-  } catch {
+  } else {
     toast.error(t('admin.systemUpdate.copyFailed'))
   }
 }

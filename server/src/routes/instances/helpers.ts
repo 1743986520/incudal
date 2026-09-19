@@ -65,17 +65,21 @@ export async function claimInstanceForDelete(instanceId: number, currentStatus: 
 }
 
 /**
- * 检查用户对实例的操作权限
- * @deprecated 使用 lib/permission.ts 中的 checkInstancePermission 替代
+ * 封停状态守卫：实例被封禁时禁止操作（过期封禁返回专用错误码）
+ * @returns true 表示允许继续操作
  */
-export async function checkInstanceOperationPermission(
-  user: { id: number; role: string },
-  instance: { user_id: number; host_id: number }
-): Promise<boolean> {
-  if (user.role === 'admin') return true
-  if (instance.user_id === user.id) return true
-  const host = await db.getHostById(instance.host_id)
-  if (host && host.user_id === user.id) return true
+export function ensureInstanceNotSuspended(
+  instance: { status: string; suspend_reason?: string | null },
+  reply: FastifyReply
+): boolean {
+  if (instance.status !== 'suspended') {
+    return true
+  }
+  if (instance.suspend_reason === 'expired') {
+    reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+  } else {
+    reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
+  }
   return false
 }
 

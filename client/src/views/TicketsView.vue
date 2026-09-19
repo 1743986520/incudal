@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateTime as formatDate } from '@/utils/formatters'
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -643,11 +644,6 @@ async function submitCreate() {
   } finally {
     creating.value = false
   }
-}
-
-function formatDate(dateString: string) {
-  const date = new Date(dateString)
-  return date.toLocaleString()
 }
 
 function formatDateShort(dateString: string) {

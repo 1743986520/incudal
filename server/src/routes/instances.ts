@@ -70,12 +70,13 @@ import {
 
 
 import { resolveEffectiveSwapSize, resolveIncusSwapValue } from '../lib/instance-swap.js'
+import { checkInstancePermission, getInstanceWithPermission } from '../lib/permission.js'
 
 // 从提取的模块导入共享辅助函数
 import {
   checkTransferLock,
   claimInstanceForDelete,
-  checkInstanceOperationPermission,
+  ensureInstanceNotSuspended,
   buildChangeHostOptions
 } from './instances/helpers.js'
 import { createInstanceAsync } from './instances/create-async.js'
@@ -1946,17 +1947,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、节点所有者
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 权限检查：管理员、实例所有者、节点所有者（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
     const portMappings = await db.getPortMappings(instanceId)
 
@@ -2395,16 +2388,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、节点所有者
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 权限检查：管理员、实例所有者、节点所有者（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
     if (instance.status !== 'running') {
       return {
@@ -2509,16 +2495,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、节点所有者
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 权限检查：管理员、实例所有者、节点所有者（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
     if (instance.status === 'running') {
       return reply.code(400).send(apiError(ErrorCode.INSTANCE_ALREADY_RUNNING))
@@ -2578,16 +2557,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、节点所有者
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 权限检查：管理员、实例所有者、节点所有者（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
     // 封禁状态检查：实例所有者不能停止被封禁的实例
     // 节点所有者可以停止（用于维护等操作）
@@ -2651,24 +2623,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、节点所有者
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 权限检查：管理员、实例所有者、节点所有者（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
     // 封停状态不允许重启
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     // 检查转移锁定
     if (await checkTransferLock(instanceId, reply)) return
@@ -3053,8 +3013,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
     }
 
-    const hasPermission = await checkInstanceOperationPermission(request.user, instance)
-    if (!hasPermission) {
+    if (!(await checkInstancePermission(request.user, instance)).allowed) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
@@ -3094,17 +3053,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
     }
 
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
+    if (!(await checkInstancePermission(user, instance)).allowed) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     if (!['running', 'stopped', 'error'].includes(instance.status)) {
       return reply.code(400).send({
@@ -3269,12 +3222,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许重装
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     if (instance.status !== 'stopped') {
       return reply.code(400).send(apiError(ErrorCode.INSTANCE_STOP_REQUIRED))
@@ -3428,12 +3376,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许重建
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     // 注意：重建不限制实例状态，任何状态都可以重建（不同于重装）
 
@@ -3559,19 +3502,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
+    // 权限检查：管理员、实例所有者、节点所有者（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
-    // 权限检查：管理员、实例所有者、节点所有者
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
-
-    // 检查是否是宿主机拥有者（避免重复查询，复用checkInstanceOperationPermission的逻辑）
-    // 注意：checkInstanceOperationPermission已经检查了是否是宿主机拥有者，但我们需要明确知道以决定是否检查套餐限制
+    // checkInstancePermission 已判定权限；此处需要明确区分宿主机拥有者/管理员以决定是否检查套餐限制
     const host = await db.getHostById(instance.host_id)
     const isHostOwner = !!(host && host.user_id === user.id)
     const isAdmin = user.role === 'admin'
@@ -4047,12 +3982,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许添加端口映射
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     if (!['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.network_mode)) {
       return reply.code(400).send(apiError(ErrorCode.PORT_MAPPING_NAT_ONLY))
@@ -4208,12 +4138,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许删除端口映射
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     const mapping = await db.getPortMappingById(portMappingId)
     if (!mapping || mapping.instance_id !== instanceId) {
@@ -4319,12 +4244,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许添加端口映射
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     if (!['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.network_mode)) {
       return reply.code(400).send(apiError(ErrorCode.PORT_MAPPING_NAT_ONLY))
@@ -5135,12 +5055,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许重命名
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     const { name } = request.body
     const oldName = instance.name
@@ -5174,16 +5089,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 权限检查（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
     // 获取实例的完整配置（包含覆盖字段）
     const instanceConfig = await db.getInstanceConfig(instanceId)
@@ -5666,16 +5574,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const { user } = request
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查
-    const hasPermission = await checkInstanceOperationPermission(user, instance)
-    if (!hasPermission) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 权限检查（不存在 404，无权限 403）
+    const instance = await getInstanceWithPermission(user, instanceId, reply)
+    if (!instance) return
 
     const task = await getActiveTaskForInstance(instanceId)
     if (!task) {
@@ -5929,13 +5830,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 权限检查（与终端路由保持一致，管理员可访问所有实例）
-    let hasPermission = false
-    if (user.role === 'admin') {
-      hasPermission = true
-    } else {
-      hasPermission = await checkInstanceOperationPermission(user, instance)
-    }
-    if (!hasPermission) {
+    if (!(await checkInstancePermission(user, instance)).allowed) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
@@ -6096,12 +5991,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许操作
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     // 实例必须处于停止状态
     if (instance.status !== 'stopped') {

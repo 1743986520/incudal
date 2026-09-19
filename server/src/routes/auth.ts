@@ -889,8 +889,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
   }>('/invites', {
     onRequest: [fastify.authenticateAdmin]
   }, async (request: FastifyRequest<{ Querystring: { page?: string; pageSize?: string; status?: string } }>, _reply: FastifyReply) => {
-    const page = Math.max(1, parseInt(request.query.page || '1', 10))
-    const pageSize = Math.min(100, Math.max(1, parseInt(request.query.pageSize || '20', 10)))
+    const { page, pageSize } = db.parsePagination(request.query, { maxPageSize: 100 })
     const status = request.query.status === 'used' || request.query.status === 'unused'
       ? request.query.status
       : undefined

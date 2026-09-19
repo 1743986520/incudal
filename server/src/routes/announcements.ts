@@ -4,6 +4,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import * as announcementsDb from '../db/announcements.js'
+import { parsePagination } from '../db/pagination.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 
 export default async function announcementsRoutes(fastify: FastifyInstance) {
@@ -32,11 +33,10 @@ export default async function announcementsRoutes(fastify: FastifyInstance) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
-    const { page = '1', pageSize = '20', type } = request.query
+    const { type } = request.query
 
     const result = await announcementsDb.getAnnouncementList({
-      page: parseInt(page, 10) || 1,
-      pageSize: parseInt(pageSize, 10) || 20,
+      ...parsePagination(request.query),
       type: type as any,
     })
 
@@ -60,13 +60,12 @@ export default async function announcementsRoutes(fastify: FastifyInstance) {
       hostId?: string
     }
   }>) => {
-    const { page = '1', pageSize = '20', hostId } = request.query
+    const { hostId } = request.query
 
     const result = await announcementsDb.getHostOwnerAnnouncementList(
       request.user.id,
       {
-        page: parseInt(page, 10) || 1,
-        pageSize: parseInt(pageSize, 10) || 20,
+        ...parsePagination(request.query),
         hostId: hostId ? parseInt(hostId, 10) : undefined,
       }
     )

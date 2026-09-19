@@ -12,17 +12,8 @@ import { createSnapshot, deleteSnapshot, restoreSnapshot } from '../lib/incus/in
 import { sendNotification } from '../lib/notifier.js'
 import { checkSnapshotQuota } from '../db/quota-operations.js'
 import type { CreateSnapshotRequest } from '../types/api.js'
-import { checkInstancePermission } from '../lib/permission.js'
-
-// 检查实例是否被转移锁定
-async function checkTransferLock(instanceId: number, reply: FastifyReply): Promise<boolean> {
-  const hasPending = await db.hasPendingTransfer(instanceId)
-  if (hasPending) {
-    reply.code(400).send(apiError(ErrorCode.TRANSFER_INSTANCE_LOCKED))
-    return true
-  }
-  return false
-}
+import { getInstanceWithPermission } from '../lib/permission.js'
+import { checkTransferLock, ensureInstanceNotSuspended } from './instances/helpers.js'
 
 export default async function snapshotRoutes(fastify: FastifyInstance) {
 
@@ -37,17 +28,9 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 从数据库获取快照列表
     const snapshots = await db.getSnapshotsByInstanceId(instanceIdNum)
@@ -92,25 +75,12 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
 
     const { name, description } = request.body
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 封停状态不允许创建快照
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     // 实例必须是运行或停止状态
     if (!['running', 'stopped'].includes(instance.status)) {
@@ -189,17 +159,9 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 获取快照信息
     const snapshot = await db.getSnapshotById(snapshotIdNum)
@@ -266,17 +228,9 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 获取快照信息
     const snapshot = await db.getSnapshotById(snapshotIdNum)
@@ -285,12 +239,7 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
     }
 
     // 封停状态不允许恢复快照
-    if (instance.status === 'suspended') {
-      if (instance.suspend_reason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
+    if (!ensureInstanceNotSuspended(instance, reply)) return
 
     // 实例必须停止才能恢复
     if (instance.status !== 'stopped') {
@@ -340,17 +289,9 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     const policy = await db.getSnapshotPolicy(instanceIdNum)
 
@@ -396,17 +337,9 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
 
     const { enabled, intervalMinutes = 360 } = request.body
 
-    // 验证实例归属
-    const instance = await db.getInstanceById(instanceIdNum)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
-
-    // 权限检查：管理员、实例所有者、宿主机所有者
-    const permResult = await checkInstancePermission(request.user, instance)
-    if (!permResult.allowed) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+    if (!instance) return
 
     // 如果启用自动快照，检查配额
     if (enabled) {
