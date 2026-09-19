@@ -6,57 +6,36 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '../db/prisma.js'
 import { isAccessTokenInvalidated } from '../lib/security.js'
+import { sharedDel, sharedDelPrefix, sharedGet, sharedSet } from '../lib/shared-state.js'
 
 // ==================== 认证查询短时缓存 ====================
-// 为认证查询添加 30 秒 TTL 内存缓存，减少每次请求的数据库查询
+// 为认证查询添加 30 秒 TTL 缓存，减少每次请求的数据库查询。
+// 缓存走共享状态层（审查项 P2-09）：配置 REDIS_URL 的多副本部署中，
+// 用户封禁/角色变更通过 clearAuthCache 清除共享缓存，各副本即时生效；
+// 未配置 Redis 时退化为进程内存，行为与历史版本一致。
 
 const AUTH_CACHE_TTL_MS = 30_000 // 30 秒
 
-interface AuthCacheEntry<T> {
-  value: T
-  expiresAt: number
+const AUTH_USER_CACHE_PREFIX = 'auth-cache:user:'
+const AUTH_TOKEN_INVALIDATION_PREFIX = 'auth-cache:tinv:'
+
+interface AuthUserInfo {
+  username: string
+  role: string
+  status: string
 }
 
-// 用户信息缓存: `${userId}` -> { username, role, status }
-const userInfoCache = new Map<string, AuthCacheEntry<{ username: string; role: string; status: string }>>()
-
-// Token 失效检查缓存: `${userId}:${iat}:${sid}` -> invalidated
-const tokenInvalidationCache = new Map<string, AuthCacheEntry<boolean>>()
-
-function getCached<T>(cache: Map<string, AuthCacheEntry<T>>, key: string): T | undefined {
-  const entry = cache.get(key)
-  if (!entry) return undefined
-  if (entry.expiresAt <= Date.now()) {
-    cache.delete(key)
-    return undefined
-  }
-  return entry.value
+/**
+ * 清除指定用户的认证缓存（用户状态变更时调用），多副本部署下作用于共享存储。
+ *
+ * 必须在状态/令牌失效变更提交到数据库之后再调用并 await：
+ * 若先清理后提交，其他副本的请求可能在清理与提交之间把旧的"有效"结果
+ * 重新写入缓存，令牌撤销后仍可继续使用最长一个缓存 TTL。
+ */
+export async function clearAuthCache(userId: number): Promise<void> {
+  await sharedDel(`${AUTH_USER_CACHE_PREFIX}${userId}`)
+  await sharedDelPrefix(`${AUTH_TOKEN_INVALIDATION_PREFIX}${userId}:`)
 }
-
-function setCached<T>(cache: Map<string, AuthCacheEntry<T>>, key: string, value: T): void {
-  cache.set(key, { value, expiresAt: Date.now() + AUTH_CACHE_TTL_MS })
-}
-
-/** 清除指定用户的认证缓存（用户状态变更时调用） */
-export function clearAuthCache(userId: number): void {
-  userInfoCache.delete(String(userId))
-  for (const key of tokenInvalidationCache.keys()) {
-    if (key.startsWith(`${userId}:`)) {
-      tokenInvalidationCache.delete(key)
-    }
-  }
-}
-
-// 定期清理过期缓存条目（每 5 分钟）
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of userInfoCache) {
-    if (entry.expiresAt <= now) userInfoCache.delete(key)
-  }
-  for (const [key, entry] of tokenInvalidationCache) {
-    if (entry.expiresAt <= now) tokenInvalidationCache.delete(key)
-  }
-}, 5 * 60 * 1000).unref()
 
 // ==================== 认证辅助函数 ====================
 
@@ -72,14 +51,14 @@ async function ensureActiveAccessToken(
   }
 
   // 使用缓存的 token 失效检查结果
-  const invalidationKey = `${user.id}:${user.iat}:${user.sid ?? ''}`
-  const cachedInvalidated = getCached(tokenInvalidationCache, invalidationKey)
+  const invalidationKey = `${AUTH_TOKEN_INVALIDATION_PREFIX}${user.id}:${user.iat}:${user.sid ?? ''}`
+  const cachedInvalidated = await sharedGet(invalidationKey)
   let invalidated: boolean
-  if (cachedInvalidated !== undefined) {
-    invalidated = cachedInvalidated
+  if (cachedInvalidated !== null) {
+    invalidated = cachedInvalidated === '1'
   } else {
     invalidated = await isAccessTokenInvalidated(user.id, user.iat, user.sid)
-    setCached(tokenInvalidationCache, invalidationKey, invalidated)
+    await sharedSet(invalidationKey, invalidated ? '1' : '0', AUTH_CACHE_TTL_MS)
   }
 
   if (invalidated) {
@@ -88,17 +67,22 @@ async function ensureActiveAccessToken(
   }
 
   // 使用缓存的用户信息
-  const userKey = String(user.id)
-  const cachedUserInfo = getCached(userInfoCache, userKey)
-  if (cachedUserInfo) {
-    if (cachedUserInfo.status !== 'active') {
-      reply.code(401).send({ error: 'Account banned', code: 'ACCOUNT_BANNED' })
-      return false
+  const userKey = `${AUTH_USER_CACHE_PREFIX}${user.id}`
+  const cachedUserInfoRaw = await sharedGet(userKey)
+  if (cachedUserInfoRaw) {
+    try {
+      const cachedUserInfo = JSON.parse(cachedUserInfoRaw) as AuthUserInfo
+      if (cachedUserInfo.status !== 'active') {
+        reply.code(401).send({ error: 'Account banned', code: 'ACCOUNT_BANNED' })
+        return false
+      }
+      user.username = cachedUserInfo.username
+      user.role = cachedUserInfo.role
+      user.status = cachedUserInfo.status
+      return true
+    } catch {
+      // 缓存数据损坏时按 miss 处理，回源数据库
     }
-    user.username = cachedUserInfo.username
-    user.role = cachedUserInfo.role
-    user.status = cachedUserInfo.status
-    return true
   }
 
   const currentUser = await prisma.user.findUnique({
@@ -116,7 +100,7 @@ async function ensureActiveAccessToken(
   }
 
   // 缓存用户信息
-  setCached(userInfoCache, userKey, currentUser)
+  await sharedSet(userKey, JSON.stringify(currentUser), AUTH_CACHE_TTL_MS)
 
   if (currentUser.status !== 'active') {
     reply.code(401).send({ error: 'Account banned', code: 'ACCOUNT_BANNED' })

@@ -4,6 +4,7 @@
 
 import { prisma } from './prisma.js'
 import crypto from 'crypto'
+import { sharedDel, sharedIncrement } from '../lib/shared-state.js'
 
 // Verification code expiration time in minutes
 const CODE_EXPIRATION_MINUTES = 10
@@ -27,24 +28,17 @@ export function generateVerificationCode(): string {
     return crypto.randomInt(min, max + 1).toString()
 }
 
-// 验证失败计数（按邮箱，进程内存）。
-// 注意：多副本部署时计数不共享，应随审查项 8 一并迁移到 Redis 等共享存储。
-const verifyFailures = new Map<string, { count: number; firstAt: number }>()
+// 验证失败计数（按邮箱）。
+// 计数走共享存储（审查项 P2-09）：多副本部署时按邮箱全局计数，
+// 攻击者无法把尝试分散到不同副本来绕过失败上限。
+const VERIFY_FAILURE_KEY_PREFIX = 'email-verify-failure:'
 
 async function registerVerifyFailure(normalizedEmail: string): Promise<void> {
-    const now = Date.now()
-    const entry = verifyFailures.get(normalizedEmail)
+    const count = await sharedIncrement(`${VERIFY_FAILURE_KEY_PREFIX}${normalizedEmail}`, VERIFY_FAILURE_WINDOW_MS)
 
-    if (!entry || now - entry.firstAt > VERIFY_FAILURE_WINDOW_MS) {
-        verifyFailures.set(normalizedEmail, { count: 1, firstAt: now })
-        return
-    }
-
-    entry.count++
-
-    if (entry.count >= MAX_VERIFY_FAILURES) {
+    if (count >= MAX_VERIFY_FAILURES) {
         // 立即作废该邮箱的所有验证码，让继续暴力尝试失去意义
-        verifyFailures.delete(normalizedEmail)
+        await sharedDel(`${VERIFY_FAILURE_KEY_PREFIX}${normalizedEmail}`)
         await prisma.emailVerificationCode.deleteMany({
             where: { email: normalizedEmail }
         }).catch(() => {})
@@ -113,7 +107,7 @@ export async function verifyCode(email: string, code: string): Promise<boolean> 
     })
 
     if (result.count > 0) {
-        verifyFailures.delete(normalizedEmail)
+        await sharedDel(`${VERIFY_FAILURE_KEY_PREFIX}${normalizedEmail}`)
         return true
     }
 

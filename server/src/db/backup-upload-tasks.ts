@@ -3,10 +3,15 @@
  */
 
 import { prisma } from './prisma.js'
+import { Prisma } from '@prisma/client'
 import type { BackupUploadTask, BackupUploadTaskStatus } from '@prisma/client'
 
 /**
  * 创建备份上传任务
+ *
+ * "查询是否已有 active task → 创建任务"存在检查-写入竞态（审查项 P2-13），
+ * 数据库通过 (user_id) WHERE status IN ('PENDING','PROCESSING') 的部分唯一索引
+ * 兜底；唯一约束冲突时返回 null，由调用方返回 409。
  */
 export async function createBackupUploadTask(data: {
     userId: number
@@ -14,17 +19,24 @@ export async function createBackupUploadTask(data: {
     backupId: number
     hostId: number
     storageConfigId: number
-}): Promise<BackupUploadTask> {
-    return prisma.backupUploadTask.create({
-        data: {
-            userId: data.userId,
-            instanceId: data.instanceId,
-            backupId: data.backupId,
-            hostId: data.hostId,
-            storageConfigId: data.storageConfigId,
-            status: 'PENDING'
+}): Promise<BackupUploadTask | null> {
+    try {
+        return await prisma.backupUploadTask.create({
+            data: {
+                userId: data.userId,
+                instanceId: data.instanceId,
+                backupId: data.backupId,
+                hostId: data.hostId,
+                storageConfigId: data.storageConfigId,
+                status: 'PENDING'
+            }
+        })
+    } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            return null
         }
-    })
+        throw error
+    }
 }
 
 /**

@@ -129,7 +129,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     }
 
     return {
-      ticket: generateOAuthBindTicket(
+      ticket: await generateOAuthBindTicket(
         request.user.id,
         request.user.iat,
         request.user.sid
@@ -175,7 +175,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
         return reply.redirect(`/profile?error=not_logged_in`)
       }
 
-      const ticketData = consumeOAuthBindTicket(bindTicket)
+      const ticketData = await consumeOAuthBindTicket(bindTicket)
       if (!ticketData.valid || !ticketData.userId || !ticketData.issuedAt) {
         return reply.redirect(`/profile?error=invalid_session`)
       }
@@ -497,7 +497,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     const { code } = request.body
 
     // 验证并消费一次性登录码
-    const loginData = verifyAndConsumeOAuthLoginCode(code)
+    const loginData = await verifyAndConsumeOAuthLoginCode(code)
     if (!loginData) {
       await logSecurityEvent(SecurityEventType.SUSPICIOUS_ACTIVITY, null, {
         ip: request.ip,

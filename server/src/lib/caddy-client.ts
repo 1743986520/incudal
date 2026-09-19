@@ -76,6 +76,23 @@ function buildCaddyTlsConnectOptions(): {
 }
 
 /**
+ * 生成站点路由 ID（审查项 P2-07）
+ *
+ * 旧实现用 `site-${domain.replace(/\./g, '-')}`，不同域名会碰撞：
+ * a.b-c.example 与 a-b.c.example 都生成 site-a-b-c-example，
+ * 导致新站点覆盖旧站点、删除一个站点误删另一个站点的配置。
+ * 改用域名（小写化）的 SHA-256 前 32 位十六进制，保证唯一且确定性。
+ */
+function buildSiteRouteId(domain: string): string {
+    return `site-${createHash('sha256').update(domain.toLowerCase()).digest('hex').slice(0, 32)}`
+}
+
+/** 旧版本基于字符替换的路由 ID，仅用于删除存量站点时兼容 */
+function buildLegacySiteRouteId(domain: string): string {
+    return `site-${domain.replace(/\./g, '-')}`
+}
+
+/**
  * Caddy API 客户端类
  */
 export class CaddyClient {
@@ -178,7 +195,7 @@ export class CaddyClient {
    * @param httpsEnabled 是否启用 HTTPS（自动申请 Let's Encrypt 证书）
    */
   async addSite(domain: string, targetIp: string, targetPort: number, httpsEnabled: boolean = true): Promise<void> {
-    const routeId = `site-${domain.replace(/\./g, '-')}`
+    const routeId = buildSiteRouteId(domain)
     
     // 构建路由配置
     const route: CaddyRoute = {
@@ -260,13 +277,18 @@ export class CaddyClient {
    * @param domain 域名
    */
   async deleteSite(domain: string): Promise<void> {
-    const routeId = `site-${domain.replace(/\./g, '-')}`
-    
-    try {
-      await this.request('DELETE', `/id/${routeId}`)
-    } catch (error) {
-      // 如果路由不存在，忽略错误
-      if (error instanceof Error && !error.message.includes('404')) {
+    // 新版部署的站点是哈希 ID；存量站点仍是旧的字符替换 ID，两个都尝试删除
+    const routeIds = [...new Set([buildSiteRouteId(domain), buildLegacySiteRouteId(domain)])]
+
+    for (const routeId of routeIds) {
+      try {
+        await this.request('DELETE', `/id/${routeId}`)
+        return
+      } catch (error) {
+        // 如果路由不存在，尝试下一个候选 ID
+        if (error instanceof Error && error.message.includes('404')) {
+          continue
+        }
         throw error
       }
     }

@@ -3,7 +3,8 @@
  */
 
 import { prisma } from './prisma.js'
-import type { InstanceTaskType, InstanceTaskStatus, Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
+import type { InstanceTaskType, InstanceTaskStatus, Prisma as PrismaTypes } from '@prisma/client'
 
 export interface CreateInstanceTaskData {
   instanceId: number
@@ -16,6 +17,22 @@ export interface CreateInstanceTaskData {
   targetName?: string       // 克隆的目标名称
   targetHostId?: number     // 克隆的目标宿主机
   snapshotName?: string     // 克隆时的快照名称
+}
+
+/**
+ * 实例已有活跃任务冲突（审查项 P2-13）
+ *
+ * "查询是否已有 active task → 创建任务"存在检查-写入竞态，数据库通过
+ * (instance_id) WHERE status IN ('PENDING','PROCESSING') 的部分唯一索引兜底，
+ * 唯一约束冲突时抛出本错误，携带当前活跃任务信息。
+ */
+export class InstanceTaskConflictError extends Error {
+  readonly activeTask: InstanceTaskWithDetails
+  constructor(activeTask: InstanceTaskWithDetails) {
+    super('ACTIVE_INSTANCE_TASK_EXISTS')
+    this.name = 'InstanceTaskConflictError'
+    this.activeTask = activeTask
+  }
 }
 
 export interface InstanceTaskWithDetails {
@@ -47,22 +64,34 @@ export interface InstanceTaskWithDetails {
  */
 export async function createInstanceTask(data: CreateInstanceTaskData): Promise<InstanceTaskWithDetails> {
   // 注：使用 as any 绕过 Prisma 类型检查，因为 customInitCommandIds 字段在迁移后才会生成类型
-  const result = await prisma.instanceTask.create({
-    data: {
-      instanceId: data.instanceId,
-      hostId: data.hostId,
-      userId: data.userId,
-      taskType: data.taskType,
-      imageAlias: data.imageAlias || null,
-      sshKeyId: data.sshKeyId || null,
-      customInitCommandIds: data.customInitCommandIds ? JSON.stringify(data.customInitCommandIds) : null,
-      targetName: data.targetName || null,
-      targetHostId: data.targetHostId || null,
-      snapshotName: data.snapshotName || null,
-      status: 'PENDING'
-    } as any
-  })
-  return result as unknown as InstanceTaskWithDetails
+  try {
+    const result = await prisma.instanceTask.create({
+      data: {
+        instanceId: data.instanceId,
+        hostId: data.hostId,
+        userId: data.userId,
+        taskType: data.taskType,
+        imageAlias: data.imageAlias || null,
+        sshKeyId: data.sshKeyId || null,
+        customInitCommandIds: data.customInitCommandIds ? JSON.stringify(data.customInitCommandIds) : null,
+        targetName: data.targetName || null,
+        targetHostId: data.targetHostId || null,
+        snapshotName: data.snapshotName || null,
+        status: 'PENDING'
+      } as any
+    })
+    return result as unknown as InstanceTaskWithDetails
+  } catch (error) {
+    // 部分唯一索引兜底（审查项 P2-13）：并发请求同时通过 active task 检查时，
+    // 只有一个能创建成功，其余请求返回冲突并携带当前活跃任务
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const active = await getActiveTaskForInstance(data.instanceId)
+      if (active) {
+        throw new InstanceTaskConflictError(active)
+      }
+    }
+    throw error
+  }
 }
 
 /**
@@ -98,7 +127,7 @@ export async function getUserInstanceTasks(
 ): Promise<{ items: InstanceTaskWithDetails[]; total: number }> {
   const { page = 1, pageSize = 20, status } = options
 
-  const where: Prisma.InstanceTaskWhereInput = { userId }
+  const where: PrismaTypes.InstanceTaskWhereInput = { userId }
   if (status && status.length > 0) {
     where.status = { in: status }
   }

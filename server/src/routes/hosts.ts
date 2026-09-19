@@ -16,7 +16,7 @@ import { createInboxMessage } from '../db/inbox.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode, type ErrorCodeType } from '../lib/errors.js'
 import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
-import { createInstanceTask, getActiveTaskForInstance } from '../db/instance-tasks.js'
+import { createInstanceTask, InstanceTaskConflictError, getActiveTaskForInstance } from '../db/instance-tasks.js'
 import { getSSHKeyById, getSSHKeysByUserId } from '../db/ssh-keys.js'
 import { getEnabledCommandsByDistro, validateCommandsOwnership } from '../db/custom-init-commands.js'
 import { IncusClient, getIncusClient, removeIncusClient } from '../lib/incus/index.js'
@@ -8395,15 +8395,30 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const task = await createInstanceTask({
-      instanceId,
-      hostId: instance.host_id,
-      userId: user.id,
-      taskType: action,
-      imageAlias,
-      sshKeyId,
-      customInitCommandIds
-    })
+    let task
+    try {
+      task = await createInstanceTask({
+        instanceId,
+        hostId: instance.host_id,
+        userId: user.id,
+        taskType: action,
+        imageAlias,
+        sshKeyId,
+        customInitCommandIds
+      })
+    } catch (error) {
+      // 部分唯一索引兜底：并发提交同实例任务时返回 409（审查项 P2-13）
+      if (error instanceof InstanceTaskConflictError) {
+        return reply.code(409).send({
+          error: 'Instance has an active task',
+          code: 'TASK_IN_PROGRESS',
+          taskId: error.activeTask.id,
+          taskType: error.activeTask.taskType,
+          status: error.activeTask.status
+        })
+      }
+      throw error
+    }
 
     await createLog(user.id, 'host', `host.ops.${action}`, `Queued ${action} task for instance "${instance.name}" on host "${host.name}" with image ${imageAlias}`, 'success', { instanceId })
 

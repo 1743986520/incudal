@@ -147,8 +147,8 @@ export default async function storageConfigRoutes(fastify: FastifyInstance) {
             }
         } catch (err) {
             fastify.log.error(err)
-            const errorMessage = err instanceof Error ? err.message : String(err)
-            return reply.code(500).send(apiError(ErrorCode.STORAGE_CONFIG_CREATE_FAILED, errorMessage))
+            // 远程存储/底层错误细节只留服务端日志，不回传客户端（审查项 P3-04）
+            return reply.code(500).send(apiError(ErrorCode.STORAGE_CONFIG_CREATE_FAILED))
         }
     })
 
@@ -250,8 +250,7 @@ export default async function storageConfigRoutes(fastify: FastifyInstance) {
             }
         } catch (err) {
             fastify.log.error(err)
-            const errorMessage = err instanceof Error ? err.message : String(err)
-            return reply.code(500).send(apiError(ErrorCode.STORAGE_CONFIG_UPDATE_FAILED, errorMessage))
+            return reply.code(500).send(apiError(ErrorCode.STORAGE_CONFIG_UPDATE_FAILED))
         }
     })
 
@@ -297,8 +296,7 @@ export default async function storageConfigRoutes(fastify: FastifyInstance) {
             return { message: 'Storage config deleted' }
         } catch (err) {
             fastify.log.error(err)
-            const errorMessage = err instanceof Error ? err.message : String(err)
-            return reply.code(500).send(apiError(ErrorCode.STORAGE_CONFIG_DELETE_FAILED, errorMessage))
+            return reply.code(500).send(apiError(ErrorCode.STORAGE_CONFIG_DELETE_FAILED))
         }
     })
 
@@ -328,10 +326,11 @@ export default async function storageConfigRoutes(fastify: FastifyInstance) {
             return { success: true, message: '连接测试成功' }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err)
+            // 连接测试面向配置所有者排障，保留信息但截断，避免回传大段底层报错
             return reply.code(400).send({
                 success: false,
                 error: 'CONNECTION_TEST_FAILED',
-                message: errorMessage
+                message: errorMessage.slice(0, 200)
             })
         }
     })

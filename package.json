@@ -13,7 +13,7 @@
     "test:prisma": "pnpm --filter server test:prisma"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.2.1"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -21,8 +21,14 @@
   "packageManager": "pnpm@9.14.2",
   "pnpm": {
     "overrides": {
-      "webdav>fast-xml-parser": "4.5.5",
-      "fastify-cloudflare-turnstile>undici": "6.27.0"
+      "webdav>fast-xml-parser": "4.5.7",
+      "fastify-cloudflare-turnstile>undici": "6.27.0",
+      "mysql2": "^3.24.4",
+      "brace-expansion@1": "^1.1.21",
+      "brace-expansion@2": "^2.1.7",
+      "deepmerge-ts": "^8.0.2",
+      "fast-xml-parser@5": "^5.3.5",
+      "shell-quote": "^1.8.4"
     }
   }
 }

@@ -97,7 +97,7 @@ export default async function terminalRoutes(fastify: FastifyInstance) {
             return reply.code(401).send({ error: 'Unauthorized', code: 'UNAUTHORIZED' })
         }
 
-        const ticket = generateTerminalAccessTicket(
+        const ticket = await generateTerminalAccessTicket(
             request.user.id,
             instanceId,
             issuedAt,
@@ -155,7 +155,7 @@ export default async function terminalRoutes(fastify: FastifyInstance) {
             return
         }
 
-        const authResult = consumeTerminalAccessTicket(ticket, instanceId)
+        const authResult = await consumeTerminalAccessTicket(ticket, instanceId)
         if (!authResult.valid || !authResult.userId || !authResult.issuedAt) {
             safeSend(socket, JSON.stringify({
                 type: 'error',
