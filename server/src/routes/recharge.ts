@@ -5,6 +5,7 @@
 import { FastifyInstance } from 'fastify'
 import * as db from '../db/index.js'
 import * as crypto from 'crypto'
+import { registerFormUrlencodedParser } from '../lib/form-urlencoded.js'
 import { createEpayClient, type EpayConfig, type EpayConfigV1, type EpayConfigV2, type CallbackData, type EpayVersion, type VerifyResult } from '../lib/epay.js'
 import {
   buildHeleketConfig,
@@ -652,6 +653,10 @@ function verifyCallbackSignature(
 // ==================== 用户接口 ====================
 
 export default async function rechargeRoutes(app: FastifyInstance): Promise<void> {
+  // 易支付（yipay）等网关的异步通知使用 form 编码的 POST 回调；
+  // 仅在本插件作用域注册解析器，其余 API 仍只接受 JSON/multipart
+  registerFormUrlencodedParser(app)
+
   // 获取可用支付渠道列表
   app.get('/api/recharge/providers', {
     onRequest: [app.authenticate]
