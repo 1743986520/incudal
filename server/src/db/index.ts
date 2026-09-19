@@ -71,7 +71,6 @@ export * from './traffic.js'
 export * from './restore-tasks.js'
 
 // 导出远程存储配置相关操作
-export * from './storage-configs.js'
 
 // 导出备份上传任务相关操作
 export * from './backup-upload-tasks.js'

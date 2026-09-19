@@ -650,24 +650,7 @@ export interface Snapshot {
   created_at: string
 }
 
-export interface Backup {
-  id: number
-  instance_id: number
-  incus_name: string
-  name: string
-  description: string | null
-  size: number
-  status: 'creating' | 'ready' | 'error' | 'deleted'
-  created_at: string
-  expires_at: string | null
-}
-
 export interface CreateSnapshotRequest {
-  name: string
-  description?: string
-}
-
-export interface CreateBackupRequest {
   name: string
   description?: string
 }
@@ -683,25 +666,9 @@ export interface SnapshotPolicy {
   updated_at: string
 }
 
-export interface BackupPolicy {
-  id: number
-  instance_id: number
-  enabled: number
-  interval_minutes: number
-  last_run_at: string | null
-  next_run_at: string | null
-  created_at: string
-  updated_at: string
-}
-
 export interface UpdateSnapshotPolicyRequest {
   enabled?: boolean
   intervalMinutes?: number  // 10, 60, 360, 1440
-}
-
-export interface UpdateBackupPolicyRequest {
-  enabled?: boolean
-  intervalMinutes?: number  // 60, 360, 1440, 4320
 }
 
 // ==================== 节点相关 ====================

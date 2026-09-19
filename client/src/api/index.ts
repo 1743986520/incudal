@@ -49,13 +49,9 @@ import type {
   SystemUpdateStatusResponse,
   SystemUpdateCheckResponse,
   Snapshot,
-  Backup,
   CreateSnapshotRequest,
-  CreateBackupRequest,
   SnapshotPolicy,
-  BackupPolicy,
   UpdateSnapshotPolicyRequest,
-  UpdateBackupPolicyRequest,
   Host,
   HostWithDetails,
   AvailableHost,
@@ -1026,82 +1022,6 @@ const api = {
       http.get(`/instances/${id}/snapshot-policy`),
     updateSnapshotPolicy: (id: number, data: UpdateSnapshotPolicyRequest): Promise<SnapshotPolicy> =>
       http.put(`/instances/${id}/snapshot-policy`, data),
-    // 备份
-    getBackups: (id: number): Promise<Backup[]> => http.get(`/instances/${id}/backups`),
-    createBackup: (id: number, data: CreateBackupRequest): Promise<Backup> =>
-      http.post(`/instances/${id}/backups`, data, { timeout: TIMEOUT.SNAPSHOT }),
-    deleteBackup: (id: number, backupId: number): Promise<void> =>
-      http.delete(`/instances/${id}/backups/${backupId}`, { timeout: TIMEOUT.MEDIUM }),
-    getBackupPolicy: (id: number): Promise<BackupPolicy> =>
-      http.get(`/instances/${id}/backup-policy`),
-    updateBackupPolicy: (id: number, data: UpdateBackupPolicyRequest): Promise<BackupPolicy> =>
-      http.put(`/instances/${id}/backup-policy`, data),
-    // 备份导出
-    exportBackup: (id: number, backupId: number): Promise<{ taskId: string; status: string; expiresAt: string; downloadUrl: string }> =>
-      http.post(`/instances/${id}/backups/${backupId}/export`, {}),
-    getExportStatus: (id: number, taskId: string): Promise<{ taskId: string; status: string; error?: string; expiresAt: string }> =>
-      http.get(`/instances/${id}/backups/export/${taskId}/status`),
-    // 获取一次性下载 token（安全改进：使用短期 token 替代 JWT URL 参数）
-    getDownloadToken: (id: number, taskId: string): Promise<{ downloadUrl: string; expiresIn: number }> =>
-      http.post(`/instances/${id}/backups/export/${taskId}/download-token`, {}),
-    // 已废弃：直接获取下载 URL（不安全，保留用于向后兼容）
-    // @deprecated 使用 getDownloadToken 替代
-    getExportDownloadUrl: (id: number, taskId: string): string =>
-      `/api/instances/${id}/backups/export/${taskId}/download`,
-    // 备份恢复
-    restoreBackup: (id: number, backupId: number): Promise<{ taskId: string; status: string; message: string }> =>
-      http.post(`/instances/${id}/restore/${backupId}`, {}, { timeout: TIMEOUT.SNAPSHOT }),
-    getRestoreStatus: (id: number, taskId: string): Promise<{
-      taskId: string
-      status: string
-      error?: string
-      queuePosition: number
-      duration: number | null
-      createdAt: string
-      startedAt: string | null
-      finishedAt: string | null
-    }> =>
-      http.get(`/instances/${id}/restore/${taskId}`),
-    rollbackRestore: (id: number, taskId: string): Promise<{ success: boolean; message: string }> =>
-      http.post(`/instances/${id}/restore/${taskId}/rollback`, {}, { timeout: TIMEOUT.SNAPSHOT }),
-    // 备份上传到远程存储
-    uploadBackupRemote: (id: number, backupId: number, storageConfigId?: number): Promise<{
-      taskId: number
-      status: string
-      queuePosition: number
-      storageName: string
-      message: string
-    }> => http.post(`/instances/${id}/backups/${backupId}/upload-remote`, { storageConfigId }),
-    getUploadTaskStatus: (id: number, taskId: number): Promise<{
-      taskId: number
-      status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-      error?: string
-      remoteFileName?: string
-      fileSize?: string
-      storageName?: string
-      storageType?: string
-      queuePosition: number
-      duration: number | null
-      createdAt: string
-      startedAt: string | null
-      finishedAt: string | null
-    }> => http.get(`/instances/${id}/upload-tasks/${taskId}`),
-    cancelUploadTask: (id: number, taskId: number): Promise<{ success: boolean; message: string }> =>
-      http.delete(`/instances/${id}/upload-tasks/${taskId}`),
-    getActiveUploadTask: (id: number): Promise<{
-      task: {
-        taskId: number
-        backupId: number
-        status: 'PENDING' | 'PROCESSING'
-        storageName?: string
-        storageType?: string
-        queuePosition: number
-        duration: number | null
-        createdAt: string
-        startedAt: string | null
-        finishedAt: string | null
-      } | null
-    }> => http.get(`/instances/${id}/upload-tasks/active`),
     // 配额
     updateQuota: (id: number, data: UpdateInstanceRequest): Promise<Instance> =>
       http.patch(`/instances/${id}/quota`, data),
@@ -2323,52 +2243,6 @@ const api = {
       http.get('/system-config/default-quota'),
     update: (configs: Array<{ key: string; value: string }>): Promise<{ message: string }> =>
       http.put('/system-config', { configs })
-  },
-
-  // Storage Configs (远程存储配置)
-  storageConfigs: {
-    list: (): Promise<Array<{
-      id: number
-      name: string
-      type: 'WEBDAV' | 'FTP' | 'SFTP' | 'S3'
-      host: string
-      port: number | null
-      username: string | null
-      basePath: string | null
-      isDefault: boolean
-      createdAt: string
-      updatedAt: string
-    }>> => http.get('/storage-configs'),
-
-    create: (data: {
-      name: string
-      type: 'WEBDAV' | 'FTP' | 'SFTP' | 'S3'
-      host: string
-      port?: number
-      username?: string
-      password?: string
-      basePath?: string
-      isDefault?: boolean
-    }): Promise<{ id: number }> => http.post('/storage-configs', data),
-
-    update: (id: number, data: {
-      name?: string
-      type?: 'WEBDAV' | 'FTP' | 'SFTP' | 'S3'
-      host?: string
-      port?: number | null
-      username?: string | null
-      password?: string | null
-      basePath?: string | null
-      isDefault?: boolean
-    }): Promise<{ id: number }> => http.patch(`/storage-configs/${id}`, data),
-
-    delete: (id: number): Promise<void> => http.delete(`/storage-configs/${id}`),
-
-    test: (id: number): Promise<{ success: boolean; message?: string }> =>
-      http.post(`/storage-configs/${id}/test`),
-
-    setDefault: (id: number): Promise<{ success: boolean }> =>
-      http.post(`/storage-configs/${id}/set-default`)
   },
 
   // Traffic (流量统计)
