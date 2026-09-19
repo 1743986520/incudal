@@ -1615,7 +1615,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
   // ==================== 管理员应用AFF优惠码 ====================
 
-  // POST /api/admin/instances/:id/apply-aff - 为实例应用AFF优惠码
+  // POST /api/admin/instances/:id/apply-aff - 为实例应用AFF优惠码（支持新增或更换）
   app.post('/api/admin/instances/:id/apply-aff', {
     onRequest: [app.authenticate, app.requireAdmin],
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } }
@@ -1644,7 +1644,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         where: { id: instanceId },
         include: {
           user: { select: { id: true, username: true } },
-          affBinding: true
+          affBinding: {
+            include: { affCode: { select: { id: true, code: true } } }
+          }
         }
       })
 
@@ -1660,12 +1662,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: '免费实例不支持应用优惠码' })
       }
 
-      // 2. 检查是否已有AFF绑定
-      if (instance.affBinding) {
-        return reply.status(400).send({ error: '该实例已绑定优惠码，无法重复应用' })
-      }
-
-      // 3. 验证AFF码
+      // 2. 验证AFF码
       const affCode = await prisma.affCode.findUnique({
         where: { code: affCodeInput.trim().toUpperCase() },
         include: {
@@ -1681,20 +1678,35 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: '优惠码已停用' })
       }
 
+      // 3. 已绑定相同优惠码：幂等成功（同时补齐覆盖官方优惠券的标记）
+      if (instance.affBinding && instance.affBinding.affCodeId === affCode.id) {
+        const idempotentResult = await db.applyInstanceAffBinding(instanceId, affCode.id, affCode.code)
+        return {
+          success: true,
+          replaced: false,
+          previousCode: idempotentResult.previousCode,
+          currentCode: idempotentResult.currentCode,
+          discountRate: Number(affCode.discountRate),
+          message: '该实例已绑定此优惠码，将用于下一笔未结算续费'
+        }
+      }
+
       // 4. 检查AFF码创建者不能是实例所有者（防止自返利）
       if (affCode.userId === instance.userId) {
         return reply.status(400).send({ error: '不能为用户应用其自己的优惠码' })
       }
 
-      // 5. 创建AFF绑定
-      await db.createAffBinding(instanceId, affCode.id)
+      // 5. 创建或更换AFF绑定（更换时旧码不再参与后续续费与返利）
+      const result = await db.applyInstanceAffBinding(instanceId, affCode.id, affCode.code)
 
       // 6. 记录操作日志
       await createLog(
         admin.id,
         'admin',
         'instance.admin_apply_aff',
-        `Admin applied AFF code "${affCode.code}" (Owner: ${affCode.user?.username}) to instance "${instance.name}" (User: ${instance.user?.username})`,
+        result.replaced
+          ? `Admin replaced AFF code "${result.previousCode}" with "${result.currentCode}" (Owner: ${affCode.user?.username}) on instance "${instance.name}" (User: ${instance.user?.username}); binding supersedes official coupon`
+          : `Admin applied AFF code "${result.currentCode}" (Owner: ${affCode.user?.username}) to instance "${instance.name}" (User: ${instance.user?.username}); binding supersedes official coupon`,
         'success',
         { instanceId }
       )
@@ -1707,8 +1719,13 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       return {
         success: true,
-        message: `已为实例应用 ${Math.round(Number(affCode.discountRate) * 100)}% 续费折扣`,
-        discountRate: Number(affCode.discountRate)
+        replaced: result.replaced,
+        previousCode: result.previousCode,
+        currentCode: result.currentCode,
+        discountRate: Number(affCode.discountRate),
+        message: result.replaced
+          ? `已将优惠码由 ${result.previousCode} 更换为 ${result.currentCode}，用于下一笔未结算续费`
+          : `已为实例应用 ${Math.round(Number(affCode.discountRate) * 100)}% 续费折扣`
       }
     } catch (error) {
       request.log.error(error, '应用AFF优惠码失败')

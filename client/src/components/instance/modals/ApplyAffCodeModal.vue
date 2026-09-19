@@ -13,11 +13,17 @@ interface Props {
   billingCycleLabel: string
   disabled?: boolean
   disabledReason?: string
+  currentCode?: string | null  // 当前已生效的优惠码
+  currentSourceLabel?: string | null  // 当前生效的优惠来源描述
+  replaceHint?: string | null  // 替换确认提示（已有优惠码/官方优惠券时展示）
 }
 
 interface ApplyAffResult {
   success: boolean
   message: string
+  replaced: boolean
+  previousCode: string | null
+  currentCode: string
   discountRate: number
   discountPercent: number
 }
@@ -39,6 +45,7 @@ const inputRef = ref<HTMLInputElement | null>(null)
 const normalizedAffCode = computed(() => affCode.value.trim().toUpperCase())
 const canSubmit = computed(() => normalizedAffCode.value.length >= 3 && !submitting.value && !props.disabled)
 const formattedRenewPrice = computed(() => props.renewPrice.toFixed(2))
+const isReplacing = computed(() => !!props.currentCode || !!props.replaceHint)
 
 watch(() => props.show, async (show) => {
   if (show) {
@@ -87,7 +94,7 @@ async function handleSubmit(): Promise<void> {
         <form class="modal-content max-w-md" @submit.prevent="handleSubmit">
           <div class="modal-header">
             <h3 class="modal-title">
-              {{ t('instance.subscription.applyAffTitle') }}
+              {{ isReplacing ? t('instance.subscription.changeAffTitle') : t('instance.subscription.applyAffTitle') }}
             </h3>
             <button
               type="button"
@@ -102,6 +109,31 @@ async function handleSubmit(): Promise<void> {
           </div>
 
           <div class="modal-body">
+            <!-- 当前生效优惠来源 / 优惠码 -->
+            <div
+              v-if="currentCode || currentSourceLabel"
+              class="rounded-lg border p-3"
+              :class="themeStore.isDark ? 'border-gray-800 bg-gray-950/70' : 'border-gray-200 bg-gray-50'"
+            >
+              <div class="text-xs" :class="themeStore.isDark ? 'text-gray-500' : 'text-gray-500'">
+                {{ currentSourceLabel || t('instance.subscription.applyAffCurrentCode') }}
+              </div>
+              <div class="mt-1 truncate font-mono text-sm font-medium" :class="themeStore.isDark ? 'text-gray-100' : 'text-gray-900'">
+                {{ currentCode }}
+              </div>
+            </div>
+
+            <!-- 替换确认提示 -->
+            <div
+              v-if="replaceHint"
+              class="rounded-lg px-3 py-2.5 text-xs leading-5"
+              :class="themeStore.isDark ? 'bg-amber-500/10 text-amber-200' : 'bg-amber-50 text-amber-800'"
+            >
+              <p>{{ replaceHint }}</p>
+              <p class="mt-1">{{ t('instance.subscription.applyAffNoStackHint') }}</p>
+              <p class="mt-1">{{ t('instance.subscription.applyAffNextRenewalHint') }}</p>
+            </div>
+
             <div
               class="rounded-lg border p-3"
               :class="themeStore.isDark ? 'border-gray-800 bg-gray-950/70' : 'border-gray-200 bg-gray-50'"
@@ -166,6 +198,7 @@ async function handleSubmit(): Promise<void> {
               <p>{{ t('instance.subscription.applyAffEffectHint') }}</p>
               <p class="mt-1">{{ t('instance.subscription.applyAffNoRefundHint') }}</p>
               <p class="mt-1">{{ t('instance.subscription.applyAffOwnCodeHint') }}</p>
+              <p class="mt-1">{{ t('instance.subscription.applyAffHistoryHint') }}</p>
             </div>
           </div>
 
@@ -178,7 +211,7 @@ async function handleSubmit(): Promise<void> {
                 v-if="submitting"
                 class="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white align-[-2px]"
               ></span>
-              {{ submitting ? t('instance.subscription.applyAffSubmitting') : t('instance.subscription.applyAffSubmit') }}
+              {{ submitting ? t('instance.subscription.applyAffSubmitting') : (isReplacing ? t('instance.subscription.changeAffSubmit') : t('instance.subscription.applyAffSubmit')) }}
             </button>
           </div>
         </form>

@@ -7,7 +7,7 @@ import { prisma } from './prisma.js'
 import { Prisma, type AffCode, type AffLog, type AffLogType, type AffWithdrawal, type AffWithdrawalStatus } from '@prisma/client'
 import { nanoid } from 'nanoid'
 import { getSystemConfigBoolean } from './system-config.js'
-import { USER_BALANCE_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
+import { INSTANCE_OPERATION_LOCK_NAMESPACE, USER_BALANCE_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
 
 const AFF_REBATE_DISABLED_ERROR = 'AFF 返利暂未开启，暂时无法使用优惠码'
 
@@ -451,15 +451,17 @@ export async function validateAffCode(
 
 /**
  * 创建实例与优惠码的绑定关系（开通时调用）
+ * 购买时创建的绑定不覆盖官方优惠券（supersedesOfficialCoupon=false）
  */
 export async function createAffBinding(
   instanceId: number,
   affCodeId: number,
-  tx?: Prisma.TransactionClient
+  tx?: Prisma.TransactionClient,
+  supersedesOfficialCoupon: boolean = false
 ): Promise<void> {
   const client = tx || prisma
   await client.affBinding.create({
-    data: { instanceId, affCodeId }
+    data: { instanceId, affCodeId, supersedesOfficialCoupon }
   })
 }
 
@@ -469,6 +471,7 @@ export async function createAffBinding(
 export async function getInstanceAffBinding(instanceId: number, tx?: Prisma.TransactionClient): Promise<{
   affCode: AffCode
   userId: number // 优惠码创建者
+  supersedesOfficialCoupon: boolean // 是否为用户明确设置的覆盖（AFF 优先于官方优惠券）
 } | null> {
   const client = tx || prisma
   const binding = await client.affBinding.findUnique({
@@ -482,8 +485,64 @@ export async function getInstanceAffBinding(instanceId: number, tx?: Prisma.Tran
 
   return {
     affCode: binding.affCode,
-    userId: binding.affCode.userId
+    userId: binding.affCode.userId,
+    supersedesOfficialCoupon: binding.supersedesOfficialCoupon
   }
+}
+
+// 绑定/更换实例优惠码的结果
+export interface ApplyInstanceAffBindingResult {
+  replaced: boolean // 是否替换了已有绑定
+  previousCode: string | null // 替换前的优惠码（首次绑定为 null）
+  currentCode: string // 当前生效的优惠码
+}
+
+/**
+ * 创建或更换实例与优惠码的绑定关系（用户/管理员主动绑定共用）
+ *
+ * 通过实例级事务锁与续费流程串行化：
+ * - 更换先拿到锁：本次续费使用新码
+ * - 续费先拿到锁：本次续费使用旧码，新码从下一笔续费生效
+ * 主动绑定/更换后 AFF 覆盖官方优惠券的续费折扣（supersedesOfficialCoupon=true）；
+ * 相同优惠码重复绑定为幂等操作（仅补齐覆盖标记）。
+ */
+export async function applyInstanceAffBinding(
+  instanceId: number,
+  affCodeId: number,
+  affCode: string
+): Promise<ApplyInstanceAffBindingResult> {
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const existing = await tx.affBinding.findUnique({
+      where: { instanceId },
+      include: { affCode: { select: { code: true } } }
+    })
+
+    if (existing && existing.affCodeId === affCodeId) {
+      if (!existing.supersedesOfficialCoupon) {
+        await tx.affBinding.update({
+          where: { instanceId },
+          data: { supersedesOfficialCoupon: true }
+        })
+      }
+      return { replaced: false, previousCode: existing.affCode.code, currentCode: existing.affCode.code }
+    }
+
+    const previousCode = existing?.affCode.code ?? null
+    if (existing) {
+      await tx.affBinding.update({
+        where: { instanceId },
+        data: { affCodeId, supersedesOfficialCoupon: true }
+      })
+    } else {
+      await tx.affBinding.create({
+        data: { instanceId, affCodeId, supersedesOfficialCoupon: true }
+      })
+    }
+
+    return { replaced: !!existing, previousCode, currentCode: affCode }
+  })
 }
 
 /**

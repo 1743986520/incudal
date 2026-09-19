@@ -3024,6 +3024,9 @@ const api = {
     applyAffCodeToInstance: (instanceId: number, affCode: string): Promise<{
       success: boolean
       message: string
+      replaced: boolean  // 是否替换了已有优惠码
+      previousCode: string | null  // 替换前的优惠码（首次绑定为 null）
+      currentCode: string  // 当前生效的优惠码
       discountRate: number
       discountPercent: number
     }> => http.post(`/instances/${instanceId}/apply-aff`, { affCode }),

@@ -1181,11 +1181,32 @@ async function handleRenewSuccess(): Promise<void> {
   await loadInstance()
 }
 
-// 绑定 AFF 优惠码成功处理
-async function handleApplyAffSuccess(): Promise<void> {
-  toast.success(t('instance.subscription.applyAffSuccess'))
+// 绑定 AFF 优惠码成功处理（更换与首次绑定提示不同）
+async function handleApplyAffSuccess(result?: { replaced?: boolean }): Promise<void> {
+  toast.success(
+    result?.replaced
+      ? t('instance.subscription.applyAffReplacedSuccess')
+      : t('instance.subscription.applyAffSuccess')
+  )
   await loadInstance()
 }
+
+// 优惠码弹窗的当前生效来源与替换提示
+const applyAffCurrentSourceLabel = computed<string | null>(() => {
+  const instAny = instance.value as any
+  if (!instAny) return null
+  if (instAny.affBindingCode) return t('instance.subscription.applyAffSourceAff')
+  if (hasOfficialRenewalDiscount(instance.value)) return t('instance.subscription.applyAffSourceOfficial')
+  return null
+})
+
+const applyAffReplaceHint = computed<string | null>(() => {
+  const instAny = instance.value as any
+  if (!instAny) return null
+  if (instAny.affBindingCode) return t('instance.subscription.applyAffReplaceHint')
+  if (hasOfficialRenewalDiscount(instance.value)) return t('instance.subscription.applyAffReplaceOfficialHint')
+  return null
+})
 
 // 变更方案成功处理
 async function handleChangePlanSuccess(): Promise<void> {
@@ -2279,13 +2300,27 @@ function isHostedInstanceForAff(inst: InstanceWithDetails | null): boolean {
   return instAny.isHostedInstance === true || hostName.toLowerCase().startsWith('peer')
 }
 
+// 检查实例是否有生效中的官方优惠券续费折扣
+function hasOfficialRenewalDiscount(inst: InstanceWithDetails | null): boolean {
+  if (!inst) return false
+  const instAny = inst as any
+  return !!instAny.officialRenewalCouponCode && (instAny.officialRenewalDiscountPercent ?? 0) > 0
+}
+
 function canApplyAffCode(inst: InstanceWithDetails | null): boolean {
   if (!inst || isHostOwnerOnly.value) return false
   const instAny = inst as any
+  // 已有 AFF 或官方续费优惠时仍可进入弹窗进行更换/替换
   return Boolean(instAny.packagePlanId && instAny.expires_at)
     && configStore.affRebateEnabled
-    && !hasAffBinding(inst)
     && !isHostedInstanceForAff(inst)
+}
+
+// 优惠码按钮文案：已有 AFF → 更换；官方优惠券生效 → 替换官方优惠；无 → 添加
+function getAffButtonText(inst: InstanceWithDetails | null): string {
+  if (hasAffBinding(inst)) return t('instance.subscription.changeAffShort')
+  if (hasOfficialRenewalDiscount(inst)) return t('instance.subscription.replaceOfficialCouponShort')
+  return t('instance.subscription.applyAffShort')
 }
 
 // 获取计费周期文本
@@ -2915,7 +2950,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
                         {{ getAffDiscountText(instance) }}
                       </span>
                       <button
-                        v-else-if="canApplyAffCode(instance)"
+                        v-if="canApplyAffCode(instance)"
                         type="button"
                         class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors"
                         :class="themeStore.isDark
@@ -2923,7 +2958,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
                           : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'"
                         @click="showApplyAffModal = true"
                       >
-                        {{ $t('instance.subscription.applyAffShort') }}
+                        {{ getAffButtonText(instance) }}
                       </button>
                     </div>
                   </div>
@@ -3265,6 +3300,9 @@ function formatShortDate(dateStr: string | null | undefined): string {
       :billing-cycle-label="getBillingCycleShort((instance as any).billingCycle)"
       :disabled="!configStore.affRebateEnabled"
       :disabled-reason="$t('instance.subscription.applyAffDisabledByAdmin')"
+      :current-code="(instance as any).affBindingCode || null"
+      :current-source-label="applyAffCurrentSourceLabel"
+      :replace-hint="applyAffReplaceHint"
       @success="handleApplyAffSuccess"
     />
 

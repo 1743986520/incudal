@@ -143,6 +143,7 @@ export {
   calculateInstancePriceAdjustmentQuote,
   previewRenewPrices,
   performRenewal,
+  resolveInstanceRenewalDiscount,
   performPlanChange,
   updateAutoRenew,
   getInstanceBillingInfo,

@@ -2041,6 +2041,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     let billingCycle: number | null = null
     let affDiscountRate: number | null = null  // AFF优惠码折扣率
     let hasAffBinding = false
+    let affBindingCode: string | null = null
+    let affSupersedesOfficialCoupon = false
+    let officialRenewalCouponCode: string | null = null
+    let officialRenewalDiscountPercent = 0
     let isHostedInstance = false
     if ((instance as any).package_plan_id) {
       const plan = await prisma.packagePlan.findUnique({
@@ -2054,12 +2058,24 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         billingCycle = plan.billingCycle
       }
 
-      // 查询 AFF 绑定，获取折扣率
-      const affEnabled = await db.isAffRebateEnabled()
-      const affBinding = affEnabled ? await db.getInstanceAffBinding(instanceId) : null
+      // 查询 AFF 绑定，并通过统一解析函数获取真实生效的续费优惠来源
+      const affBinding = await db.getInstanceAffBinding(instanceId)
+      hasAffBinding = !!affBinding
       if (affBinding) {
-        hasAffBinding = true
-        affDiscountRate = Number(affBinding.affCode.discountRate)
+        affBindingCode = affBinding.affCode.code
+        affSupersedesOfficialCoupon = affBinding.supersedesOfficialCoupon
+      }
+      const renewalDiscount = await db.resolveInstanceRenewalDiscount({
+        id: instanceId,
+        packageId: instance.package_id,
+        packagePlanId: (instance as any).package_plan_id,
+        userId: instance.user_id
+      }, 0)
+      if (renewalDiscount.source === 'aff') {
+        affDiscountRate = renewalDiscount.discountRate
+      } else if (renewalDiscount.source === 'official_coupon') {
+        officialRenewalCouponCode = renewalDiscount.officialCouponCode
+        officialRenewalDiscountPercent = Math.round(renewalDiscount.discountRate * 100)
       }
     }
 
@@ -2134,6 +2150,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       billingCycle?: number | null  // 计费周期（月）
       affDiscountRate?: number | null  // AFF优惠码折扣率
       hasAffBinding?: boolean  // 是否已绑定 AFF 优惠码
+      affBindingCode?: string | null  // 已绑定的 AFF 优惠码字符串
+      affSupersedesOfficialCoupon?: boolean  // 绑定是否覆盖官方优惠券的续费折扣
+      officialRenewalCouponCode?: string | null  // 当前生效的官方优惠券续期折扣码
+      officialRenewalDiscountPercent?: number  // 官方优惠券续期折扣百分比
       isHostedInstance?: boolean  // 是否为用户托管节点实例
       hostAnnouncement?: string | null  // 节点公告
       limitsIngress?: string | null  // 入栈带宽限制
@@ -2214,6 +2234,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       billingCycle: billingCycle,
       affDiscountRate: affDiscountRate,
       hasAffBinding,
+      affBindingCode,
+      affSupersedesOfficialCoupon,
+      officialRenewalCouponCode,
+      officialRenewalDiscountPercent,
       isHostedInstance,
       hostAnnouncement: host?.announcement || null,
       limitsIngress: (instance as any).limits_ingress ?? pkg?.limits_ingress ?? null,

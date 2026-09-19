@@ -339,7 +339,9 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
         // AFF 折扣信息
         affDiscount: billingInfo.affDiscount ? {
           discountRate: billingInfo.affDiscount.discountRate,
-          discountPercent: Math.round(billingInfo.affDiscount.discountRate * 100)  // 百分比，如 5 表示 5%
+          discountPercent: Math.round(billingInfo.affDiscount.discountRate * 100),  // 百分比，如 5 表示 5%
+          code: billingInfo.affDiscount.code,
+          supersedesOfficialCoupon: billingInfo.affDiscount.supersedesOfficialCoupon
         } : null,
         // 官方优惠券续期折扣信息（优先于 AFF）
         officialCouponDiscount: billingInfo.officialCouponDiscount ? {
@@ -356,8 +358,9 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // ==================== 绑定 AFF 优惠码（仅影响后续续费） ====================
+  // ==================== 绑定/更换 AFF 优惠码（仅影响后续续费） ====================
   // POST /api/instances/:id/apply-aff
+  // 没有绑定：创建绑定；已绑定相同优惠码：幂等成功；已绑定其他优惠码：替换为新优惠码
   fastify.post<{
     Params: { id: string }
     Body: { affCode: string }
@@ -387,10 +390,14 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '请输入有效的AFF优惠码'))
     }
 
+    const normalizedCode = affCodeInput.toUpperCase()
+
     const instance = await prisma.instance.findUnique({
       where: { id: instanceId },
       include: {
-        affBinding: true,
+        affBinding: {
+          include: { affCode: true }
+        },
         host: {
           select: {
             name: true,
@@ -426,17 +433,64 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '用户托管节点不支持使用优惠码'))
     }
 
-    if (instance.affBinding) {
-      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '该实例已绑定优惠码，无法重复绑定'))
+    // 已绑定相同优惠码：幂等返回成功（同时补齐覆盖官方优惠券的标记）
+    if (instance.affBinding && instance.affBinding.affCode.code === normalizedCode) {
+      try {
+        const result = await db.applyInstanceAffBinding(instance.id, instance.affBinding.affCodeId, instance.affBinding.affCode.code)
+        const discountRate = Number(instance.affBinding.affCode.discountRate)
+        return {
+          success: true,
+          replaced: false,
+          previousCode: result.previousCode,
+          currentCode: result.currentCode,
+          discountRate,
+          discountPercent: Math.round(discountRate * 100),
+          message: `优惠码已生效，将用于下一笔未结算续费（${Math.round(discountRate * 100)}% 折扣）`
+        }
+      } catch (error: any) {
+        request.log.error(error, '用户绑定AFF优惠码失败')
+        return reply.code(500).send({ error: '绑定优惠码失败' })
+      }
     }
 
-    const validation = await db.validateAffCode(affCodeInput, instance.packagePlanId, user.id)
+    const validation = await db.validateAffCode(normalizedCode, instance.packagePlanId, user.id)
     if (!validation.valid || !validation.affCode) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, validation.error || '优惠码无效'))
     }
 
+    if (!validation.affCode.enabled) {
+      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '优惠码已停用'))
+    }
+
+    const discountRate = Number(validation.discountRate ?? validation.affCode.discountRate)
+    const discountPercent = Math.round(discountRate * 100)
+    const previousCode = instance.affBinding?.affCode.code ?? null
+
     try {
-      await db.createAffBinding(instance.id, validation.affCode.id)
+      const result = await db.applyInstanceAffBinding(instance.id, validation.affCode.id, validation.affCode.code)
+
+      await createLog(
+        user.id,
+        'instance',
+        'instance.apply_aff',
+        result.replaced
+          ? `Replaced AFF code "${result.previousCode}" with "${result.currentCode}" on instance "${instance.name}" for future renewals`
+          : `Applied AFF code "${result.currentCode}" to instance "${instance.name}" for future renewals`,
+        'success',
+        { instanceId: instance.id }
+      )
+
+      return {
+        success: true,
+        replaced: result.replaced,
+        previousCode: result.previousCode,
+        currentCode: result.currentCode,
+        discountRate,
+        discountPercent,
+        message: result.replaced
+          ? `优惠码已更新（${previousCode} → ${result.currentCode}），将用于下一笔未结算续费，优惠不叠加`
+          : `优惠码绑定成功，后续续费将享受 ${discountPercent}% 折扣`
+      }
     } catch (error: any) {
       if (error?.code === 'P2002') {
         return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '该实例已绑定优惠码，无法重复绑定'))
@@ -446,25 +500,6 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       }
       request.log.error(error, '用户绑定AFF优惠码失败')
       return reply.code(500).send({ error: '绑定优惠码失败' })
-    }
-
-    const discountRate = Number(validation.discountRate ?? validation.affCode.discountRate)
-    const discountPercent = Math.round(discountRate * 100)
-
-    await createLog(
-      user.id,
-      'instance',
-      'instance.apply_aff',
-      `Applied AFF code "${validation.affCode.code}" to instance "${instance.name}" for future renewals`,
-      'success',
-      { instanceId: instance.id }
-    )
-
-    return {
-      success: true,
-      message: `优惠码绑定成功，后续续费将享受 ${discountPercent}% 折扣`,
-      discountRate,
-      discountPercent
     }
   })
 

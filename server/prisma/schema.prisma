@@ -2525,7 +2525,11 @@ model AffBinding {
   id          Int      @id @default(autoincrement())
   instanceId  Int      @unique @map("instance_id")  // 一个实例只能绑定一个优惠码
   affCodeId   Int      @map("aff_code_id")
+  // 用户/管理员通过绑定或更换操作设置后，AFF 覆盖官方优惠券的续费折扣；
+  // 购买时自动创建的绑定保持 false（官方优惠券优先，AFF 仅作后备）
+  supersedesOfficialCoupon Boolean @default(false) @map("supersedes_official_coupon")
   createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   affCode  AffCode  @relation(fields: [affCodeId], references: [id], onDelete: Cascade)

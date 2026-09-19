@@ -5698,9 +5698,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           }, '[Migrate] 付费实例迁移时未迁移到任何计费记录')
         }
 
-        // 17. 复制 AFF 绑定（如果存在）
+        // 17. 复制 AFF 绑定（如果存在，保留官方优惠券覆盖标记）
         if (affBinding) {
-          await createAffBinding(newInstance.id, affBinding.affCode.id)
+          await createAffBinding(newInstance.id, affBinding.affCode.id, undefined, affBinding.supersedesOfficialCoupon)
         }
 
         // 18. 更新目标节点资源使用量

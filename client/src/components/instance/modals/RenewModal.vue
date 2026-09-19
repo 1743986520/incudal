@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { formatDateYMD as formatDate } from '@/utils/formatters'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
 import { useConfigStore } from '@/stores/config'
 import api from '@/api'
 import type { InstanceBillingInfo, RenewPreview } from '@/types/api'
 import { freeSiteCopy } from '@/utils/freeSiteFun'
+
+const ApplyAffCodeModal = defineAsyncComponent(() => import('@/components/instance/modals/ApplyAffCodeModal.vue'))
 
 const { t } = useI18n()
 const themeStore = useThemeStore()
@@ -16,6 +18,16 @@ interface Props {
   show: boolean
   instanceId: number
   instanceName: string
+}
+
+interface ApplyAffResult {
+  success: boolean
+  message: string
+  replaced: boolean
+  previousCode: string | null
+  currentCode: string
+  discountRate: number
+  discountPercent: number
 }
 
 const props = defineProps<Props>()
@@ -31,6 +43,8 @@ const billingInfo = ref<InstanceBillingInfo | null>(null)
 const userBalance = ref<number>(0)
 const selectedMonths = ref<number>(1)
 const error = ref<string>('')
+const showAffModal = ref(false)
+const affActionMessage = ref<string>('')
 
 // 续费选项
 const renewOptions = computed<RenewPreview[]>(() => {
@@ -61,14 +75,45 @@ const discountPercent = computed(() => {
   return billingInfo.value?.affDiscount?.discountPercent || 0
 })
 
-// 折扣标签
+// 折扣标签（含优惠码）
 const discountLabel = computed(() => {
   if (isOfficialCouponDiscount.value) {
     const code = billingInfo.value?.officialCouponDiscount?.couponCode
     return code ? `${t('billing.officialCouponDiscount')} (${code})` : t('billing.officialCouponDiscount')
   }
-  return t('billing.affDiscount')
+  const info = billingInfo.value?.affDiscount
+  const base = t('billing.affDiscount')
+  return info?.code ? `${base} (${info.code})` : base
 })
+
+// 优惠码按钮文案：已绑定 AFF → 更换；官方优惠券生效 → 替换官方优惠；无 → 添加
+const affButtonLabel = computed(() => {
+  if (billingInfo.value?.affDiscount) return t('billing.changeDiscountCode')
+  if (isOfficialCouponDiscount.value) return t('billing.replaceOfficialCoupon')
+  return t('billing.addDiscountCode')
+})
+
+// 弹窗内优惠码弹窗的当前来源与替换提示
+const affCurrentSourceLabel = computed(() => {
+  const info = billingInfo.value
+  if (info?.affDiscount) return t('instance.subscription.applyAffSourceAff')
+  if (info?.officialCouponDiscount) return t('instance.subscription.applyAffSourceOfficial')
+  return null
+})
+
+const affReplaceHint = computed(() => {
+  const info = billingInfo.value
+  if (info?.affDiscount) return t('instance.subscription.applyAffReplaceHint')
+  if (info?.officialCouponDiscount) return t('instance.subscription.applyAffReplaceOfficialHint')
+  return null
+})
+
+// 优惠码弹窗提交成功后：重新请求计费信息与余额，刷新续费价格与余额不足状态
+async function handleAffApplied(_result: ApplyAffResult): Promise<void> {
+  showAffModal.value = false
+  affActionMessage.value = t('billing.affCodeApplied')
+  await loadBillingInfo()
+}
 
 // 实际支付价格（考虑折扣）
 const actualPrice = computed(() => {
@@ -168,6 +213,8 @@ watch(() => props.show, (newVal) => {
     userBalance.value = 0
     selectedMonths.value = 1
     error.value = ''
+    showAffModal.value = false
+    affActionMessage.value = ''
   }
 })
 
@@ -230,6 +277,45 @@ function handleClose() {
 
             <!-- Content -->
             <template v-else-if="billingInfo">
+              <!-- 当前优惠信息与优惠码入口 -->
+              <div
+                v-if="hasDiscount || !isHostedInstance"
+                class="mb-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
+                :class="themeStore.isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-gray-50'"
+              >
+                <div class="min-w-0">
+                  <div class="text-xs" :class="themeStore.isDark ? 'text-gray-500' : 'text-gray-500'">
+                    {{ t('billing.currentDiscountSource') }}
+                  </div>
+                  <div class="mt-0.5 truncate text-sm font-medium" :class="themeStore.isDark ? 'text-gray-100' : 'text-gray-900'">
+                    <template v-if="hasDiscount">
+                      {{ discountLabel }}<span class="ml-1 text-green-500">-{{ discountPercent }}%</span>
+                    </template>
+                    <template v-else>{{ t('billing.noDiscount') }}</template>
+                  </div>
+                </div>
+                <button
+                  v-if="!isHostedInstance"
+                  type="button"
+                  class="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+                  :class="themeStore.isDark
+                    ? 'bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'"
+                  @click="showAffModal = true"
+                >
+                  {{ affButtonLabel }}
+                </button>
+              </div>
+
+              <!-- 优惠码更新成功提示 -->
+              <div
+                v-if="affActionMessage"
+                class="mb-4 rounded-lg px-3 py-2 text-sm"
+                :class="themeStore.isDark ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-700'"
+              >
+                {{ affActionMessage }}
+              </div>
+
               <!-- 续费选项 -->
               <div class="mb-4">
                 <label 
@@ -379,6 +465,21 @@ function handleClose() {
             </button>
           </div>
         </div>
+
+        <!-- 绑定/更换优惠码弹窗 -->
+        <ApplyAffCodeModal
+          v-model:show="showAffModal"
+          :instance-id="props.instanceId"
+          :instance-name="props.instanceName"
+          :renew-price="selectedRenewOption?.price ?? 0"
+          :billing-cycle-label="''"
+          :disabled="!configStore.affRebateEnabled"
+          :disabled-reason="t('instance.subscription.applyAffDisabledByAdmin')"
+          :current-code="billingInfo?.affDiscount?.code ?? null"
+          :current-source-label="affCurrentSourceLabel"
+          :replace-hint="affReplaceHint"
+          @success="handleAffApplied"
+        />
       </div>
     </Transition>
   </Teleport>

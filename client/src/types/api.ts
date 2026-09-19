@@ -464,6 +464,10 @@ export interface Instance {
   billingCycle?: number | null
   affDiscountRate?: number | null
   hasAffBinding?: boolean
+  affBindingCode?: string | null  // 已绑定的 AFF 优惠码字符串
+  affSupersedesOfficialCoupon?: boolean  // 绑定是否覆盖官方优惠券的续费折扣
+  officialRenewalCouponCode?: string | null  // 当前生效的官方优惠券续期折扣码
+  officialRenewalDiscountPercent?: number  // 官方优惠券续期折扣百分比
   isHostedInstance?: boolean
   instanceType?: 'container' | 'vm'  // 实例类型：容器或虚拟机
   iconBadgeId?: string | null
@@ -1757,6 +1761,8 @@ export interface RenewPreview {
 export interface AffDiscount {
   discountRate: number     // 折扣率，如 0.05
   discountPercent: number  // 百分比，如 5 表示 5%
+  code?: string | null     // 优惠码字符串
+  supersedesOfficialCoupon?: boolean  // 是否为用户明确设置的覆盖（AFF 优先于官方优惠券）
 }
 
 export interface OfficialCouponDiscount {

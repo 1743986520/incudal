@@ -695,6 +695,138 @@ export function previewRenewPrices(
   })
 }
 
+// ==================== 续费优惠来源解析 ====================
+
+export interface RenewalDiscountResolution {
+  /** 最终生效的优惠来源；null 表示按原价续费 */
+  source: 'official_coupon' | 'aff' | null
+  /** 折扣率（0-1），无优惠时为 0 */
+  discountRate: number
+  /** 折扣金额（元） */
+  discountAmount: number
+  /** 折后应付金额（元） */
+  finalAmount: number
+  /** 生效的 AFF 优惠码（source === 'aff' 时） */
+  affCodeId: number | null
+  affCodeCode: string | null
+  /** 生效绑定是否为用户明确设置的覆盖（官方优惠券被 AFF 取代） */
+  supersedesOfficialCoupon: boolean
+  /** 生效的官方优惠券（source === 'official_coupon' 时） */
+  officialCouponCode: string | null
+  officialCouponName: string | null
+}
+
+export interface RenewalDiscountInstanceInput {
+  id: number
+  packageId: number | null
+  packagePlanId: number | null
+  userId: number
+}
+
+/**
+ * 统一解析实例续费的优惠来源，至多返回一个生效来源。
+ *
+ * 优先级：用户明确覆盖的 AFF（supersedesOfficialCoupon）> 官方优惠券 > 普通 AFF 绑定。
+ * 续费价格预览、手动/自动/批量续费、账单备注与 AFF 返利必须复用本函数，
+ * 避免出现"前端显示使用 B，后端实际却使用官方券"的问题。
+ */
+export async function resolveInstanceRenewalDiscount(
+  instance: RenewalDiscountInstanceInput,
+  originalAmount: number,
+  tx?: Prisma.TransactionClient
+): Promise<RenewalDiscountResolution> {
+  const resolution: RenewalDiscountResolution = {
+    source: null,
+    discountRate: 0,
+    discountAmount: 0,
+    finalAmount: originalAmount,
+    affCodeId: null,
+    affCodeCode: null,
+    supersedesOfficialCoupon: false,
+    officialCouponCode: null,
+    officialCouponName: null
+  }
+
+  const affEnabled = await isAffRebateEnabled()
+  const affBinding = affEnabled ? await getInstanceAffBinding(instance.id, tx) : null
+
+  // AFF 适用于当前方案：全局码任意方案可用，方案专有码必须匹配实例当前方案
+  const affUsable = !!affBinding
+    && affBinding.affCode.enabled
+    && (affBinding.affCode.packagePlanId === null
+      || (instance.packagePlanId !== null && affBinding.affCode.packagePlanId === instance.packagePlanId))
+  // 用户明确绑定/更换的 AFF 覆盖官方优惠券的续费折扣
+  const affOverridesOfficial = affUsable && affBinding!.supersedesOfficialCoupon
+
+  const applyAffDiscount = (): void => {
+    const discountRate = Number(affBinding!.affCode.discountRate) || 0
+    resolution.source = 'aff'
+    resolution.discountRate = discountRate
+    resolution.discountAmount = calculateDiscountAmount(originalAmount, discountRate)
+    resolution.finalAmount = calculateDiscountedPrice(originalAmount, discountRate)
+    resolution.affCodeId = affBinding!.affCode.id
+    resolution.affCodeCode = affBinding!.affCode.code
+    resolution.supersedesOfficialCoupon = affBinding!.supersedesOfficialCoupon
+  }
+
+  const applyOfficialCouponDiscount = (
+    discountRate: number,
+    couponCode: string,
+    couponName: string
+  ): void => {
+    resolution.source = 'official_coupon'
+    resolution.discountRate = discountRate
+    resolution.discountAmount = calculateDiscountAmount(originalAmount, discountRate)
+    resolution.finalAmount = calculateDiscountedPrice(originalAmount, discountRate)
+    resolution.officialCouponCode = couponCode
+    resolution.officialCouponName = couponName
+  }
+
+  // 官方优惠券：只有使用官方券购买的实例才参与续期折扣；被用户覆盖的 AFF 压制时跳过
+  let officialUsable = false
+  let officialDiscountRate = 0
+  let officialCouponCode: string | null = null
+  let officialCouponName: string | null = null
+
+  if (!affOverridesOfficial && instance.packageId !== null) {
+    const purchaseCoupon = await getInstancePurchaseCoupon(instance.id, tx)
+    if (purchaseCoupon) {
+      const { coupon } = purchaseCoupon
+      const discountedChargeCount = await countDiscountedChargesForInstance(coupon.id, instance.id, tx)
+      if (shouldDiscountRenewal({
+        renewalMode: coupon.renewalMode,
+        discountedChargeLimit: coupon.discountedChargeLimit,
+        discountedChargeCount
+      })) {
+        const validation = await validateOfficialCoupon({
+          code: coupon.code,
+          packageId: instance.packageId,
+          userId: instance.userId,
+          client: tx,
+          // 每用户次数只约束新购，不阻断实例的续费折扣
+          checkUserLimit: false
+        })
+        if (validation.valid) {
+          officialUsable = true
+          officialDiscountRate = validation.discountRate
+          officialCouponCode = coupon.code
+          officialCouponName = coupon.name
+        }
+      }
+    }
+  }
+
+  if (affOverridesOfficial) {
+    applyAffDiscount()
+  } else if (officialUsable) {
+    applyOfficialCouponDiscount(officialDiscountRate, officialCouponCode!, officialCouponName!)
+  } else if (affUsable) {
+    applyAffDiscount()
+  }
+
+  return resolution
+}
+
 // ==================== 业务操作函数 ====================
 
 /**
@@ -729,13 +861,13 @@ export async function performRenewal(
 
   const { amount: originalAmount, newExpiresAt } = calculateRenewBilling(instance, months)
 
-  const affEnabled = await isAffRebateEnabled()
-
-  // 折扣金额与折扣来源在事务内重新计算，避免续费与优惠券状态变更竞争
+  // 折扣金额与折扣来源在事务内通过统一解析函数重新计算，避免续费与优惠券状态变更竞争
   let discountAmount = 0
   let finalAmount = originalAmount
   let discountSource: 'official_coupon' | 'aff' | null = null
   let appliedOfficialCouponCode: string | null = null
+  let appliedAffCodeId: number | null = null
+  let appliedAffCodeCode: string | null = null
 
   // 执行事务（带乐观锁）
   const result = await prisma.$transaction(async (tx) => {
@@ -753,46 +885,19 @@ export async function performRenewal(
       throw new Error('实例状态已变更，请重试')
     }
 
-    // ===== 优惠折扣判定（官方优惠券优先，其次 AFF 绑定） =====
-    const affBinding = affEnabled ? await getInstanceAffBinding(instance.id, tx) : null
-
-    // 官方优惠券：只有使用官方券购买的实例才参与续期折扣
-    if (instance.packageId !== null) {
-      const purchaseCoupon = await getInstancePurchaseCoupon(instance.id, tx)
-      if (purchaseCoupon) {
-        const { coupon } = purchaseCoupon
-        const discountedChargeCount = await countDiscountedChargesForInstance(coupon.id, instance.id, tx)
-        if (shouldDiscountRenewal({
-          renewalMode: coupon.renewalMode,
-          discountedChargeLimit: coupon.discountedChargeLimit,
-          discountedChargeCount
-        })) {
-          const validation = await validateOfficialCoupon({
-            code: coupon.code,
-            packageId: instance.packageId,
-            userId,
-            client: tx,
-            // 每用户次数只约束新购，不阻断实例的续费折扣
-            checkUserLimit: false
-          })
-          if (validation.valid) {
-            const discountRate = validation.discountRate
-            discountAmount = calculateDiscountAmount(originalAmount, discountRate)
-            finalAmount = calculateDiscountedPrice(originalAmount, discountRate)
-            discountSource = 'official_coupon'
-            appliedOfficialCouponCode = coupon.code
-          }
-        }
-      }
-    }
-
-    // 官方券不适用或未命中时，回退到实例绑定的 AFF 优惠码
-    if (discountSource === null && affBinding) {
-      const discountRate = Number(affBinding.affCode.discountRate)
-      discountAmount = calculateDiscountAmount(originalAmount, discountRate)
-      finalAmount = calculateDiscountedPrice(originalAmount, discountRate)
-      discountSource = 'aff'
-    }
+    // ===== 统一解析续费优惠来源（用户覆盖的 AFF > 官方优惠券 > 普通 AFF） =====
+    const discount = await resolveInstanceRenewalDiscount({
+      id: instance.id,
+      packageId: instance.packageId,
+      packagePlanId: instance.packagePlanId,
+      userId
+    }, originalAmount, tx)
+    discountAmount = discount.discountAmount
+    finalAmount = discount.finalAmount
+    discountSource = discount.source
+    appliedOfficialCouponCode = discount.officialCouponCode
+    appliedAffCodeId = discount.affCodeId
+    appliedAffCodeCode = discount.affCodeCode
 
     // 获取用户当前余额
     const user = await tx.user.findUnique({
@@ -856,8 +961,8 @@ export async function performRenewal(
     // 记录余额日志
     const discountRemark = discountSource === 'official_coupon'
       ? `，官方优惠券 ${appliedOfficialCouponCode} 折扣 -¥${discountAmount.toFixed(2)}`
-      : discountAmount > 0
-        ? `，优惠码折扣 -¥${discountAmount.toFixed(2)}`
+      : discountSource === 'aff'
+        ? `，AFF 优惠码 ${appliedAffCodeCode} 折扣 -¥${discountAmount.toFixed(2)}`
         : ''
     const remarkText = `续费（${months}个月）：${instance.name}${discountRemark}`
 
@@ -876,8 +981,8 @@ export async function performRenewal(
     // 记录扣费记录
     const billingRecordRemark = discountSource === 'official_coupon'
       ? `续费 ${months} 个月，官方优惠券 ${appliedOfficialCouponCode} 折扣 -¥${discountAmount.toFixed(2)}`
-      : discountAmount > 0
-        ? `续费 ${months} 个月，优惠码折扣 -¥${discountAmount.toFixed(2)}`
+      : discountSource === 'aff'
+        ? `续费 ${months} 个月，AFF 优惠码 ${appliedAffCodeCode} 折扣 -¥${discountAmount.toFixed(2)}`
         : `续费 ${months} 个月`
 
     await tx.instanceBillingRecord.create({
@@ -908,10 +1013,10 @@ export async function performRenewal(
       })
     }
 
-    // 如果走 AFF 绑定折扣，给优惠码创建者返利（官方券不产生返利）
-    if (affEnabled && affBinding && discountSource === 'aff') {
+    // 如果走 AFF 绑定折扣，给优惠码创建者返利（官方券不产生返利；更换优惠码后返利给新码创建者）
+    if (discountSource === 'aff' && appliedAffCodeId) {
       await processAffCommission(
-        affBinding.affCode.id,
+        appliedAffCodeId,
         instance.id,
         originalAmount, // 基于原价计算返利
         'renew',
@@ -1231,6 +1336,8 @@ export async function getInstanceBillingInfo(instanceId: number): Promise<{
   affDiscount: {
     discountRate: number  // 折扣率，如 0.05 表示 5%
     affCodeId: number
+    code: string  // 优惠码字符串
+    supersedesOfficialCoupon: boolean  // 是否覆盖官方优惠券
   } | null
   // 官方优惠券续期折扣（优先于 AFF 绑定）
   officialCouponDiscount: {
@@ -1282,7 +1389,7 @@ export async function getInstanceBillingInfo(instanceId: number): Promise<{
 
   let monthlyPrice: number | null = null
   let renewPreview: Array<{ months: number; amount: number; discountedAmount: number; expiresAt: Date }> | null = null
-  let affDiscount: { discountRate: number; affCodeId: number } | null = null
+  let affDiscount: { discountRate: number; affCodeId: number; code: string; supersedesOfficialCoupon: boolean } | null = null
   let officialCouponDiscount: { discountRate: number; discountPercent: number; couponCode: string; couponName: string } | null = null
 
   if (isPaid && instance.billingPrice) {
@@ -1291,48 +1398,28 @@ export async function getInstanceBillingInfo(instanceId: number): Promise<{
       billingCycle: instance.billingCycle
     })
 
-    // 计算续费折扣：官方优惠券优先，其次 AFF 绑定
-    const affEnabled = await isAffRebateEnabled()
-    let discountRate = 0
+    // 统一解析续费优惠来源（用户覆盖的 AFF > 官方优惠券 > 普通 AFF），至多一个生效
+    const discount = await resolveInstanceRenewalDiscount({
+      id: instanceId,
+      packageId: instance.packageId,
+      packagePlanId: instance.packagePlanId,
+      userId: instance.userId
+    }, 0)
+    const discountRate = discount.discountRate
 
-    if (instance.packageId !== null) {
-      const purchaseCoupon = await getInstancePurchaseCoupon(instanceId)
-      if (purchaseCoupon) {
-        const { coupon } = purchaseCoupon
-        const discountedChargeCount = await countDiscountedChargesForInstance(coupon.id, instanceId)
-        if (shouldDiscountRenewal({
-          renewalMode: coupon.renewalMode,
-          discountedChargeLimit: coupon.discountedChargeLimit,
-          discountedChargeCount
-        })) {
-          const validation = await validateOfficialCoupon({
-            code: coupon.code,
-            packageId: instance.packageId,
-            userId: instance.userId,
-            // 每用户次数只约束新购，不阻断续费折扣
-            checkUserLimit: false
-          })
-          if (validation.valid) {
-            discountRate = validation.discountRate
-            officialCouponDiscount = {
-              discountRate,
-              discountPercent: Math.round(discountRate * 100),
-              couponCode: coupon.code,
-              couponName: coupon.name
-            }
-          }
-        }
+    if (discount.source === 'official_coupon') {
+      officialCouponDiscount = {
+        discountRate,
+        discountPercent: Math.round(discountRate * 100),
+        couponCode: discount.officialCouponCode!,
+        couponName: discount.officialCouponName!
       }
-    }
-
-    if (officialCouponDiscount === null) {
-      const affBinding = affEnabled ? await getInstanceAffBinding(instanceId) : null
-      if (affBinding) {
-        discountRate = Number(affBinding.affCode.discountRate)
-        affDiscount = {
-          discountRate,
-          affCodeId: affBinding.affCode.id
-        }
+    } else if (discount.source === 'aff') {
+      affDiscount = {
+        discountRate,
+        affCodeId: discount.affCodeId!,
+        code: discount.affCodeCode!,
+        supersedesOfficialCoupon: discount.supersedesOfficialCoupon
       }
     }
 
