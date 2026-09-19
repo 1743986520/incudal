@@ -371,7 +371,7 @@ export async function createPortMappingsBatch(data: Array<{
   remark?: string
 }>): Promise<number[]> {
   const results = await prisma.$transaction(
-    data.map(item => 
+    data.map(item =>
       prisma.portMapping.create({
         data: {
           instanceId: item.instanceId,
@@ -386,4 +386,100 @@ export async function createPortMappingsBatch(data: Array<{
   )
 
   return results.map(r => r.id)
+}
+
+// 端口预留 advisory lock 的命名空间，与其他业务的锁隔离
+const PORT_RESERVATION_LOCK_NAMESPACE = 746523
+
+/**
+ * 端口预留冲突错误：advisory lock 内复查发现端口已被其他请求占用
+ */
+export class PortReservationConflictError extends Error {
+  readonly conflicts: string[]
+  constructor(conflicts: string[]) {
+    super(`PORT_RESERVATION_CONFLICT: ${conflicts.join(', ')}`)
+    this.name = 'PortReservationConflictError'
+    this.conflicts = conflicts
+  }
+}
+
+export interface ReservePortMappingInput {
+  instanceId: number
+  hostId: number
+  protocol: 'tcp' | 'udp'
+  publicPort: number
+  privatePort: number
+  remark?: string
+}
+
+export interface ReservedPortMapping {
+  id: number
+  protocol: string
+  publicPort: number
+  privatePort: number
+}
+
+/**
+ * 在数据库事务中预留端口映射（审查项 P2-12）
+ *
+ * 端口映射原先采用"检查 → 加 Incus 设备 → 写库"的顺序，两个并发请求可同时
+ * 通过检查；后写库的一方唯一约束失败触发回滚，且回滚按设备名删除 Incus 设备，
+ * 可能删掉先成功请求创建的设备，造成数据库与 Incus 状态漂移。
+ *
+ * 现改为"先预留后落盘"：以宿主机为粒度取 advisory lock 串行化同一宿主机的
+ * 并发请求，在锁内复查占用并写入全部映射记录；事务提交后端口即被预订，
+ * 后续 Incus 操作失败时只释放本次预留的记录（releasePortMappings），
+ * 不会误删其他请求的映射或设备。表上的 (hostId, protocol, publicPort)
+ * 唯一约束作为最后防线。
+ */
+export async function reservePortMappings(items: ReservePortMappingInput[]): Promise<ReservedPortMapping[]> {
+  if (items.length === 0) return []
+  const hostId = items[0].hostId
+
+  return prisma.$transaction(async (tx) => {
+    // 两段式 advisory lock (namespace, hostId)：只串行化同一宿主机的请求
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${PORT_RESERVATION_LOCK_NAMESPACE}::int, ${hostId}::int)`
+
+    // 锁内复查冲突（TCP/UDP 各自维度）
+    const ports = [...new Set(items.map(item => item.publicPort))]
+    const protocols = [...new Set(items.map(item => item.protocol))]
+    const conflicts = await tx.portMapping.findMany({
+      where: { hostId, protocol: { in: protocols }, publicPort: { in: ports } },
+      select: { publicPort: true, protocol: true }
+    })
+    if (conflicts.length > 0) {
+      throw new PortReservationConflictError(
+        conflicts.map(c => `${c.publicPort}(${c.protocol.toUpperCase()})`)
+      )
+    }
+
+    const created: ReservedPortMapping[] = []
+    for (const item of items) {
+      const row = await tx.portMapping.create({
+        data: {
+          instanceId: item.instanceId,
+          hostId: item.hostId,
+          protocol: item.protocol,
+          publicPort: item.publicPort,
+          privatePort: item.privatePort,
+          remark: item.remark || null
+        }
+      })
+      created.push({
+        id: row.id,
+        protocol: row.protocol,
+        publicPort: row.publicPort,
+        privatePort: row.privatePort
+      })
+    }
+    return created
+  })
+}
+
+/**
+ * 释放预留的端口映射（Incus 操作失败时回滚本次请求，只删除传入的记录）
+ */
+export async function releasePortMappings(ids: number[]): Promise<void> {
+  if (ids.length === 0) return
+  await prisma.portMapping.deleteMany({ where: { id: { in: ids } } })
 }

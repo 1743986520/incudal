@@ -143,7 +143,8 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       fastify.log.error(err)
       const errorMessage = err instanceof Error ? err.message : String(err)
       await createLog(request.user.id, 'snapshot', 'snapshot.create', `Failed to create snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
-      return reply.code(500).send({ error: 'Failed to create snapshot: ' + errorMessage, code: 'OPERATION_FAILED' })
+      // Incus 错误细节只留在服务端日志与操作日志，不回传客户端（审查项 P3-04）
+      return reply.code(500).send({ error: '创建快照失败，请稍后重试', code: 'OPERATION_FAILED' })
     }
   })
 
@@ -202,7 +203,7 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       fastify.log.error(err)
       const errorMessage = err instanceof Error ? err.message : String(err)
       await createLog(request.user.id, 'snapshot', 'snapshot.delete', `Failed to delete snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
-      return reply.code(500).send({ error: 'Failed to delete snapshot: ' + errorMessage, code: 'OPERATION_FAILED' })
+      return reply.code(500).send({ error: '删除快照失败，请稍后重试', code: 'OPERATION_FAILED' })
     }
   })
 
@@ -274,7 +275,7 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       fastify.log.error(err)
       const errorMessage = err instanceof Error ? err.message : String(err)
       await createLog(request.user.id, 'snapshot', 'snapshot.restore', `Failed to restore snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
-      return reply.code(500).send({ error: 'Failed to restore snapshot: ' + errorMessage, code: 'OPERATION_FAILED' })
+      return reply.code(500).send({ error: '恢复快照失败，请稍后重试', code: 'OPERATION_FAILED' })
     }
   })
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -19,6 +20,9 @@ import (
 )
 
 const stateDir = "/etc/incudal-agent/network-policy"
+
+// DefaultBridgeInterface 是未在 agent 配置中指定 bridge_interface 时使用的默认网桥。
+const DefaultBridgeInterface = "incus0"
 
 var macPattern = regexp.MustCompile(`^([0-9a-f]{2}:){5}[0-9a-f]{2}$`)
 var domainPattern = regexp.MustCompile(`^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
@@ -46,9 +50,9 @@ type dnsRollout struct {
 	profiles []stagedDNSProfile
 }
 
-func Apply(ctx context.Context, bundle panel.NetworkPolicyBundle) Status {
+func Apply(ctx context.Context, bundle panel.NetworkPolicyBundle, bridgeInterface string) Status {
 	status := Status{Revision: bundle.Revision}
-	if err := apply(ctx, bundle); err != nil {
+	if err := apply(ctx, bundle, bridgeInterface); err != nil {
 		status.Error = err.Error()
 		return status
 	}
@@ -56,7 +60,9 @@ func Apply(ctx context.Context, bundle panel.NetworkPolicyBundle) Status {
 	return status
 }
 
-func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
+func apply(ctx context.Context, bundle panel.NetworkPolicyBundle, bridgeInterface string) error {
+	// configured 为空表示由 agent 自动探测实际网桥（审查项 P2-06 收尾）
+	configured := strings.TrimSpace(bridgeInterface)
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		return err
 	}
@@ -149,7 +155,24 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 			return fmt.Errorf("dnsmasq is required for enabled DNS policies")
 		}
 	}
-	rollout, err := prepareDNSRollout(stateDir, profiles)
+	// DNS 策略存在时确定 dnsmasq 绑定与 input 链放行使用的网桥：
+	// 显式配置优先；未配置时从实例 MAC 所在网桥自动探测，失败再回退默认值，
+	// 避免 bridge_interface 与实际网桥名不一致导致 DNS 策略静默失效。
+	bridgeName := configured
+	if bridgeName == "" && len(profiles) > 0 {
+		macs := make([]string, 0, len(profiles))
+		for mac := range profiles {
+			macs = append(macs, mac)
+		}
+		if detected := detectBridgeInterface(ctx, macs); detected != "" {
+			bridgeName = detected
+			log.Printf("network policy: detected bridge interface %q from instance MACs", bridgeName)
+		} else {
+			bridgeName = DefaultBridgeInterface
+			log.Printf("network policy: could not detect bridge interface, falling back to %q", bridgeName)
+		}
+	}
+	rollout, err := prepareDNSRollout(stateDir, profiles, bridgeName)
 	if err != nil {
 		return err
 	}
@@ -166,13 +189,29 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 			dotRules = append(dotRules, fmt.Sprintf("ether saddr %s tcp dport 853 counter reject", profile.MAC))
 		}
 	}
+	// input 链（审查项 P2-06）：dnsmasq 监听端口只允许来自网桥与本机的访问，
+	// 其他接口（含公网）对这些端口的入站一律丢弃。prerouting redirect 之后的
+	// 本机投递会经过 input 链，因此该规则不会影响实例的 DNS 劫持转发。
+	inputLines := []string{" chain input { type filter hook input priority -10; policy accept;", ` iifname "lo" accept`}
+	for _, profile := range rollout.profiles {
+		inputLines = append(inputLines,
+			fmt.Sprintf(" iifname %q udp dport %d counter accept", bridgeName, profile.Port),
+			fmt.Sprintf(" iifname %q tcp dport %d counter accept", bridgeName, profile.Port),
+			fmt.Sprintf(" udp dport %d counter drop", profile.Port),
+			fmt.Sprintf(" tcp dport %d counter drop", profile.Port),
+		)
+	}
+	inputLines = append(inputLines, " }")
+
 	lines := []string{"table inet incudal_managed_policy {", " chain forward { type filter hook forward priority -10; policy accept;"}
 	lines = append(lines, ipv4Blocks...)
 	lines = append(lines, ipv6Blocks...)
 	lines = append(lines, transportBlocks...)
 	lines = append(lines, pingBlocks...)
 	lines = append(lines, dotRules...)
-	lines = append(lines, " }", " chain prerouting { type nat hook prerouting priority -105; policy accept;")
+	lines = append(lines, " }")
+	lines = append(lines, inputLines...)
+	lines = append(lines, " chain prerouting { type nat hook prerouting priority -105; policy accept;")
 	lines = append(lines, dnsRules...)
 	lines = append(lines, " }", "}")
 	if err := replaceNftTable(ctx, strings.Join(lines, "\n")+"\n"); err != nil {
@@ -183,8 +222,11 @@ func apply(ctx context.Context, bundle panel.NetworkPolicyBundle) error {
 	return stopOldDNSExcept(ctx, rollout.dir)
 }
 
-func prepareDNSRollout(root string, profiles map[string]*dnsProfile) (dnsRollout, error) {
+func prepareDNSRollout(root string, profiles map[string]*dnsProfile, bridgeInterface string) (dnsRollout, error) {
 	rollout := dnsRollout{}
+	if strings.TrimSpace(bridgeInterface) == "" {
+		bridgeInterface = DefaultBridgeInterface
+	}
 	macs := make([]string, 0, len(profiles))
 	for mac := range profiles {
 		macs = append(macs, mac)
@@ -200,14 +242,28 @@ func prepareDNSRollout(root string, profiles map[string]*dnsProfile) (dnsRollout
 		return rollout, err
 	}
 	rollout.dir = dir
-	basePort := 10000 + int(time.Now().UnixNano()%40000)
-	if basePort+len(macs) >= 65535 {
-		basePort = 10000
-	}
+	port := 10000 + int(time.Now().UnixNano()%40000)
 	for index, mac := range macs {
 		profile := profiles[mac]
-		port := basePort + index
-		config := []string{"no-resolv", "no-hosts", "bind-dynamic", "listen-address=0.0.0.0", "port=" + strconv.Itoa(port), "cache-size=1000", "domain-needed", "bogus-priv"}
+		// 启动前探测端口占用（审查项 P2-06）：TCP/UDP 通配绑定任一失败即跳过，
+		// 避免随机端口撞上宿主机现有服务导致 dnsmasq 绑定失败。
+		for !isPortFree(port) {
+			port++
+			if port >= 65535 {
+				os.RemoveAll(dir)
+				return dnsRollout{}, fmt.Errorf("no free TCP/UDP port available for dnsmasq profile %d", index)
+			}
+		}
+		configPort := port
+		port++
+		config := []string{
+			"no-resolv", "no-hosts", "bind-dynamic",
+			// 仅绑定 Incus 网桥（审查项 P2-06）：不再监听 0.0.0.0，
+			// 防止 dnsmasq 变成公网可访问的 DNS 转发器被滥用或用于放大攻击
+			"interface=" + bridgeInterface,
+			"port=" + strconv.Itoa(configPort),
+			"cache-size=1000", "domain-needed", "bogus-priv",
+		}
 		for _, upstream := range unique(profile.Upstreams) {
 			config = append(config, "server="+upstream)
 		}
@@ -218,9 +274,103 @@ func prepareDNSRollout(root string, profiles map[string]*dnsProfile) (dnsRollout
 			os.RemoveAll(dir)
 			return dnsRollout{}, err
 		}
-		rollout.profiles = append(rollout.profiles, stagedDNSProfile{MAC: mac, configPath: configPath, pidPath: pidPath, Port: port, BlockDoT: profile.BlockDoT})
+		rollout.profiles = append(rollout.profiles, stagedDNSProfile{MAC: mac, configPath: configPath, pidPath: pidPath, Port: configPort, BlockDoT: profile.BlockDoT})
 	}
 	return rollout, nil
+}
+
+// isPortFree 尽力探测端口是否空闲。仅缩小撞端口的概率窗口，真正的冲突
+// 仍会在 dnsmasq 启动时暴露，并由 apply 的整体回滚兜底。
+func isPortFree(port int) bool {
+	tcpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	tcpListener.Close()
+
+	udpConn, err := net.ListenPacket("udp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	udpConn.Close()
+	return true
+}
+
+// detectBridgeInterface 通过 bridge fdb show 反查目标实例 MAC 所在的网桥。
+// 实例未运行（FDB 无表项）或 bridge 命令不可用时返回空字符串。
+func detectBridgeInterface(ctx context.Context, macs []string) string {
+	if len(macs) == 0 {
+		return ""
+	}
+	wanted := make(map[string]bool, len(macs))
+	for _, mac := range macs {
+		wanted[strings.ToLower(mac)] = true
+	}
+	cmdCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(cmdCtx, "bridge", "fdb", "show").Output()
+	if err != nil {
+		return ""
+	}
+	return pickBridgeFromFdbOutput(string(output), wanted)
+}
+
+// pickBridgeFromFdbOutput 解析 `bridge fdb show` 输出，选出目标实例 MAC 所在的网桥。
+// 行示例：`00:11:22:33:44:55 dev vethabc123 master incus0 permanent`。
+// 优先取 master（网桥设备），无 master 时退回 dev（网桥端口）；出现次数最多者胜出，
+// 并发同名时按字典序保持确定性。
+func pickBridgeFromFdbOutput(output string, wanted map[string]bool) string {
+	weights := map[string]int{}
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !wanted[strings.ToLower(fields[0])] {
+			continue
+		}
+		hasMaster := false
+		for i := 1; i+1 < len(fields); i++ {
+			switch fields[i] {
+			case "master":
+				weights[fields[i+1]] += 2
+				hasMaster = true
+			case "dev":
+				if !hasMaster {
+					weights[fields[i+1]] += 1
+				}
+			}
+		}
+	}
+
+	names := make([]string, 0, len(weights))
+	for name := range weights {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	best := ""
+	bestWeight := 0
+	for _, name := range names {
+		if weights[name] > bestWeight && isSaneInterfaceName(name) {
+			best = name
+			bestWeight = weights[name]
+		}
+	}
+	return best
+}
+
+// isSaneInterfaceName 校验探测到的设备名可安全嵌入 dnsmasq 配置与 nftables 规则
+// （Linux 接口名最长 15 字符且不含空白/引号；此处为纵深防御）。
+func isSaneInterfaceName(name string) bool {
+	if name == "" || len(name) > 15 {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func startDNSRollout(ctx context.Context, rollout dnsRollout) error {

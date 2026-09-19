@@ -585,6 +585,11 @@ export default async function authRoutes(fastify: FastifyInstance) {
       if (createErr instanceof Error && createErr.message === 'INVITE_CODE_UNAVAILABLE') {
         return reply.code(400).send(apiError(ErrorCode.INVALID_INVITE_CODE))
       }
+      // (LOWER(email)) 部分唯一索引兜底（审查项 P2-10）：并发注册同一邮箱时，
+      // "查询-写入"竞态由数据库唯一约束拦截，统一返回邮箱已注册
+      if (createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === 'P2002') {
+        return reply.code(400).send(apiError(ErrorCode.EMAIL_ALREADY_REGISTERED))
+      }
       throw createErr
     }
 
@@ -732,11 +737,11 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     for (const sessionId of sessionIdsToInvalidate) {
       await invalidateSessionAccessToken(request.user.id, sessionId)
-      revokeActionTicketsForSession(sessionId)
+      await revokeActionTicketsForSession(sessionId)
       closeSessionTerminalSessions(sessionId, 'Session logged out')
     }
     // 清除认证缓存，确保会话失效立即生效
-    clearAuthCache(request.user.id)
+    await clearAuthCache(request.user.id)
 
     // 清除 Cookie - SEC005: 使用统一配置
     reply.clearCookie('refreshToken', getClearCookieOptions())
@@ -1303,21 +1308,39 @@ export default async function authRoutes(fastify: FastifyInstance) {
     const is2FAEnabled = await db.is2FAEnabled(user.id)
     let twoFactorDisabled = false
 
-    // 原子更新密码并撤销所有会话；失效标记写入失败时事务回滚，
-    // 因而不会出现密码已变更但旧 Access Token 仍可用的状态。
+    // 先发送新密码邮件，投递成功后才执行不可逆的状态变更（审查项 P2-15）：
+    // 旧顺序先改密码/撤销会话再发信，SMTP 故障时用户永远收不到新密码，
+    // 接口却返回成功，用户被锁死在账户外。邮件发送失败时不做任何变更，
+    // 用户旧密码仍然有效，可稍后重试。
+    const sendResult = await sendPasswordResetEmail(email, {
+      username: user.username,
+      newPassword: newPassword,
+      twoFactorDisabled: is2FAEnabled
+    })
+
+    if (!sendResult.success) {
+      request.log.error({ error: sendResult.error }, 'Failed to send password reset email; password change aborted')
+      return reply.code(502).send(apiError(ErrorCode.EMAIL_SEND_FAILED, '密码重置邮件发送失败，账户密码未变更，请稍后重试'))
+    }
+
+    // 邮件已投递，原子更新密码并撤销所有会话；事务失败时旧密码仍然有效，
+    // 已发出的新密码不可用，用户重新走找回流程即可，不会被锁定
     await updateUserPasswordAndInvalidateSessions(user.id, { passwordHash })
+    twoFactorDisabled = is2FAEnabled
 
-    // 密码和会话安全状态已成功更新后，再清理 2FA，避免前一步失败留下部分变更。
+    // 密码已变更后清理 2FA；此步失败不影响登录（用户持有新密码与 2FA 设备），仅记录日志
     if (is2FAEnabled) {
-      await db.disable2FAComplete(user.id)
-      twoFactorDisabled = true
-
-      await createLog(user.id, 'security', '2fa.disable', '2FA disabled due to password reset', 'success')
+      try {
+        await db.disable2FAComplete(user.id)
+        await createLog(user.id, 'security', '2fa.disable', '2FA disabled due to password reset', 'success')
+      } catch (err) {
+        request.log.error({ err }, 'Failed to disable 2FA after password reset')
+      }
     }
 
     closeUserSessions(user.id, 'Password reset')
     // 清除认证缓存，确保令牌失效立即生效
-    clearAuthCache(user.id)
+    await clearAuthCache(user.id)
 
     // 记录安全事件
     await logSecurityEvent(SecurityEventType.SUSPICIOUS_ACTIVITY, user.id, {
@@ -1326,18 +1349,6 @@ export default async function authRoutes(fastify: FastifyInstance) {
       action: 'password_reset',
       reason: 'Password reset via forgot password'
     })
-
-    // 发送新密码邮件
-    const sendResult = await sendPasswordResetEmail(email, {
-      username: user.username,
-      newPassword: newPassword,
-      twoFactorDisabled: twoFactorDisabled
-    })
-
-    if (!sendResult.success) {
-      // 即使邮件发送失败，密码已经重置，记录错误但返回成功
-      request.log.error({ error: sendResult.error }, 'Failed to send password reset email')
-    }
 
     return {
       message: 'Password reset successfully. Please check your email for the new password.',

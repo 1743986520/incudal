@@ -5,6 +5,7 @@
 
 import { createLog, LogModule } from '../db/logs.js'
 import { Prisma } from '@prisma/client'
+import { sharedAddOnce } from './shared-state.js'
 
 // ==================== 安全事件类型 ====================
 
@@ -30,10 +31,33 @@ interface LoginAttempt {
 
 const loginAttempts = new Map<string, LoginAttempt>()
 
+// 按 IP:用户名 组合缓存，攻击者可构造大量组合撑爆内存（审查项 P3-03），
+// 限制最大条目数并在超限时清理过期/最旧条目。
+const LOGIN_ATTEMPT_MAX_KEYS = 20_000
+
 const LOGIN_CONFIG = {
     maxAttempts: 5,
     lockDuration: 15 * 60 * 1000,  // 15分钟
     attemptWindow: 5 * 60 * 1000   // 5分钟内的尝试计数
+}
+
+
+/**
+ * 清理超出容量的登录失败缓存：先删过期条目，仍超限则淘汰最旧的
+ */
+function evictLoginAttemptsIfNeeded(): void {
+    if (loginAttempts.size <= LOGIN_ATTEMPT_MAX_KEYS) return
+    const now = Date.now()
+    for (const [key, entry] of loginAttempts) {
+        const expiresAt = entry.lockedUntil ?? entry.lastAttempt + LOGIN_CONFIG.attemptWindow
+        if (now > expiresAt) loginAttempts.delete(key)
+        if (loginAttempts.size <= LOGIN_ATTEMPT_MAX_KEYS) return
+    }
+    while (loginAttempts.size > LOGIN_ATTEMPT_MAX_KEYS) {
+        const oldest = loginAttempts.keys().next().value
+        if (oldest === undefined) break
+        loginAttempts.delete(oldest)
+    }
 }
 
 
@@ -87,6 +111,7 @@ export function recordLoginFailure(ip: string, username: string): void {
     }
 
     loginAttempts.set(key, attempt)
+    evictLoginAttemptsIfNeeded()
 }
 
 /**
@@ -1073,16 +1098,18 @@ export function encryptSensitiveData(plaintext: string): string {
 
 /**
  * 解密敏感数据
+ *
+ * 只有符合加密格式（iv:tag:ciphertext）的数据才按密文处理，其余视为历史明文
+ * 原样返回；解密失败必须 fail closed（审查项 P2-16）——密钥错误、数据被篡改
+ * 或损坏时，绝不能把密文当明文返回给调用方。
  */
-export function decryptSensitiveData(ciphertext: string): string | null {
-    try {
-        const parts = ciphertext.split(':')
-        if (parts.length !== 3) {
-            // 可能是未加密的旧数据，直接返回
-            return ciphertext
-        }
+export function decryptSensitiveData(ciphertext: string): string {
+    if (!isEncrypted(ciphertext)) {
+        return ciphertext
+    }
 
-        const [ivHex, tagHex, encrypted] = parts
+    const [ivHex, tagHex, encrypted] = ciphertext.split(':')
+    try {
         const key = getEncryptionKey()
         const iv = Buffer.from(ivHex, 'hex')
         const tag = Buffer.from(tagHex, 'hex')
@@ -1095,9 +1122,9 @@ export function decryptSensitiveData(ciphertext: string): string | null {
 
         return decrypted
     } catch (err) {
-        // Decryption failed, might be unencrypted old data
-        console.warn('Decryption failed, returning original data')
-        return ciphertext
+        console.error('Sensitive data decryption failed; failing closed instead of returning ciphertext:',
+            err instanceof Error ? err.message : err)
+        throw new Error('SENSITIVE_DATA_DECRYPTION_FAILED')
     }
 }
 
@@ -1108,10 +1135,12 @@ export function isEncrypted(data: string): boolean {
     const parts = data.split(':')
     if (parts.length !== 3) return false
 
-    // 检查格式是否符合 iv:tag:encrypted
-    const [ivHex, tagHex] = parts
-    return ivHex.length === ENCRYPTION_CONFIG.ivLength * 2 &&
-        tagHex.length === ENCRYPTION_CONFIG.tagLength * 2
+    // 检查格式是否符合 iv:tag:encrypted（16字节 IV + 16字节 GCM tag 的 hex）
+    const [ivHex, tagHex, encrypted] = parts
+    if (!ivHex || !tagHex || !encrypted) return false
+    if (ivHex.length !== ENCRYPTION_CONFIG.ivLength * 2) return false
+    if (tagHex.length !== ENCRYPTION_CONFIG.tagLength * 2) return false
+    return /^[0-9a-f]+$/i.test(ivHex) && /^[0-9a-f]+$/i.test(tagHex) && /^[0-9a-f]+$/i.test(encrypted)
 }
 
 
@@ -1351,13 +1380,9 @@ export async function generateOAuthState(mode: 'login' | 'bind', redirect: strin
     return { state: `${payload}.${signature}`, nonce }
 }
 
-// 已使用的 nonce 集合（防止重放攻击）
-const usedNonces = new Set<string>()
-
-// 定期清理过期 nonce（每10分钟）
-setInterval(() => {
-    usedNonces.clear()
-}, 10 * 60 * 1000)
+// 已使用的 nonce 不再存进程内存（审查项 P2-09）：
+// 多副本部署时进程内存集合会导致 nonce 在副本间被重复接受，
+// 改为通过共享存储以"不存在才写入"的方式原子消费，TTL 与 state 有效期一致。
 
 /**
  * 验证并消费 OAuth State
@@ -1403,13 +1428,12 @@ export async function verifyAndConsumeOAuthState(stateToken: string, expectedNon
             return null
         }
 
-        // 检查 nonce 是否已被使用（防止重放攻击）
-        if (usedNonces.has(data.nonce)) {
+        // 检查 nonce 是否已被使用（防止重放攻击）；共享存储原子消费，
+        // 并发重放请求中只有一个能成功
+        const consumed = await sharedAddOnce(`oauth-state-nonce:${data.nonce}`, OAUTH_STATE_TTL_MS)
+        if (!consumed) {
             return null
         }
-
-        // 标记 nonce 已使用
-        usedNonces.add(data.nonce)
 
         return data
     } catch {
@@ -1608,13 +1632,7 @@ export interface OAuthLoginCodeData {
 // OAuth 登录码有效期（60秒）
 const OAUTH_LOGIN_CODE_TTL_MS = 60 * 1000
 
-// 已使用的登录码 nonce 集合（防止重放攻击）
-const usedLoginCodeNonces = new Set<string>()
-
-// 定期清理过期 nonce（每2分钟）
-setInterval(() => {
-    usedLoginCodeNonces.clear()
-}, 2 * 60 * 1000)
+// 登录码 nonce 消费同样走共享存储（审查项 P2-09），TTL 与登录码有效期一致
 
 /**
  * 生成 OAuth 一次性登录码
@@ -1632,7 +1650,7 @@ export function generateOAuthLoginCode(data: Omit<OAuthLoginCodeData, 'timestamp
 
     // 将数据编码为 Base64
     const payload = Buffer.from(JSON.stringify(fullData)).toString('base64url')
-    
+
     // 生成 HMAC 签名
     const signature = crypto
         .createHmac('sha256', getOAuthStateSecret())
@@ -1647,7 +1665,7 @@ export function generateOAuthLoginCode(data: Omit<OAuthLoginCodeData, 'timestamp
  * 验证并消费 OAuth 登录码
  * 返回登录信息，或在无效时返回 null
  */
-export function verifyAndConsumeOAuthLoginCode(code: string): OAuthLoginCodeData | null {
+export async function verifyAndConsumeOAuthLoginCode(code: string): Promise<OAuthLoginCodeData | null> {
     try {
         const parts = code.split('.')
         if (parts.length !== 2) {
@@ -1675,12 +1693,10 @@ export function verifyAndConsumeOAuthLoginCode(code: string): OAuthLoginCodeData
         }
 
         // 检查 nonce 是否已被使用（防止重放攻击）
-        if (usedLoginCodeNonces.has(data.nonce)) {
+        const consumed = await sharedAddOnce(`oauth-login-nonce:${data.nonce}`, OAUTH_LOGIN_CODE_TTL_MS)
+        if (!consumed) {
             return null
         }
-
-        // 标记 nonce 已使用
-        usedLoginCodeNonces.add(data.nonce)
 
         return data
     } catch {

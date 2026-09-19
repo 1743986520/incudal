@@ -34,6 +34,7 @@ import { registerAuthDecorators } from './plugins/auth-decorators.js'
 import { registerStaticServer } from './plugins/static-server.js'
 import { buildRateLimitErrorResponse } from './lib/rate-limit-error.js'
 import { applyVerifiedClientIp, trustedProxyRanges } from './lib/client-ip.js'
+import { getRedis } from './lib/redis.js'
 
 // 导入调度器
 import { startSchedulers, stopSchedulers } from './services/schedulers.js'
@@ -353,10 +354,21 @@ fastify.addHook('onRoute', (routeOptions) => {
 })
 
 // 全局速率限制
+// 配置 REDIS_URL 的多副本部署时限流状态走 Redis（审查项 P2-09），
+// 避免请求被负载均衡分散到多个副本后成倍绕过限流
+const sharedRedis = getRedis()
+if (!sharedRedis) {
+  console.warn(
+    '[Startup] REDIS_URL 未配置：一次性下载/终端票据、OAuth nonce、邮件验证失败计数、限流状态与认证缓存将退化为进程内存。' +
+    '单副本部署不受影响；多副本部署必须配置 REDIS_URL（docker-compose 已默认注入），' +
+    '否则会出现票据跨副本不可见、nonce 可被重放、限流可被负载均衡绕过等问题。'
+  )
+}
 await fastify.register(rateLimit, {
   global: true,
   max: globalRateLimit.max,
   timeWindow: globalRateLimit.timeWindow,
+  ...(sharedRedis ? { redis: sharedRedis } : {}),
   keyGenerator: (request) => {
     const rule = findRateLimitRule(request.url, request.method)
     if (rule) {

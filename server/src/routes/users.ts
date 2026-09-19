@@ -847,7 +847,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       if (password) {
         closeUserSessions(userId, 'Password updated')
         // 清除认证缓存，确保令牌失效立即生效
-        clearAuthCache(userId)
+        await clearAuthCache(userId)
       }
 
       const updateActions: string[] = []
@@ -1032,7 +1032,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
 
     // 清除认证缓存，确保角色变更立即生效
-    clearAuthCache(userId)
+    await clearAuthCache(userId)
 
     const closedTerminals = closeUserSessions(userId, 'User role changed by admin')
     if (closedTerminals > 0) {
@@ -1247,13 +1247,17 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
 
     await db.updateUserStatus(userId, status, reason)
-    // 清除认证缓存，确保状态变更立即生效
-    clearAuthCache(userId)
 
-    // 如果是封禁用户，关闭该用户的所有终端连接
+    // 如果是封禁用户，先撤销令牌，再清除认证缓存：
+    // 清理必须发生在令牌失效标记提交之后，否则其他副本可能在清理与提交之间
+    // 把"有效"结果重新写入缓存，封禁后最长一个缓存 TTL 内旧令牌仍可用
     if (status === 'banned') {
       await revokeAllUserRefreshTokens(userId)
       await invalidateUserAccessTokens(userId)
+    }
+    await clearAuthCache(userId)
+
+    if (status === 'banned') {
       const closedSessions = closeUserSessions(userId, 'User account banned')
       if (closedSessions > 0) {
         console.log(`[Ban] Closed ${closedSessions} terminal session(s) for user ${userId}`)
@@ -1387,7 +1391,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
     const count = await revokeAllUserRefreshTokens(userId)
     await invalidateUserAccessTokens(userId)
     // 清除认证缓存，确保令牌失效立即生效
-    clearAuthCache(userId)
+    await clearAuthCache(userId)
 
     // 关闭该用户的所有终端连接
     const closedTerminals = closeUserSessions(userId, 'Sessions revoked by admin')
@@ -1445,7 +1449,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
 
     closeUserSessions(userId, 'Password reset by admin')
     // 清除认证缓存，确保令牌失效立即生效
-    clearAuthCache(userId)
+    await clearAuthCache(userId)
 
     await createLog(
       request.user.id,

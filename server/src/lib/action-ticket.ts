@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid'
+import { sharedConsume, sharedDel, sharedDelPrefix, sharedListKeys, sharedSet } from './shared-state.js'
 
 export type ActionTicketType = 'oauth-bind' | 'terminal'
 
@@ -9,8 +10,6 @@ interface BaseActionTicket {
   sessionId?: string
   expiresAt: number
   createdAt: number
-  usageCount: number
-  maxUsage: number
 }
 
 interface OAuthBindTicket extends BaseActionTicket {
@@ -24,25 +23,23 @@ interface TerminalTicket extends BaseActionTicket {
 
 type ActionTicket = OAuthBindTicket | TerminalTicket
 
-const actionTickets = new Map<string, ActionTicket>()
-
-const ACTION_TICKET_TTL_MS = {
+// 票据走共享状态层（审查项 P2-09）：多副本部署时任一副本签发、任一副本消费。
+// session 索引（action-ticket-session:<sessionId>:<token>）用于按会话批量撤销。
+const TICKET_TTL_MS = {
   'oauth-bind': 60 * 1000,
   terminal: 60 * 1000
 } as const
 
-setInterval(() => {
-  const now = Date.now()
-  for (const [token, data] of actionTickets.entries()) {
-    if (now > data.expiresAt || data.usageCount >= data.maxUsage) {
-      actionTickets.delete(token)
-    }
-  }
-}, 60 * 1000)
+const TICKET_KEY_PREFIX = 'action-ticket:'
+const TICKET_SESSION_INDEX_PREFIX = 'action-ticket-session:'
 
-function createTicket<T extends ActionTicket>(ticket: T): string {
+async function createTicket(ticket: ActionTicket): Promise<string> {
   const token = nanoid(32)
-  actionTickets.set(token, ticket)
+  const ttlMs = Math.max(ticket.expiresAt - Date.now(), 1)
+  await sharedSet(`${TICKET_KEY_PREFIX}${token}`, JSON.stringify(ticket), ttlMs)
+  if (ticket.sessionId) {
+    await sharedSet(`${TICKET_SESSION_INDEX_PREFIX}${ticket.sessionId}:${token}`, '1', ttlMs)
+  }
   return token
 }
 
@@ -50,17 +47,15 @@ export function generateOAuthBindTicket(
   userId: number,
   issuedAt: number,
   sessionId?: string
-): string {
+): Promise<string> {
   const now = Date.now()
   return createTicket({
     type: 'oauth-bind',
     userId,
     issuedAt,
     sessionId,
-    expiresAt: now + ACTION_TICKET_TTL_MS['oauth-bind'],
-    createdAt: now,
-    usageCount: 0,
-    maxUsage: 1
+    expiresAt: now + TICKET_TTL_MS['oauth-bind'],
+    createdAt: now
   })
 }
 
@@ -69,7 +64,7 @@ export function generateTerminalAccessTicket(
   instanceId: number,
   issuedAt: number,
   sessionId?: string
-): string {
+): Promise<string> {
   const now = Date.now()
   return createTicket({
     type: 'terminal',
@@ -77,10 +72,8 @@ export function generateTerminalAccessTicket(
     instanceId,
     issuedAt,
     sessionId,
-    expiresAt: now + ACTION_TICKET_TTL_MS.terminal,
-    createdAt: now,
-    usageCount: 0,
-    maxUsage: 1
+    expiresAt: now + TICKET_TTL_MS.terminal,
+    createdAt: now
   })
 }
 
@@ -101,22 +94,31 @@ export interface TerminalTicketConsumeResult {
   error?: string
 }
 
-export function consumeOAuthBindTicket(token: string): OAuthBindTicketConsumeResult {
-  const ticket = actionTickets.get(token)
-  if (!ticket || ticket.type !== 'oauth-bind') {
-    return { valid: false, error: 'Ticket not found or already used' }
+async function consumeTicket(token: string): Promise<{ ticket: ActionTicket | null; error?: string }> {
+  // 消费通过共享状态的"读取即删除"完成，重放请求拿不到载荷
+  const raw = await sharedConsume(`${TICKET_KEY_PREFIX}${token}`)
+  if (!raw) {
+    return { ticket: null, error: 'Ticket not found or already used' }
+  }
+
+  let ticket: ActionTicket
+  try {
+    ticket = JSON.parse(raw) as ActionTicket
+  } catch {
+    return { ticket: null, error: 'Ticket corrupted' }
   }
 
   if (Date.now() > ticket.expiresAt) {
-    actionTickets.delete(token)
-    return { valid: false, error: 'Ticket expired' }
+    return { ticket: null, error: 'Ticket expired' }
   }
 
-  ticket.usageCount += 1
-  if (ticket.usageCount >= ticket.maxUsage) {
-    actionTickets.delete(token)
-  } else {
-    actionTickets.set(token, ticket)
+  return { ticket }
+}
+
+export async function consumeOAuthBindTicket(token: string): Promise<OAuthBindTicketConsumeResult> {
+  const { ticket, error } = await consumeTicket(token)
+  if (!ticket || ticket.type !== 'oauth-bind') {
+    return { valid: false, error: error || 'Ticket not found or already used' }
   }
 
   return {
@@ -127,30 +129,17 @@ export function consumeOAuthBindTicket(token: string): OAuthBindTicketConsumeRes
   }
 }
 
-export function consumeTerminalAccessTicket(
+export async function consumeTerminalAccessTicket(
   token: string,
   expectedInstanceId?: number
-): TerminalTicketConsumeResult {
-  const ticket = actionTickets.get(token)
+): Promise<TerminalTicketConsumeResult> {
+  const { ticket, error } = await consumeTicket(token)
   if (!ticket || ticket.type !== 'terminal') {
-    return { valid: false, error: 'Ticket not found or already used' }
-  }
-
-  if (Date.now() > ticket.expiresAt) {
-    actionTickets.delete(token)
-    return { valid: false, error: 'Ticket expired' }
+    return { valid: false, error: error || 'Ticket not found or already used' }
   }
 
   if (expectedInstanceId !== undefined && ticket.instanceId !== expectedInstanceId) {
-    actionTickets.delete(token)
     return { valid: false, error: 'Instance mismatch' }
-  }
-
-  ticket.usageCount += 1
-  if (ticket.usageCount >= ticket.maxUsage) {
-    actionTickets.delete(token)
-  } else {
-    actionTickets.set(token, ticket)
   }
 
   return {
@@ -162,13 +151,12 @@ export function consumeTerminalAccessTicket(
   }
 }
 
-export function revokeActionTicketsForSession(sessionId: string): number {
-  let revoked = 0
-  for (const [token, data] of actionTickets.entries()) {
-    if (data.sessionId === sessionId) {
-      actionTickets.delete(token)
-      revoked += 1
-    }
+export async function revokeActionTicketsForSession(sessionId: string): Promise<number> {
+  const indexPrefix = `${TICKET_SESSION_INDEX_PREFIX}${sessionId}:`
+  const indexKeys = await sharedListKeys(indexPrefix)
+  for (const indexKey of indexKeys) {
+    await sharedDel(`${TICKET_KEY_PREFIX}${indexKey.slice(indexPrefix.length)}`)
   }
-  return revoked
+  await sharedDelPrefix(indexPrefix)
+  return indexKeys.length
 }

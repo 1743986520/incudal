@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -15,7 +16,12 @@ const (
 	DefaultHeartbeatIntervalSeconds = 30
 	MinHeartbeatIntervalSeconds     = 5
 	MaxHeartbeatIntervalSeconds     = 3600
+	// DefaultBridgeInterface 是 Incus 默认网桥名，DNS 策略只在该接口上提供服务。
+	DefaultBridgeInterface = "incus0"
 )
+
+// Linux 接口名最长 15 字符且不含空白/引号；校验可防止配置值注入 dnsmasq/nftables 参数。
+var interfaceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,15}$`)
 
 type Config struct {
 	PanelURL                 string
@@ -25,6 +31,7 @@ type Config struct {
 	RequestTimeout           time.Duration
 	HeartbeatIntervalSeconds int
 	RequestTimeoutSeconds    int
+	BridgeInterface          string
 }
 
 func Load(path string) (Config, error) {
@@ -44,6 +51,7 @@ func Load(path string) (Config, error) {
 	overlayEnv(values, "agent_secret", "INCUDAL_AGENT_SECRET")
 	overlayEnv(values, "heartbeat_interval_seconds", "INCUDAL_HEARTBEAT_INTERVAL_SECONDS")
 	overlayEnv(values, "request_timeout_seconds", "INCUDAL_REQUEST_TIMEOUT_SECONDS")
+	overlayEnv(values, "bridge_interface", "INCUDAL_BRIDGE_INTERFACE")
 
 	heartbeatSeconds := clampInt(
 		parsePositiveInt(values["heartbeat_interval_seconds"], DefaultHeartbeatIntervalSeconds),
@@ -51,6 +59,8 @@ func Load(path string) (Config, error) {
 		MaxHeartbeatIntervalSeconds,
 	)
 	timeoutSeconds := parsePositiveInt(values["request_timeout_seconds"], 10)
+	// bridge_interface 留空表示由 agent 根据实例 MAC 所在网桥自动探测
+	bridgeInterface := strings.TrimSpace(values["bridge_interface"])
 	cfg := Config{
 		PanelURL:                 strings.TrimRight(values["panel_url"], "/"),
 		AgentID:                  values["agent_id"],
@@ -59,6 +69,7 @@ func Load(path string) (Config, error) {
 		RequestTimeoutSeconds:    timeoutSeconds,
 		HeartbeatInterval:        time.Duration(heartbeatSeconds) * time.Second,
 		RequestTimeout:           time.Duration(timeoutSeconds) * time.Second,
+		BridgeInterface:          bridgeInterface,
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -89,6 +100,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.RequestTimeout < time.Second {
 		return errors.New("request timeout must be at least 1 second")
+	}
+	if cfg.BridgeInterface != "" && !interfaceNamePattern.MatchString(cfg.BridgeInterface) {
+		return fmt.Errorf("bridge_interface is invalid: %s", cfg.BridgeInterface)
 	}
 	return nil
 }

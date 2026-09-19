@@ -182,8 +182,8 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       })
     } catch (err) {
       fastify.log.error(err)
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      return reply.code(500).send(apiError(ErrorCode.BACKUP_CREATE_FAILED, errorMessage))
+      // Incus/存储错误细节只留服务端日志，不回传客户端（审查项 P3-04）
+      return reply.code(500).send(apiError(ErrorCode.BACKUP_CREATE_FAILED))
     }
   })
 
@@ -508,7 +508,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       }
 
       // 生成一次性下载 token（5分钟有效，仅可使用1次）
-      const downloadToken = generateDownloadToken(
+      const downloadToken = await generateDownloadToken(
         request.user.id,
         taskId,
         'backup-export',
@@ -545,7 +545,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         }
 
         // 验证并消费一次性 token
-        const result = consumeDownloadToken(downloadToken, taskId, 'backup-export')
+        const result = await consumeDownloadToken(downloadToken, taskId, 'backup-export')
         if (!result.valid) {
           return reply.code(401).send({
             error: result.error || 'Invalid or expired download token',
@@ -1080,6 +1080,8 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       }
 
       // 创建上传任务
+      // 并发请求同时通过"是否有进行中任务"检查时，由部分唯一索引兜底
+      // （审查项 P2-13），冲突时 createBackupUploadTask 返回 null
       const task = await db.createBackupUploadTask({
         userId: request.user.id,
         instanceId: instanceIdNum,
@@ -1087,6 +1089,15 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         hostId: instance.host_id,
         storageConfigId: storageConfig.id
       })
+
+      if (!task) {
+        const activeTask = await db.hasActiveUploadTask(request.user.id)
+        return reply.code(409).send({
+          error: ErrorCode.BACKUP_UPLOAD_IN_PROGRESS,
+          message: '您有上传任务正在进行中',
+          taskId: activeTask?.id
+        })
+      }
 
       await createLog(
         request.user.id,

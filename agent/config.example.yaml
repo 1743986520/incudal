@@ -6,3 +6,6 @@ agent_id: "agt_replace_me"
 agent_secret: "ias_replace_me"
 heartbeat_interval_seconds: 30
 request_timeout_seconds: 10
+# Incus 网桥接口名：DNS 策略的 dnsmasq 只绑定该接口，nftables input 链仅放行来自它的 DNS 访问。
+# 留空（或删除本行）则 agent 通过实例 MAC 所在网桥自动探测，探测失败时回退到 incus0。
+# bridge_interface: "incus0"

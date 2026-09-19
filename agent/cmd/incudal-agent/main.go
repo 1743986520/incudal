@@ -54,7 +54,7 @@ func main() {
 		if result, err := sendHeartbeat(ctx, client, cfg.HeartbeatIntervalSeconds); err != nil {
 			log.Fatalf("heartbeat: %v", err)
 		} else {
-			processInstructions(ctx, result)
+			processInstructions(ctx, cfg, result)
 		}
 		return
 	}
@@ -65,7 +65,7 @@ func main() {
 	if result, err := sendHeartbeat(ctx, client, cfg.HeartbeatIntervalSeconds); err != nil {
 		log.Printf("heartbeat failed: %v", err)
 	} else {
-		processInstructions(ctx, result)
+		processInstructions(ctx, cfg, result)
 		scheduleAgentUpgrade(ctx, upgradeRunner, result, &upgradeInProgress)
 	}
 
@@ -81,7 +81,7 @@ func main() {
 			if result, err := sendHeartbeat(ctx, client, cfg.HeartbeatIntervalSeconds); err != nil {
 				log.Printf("heartbeat failed: %v", err)
 			} else {
-				processInstructions(ctx, result)
+				processInstructions(ctx, cfg, result)
 				scheduleAgentUpgrade(ctx, upgradeRunner, result, &upgradeInProgress)
 			}
 		}
@@ -135,10 +135,10 @@ func sendHeartbeat(ctx context.Context, client *panel.Client, heartbeatIntervalS
 	return result, nil
 }
 
-func processInstructions(ctx context.Context, result panel.HeartbeatResult) {
+func processInstructions(ctx context.Context, cfg config.Config, result panel.HeartbeatResult) {
 	if result.NetworkPolicies != nil && shouldApplyNetworkPolicies(result.NetworkPolicies.Revision) {
 		applyCtx, cancel := context.WithTimeout(ctx, policyApplyTimeout)
-		status := policy.Apply(applyCtx, *result.NetworkPolicies)
+		status := policy.Apply(applyCtx, *result.NetworkPolicies, cfg.BridgeInterface)
 		cancel()
 		lastPolicyStatus = &status
 		if status.Applied {

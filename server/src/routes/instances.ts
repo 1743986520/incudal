@@ -51,7 +51,7 @@ import { calculateVipLevel, getVipBadgeStyleForLevel, getVipRules } from '../ser
 import { ProxyStrategyFactory } from '../lib/proxy/index.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
 import { sendHostManagedInstanceNotification, sendNotification } from '../lib/notifier.js'
-import { createInstanceTask, getInstanceTaskById, getActiveTaskForInstance, getTaskQueuePosition, cancelInstanceTask } from '../db/instance-tasks.js'
+import { createInstanceTask, InstanceTaskConflictError, getInstanceTaskById, getActiveTaskForInstance, getTaskQueuePosition, cancelInstanceTask } from '../db/instance-tasks.js'
 import { canRecoverInstanceTask } from '../workers/instance-task-lease.js'
 import { closeInstanceSessions } from '../lib/terminal-proxy.js'
 import { calculateDiscountAmount, getCycleDays } from '../lib/billing-calc.js'
@@ -81,6 +81,31 @@ import {
 } from './instances/helpers.js'
 import { createInstanceAsync } from './instances/create-async.js'
 import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
+
+/**
+ * 创建实例任务；并发请求同时通过"是否有活跃任务"检查时，
+ * 由部分唯一索引兜底（审查项 P2-13），冲突时以 409 响应并返回 null。
+ */
+async function createInstanceTaskGuarded(
+  reply: FastifyReply,
+  data: Parameters<typeof createInstanceTask>[0]
+): Promise<Awaited<ReturnType<typeof createInstanceTask>> | null> {
+  try {
+    return await createInstanceTask(data)
+  } catch (error) {
+    if (error instanceof InstanceTaskConflictError) {
+      reply.code(409).send({
+        error: 'Instance has an active task',
+        code: 'TASK_IN_PROGRESS',
+        taskId: error.activeTask.id,
+        taskType: error.activeTask.taskType,
+        status: error.activeTask.status
+      })
+      return null
+    }
+    throw error
+  }
+}
 
 function resolveInstanceTargetIpv4FromIncusDevice(
   incusInstance: { devices?: Record<string, Record<string, unknown> | undefined> }
@@ -2528,12 +2553,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 创建异步任务
-    const task = await createInstanceTask({
+    const task = await createInstanceTaskGuarded(reply, {
       instanceId,
       hostId: instance.host_id,
       userId: user.id,
       taskType: 'start'
     })
+    if (!task) return
 
     await createLog(user.id, 'instance', 'instance.start', `Queued start task for instance "${instance.name}"`, 'success', { instanceId })
 
@@ -2594,12 +2620,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 创建异步任务
-    const task = await createInstanceTask({
+    const task = await createInstanceTaskGuarded(reply, {
       instanceId,
       hostId: instance.host_id,
       userId: user.id,
       taskType: 'stop'
     })
+    if (!task) return
 
     await createLog(user.id, 'instance', 'instance.stop', `Queued stop task for instance "${instance.name}"`, 'success', { instanceId })
 
@@ -2646,12 +2673,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 创建异步任务
-    const task = await createInstanceTask({
+    const task = await createInstanceTaskGuarded(reply, {
       instanceId,
       hostId: instance.host_id,
       userId: user.id,
       taskType: 'restart'
     })
+    if (!task) return
 
     await createLog(user.id, 'instance', 'instance.restart', `Queued restart task for instance "${instance.name}"`, 'success', { instanceId })
 
@@ -3149,7 +3177,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
     }
 
-    const task = await createInstanceTask({
+    const task = await createInstanceTaskGuarded(reply, {
       instanceId,
       hostId: targetHostId,
       userId: user.id,
@@ -3157,6 +3185,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       targetHostId,
       sshKeyId
     })
+    if (!task) return
 
     await createLog(
       user.id,
@@ -3309,7 +3338,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 创建异步任务
-    const task = await createInstanceTask({
+    const task = await createInstanceTaskGuarded(reply, {
       instanceId,
       hostId: instance.host_id,
       userId: user.id,
@@ -3318,6 +3347,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       sshKeyId,
       customInitCommandIds
     })
+    if (!task) return
 
     await createLog(user.id, 'instance', 'instance.rebuild', `Queued rebuild task for instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
 
@@ -3461,7 +3491,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 创建异步任务
-    const task = await createInstanceTask({
+    const task = await createInstanceTaskGuarded(reply, {
       instanceId,
       hostId: instance.host_id,
       userId: user.id,
@@ -3470,6 +3500,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       sshKeyId,
       customInitCommandIds
     })
+    if (!task) return
 
     await createLog(user.id, 'instance', 'instance.recreate', `Queued recreate task for instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
 
@@ -4021,6 +4052,35 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     }
 
+    // IPv6 Only 实例不需要端口映射
+    if (instance.network_mode === 'ipv6_only') {
+      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'IPv6 Only instances do not require port mappings'))
+    }
+
+    // 先在数据库中预留端口（审查项 P2-12），再操作 Incus。
+    // 旧顺序"检查 → 加设备 → 写库"存在竞态：并发请求同时通过检查后，
+    // 后写库一方回滚时按设备名删除 Incus 设备，可能删掉先成功请求创建的设备。
+    let reservedMapping: { id: number; protocol: string; publicPort: number; privatePort: number } | null = null
+    try {
+      reservedMapping = (await db.reservePortMappings([{
+        instanceId,
+        hostId: instance.host_id,
+        protocol,
+        publicPort: allocatedPort,
+        privatePort,
+        remark: remark?.trim()
+      }]))[0] ?? null
+    } catch (error) {
+      if (error instanceof db.PortReservationConflictError) {
+        return reply.code(409).send(apiError(ErrorCode.PORT_IN_USE))
+      }
+      throw error
+    }
+
+    if (!reservedMapping) {
+      return reply.code(500).send({ error: '端口预留失败，请稍后重试', code: 'PORT_RESERVE_FAILED' })
+    }
+
     const createdDeviceNames: string[] = []
     try {
       const client = await getIncusClient(host)
@@ -4035,9 +4095,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         isVM = !!pkg && (('instance_type' in pkg && pkg.instance_type === 'vm') || ('instanceType' in pkg && pkg.instanceType === 'vm'));
       }
       const actualInstanceType = isVM ? 'virtual-machine' : 'container';
-      if (instance.network_mode === 'ipv6_only') {
-        return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'IPv6 Only instances do not require port mappings'))
-      }
 
       // 获取保底 IPv6 供双路网卡调用
       let explicitIpv6 = (host as any).nat_bind_ipv6 || host.nat_public_ipv6 || host.ipv6_gateway || (host.ip_address?.includes(':') ? host.ip_address : null);
@@ -4081,24 +4138,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         createdDeviceNames.push(resolvedDeviceName)
       }
 
-      const mappingId = await db.createPortMapping({
-        instanceId: instanceId,
-        hostId: instance.host_id,
-        protocol,
-        publicPort: allocatedPort,
-        privatePort,
-        remark: remark?.trim()
-      })
-
+      // 端口映射记录已在预留阶段写入数据库，这里不再重复创建
       await createLog(user.id, 'instance', 'port.add', `Added port mapping for instance "${instance.name}" [host: ${host?.name || 'unknown'}, ${protocol.toUpperCase()} ${allocatedPort}:${privatePort}${remark ? `, remark: ${remark}` : ''}]`, 'success', { instanceId })
 
       return {
         message: 'Port mapping added',
-        mapping: { id: mappingId, protocol, publicPort: allocatedPort, privatePort, remark: remark?.trim() || null }
+        mapping: { id: reservedMapping.id, protocol, publicPort: allocatedPort, privatePort, remark: remark?.trim() || null }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       try {
+        // 回滚：只处理本次请求拥有的设备与预留记录（审查项 P2-12）
         const host = await db.getHostById(instance.host_id)
         if (host) {
           const client = await getIncusClient(host)
@@ -4106,11 +4156,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           await removeDevice(client, instance.incus_id, deviceName)
           await removeDevice(client, instance.incus_id, `${deviceName}-v6`)
         }
+        if (reservedMapping) {
+          await db.releasePortMappings([reservedMapping.id])
+        }
       } catch {
         // 忽略回滚失败，保留原始错误
       }
       await createLog(user.id, 'instance', 'port.add', `Failed to add port mapping: ${errorMessage}`, 'failed', { instanceId })
-      return reply.code(500).send({ error: errorMessage })
+      // 不把 Incus/底层错误细节回传给客户端（审查项 P3-04）
+      return reply.code(500).send({ error: '添加端口映射失败，请稍后重试', code: 'PORT_ADD_FAILED' })
     }
   })
 
@@ -4167,7 +4221,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       await createLog(user.id, 'instance', 'port.delete', `Failed to delete port mapping: ${errorMessage}`, 'failed', { instanceId })
-      return reply.code(500).send({ error: errorMessage })
+      // Incus 错误细节只留服务端日志，不回传客户端（审查项 P3-04）
+      return reply.code(500).send({ error: '删除端口映射失败，请稍后重试', code: 'PORT_DELETE_FAILED' })
     }
   })
 
@@ -4322,8 +4377,59 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           publicPort: publicPortStart + i
         })
       }
+    } else {
+      // 公网端口留空，自动分配
+      const protocolForAlloc = protocol === 'both' ? 'tcp' : protocol
+      const allocatedPorts = await db.allocatePorts(
+        instance.host_id,
+        privatePortCount,
+        protocolForAlloc,
+        protocol === 'both'  // Both 模式需要同时检查 TCP 和 UDP
+      )
 
-      // 5. 检查端口冲突（需要检查 TCP 和 UDP）
+      if (allocatedPorts.length < privatePortCount) {
+        return reply.code(503).send({
+          error: ErrorCode.PORT_NO_AVAILABLE,
+          message: `可用端口不足，需要 ${privatePortCount} 个，只有 ${allocatedPorts.length} 个可用`
+        })
+      }
+
+      // 排序以保证顺序
+      allocatedPorts.sort((a, b) => a - b)
+
+      for (let i = 0; i < privatePortCount; i++) {
+        finalMappings.push({
+          privatePort: privatePortStart + i,
+          publicPort: allocatedPorts[i]
+        })
+      }
+    }
+
+    // 公网端口范围校验对所有输入路径统一执行（审查项 P2-05）：
+    // portMappings 分支（冲突解决重提交）此前完全绕过宿主机 NAT 端口池校验，
+    // 用户可提交 1-65535 任意端口，抢占系统端口、代理端口或其他租户端口
+    const natPortStart = host.nat_port_start
+    const natPortEnd = host.nat_port_end
+    if (natPortStart && natPortEnd) {
+      const outOfRange = finalMappings.find(m => m.publicPort < natPortStart || m.publicPort > natPortEnd)
+      if (outOfRange) {
+        return reply.code(400).send(apiError(ErrorCode.PORT_RANGE_INVALID, `允许范围: ${natPortStart}-${natPortEnd}`))
+      }
+    }
+
+    // 提交列表内部不允许重复公网端口：重复端口会创建重复设备与映射记录
+    const seenPublicPorts = new Set<number>()
+    for (const mapping of finalMappings) {
+      if (seenPublicPorts.has(mapping.publicPort)) {
+        return reply.code(400).send(apiError(ErrorCode.PORT_RANGE_MISMATCH, `公网端口 ${mapping.publicPort} 在提交列表中重复`))
+      }
+      seenPublicPorts.add(mapping.publicPort)
+    }
+
+    // 5. 检查端口冲突（需要检查 TCP 和 UDP）
+    // 用户指定端口的路径（范围 / portMappings 重提交）统一预检查并给出建议；
+    // 自动分配路径由 allocatePorts 从端口池中挑选，无需预检查
+    if ((portMappings && portMappings.length > 0) || publicPortStart !== undefined) {
       const publicPorts = finalMappings.map(m => m.publicPort)
       const protocolsToCheck: Array<'tcp' | 'udp'> = protocol === 'both' ? ['tcp', 'udp'] : [protocol]
 
@@ -4356,119 +4462,33 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           availableCount: suggestedPorts.length
         })
       }
-    } else {
-      // 公网端口留空，自动分配
-      const protocolForAlloc = protocol === 'both' ? 'tcp' : protocol
-      const allocatedPorts = await db.allocatePorts(
-        instance.host_id,
-        privatePortCount,
-        protocolForAlloc,
-        protocol === 'both'  // Both 模式需要同时检查 TCP 和 UDP
-      )
-
-      if (allocatedPorts.length < privatePortCount) {
-        return reply.code(503).send({
-          error: ErrorCode.PORT_NO_AVAILABLE,
-          message: `可用端口不足，需要 ${privatePortCount} 个，只有 ${allocatedPorts.length} 个可用`
-        })
-      }
-
-      // 排序以保证顺序
-      allocatedPorts.sort((a, b) => a - b)
-
-      for (let i = 0; i < privatePortCount; i++) {
-        finalMappings.push({
-          privatePort: privatePortStart + i,
-          publicPort: allocatedPorts[i]
-        })
-      }
     }
 
-    // 6. 批量创建映射
-    const createdMappings: Array<{ id: number; protocol: string; publicPort: number; privatePort: number }> = []
+    // 6. 先在数据库事务中预留全部映射记录（审查项 P2-12），再操作 Incus。
+    // 预留由宿主机粒度的 advisory lock + (hostId, protocol, publicPort) 唯一约束保证；
+    // Incus 失败时只回滚本次预留的记录与本次添加的设备，不影响其他请求。
+    // IPv6 Only 实例不需要端口映射
+    if (instance.network_mode === 'ipv6_only') {
+      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'IPv6 Only instances do not require port mappings'))
+    }
+
+    const reservedMappings: Array<{ id: number; protocol: string; publicPort: number; privatePort: number }> = []
     const createdDeviceNames: string[] = []
     try {
-      const client = await getIncusClient(host)
-      let targetIpv4 = normalizeIpv4Address(instance.ipv4)
-      if (!targetIpv4) {
-        const incusInstance = await getInstance(client, instance.incus_id) as { devices?: Record<string, Record<string, unknown> | undefined> }
-        targetIpv4 = resolveInstanceTargetIpv4FromIncusDevice(incusInstance)
-      }
-
       // 对于 Both 模式，需要创建 TCP 和 UDP 两组映射
       const protocolsToCreate: Array<'tcp' | 'udp'> = protocol === 'both' ? ['tcp', 'udp'] : [protocol]
 
+      const reserveItems: Array<{
+        instanceId: number
+        hostId: number
+        protocol: 'tcp' | 'udp'
+        publicPort: number
+        privatePort: number
+        remark?: string
+      }> = []
       for (const proto of protocolsToCreate) {
         for (const mapping of finalMappings) {
-          // 再次检查端口是否被占用（防止并发冲突）
-          const existingPort = await db.checkPortInUse(instance.host_id, mapping.publicPort, proto)
-          if (existingPort) {
-            // 回滚已创建的映射
-            for (const created of createdMappings) {
-              try {
-                const deviceName = `proxy-${created.protocol}-${created.publicPort}`
-                await removeDevice(client, instance.incus_id, deviceName)
-                await removeDevice(client, instance.incus_id, `${deviceName}-v6`)
-                await db.deletePortMapping(created.id)
-              } catch (e) {
-                // 忽略回滚错误
-              }
-            }
-            return reply.code(400).send(apiError(ErrorCode.PORT_IN_USE, `端口 ${mapping.publicPort} (${proto.toUpperCase()}) 已被占用`))
-          }
-
-          const deviceName = `proxy-${proto}-${mapping.publicPort}`
-          // 获取当前用于建立底层设备的实例准确类别
-          let isVM = false;
-          if (instance.package_id) {
-            const pkg = await prisma.package.findUnique({
-              where: { id: instance.package_id }
-            });
-            isVM = !!pkg && (('instance_type' in pkg && pkg.instance_type === 'vm') || ('instanceType' in pkg && pkg.instanceType === 'vm'));
-          }
-          const actualInstanceType = isVM ? 'virtual-machine' : 'container';
-          if (instance.network_mode === 'ipv6_only') {
-            return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'IPv6 Only instances do not require port mappings'))
-          }
-
-          // 提取确切 IPv6 供给代理防崩
-          let explicitBatchIpv6 = (host as any).nat_bind_ipv6 || host.nat_public_ipv6 || host.ipv6_gateway || (host.ip_address?.includes(':') ? host.ip_address : null);
-          if (!explicitBatchIpv6 && host) {
-            try {
-              const ipv6Alias = await prisma.hostAddressAlias.findFirst({
-                where: { hostId: host.id, kind: 'ipv6' },
-                select: { address: true }
-              })
-              if (ipv6Alias?.address) explicitBatchIpv6 = ipv6Alias.address
-            } catch { }
-          }
-
-          // == 一切参数交付给隔离后的独立网络策略类以规避共振 ==
-          const proxyStrategy = ProxyStrategyFactory.getStrategy(actualInstanceType);
-          const bindableIpv4 = selectBindableIpv4ListenAddress(
-            (host as any).nat_bind_ip || null,
-            host.nat_public_ip || null,
-            host.url,
-            host.ip_address || null
-          )
-          const proxyDeviceRes = proxyStrategy.createProxyDevice(bindableIpv4, explicitBatchIpv6, instance.network_mode, proto, mapping.publicPort, mapping.privatePort, {
-            targetIpv4
-          });
-
-          const deviceConfigs = proxyDeviceRes.deviceConfigs
-            || (proxyDeviceRes.deviceConfig ? [{ deviceConfig: proxyDeviceRes.deviceConfig }] : [])
-
-          if (!proxyDeviceRes.success || deviceConfigs.length === 0) {
-            return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, proxyDeviceRes.errorMessage || '代理对象工厂拦截异常'));
-          }
-
-          for (const deviceEntry of deviceConfigs) {
-            const resolvedDeviceName = `${deviceName}${deviceEntry.nameSuffix || ''}`
-            await addDevice(client, instance.incus_id, resolvedDeviceName, deviceEntry.deviceConfig as Record<string, string>)
-            createdDeviceNames.push(resolvedDeviceName)
-          }
-
-          const mappingId = await db.createPortMapping({
+          reserveItems.push({
             instanceId,
             hostId: instance.host_id,
             protocol: proto,
@@ -4476,13 +4496,72 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             privatePort: mapping.privatePort,
             remark: remark?.trim()
           })
+        }
+      }
 
-          createdMappings.push({
-            id: mappingId,
-            protocol: proto,
-            publicPort: mapping.publicPort,
-            privatePort: mapping.privatePort
+      reservedMappings.push(...await db.reservePortMappings(reserveItems))
+
+      const client = await getIncusClient(host)
+      let targetIpv4 = normalizeIpv4Address(instance.ipv4)
+      if (!targetIpv4) {
+        const incusInstance = await getInstance(client, instance.incus_id) as { devices?: Record<string, Record<string, unknown> | undefined> }
+        targetIpv4 = resolveInstanceTargetIpv4FromIncusDevice(incusInstance)
+      }
+
+      // 获取当前用于建立底层设备的实例准确类别
+      let isVM = false;
+      if (instance.package_id) {
+        const pkg = await prisma.package.findUnique({
+          where: { id: instance.package_id }
+        });
+        isVM = !!pkg && (('instance_type' in pkg && pkg.instance_type === 'vm') || ('instanceType' in pkg && pkg.instanceType === 'vm'));
+      }
+      const actualInstanceType = isVM ? 'virtual-machine' : 'container';
+
+      // 提取确切 IPv6 供给代理防崩
+      let explicitBatchIpv6 = (host as any).nat_bind_ipv6 || host.nat_public_ipv6 || host.ipv6_gateway || (host.ip_address?.includes(':') ? host.ip_address : null);
+      if (!explicitBatchIpv6 && host) {
+        try {
+          const ipv6Alias = await prisma.hostAddressAlias.findFirst({
+            where: { hostId: host.id, kind: 'ipv6' },
+            select: { address: true }
           })
+          if (ipv6Alias?.address) explicitBatchIpv6 = ipv6Alias.address
+        } catch { }
+      }
+
+      // == 一切参数交付给隔离后的独立网络策略类以规避共振 ==
+      const proxyStrategy = ProxyStrategyFactory.getStrategy(actualInstanceType);
+      const bindableIpv4 = selectBindableIpv4ListenAddress(
+        (host as any).nat_bind_ip || null,
+        host.nat_public_ip || null,
+        host.url,
+        host.ip_address || null
+      )
+
+      for (const mapping of reservedMappings) {
+        const deviceName = `proxy-${mapping.protocol}-${mapping.publicPort}`
+        const proxyDeviceRes = proxyStrategy.createProxyDevice(
+          bindableIpv4,
+          explicitBatchIpv6,
+          instance.network_mode,
+          mapping.protocol as 'tcp' | 'udp',
+          mapping.publicPort,
+          mapping.privatePort,
+          { targetIpv4 }
+        );
+
+        const deviceConfigs = proxyDeviceRes.deviceConfigs
+          || (proxyDeviceRes.deviceConfig ? [{ deviceConfig: proxyDeviceRes.deviceConfig }] : [])
+
+        if (!proxyDeviceRes.success || deviceConfigs.length === 0) {
+          throw new Error(proxyDeviceRes.errorMessage || '代理对象工厂拦截异常')
+        }
+
+        for (const deviceEntry of deviceConfigs) {
+          const resolvedDeviceName = `${deviceName}${deviceEntry.nameSuffix || ''}`
+          await addDevice(client, instance.incus_id, resolvedDeviceName, deviceEntry.deviceConfig as Record<string, string>)
+          createdDeviceNames.push(resolvedDeviceName)
         }
       }
 
@@ -4490,31 +4569,37 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         user.id,
         'instance',
         'port.batch_add',
-        `Batch added ${createdMappings.length} port mappings for instance "${instance.name}" [host: ${host?.name || 'unknown'}, ${protocol.toUpperCase()}, ports: ${privatePortStart}-${privatePortEnd}]`,
+        `Batch added ${reservedMappings.length} port mappings for instance "${instance.name}" [host: ${host?.name || 'unknown'}, ${protocol.toUpperCase()}, ports: ${privatePortStart}-${privatePortEnd}]`,
         'success',
         { instanceId }
       )
 
       return {
         message: 'Batch port mapping added',
-        mappings: createdMappings,
-        count: createdMappings.length
+        mappings: reservedMappings,
+        count: reservedMappings.length
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      // 回滚：只处理本次请求拥有的设备与预留记录
       try {
         const client = await getIncusClient(host)
         for (const createdDeviceName of createdDeviceNames) {
           await removeDevice(client, instance.incus_id, createdDeviceName)
         }
-        for (const created of createdMappings) {
-          await db.deletePortMapping(created.id)
-        }
+        await db.releasePortMappings(reservedMappings.map(m => m.id))
       } catch {
         // 忽略回滚失败，保留原始错误
       }
+
+      if (error instanceof db.PortReservationConflictError) {
+        await createLog(user.id, 'instance', 'port.batch_add', `Batch add port mappings conflicted: ${error.conflicts.join(', ')}`, 'failed', { instanceId })
+        return reply.code(409).send(apiError(ErrorCode.PORT_CONFLICT, '部分端口已被占用，请刷新后重试'))
+      }
+
+      const errorMessage = error instanceof Error ? error.message : String(error)
       await createLog(user.id, 'instance', 'port.batch_add', `Failed to batch add port mappings: ${errorMessage}`, 'failed', { instanceId })
-      return reply.code(500).send({ error: errorMessage })
+      // 不把 Incus/底层错误细节回传给客户端（审查项 P3-04）
+      return reply.code(500).send({ error: '批量添加端口映射失败，请稍后重试', code: 'PORT_BATCH_ADD_FAILED' })
     }
   })
 
@@ -4993,12 +5078,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 创建异步任务
-    const task = await createInstanceTask({
+    const task = await createInstanceTaskGuarded(reply, {
       instanceId,
       hostId: sourceInstance.host_id,
       userId: user.id,
       taskType: 'clone'
     })
+    if (!task) return
 
     await createLog(
       user.id,
@@ -5528,12 +5614,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       })
     }
 
-    // 更新数据库中的实例配置
-    await db.updateInstanceConfig(instanceId, {
-      limitsProcesses: targetLimit
-    })
-
-    // 应用配置到 Incus 容器
+    // 先应用到 Incus，成功后才更新数据库（审查项 P2-14）：
+    // 旧顺序在 Incus 失败时仍返回成功，数据库与实例实际配置漂移，
+    // 后续更新会被误判为"已达上限"
     try {
       const client = await getIncusClient(host)
       await updateInstance(client, instance.incus_id, {
@@ -5542,9 +5625,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         }
       })
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
       console.error(`[BoostProcesses] Failed to apply to Incus for instance ${instance.name}:`, err)
-      // 不抛出错误，数据库已更新成功
+      await createLog(user.id, 'instance', 'instance.boost_processes', `Failed to apply process limit ${targetLimit} for instance "${instance.name}": ${errorMessage}`, 'failed', { instanceId })
+      return reply.code(502).send({
+        error: '进程数提升未能应用到实例，请稍后重试',
+        code: 'PROCESS_LIMIT_APPLY_FAILED'
+      })
     }
+
+    // Incus 应用成功后再更新数据库中的实例配置
+    await db.updateInstanceConfig(instanceId, {
+      limitsProcesses: targetLimit
+    })
 
     await createLog(
       user.id,
