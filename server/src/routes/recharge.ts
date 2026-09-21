@@ -1718,7 +1718,7 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
       }
 
       const existing = await db.getPaymentProviderById(providerId)
-      if (!existing) {
+      if (!existing || existing.deletedAt) {
         return reply.status(404).send({ error: '支付渠道不存在' })
       }
 
@@ -1757,7 +1757,7 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
       }
 
       const existing = await db.getPaymentProviderById(providerId)
-      if (!existing) {
+      if (!existing || existing.deletedAt) {
         return reply.status(404).send({ error: '支付渠道不存在' })
       }
 
@@ -1792,14 +1792,17 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
         return reply.status(400).send({ error: '无效的渠道ID' })
       }
 
-      const existing = await db.getPaymentProviderById(providerId)
-      if (!existing) {
+      const mode = await db.deletePaymentProvider(providerId)
+      return { success: true, mode, message: '支付渠道已删除' }
+    } catch (error) {
+      if (error instanceof db.PaymentProviderNotFoundError) {
         return reply.status(404).send({ error: '支付渠道不存在' })
       }
-
-      await db.deletePaymentProvider(providerId)
-      return { success: true, message: '支付渠道已删除' }
-    } catch (error) {
+      // 外键约束冲突：存在关联记录且无法软删除时兜底返回 409，而不是模糊的 500
+      if ((error as { code?: string }).code === 'P2003') {
+        request.log.warn({ id: request.params, error }, '删除支付渠道被外键约束阻止')
+        return reply.status(409).send({ error: '该渠道存在关联记录，无法删除', code: 'PAYMENT_PROVIDER_IN_USE' })
+      }
       request.log.error(error, '删除支付渠道失败')
       return reply.status(500).send({ error: '删除支付渠道失败' })
     }

@@ -343,8 +343,8 @@ function confirmDelete(provider: any) {
 }
 
 async function deleteProvider() {
-  if (!deleteTarget.value) return
-  
+  if (!deleteTarget.value || deleteLoading.value) return
+
   deleteLoading.value = true
   try {
     await api.admin.deletePaymentProvider(deleteTarget.value.id)
@@ -354,7 +354,15 @@ async function deleteProvider() {
     await loadProviders()
     emit('changed')
   } catch (err: any) {
-    toast.error(t('admin.paymentProviders.deleteFailed') + ': ' + err.message)
+    // 409（渠道存在关联记录被外键阻止）使用专用文案，其余结构化错误展示后端原因
+    if (err?.code === 'PAYMENT_PROVIDER_IN_USE') {
+      toast.error(t('admin.paymentProviders.deleteFailedInUse'))
+    } else {
+      const reason = err?.code
+        ? err.message
+        : t('admin.paymentProviders.deleteFailed') + ': ' + (err?.message || '')
+      toast.error(reason)
+    }
   } finally {
     deleteLoading.value = false
   }

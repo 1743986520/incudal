@@ -2232,6 +2232,8 @@ model PaymentProvider {
   sortOrder Int      @default(0) @map("sort_order") // 排序
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  // 软删除标记：存在充值记录的渠道删除时仅打标记，保留历史订单与回调处理
+  deletedAt DateTime? @map("deleted_at")
 
   rechargeRecords RechargeRecord[]
 

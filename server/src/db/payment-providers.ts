@@ -101,10 +101,11 @@ function decryptProvider<T extends { config: unknown }>(provider: T): T & { conf
 
 /**
  * 获取所有支付渠道（管理员）
- * 返回解密后的配置
+ * 返回解密后的配置，排除已软删除的渠道
  */
 export async function getAllPaymentProviders(): Promise<PaymentProvider[]> {
   const providers = await prisma.paymentProvider.findMany({
+    where: { deletedAt: null },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }]
   })
   return providers.map(p => decryptProvider(p)) as PaymentProvider[]
@@ -112,11 +113,11 @@ export async function getAllPaymentProviders(): Promise<PaymentProvider[]> {
 
 /**
  * 获取已启用的支付渠道（用户可见）
- * 返回解密后的配置
+ * 返回解密后的配置，排除已软删除的渠道
  */
 export async function getActivePaymentProviders(): Promise<PaymentProvider[]> {
   const providers = await prisma.paymentProvider.findMany({
-    where: { status: 'active' },
+    where: { status: 'active', deletedAt: null },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }]
   })
   return providers.map(p => decryptProvider(p)) as PaymentProvider[]
@@ -124,7 +125,7 @@ export async function getActivePaymentProviders(): Promise<PaymentProvider[]> {
 
 /**
  * 根据 ID 获取支付渠道
- * 返回解密后的配置
+ * 返回解密后的配置。包含已软删除的渠道，保证历史订单与支付回调仍可处理
  */
 export async function getPaymentProviderById(id: number): Promise<PaymentProvider | null> {
   const provider = await prisma.paymentProvider.findUnique({
@@ -230,12 +231,50 @@ export async function disablePaymentProvider(id: number): Promise<PaymentProvide
 // ==================== 删除操作 ====================
 
 /**
- * 删除支付渠道
+ * 删除支付渠道。
+ *
+ * 混合策略：
+ * - 无关联充值记录：物理删除。
+ * - 有关联充值记录：软删除（设置 deletedAt 并禁用），保留历史订单与支付回调处理。
+ * - 已软删除的渠道重复删除时幂等返回 soft。
  */
-export async function deletePaymentProvider(id: number): Promise<void> {
-  await prisma.paymentProvider.delete({
-    where: { id }
+export async function deletePaymentProvider(id: number): Promise<'hard' | 'soft'> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.paymentProvider.findUnique({
+      where: { id },
+      include: { _count: { select: { rechargeRecords: true } } }
+    })
+
+    if (!existing) {
+      throw new PaymentProviderNotFoundError()
+    }
+
+    // 已软删除：幂等，不重复操作
+    if (existing.deletedAt) {
+      return 'soft'
+    }
+
+    if (existing._count.rechargeRecords === 0) {
+      await tx.paymentProvider.delete({ where: { id } })
+      return 'hard'
+    }
+
+    await tx.paymentProvider.update({
+      where: { id },
+      data: { deletedAt: new Date(), status: 'disabled' }
+    })
+    return 'soft'
   })
+}
+
+/**
+ * 渠道不存在错误，供路由层转换为 404
+ */
+export class PaymentProviderNotFoundError extends Error {
+  constructor() {
+    super('PAYMENT_PROVIDER_NOT_FOUND')
+    this.name = 'PaymentProviderNotFoundError'
+  }
 }
 
 // ==================== 辅助函数 ====================

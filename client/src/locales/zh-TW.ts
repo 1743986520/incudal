@@ -5682,6 +5682,7 @@ export default {
             createFailed: '建立支付渠道失敗',
             updateFailed: '更新支付渠道失敗',
             deleteFailed: '刪除失敗',
+            deleteFailedInUse: '該渠道存在歷史充值記錄，已停用並從列表移除',
             loadFailed: '載入失敗',
             createProvider: '新增支付渠道',
             editProvider: '編輯支付渠道',

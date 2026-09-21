@@ -4444,6 +4444,7 @@ export default {
             createFailed: 'Failed to create payment provider',
             updateFailed: 'Failed to update payment provider',
             deleteFailed: 'Delete failed',
+            deleteFailedInUse: 'This provider has recharge history and was disabled and removed from the list',
             loadFailed: 'Load failed',
             createProvider: 'Add Payment Provider',
             editProvider: 'Edit Payment Provider',
