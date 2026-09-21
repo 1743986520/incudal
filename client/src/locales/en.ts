@@ -511,6 +511,7 @@ export default {
           qqpay: 'QQ Wallet',
           bank: 'Bank Card',
           jdpay: 'JD Pay',
+          usdt: 'USDT',
         },
         noProviders: 'No payment providers available',
         amountLabel: 'Recharge Amount',

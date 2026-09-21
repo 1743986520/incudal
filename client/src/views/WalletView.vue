@@ -644,6 +644,7 @@ function getPaymentMethodName(method: string): string {
     qqpay: t('wallet.paymentMethods.qqpay'),
     bank: t('wallet.paymentMethods.bank'),
     jdpay: t('wallet.paymentMethods.jdpay'),
+    usdt: t('wallet.paymentMethods.usdt'),
   }
   if (map[method]) {
     return map[method]

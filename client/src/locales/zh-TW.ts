@@ -520,6 +520,7 @@ export default {
           qqpay: 'QQ錢包',
           bank: '網銀支付',
           jdpay: '京東支付',
+          usdt: 'USDT',
         },
         noProviders: '暫無可用支付渠道',
         amountLabel: '充值金額',

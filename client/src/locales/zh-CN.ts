@@ -511,6 +511,7 @@ export default {
           qqpay: 'QQ钱包',
           bank: '网银支付',
           jdpay: '京东支付',
+          usdt: 'USDT',
         },
         noProviders: '暂无可用支付渠道',
         amountLabel: '充值金额',

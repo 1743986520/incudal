@@ -36,7 +36,7 @@ export interface EpayConfigLegacy {
 export type EpayConfig = EpayConfigV1 | EpayConfigV2 | EpayConfigLegacy
 
 export interface PayParams {
-  type: string          // 支付方式：alipay, wxpay, qqpay, bank, jdpay
+  type: string          // 支付方式：alipay, wxpay, qqpay, bank, jdpay, usdt
   out_trade_no: string  // 商户订单号
   name: string          // 商品名称
   money: string         // 付款金额
