@@ -1287,6 +1287,20 @@ async function executeRecreateTask(
   const oldIncusId = instance.incus_id
   const allowCancelBusyUpdate = isAlpineImageAlias(instance.image) || isAlpineImageAlias(imageAlias)
 
+  // 先确认目标存储池，再执行停止实例和清理旧数据等破坏性操作。
+  // 存储池可能在实例创建后被删除或失效，不能等到清理完成后才发现配置缺失。
+  const storagePool = await db.resolveStoragePoolForExistingInstance(task.instanceId, host.id, { packageId: instance.package_id })
+  if (!storagePool) {
+    await notifyStoragePoolMissing({
+      userId: task.userId,
+      hostId: host.id,
+      hostName: host.name,
+      source: 'task.rebuild',
+      instanceId: task.instanceId
+    })
+    throw new Error('宿主机尚未创建可用的系统盘存储池，无法重建实例')
+  }
+
   const collectResult = await collectTrafficForRunningInstance(task.instanceId)
   if (!collectResult.success) {
     console.warn(`[Recreate] 实例 ${task.instanceId} 重建前即时采集流量失败: ${collectResult.error}`)
@@ -1493,19 +1507,6 @@ async function executeRecreateTask(
     console.log(`[Recreate] VM network-config 已更新: IPv4=${newIPv4}, IPv6=${instance.ipv6 || 'none'}`)
   } else {
     console.log(`[Recreate] Container network-config 已更新: IPv4=${newIPv4}, IPv6=${instance.ipv6 || 'none'}`)
-  }
-
-  // 10. 选择存储池：节点没有可用的系统盘存储池时终止重建任务
-  let storagePool = await db.resolveStoragePoolForExistingInstance(task.instanceId, host.id, { packageId: instance.package_id })
-  if (!storagePool) {
-    await notifyStoragePoolMissing({
-      userId: task.userId,
-      hostId: host.id,
-      hostName: host.name,
-      source: 'task.rebuild',
-      instanceId: task.instanceId
-    })
-    throw new Error('宿主机尚未创建可用的系统盘存储池，无法重建实例')
   }
 
   // 11. 构建实例配置（使用新分配的 IPv4）

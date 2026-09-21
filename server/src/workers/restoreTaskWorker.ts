@@ -216,6 +216,21 @@ async function executeRestoreTask(taskId: number): Promise<void> {
             : null
         if (task.backupId && !backup) throw new Error('备份不存在')
 
+        // 先确认存储池，再停止原实例；否则存储池缺失时会留下被停止的实例。
+        const storagePool = await resolveStoragePoolForExistingInstance(task.instanceId, task.hostId, {
+            packageId: instance.packageId
+        })
+        if (!storagePool) {
+            await notifyStoragePoolMissing({
+                userId: task.userId,
+                hostId: task.hostId,
+                hostName: host.name,
+                source: 'task.restore',
+                instanceId: task.instanceId
+            })
+            throw new Error('宿主机未配置系统盘存储池，无法恢复实例')
+        }
+
         const client = await getIncusClient({
             id: host.id,
             url: host.url,
@@ -243,21 +258,7 @@ async function executeRestoreTask(taskId: number): Promise<void> {
         }
         checkTimeout()
 
-        // 4. 获取存储池配置
-        // 使用宿主机的系统盘存储池，确保恢复的实例使用正确的存储池
-        const storagePool = await resolveStoragePoolForExistingInstance(task.instanceId, task.hostId, {
-            packageId: instance.packageId
-        })
-        if (!storagePool) {
-            await notifyStoragePoolMissing({
-                userId: task.userId,
-                hostId: task.hostId,
-                hostName: `#${task.hostId}`,
-                source: 'task.restore',
-                instanceId: task.instanceId
-            })
-            throw new Error('宿主机未配置系统盘存储池，无法恢复实例')
-        }
+        // 4. 使用已确认的宿主机系统盘存储池恢复实例
         console.log(`[RestoreWorker] Task ${taskId}: 使用存储池 ${storagePool}`)
 
         // 5. 获取备份流并恢复到临时实例

@@ -429,6 +429,10 @@ export async function validateAffCode(
     return { valid: false, error: '优惠码不存在' }
   }
 
+  if (!affCode.enabled) {
+    return { valid: false, error: '优惠码已停用' }
+  }
+
   // 2. 检查方案是否匹配（全局码跳过此检查）
   if (affCode.packagePlanId !== null && affCode.packagePlanId !== packagePlanId) {
     return { valid: false, error: '优惠码不适用于此方案' }

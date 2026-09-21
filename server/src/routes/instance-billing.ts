@@ -433,19 +433,27 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '用户托管节点不支持使用优惠码'))
     }
 
+    // 先重新验证优惠码状态和方案适用范围；即使是幂等提交也不能绕过停用/失配检查。
+    const validation = await db.validateAffCode(normalizedCode, instance.packagePlanId, user.id)
+    if (!validation.valid || !validation.affCode) {
+      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, validation.error || '优惠码无效'))
+    }
+
+    const discountRate = Number(validation.discountRate ?? validation.affCode.discountRate)
+    const discountPercent = Math.round(discountRate * 100)
+
     // 已绑定相同优惠码：幂等返回成功（同时补齐覆盖官方优惠券的标记）
-    if (instance.affBinding && instance.affBinding.affCode.code === normalizedCode) {
+    if (instance.affBinding && instance.affBinding.affCodeId === validation.affCode.id) {
       try {
-        const result = await db.applyInstanceAffBinding(instance.id, instance.affBinding.affCodeId, instance.affBinding.affCode.code)
-        const discountRate = Number(instance.affBinding.affCode.discountRate)
+        const result = await db.applyInstanceAffBinding(instance.id, validation.affCode.id, validation.affCode.code)
         return {
           success: true,
           replaced: false,
           previousCode: result.previousCode,
           currentCode: result.currentCode,
           discountRate,
-          discountPercent: Math.round(discountRate * 100),
-          message: `优惠码已生效，将用于下一笔未结算续费（${Math.round(discountRate * 100)}% 折扣）`
+          discountPercent,
+          message: `优惠码已生效，将用于下一笔未结算续费（${discountPercent}% 折扣）`
         }
       } catch (error: any) {
         request.log.error(error, '用户绑定AFF优惠码失败')
@@ -453,17 +461,6 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const validation = await db.validateAffCode(normalizedCode, instance.packagePlanId, user.id)
-    if (!validation.valid || !validation.affCode) {
-      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, validation.error || '优惠码无效'))
-    }
-
-    if (!validation.affCode.enabled) {
-      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '优惠码已停用'))
-    }
-
-    const discountRate = Number(validation.discountRate ?? validation.affCode.discountRate)
-    const discountPercent = Math.round(discountRate * 100)
     const previousCode = instance.affBinding?.affCode.code ?? null
 
     try {

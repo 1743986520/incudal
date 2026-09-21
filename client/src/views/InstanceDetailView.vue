@@ -2252,7 +2252,7 @@ function getRemainingDaysDisplay(days: number, expiresAt: string | Date | null):
   }
 }
 
-// 获取续费价格（应用 AFF 折扣后的实际价格）
+// 获取续费价格（应用当前生效的 AFF/官方优惠券折扣后的实际价格）
 // 优先使用实例专属价格 billingPrice，如果没有则使用方案价格 planPrice
 function getRenewPrice(inst: InstanceWithDetails | null): number {
   if (!inst) return 0
@@ -2260,9 +2260,11 @@ function getRenewPrice(inst: InstanceWithDetails | null): number {
   // 优先使用实例专属价格（管理员设置的价格）
   const originalPrice = instAny.billingPrice ?? instAny.planPrice
   if (originalPrice !== undefined && originalPrice !== null) {
-    // 如果有 AFF 折扣率，应用折扣
-    if (instAny.affDiscountRate && instAny.affDiscountRate > 0) {
-      const discountAmount = originalPrice * instAny.affDiscountRate
+    const affRate = Number(instAny.affDiscountRate) || 0
+    const officialRate = (Number(instAny.officialRenewalDiscountPercent) || 0) / 100
+    const discountRate = affRate > 0 ? affRate : officialRate
+    if (discountRate > 0) {
+      const discountAmount = originalPrice * discountRate
       return Math.round((originalPrice - discountAmount) * 100) / 100
     }
     return originalPrice
@@ -2277,6 +2279,10 @@ function hasAffDiscount(inst: InstanceWithDetails | null): boolean {
   return instAny.affDiscountRate && instAny.affDiscountRate > 0
 }
 
+function hasRenewalDiscount(inst: InstanceWithDetails | null): boolean {
+  return hasAffDiscount(inst) || hasOfficialRenewalDiscount(inst)
+}
+
 function hasAffBinding(inst: InstanceWithDetails | null): boolean {
   if (!inst) return false
   const instAny = inst as any
@@ -2289,6 +2295,9 @@ function getAffDiscountText(inst: InstanceWithDetails | null): string {
   const instAny = inst as any
   if (instAny.affDiscountRate && instAny.affDiscountRate > 0) {
     return `-${(instAny.affDiscountRate * 100).toFixed(0)}%`
+  }
+  if (hasOfficialRenewalDiscount(inst)) {
+    return `${t('billing.officialCouponDiscount')} -${Number(instAny.officialRenewalDiscountPercent).toFixed(0)}%`
   }
   return ''
 }
@@ -2943,7 +2952,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
                       </div>
 
                       <span
-                        v-if="hasAffDiscount(instance)"
+                        v-if="hasRenewalDiscount(instance)"
                         class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium"
                         :class="themeStore.isDark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-700'"
                       >
