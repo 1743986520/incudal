@@ -44,7 +44,7 @@ const formData = ref({
 })
 
 const DEFAULT_YIPAY_METHODS = ['alipay', 'wxpay']
-const YIPAY_METHODS = ['alipay', 'wxpay', 'qqpay', 'usdt']
+const YIPAY_METHODS = ['alipay', 'wxpay', 'qqpay', 'usdt', 'usdt.trc20']
 const IMPLEMENTED_PROVIDER_TYPES = new Set(['yipay', 'heleket', 'recharge_card'])
 
 function getConfigMethodFees(config: Record<string, unknown>): Record<string, { feeRate?: number; feeFixed?: number }> {
@@ -87,6 +87,14 @@ function getProviderMethodFeePercent(provider: any, method: string): number {
   return Number.isFinite(feeRate) ? feeRate * 100 : 0
 }
 
+function getYipayMethodLabel(method: string): string {
+  const key = method === 'usdt.trc20'
+    ? 'wallet.paymentMethods.usdtTrc20'
+    : `wallet.paymentMethods.${method}`
+  const label = t(key)
+  return label === key ? method : label
+}
+
 function getProviderMethodSummary(provider: any): string {
   const methods = provider.methods || []
   if (provider.type !== 'yipay' || methods.length === 0) {
@@ -95,8 +103,7 @@ function getProviderMethodSummary(provider: any): string {
 
   return methods.map((method: string) => {
     const percent = getProviderMethodFeePercent(provider, method)
-    const name = t(`wallet.paymentMethods.${method}`)
-    const label = name === `wallet.paymentMethods.${method}` ? method : name
+    const label = getYipayMethodLabel(method)
     return percent > 0 ? `${label} (${percent.toFixed(2)}%)` : label
   }).join(', ')
 }
@@ -586,7 +593,7 @@ function togglePaymentMethod(method: string) {
                           class="checkbox checkbox-primary"
                           @change="togglePaymentMethod(method)"
                         />
-                        <span class="text-themed">{{ $t(`wallet.paymentMethods.${method}`) }}</span>
+                        <span class="text-themed">{{ getYipayMethodLabel(method) }}</span>
                       </label>
                       <div class="flex items-center gap-2 sm:w-44">
                         <span class="whitespace-nowrap text-xs text-themed-muted">{{ $t('admin.paymentProviders.feeRate') }}</span>

@@ -512,6 +512,7 @@ export default {
           bank: '网银支付',
           jdpay: '京东支付',
           usdt: 'USDT',
+          usdtTrc20: 'USDT (TRC20)',
         },
         noProviders: '暂无可用支付渠道',
         amountLabel: '充值金额',

@@ -645,6 +645,7 @@ function getPaymentMethodName(method: string): string {
     bank: t('wallet.paymentMethods.bank'),
     jdpay: t('wallet.paymentMethods.jdpay'),
     usdt: t('wallet.paymentMethods.usdt'),
+    'usdt.trc20': t('wallet.paymentMethods.usdtTrc20'),
   }
   if (map[method]) {
     return map[method]

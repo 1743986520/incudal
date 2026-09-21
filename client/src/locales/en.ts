@@ -512,6 +512,7 @@ export default {
           bank: 'Bank Card',
           jdpay: 'JD Pay',
           usdt: 'USDT',
+          usdtTrc20: 'USDT (TRC20)',
         },
         noProviders: 'No payment providers available',
         amountLabel: 'Recharge Amount',
