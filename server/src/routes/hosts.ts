@@ -5234,7 +5234,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
             type: 'array',
             items: { type: 'integer' },
             minItems: 1,
-            maxItems: 30
+            maxItems: 200
           },
           targetHostId: { type: 'integer' },
           targetImage: { type: 'string', minLength: 1 },
