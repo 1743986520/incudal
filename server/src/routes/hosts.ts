@@ -3026,19 +3026,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           // 忽略转移请求取消错误
         }
 
-        // ===== 7. 更新实例状态为 deleted =====
-        await db.updateInstanceStatus(instance.id, 'deleted')
-
-        // ===== 8. 释放资源配额 =====
-        await db.rollbackResources({
-          hostId: instance.hostId,
-          cpu: instance.cpu,
-          memory: instance.memory,
-          disk: instance.disk,
-          portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
-        })
-
-        // ===== 9. 处理退款（节点所有者删除他人的付费实例时）=====
+        // ===== 7. 处理退款（节点所有者删除他人的付费实例时）=====
+        // 退款先于标记 deleted，确保退款事务失败时不会出现“实例已强制删除但没有退款”的状态。
         let refundAmount = 0
         if (instance.userId !== host.user_id) {
           // 删除的是他人的实例，检查是否需要退款
@@ -3053,7 +3042,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           if (refundInfo.isPaid && refundInfo.refundAmount > 0) {
             refundAmount = refundInfo.refundAmount
             
-            // 执行退款事务
+            // 用户退款和节点托管收入扣除必须在同一个事务中完成，
+            // 避免只给用户加钱却没有留下节点侧扣款记录。
             await prisma.$transaction(async (tx) => {
               // 获取用户当前余额
               const instanceOwner = await tx.user.findUnique({
@@ -3070,7 +3060,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
               })
               
               // 记录余额日志
-              await tx.balanceLog.create({
+              const balanceLog = await tx.balanceLog.create({
                 data: {
                   userId: instance.userId,
                   type: 'refund',
@@ -3078,22 +3068,52 @@ export default async function hostRoutes(fastify: FastifyInstance) {
                   balanceBefore: oldBalance,
                   balanceAfter: newBalance,
                   instanceId: instance.id,
-                  remark: `托管实例被删除退款：${instance.name}`
+                  remark: `${databaseOnly ? '节点离线时强制从面板删除退款' : '托管实例被删除退款'}：${instance.name}`
                 }
               })
+
+              // 同步写入实例计费退款记录，确保账单/面板历史中可追溯，
+              // 而不是只增加余额后直接删除实例。
+              const refundAt = new Date()
+              await tx.instanceBillingRecord.create({
+                data: {
+                  instanceId: instance.id,
+                  userId: instance.userId,
+                  type: 'refund',
+                  amount: -refundAmount,
+                  months: 0,
+                  periodStart: refundAt,
+                  periodEnd: refundAt,
+                  balanceLogId: balanceLog.id,
+                  remark: `${databaseOnly ? '节点离线时强制从面板删除退款' : '托管实例被删除退款'}`
+                }
+              })
+
+              // 从节点所有者托管余额扣除，并在同一事务中写入扣款审计记录。
+              await db.deductHostingBalance(
+                hostId,
+                refundAmount,
+                instance.id,
+                `${databaseOnly ? '强制从面板删除' : '删除'}托管实例退款扣除：${instance.name}`,
+                tx
+              )
             })
-            
-            // 从节点所有者托管余额扣除
-            await db.deductHostingBalance(
-              hostId,
-              refundAmount,
-              instance.id,
-              `删除托管实例退款扣除：${instance.name}`
-            )
             
             totalRefundAmount += refundAmount
           }
         }
+
+        // ===== 8. 更新实例状态为 deleted =====
+        await db.updateInstanceStatus(instance.id, 'deleted')
+
+        // ===== 9. 释放资源配额 =====
+        await db.rollbackResources({
+          hostId: instance.hostId,
+          cpu: instance.cpu,
+          memory: instance.memory,
+          disk: instance.disk,
+          portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
+        })
 
         // ===== 10. 发送删除通知给实例所有者 =====
         // 如果提供了删除原因，发送特定通知
@@ -3129,7 +3149,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           user.id,
           'instance',
           'instance.batch_delete',
-          `Batch deleted instance "${instance.name}" on host "${host.name}"${refundAmount > 0 ? ` (refund: ¥${refundAmount.toFixed(2)})` : ''}`,
+          `Batch deleted instance "${instance.name}" on host "${host.name}"${databaseOnly ? ' (panel-only; host was not contacted)' : ''}${refundAmount > 0 ? ` (refund: ¥${refundAmount.toFixed(2)})` : ''}`,
           'success'
         )
       } catch (err) {
@@ -5222,7 +5242,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
   // 批量迁移实例到其他节点（管理员或节点所有者）
   fastify.post<{
     Params: { id: string }
-    Body: { instanceIds: number[]; targetHostId: number; targetImage: string; targetPlanId?: number }
+    Body: { instanceIds: number[]; targetHostId: number; targetImage: string; targetPlanId?: number; force?: boolean }
   }>('/:id/instances/migrate', {
     onRequest: [fastify.authenticate],
     schema: {
@@ -5238,14 +5258,15 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           },
           targetHostId: { type: 'integer' },
           targetImage: { type: 'string', minLength: 1 },
-          targetPlanId: { type: 'integer' }  // 付费实例迁移时的目标方案
+          targetPlanId: { type: 'integer' },  // 付费实例迁移时的目标方案
+          force: { type: 'boolean' } // 强制从面板迁移时不连接源节点
         }
       }
     }
   }, async (request, reply) => {
     const { user } = request
     const { id } = request.params
-    const { instanceIds, targetHostId, targetImage, targetPlanId } = request.body
+    const { instanceIds, targetHostId, targetImage, targetPlanId, force = false } = request.body
     const sourceHostId = Number(id)
 
     if (isNaN(sourceHostId)) {
@@ -5356,12 +5377,25 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     let sourceClient: IncusClient | null = null
     let targetClient: IncusClient | null = null
 
-    // 获取源节点和目标节点的 Incus 客户端
-    try {
-      sourceClient = await getIncusClient(sourceHost)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      fastify.log.error(`获取源节点 Incus 客户端失败: ${errorMessage}`)
+    // 强制从面板迁移时，源节点可能已经掉线或被服务商删除；整个流程不连接源节点，
+    // 只在目标节点创建新实例并更新面板记录。
+    if (!force) {
+      try {
+        sourceClient = await getIncusClient(sourceHost)
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        fastify.log.error(`获取源节点 Incus 客户端失败: ${errorMessage}`)
+      }
+
+      // 正常迁移必须能连接源节点，避免在未明确确认的情况下只更新面板记录。
+      if (!sourceClient) {
+        return reply.code(409).send({
+          error: '源节点无法连接，请选择“强制从面板迁移”',
+          code: 'SOURCE_HOST_UNAVAILABLE'
+        })
+      }
+    } else {
+      fastify.log.info(`强制从面板迁移实例，跳过源节点连接: hostId=${sourceHostId}`)
     }
 
     try {
@@ -5710,8 +5744,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           diskUsed: instance.disk
         })
 
-        // 19. 删除源节点的实例
-        if (sourceClient) {
+        // 19. 删除源节点的实例。强制迁移明确跳过所有源节点通信。
+        if (!force && sourceClient) {
           try {
             // 先停止实例
             if (instance.status === 'running') {
@@ -5763,7 +5797,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           user.id,
           'instance',
           'instance.migrate',
-          `Migrated instance "${instance.name}" from host "${sourceHost.name}" to "${targetHost.name}"`,
+          `Migrated instance "${instance.name}" from host "${sourceHost.name}" to "${targetHost.name}"${force ? ' (panel-only; source host was not contacted)' : ''}`,
           'success'
         )
       } catch (err) {

@@ -478,7 +478,7 @@ const tabs = [
         <HostStorageTab v-if="activeTab === 'storage'" :host-id="host.id" />
         <HostCaddyTab v-if="activeTab === 'caddy'" :host-id="host.id" />
         <HostRedeemCodesTab v-if="activeTab === 'redeemCodes'" :host-id="host.id" />
-        <HostInstancesTab v-if="activeTab === 'instances'" :host-id="host.id" :host-name="host.name" />
+        <HostInstancesTab v-if="activeTab === 'instances'" :host-id="host.id" :host-name="host.name" :host-status="host.status" />
         <HostOpsTab v-if="activeTab === 'ops'" :host-id="host.id" :host-name="host.name" />
         <HostCreateInstanceTab v-if="activeTab === 'create'" :host-id="host.id" :host-name="host.name" :instance-type="host.instanceType" />
       </div>

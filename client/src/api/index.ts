@@ -1530,12 +1530,12 @@ const api = {
       extendedCount: number
     }> => http.post(`/hosts/${hostId}/extend-all`, { days }),
     // 批量迁移实例到其他节点（仅管理员）
-    migrateInstances: (hostId: number, instanceIds: number[], targetHostId: number, targetImage: string, targetPlanId?: number): Promise<{
+    migrateInstances: (hostId: number, instanceIds: number[], targetHostId: number, targetImage: string, targetPlanId?: number, force = false): Promise<{
       message: string
       results: Array<{ id: number; name: string; success: boolean; error?: string; newInstanceId?: number }>
       successCount: number
       failedCount: number
-    }> => http.post(`/hosts/${hostId}/instances/migrate`, { instanceIds, targetHostId, targetImage, targetPlanId }, { timeout: TIMEOUT.BATCH }),
+    }> => http.post(`/hosts/${hostId}/instances/migrate`, { instanceIds, targetHostId, targetImage, targetPlanId, force }, { timeout: TIMEOUT.BATCH }),
     // 获取节点绑定的套餐方案（用于改节点）
     getHostPlans: (hostId: number): Promise<{
       plans: Array<{

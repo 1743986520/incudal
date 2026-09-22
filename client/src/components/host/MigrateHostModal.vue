@@ -23,6 +23,7 @@ interface Props {
   visible: boolean
   hostId: number
   hostName?: string
+  sourceHostStatus?: 'online' | 'offline' | 'maintenance' | string
   selectedIds: number[]
   instances?: InstanceInfo[]  // 实例信息，用于判断是否有付费实例
 }
@@ -71,6 +72,9 @@ const targetImage = ref<string>('')
 
 // 选中的目标方案（付费实例必选）
 const targetPlanId = ref<number | null>(null)
+
+// 是否跳过源节点通信。源节点离线或已被删除时使用，目标节点仍需在线。
+const forceMigration = ref(false)
 
 // 提交状态
 const isSubmitting = ref(false)
@@ -157,7 +161,7 @@ async function loadImages(hostId: number) {
 }
 
 // 提交迁移
-async function handleSubmit() {
+async function handleSubmit(skipForceConfirm = false) {
   if (!targetHostId.value) {
     toast.error(t('host.migrate.selectTargetRequired'))
     return
@@ -178,6 +182,10 @@ async function handleSubmit() {
     return
   }
 
+  if (forceMigration.value && !skipForceConfirm && !window.confirm(t('host.migrate.forcePanelConfirm'))) {
+    return
+  }
+
   isSubmitting.value = true
   try {
     const res = await api.hosts.migrateInstances(
@@ -185,7 +193,8 @@ async function handleSubmit() {
       props.selectedIds,
       targetHostId.value,
       targetImage.value,
-      hasPaidInstances.value ? targetPlanId.value ?? undefined : undefined
+      hasPaidInstances.value ? targetPlanId.value ?? undefined : undefined,
+      forceMigration.value
     )
     result.value = {
       success: res.failedCount === 0,
@@ -200,6 +209,12 @@ async function handleSubmit() {
       emit('success')
     }
   } catch (err: any) {
+    // 节点状态可能滞后于实际连通性；正常迁移连接失败时，直接询问是否改为面板强制迁移。
+    if (!forceMigration.value && err?.code === 'SOURCE_HOST_UNAVAILABLE' && window.confirm(t('host.migrate.forcePanelConfirm'))) {
+      forceMigration.value = true
+      await handleSubmit(true)
+      return
+    }
     toast.error(t('host.migrate.failed') + ': ' + (err?.message || String(err)))
   } finally {
     isSubmitting.value = false
@@ -209,6 +224,7 @@ async function handleSubmit() {
 // 关闭弹窗
 function closeModal() {
   emit('update:visible', false)
+  forceMigration.value = false
   // 重置状态
   setTimeout(() => {
     showResult.value = false
@@ -247,6 +263,7 @@ watch(() => props.visible, (val) => {
     targetHostId.value = null
     targetImage.value = ''
     targetPlanId.value = null
+    forceMigration.value = props.sourceHostStatus === 'offline'
     plans.value = []
     images.value = []
   }
@@ -441,6 +458,27 @@ watch(() => props.visible, (val) => {
                     <li>{{ t('host.migrate.warningNotify') }}</li>
                   </ul>
                 </div>
+              </div>
+
+              <!-- 迁移方式 -->
+              <div
+                class="p-3 rounded-lg border"
+                :class="themeStore.isDark ? 'border-gray-700 bg-gray-800/60' : 'border-gray-200 bg-gray-50'"
+              >
+                <p class="text-sm font-medium text-themed mb-2">{{ t('host.migrate.modeTitle') }}</p>
+                <label class="flex items-start gap-2 text-sm text-themed-secondary cursor-pointer">
+                  <input v-model="forceMigration" type="checkbox" class="mt-0.5" />
+                  <span>
+                    <span class="block font-medium text-themed">{{ t('host.migrate.forcePanel') }}</span>
+                    <span class="block text-xs text-themed-muted mt-0.5">{{ t('host.migrate.forcePanelHint') }}</span>
+                  </span>
+                </label>
+                <p
+                  v-if="sourceHostStatus && sourceHostStatus !== 'online'"
+                  class="mt-2 text-xs text-orange-600 dark:text-orange-400"
+                >
+                  {{ t('host.migrate.sourceOfflineHint') }}
+                </p>
               </div>
             </template>
           </div>

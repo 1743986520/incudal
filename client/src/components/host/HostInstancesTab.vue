@@ -25,6 +25,7 @@ const toast = useToast()
 interface Props {
   hostId: number
   hostName?: string
+  hostStatus?: 'online' | 'offline' | 'maintenance' | string
 }
 
 const props = defineProps<Props>()
@@ -401,24 +402,57 @@ async function openBatchDeleteModal() {
 
 async function confirmBatchDelete(databaseOnly: boolean = false) {
   if (effectiveDeleteSelection.value.length === 0) return
+
+  if (databaseOnly && !window.confirm(t('admin.hosts.forcePanelDeleteConfirm', { count: effectiveDeleteCount.value }))) {
+    return
+  }
   
   isDeleting.value = true
   deletingMode.value = databaseOnly ? 'database' : 'full'
   try {
-    const result = await api.hosts.batchDeleteInstances(
+    let result = await api.hosts.batchDeleteInstances(
       props.hostId,
       effectiveDeleteSelection.value,
       deleteReason.value.trim() || undefined,
       databaseOnly
     )
+
+    // 普通删除发现宿主机完全无法连接时，询问是否改为只更新面板记录。
+    // 仅在一个实例都没有删除成功时重试，避免把正常的部分失败静默改成强制删除。
+    const sourceHostUnavailable = !databaseOnly
+      && result.successCount === 0
+      && result.failedCount > 0
+      && result.results.some(item => item.error === 'Incus client unavailable')
+    if (sourceHostUnavailable && window.confirm(t('admin.hosts.forcePanelDeleteConfirm', { count: effectiveDeleteCount.value }))) {
+      deletingMode.value = 'database'
+      result = await api.hosts.batchDeleteInstances(
+        props.hostId,
+        effectiveDeleteSelection.value,
+        deleteReason.value.trim() || undefined,
+        true
+      )
+    }
     
+    const refundAmount = Number(result.totalRefundAmount || 0)
+    const refundMessageKey = refundAmount > 0
+      ? (result.failedCount > 0
+        ? 'admin.hosts.batchDeletePartialWithRefund'
+        : 'admin.hosts.batchDeleteSuccessWithRefund')
+      : (result.failedCount > 0
+        ? 'admin.hosts.batchDeletePartial'
+        : 'admin.hosts.batchDeleteSuccess')
+
     if (result.failedCount > 0) {
-      toast.warning(t('admin.hosts.batchDeletePartial', {
+      toast.warning(t(refundMessageKey, {
         success: result.successCount,
-        failed: result.failedCount
+        failed: result.failedCount,
+        amount: refundAmount.toFixed(2)
       }))
     } else {
-      toast.success(t('admin.hosts.batchDeleteSuccess', { count: result.successCount }))
+      toast.success(t(refundMessageKey, {
+        count: result.successCount,
+        amount: refundAmount.toFixed(2)
+      }))
     }
     
     selectedIds.value.clear()
@@ -1594,6 +1628,16 @@ function goToInstance(id: number) {
                 <p class="text-sm text-themed-secondary">
                   {{ t('admin.hosts.batchDeleteConfirm', { count: effectiveDeleteCount }) }}
                 </p>
+
+                <div
+                  v-if="hostStatus && hostStatus !== 'online'"
+                  class="p-3 rounded-lg"
+                  :class="themeStore.isDark ? 'bg-yellow-900/20' : 'bg-yellow-50'"
+                >
+                  <p class="text-sm text-yellow-700 dark:text-yellow-400">
+                    {{ t('admin.hosts.forcePanelDeleteHint') }}
+                  </p>
+                </div>
                   
                 <!-- 退款提示区域 -->
                 <div v-if="deletePreviewLoading" class="flex items-center justify-center py-4">
@@ -1662,7 +1706,7 @@ function goToInstance(id: number) {
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                   </svg>
-                  {{ deletingMode === 'database' ? t('common.loading') : t('admin.hosts.databaseOnlyDelete') }}
+                  {{ deletingMode === 'database' ? t('common.loading') : t('admin.hosts.forcePanelDelete') }}
                 </button>
                 <button
                   class="btn-danger"
@@ -1998,6 +2042,7 @@ function goToInstance(id: number) {
     v-model:visible="showMigrateModal"
     :host-id="hostId"
     :host-name="hostName"
+    :source-host-status="hostStatus"
     :selected-ids="Array.from(selectedIds)"
     :instances="instances"
     @success="loadInstances"
