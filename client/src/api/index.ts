@@ -294,6 +294,25 @@ const TIMEOUT = {
   BATCH: 900000,            // 15分钟 - 批量操作
 }
 
+export type HostListScope = 'mine' | 'official' | 'hosted'
+
+export interface HostListParams {
+  page?: number | string
+  pageSize?: number | string
+  search?: string
+  mine?: boolean | string
+  scope?: HostListScope
+  userId?: number | string
+}
+
+export interface HostListResponse {
+  hosts: HostWithDetails[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
 function buildTicketFormData(
   data: CreateTicketRequest | { content: string; attachments?: File[] }
 ): FormData {
@@ -1294,10 +1313,13 @@ const api = {
 
   // 主机管理
   hosts: {
-    list: (params: Record<string, unknown> = {}): Promise<{ hosts: HostWithDetails[]; total: number; page: number; pageSize: number; totalPages: number }> =>
+    list: (params: HostListParams = {}): Promise<HostListResponse> =>
       http.get('/hosts', { params }),
+    // 管理员专用：获取官方自营节点（所有管理员账号名下的节点）
+    listOfficial: (params: Omit<HostListParams, 'mine' | 'scope' | 'userId'> = {}): Promise<HostListResponse> =>
+      http.get('/hosts', { params: { ...params, scope: 'official' } }),
     // 管理员专用：获取托管节点列表
-    listHosted: (params: { userId?: number; page?: number; pageSize?: number; search?: string } = {}): Promise<{ hosts: HostWithDetails[]; total: number; page: number; pageSize: number; totalPages: number }> =>
+    listHosted: (params: Pick<HostListParams, 'userId' | 'page' | 'pageSize' | 'search'> = {}): Promise<HostListResponse> =>
       http.get('/hosts', { params: { ...params, scope: 'hosted' } }),
     get: (id: number): Promise<HostWithDetails> => http.get(`/hosts/${id}`),
     lookupGiftTargetUser: (hostId: number, username: string): Promise<{

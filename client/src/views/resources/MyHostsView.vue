@@ -22,7 +22,7 @@ const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
 // 管理员专用：节点范围切换器
-const scope = ref('mine') // 'mine' | 'hosted'
+const scope = ref('mine') // 'mine' | 'official' | 'hosted'
 const filterUserId = ref('')  // 用于筛选特定用户的托管节点
 
 // 托管准入检查
@@ -116,6 +116,13 @@ async function loadHosts() {
         pageSize: pageSize.value,
         search: search.value,
         ...(filterUserId.value ? { userId: parseInt(filterUserId.value, 10) } : {})
+      })
+    } else if (isAdmin.value && scope.value === 'official') {
+      // 管理员查看官方自营节点（所有管理员账号名下的节点）
+      res = await api.hosts.listOfficial({
+        page: page.value,
+        pageSize: pageSize.value,
+        search: search.value
       })
     } else if (isAdmin.value && scope.value === 'mine') {
       // 管理员查看自己的节点（传 scope: 'mine'）
@@ -423,6 +430,15 @@ onActivated(() => {
           </button>
           <button
             class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
+            :class="scope === 'official'
+              ? (themeStore.isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-900 shadow-sm')
+              : (themeStore.isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')"
+            @click="switchScope('official')"
+          >
+            {{ t('resources.hosts.official') }}
+          </button>
+          <button
+            class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
             :class="scope === 'hosted' 
               ? (themeStore.isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-900 shadow-sm') 
               : (themeStore.isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')"
@@ -508,7 +524,7 @@ onActivated(() => {
               <th class="text-left text-xs font-medium text-themed-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">{{ t('admin.hosts.status') }}</th>
               <th class="text-left text-xs font-medium text-themed-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">{{ t('admin.hosts.resources') }}</th>
               <th class="text-left text-xs font-medium text-themed-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">{{ t('admin.hosts.instances') }}</th>
-              <th v-if="scope === 'mine' || (isAdmin && scope === 'hosted')" class="text-right text-xs font-medium text-themed-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">{{ t('admin.hosts.actions') }}</th>
+              <th v-if="scope === 'mine' || scope === 'official' || (isAdmin && scope === 'hosted')" class="text-right text-xs font-medium text-themed-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">{{ t('admin.hosts.actions') }}</th>
             </tr>
           </thead>
           <tbody
@@ -567,9 +583,9 @@ onActivated(() => {
                 </div>
               </td>
               <td class="px-4 py-3 text-sm text-themed-secondary whitespace-nowrap">{{ host.instanceCount }}</td>
-              <td v-if="scope === 'mine' || (isAdmin && scope === 'hosted')" class="px-4 py-3 text-right whitespace-nowrap" @click.stop>
+              <td v-if="scope === 'mine' || scope === 'official' || (isAdmin && scope === 'hosted')" class="px-4 py-3 text-right whitespace-nowrap" @click.stop>
                 <div class="flex items-center justify-end gap-2">
-                  <template v-if="scope === 'mine'">
+                  <template v-if="scope === 'mine' || scope === 'official'">
                     <button class="btn-ghost btn-sm" @click.stop="testHost(host)">{{ t('admin.hosts.test') }}</button>
                     <button class="btn-ghost btn-sm text-error" @click.stop="deleteHost(host)">{{ t('admin.hosts.delete') }}</button>
                   </template>

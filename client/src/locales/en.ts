@@ -6167,6 +6167,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             nameSuffixRequired: 'Please enter the node name suffix',
             // Admin only: Host scope toggle
             mine: 'My Hosts',
+            official: 'Official Hosts',
             hosted: 'Hosted',
             owner: 'Owner',
             filterByUserId: 'User ID',

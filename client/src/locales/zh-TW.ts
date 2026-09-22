@@ -6874,6 +6874,7 @@ export default {
             nameSuffixRequired: '請輸入節點名稱後綴',
             // 管理員專用：節點切換器
             mine: '我的節點',
+            official: '官方自營節點',
             hosted: '託管節點',
             owner: '擁有者',
             filterByUserId: '用戶ID',

@@ -6170,6 +6170,7 @@ export default {
             nameSuffixRequired: '请输入节点名称后缀',
             // 管理员专用：节点切换器
             mine: '我的节点',
+            official: '官方自营节点',
             hosted: '托管节点',
             owner: '所有者',
             filterByUserId: '用户ID',
