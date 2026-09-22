@@ -90,6 +90,7 @@ import vipLevelRoutes from './routes/vip-levels.js'
 import vipBenefitRoutes from './routes/vip-benefits.js'
 import officialCouponRoutes from './routes/official-coupons.js'
 import adminOfficialCouponRoutes from './routes/admin-official-coupons.js'
+import siteMetaRoutes from './routes/site-meta.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -445,6 +446,9 @@ await fastify.register(systemUpdateRoutes, { prefix: '/api/system-update' })
 await fastify.register(userInviteRoutes, { prefix: '/api/user-invites' })
 await fastify.register(vipLevelRoutes)
 await fastify.register(vipBenefitRoutes)
+
+// Search-engine discovery endpoints must be registered before the SPA fallback.
+await fastify.register(siteMetaRoutes)
 
 // 生产环境：注册静态文件服务
 if (process.env.NODE_ENV === 'production') {
