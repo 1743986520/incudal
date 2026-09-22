@@ -497,7 +497,7 @@ watch(() => props.visible, (val) => {
               <button
                 class="btn-primary"
                 :disabled="!canSubmit || isSubmitting || loadingHosts || loadingPlans || loadingImages"
-                @click="handleSubmit"
+                @click="handleSubmit()"
               >
                 <svg v-if="isSubmitting" class="w-4 h-4 mr-1 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
