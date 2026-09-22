@@ -73,7 +73,7 @@ const targetImage = ref<string>('')
 // 选中的目标方案（付费实例必选）
 const targetPlanId = ref<number | null>(null)
 
-// 是否跳过源节点通信。源节点离线或已被删除时使用，目标节点仍需在线。
+// 改节点流程在确认后重试时使用。正常提交不会跳过源节点通信。
 const forceMigration = ref(false)
 
 // 提交状态
@@ -182,7 +182,12 @@ async function handleSubmit(skipForceConfirm = false) {
     return
   }
 
-  if (forceMigration.value && !skipForceConfirm && !window.confirm(t('host.migrate.forcePanelConfirm'))) {
+  // 源节点已经明确离线时，在“改节点”流程中直接询问是否改为面板强制迁移，
+  // 确认后不再先尝试连接源节点。
+  if (!forceMigration.value && !skipForceConfirm && props.sourceHostStatus && props.sourceHostStatus !== 'online') {
+    if (!window.confirm(t('host.migrate.forcePanelConfirm'))) return
+    forceMigration.value = true
+    await handleSubmit(true)
     return
   }
 
@@ -209,7 +214,7 @@ async function handleSubmit(skipForceConfirm = false) {
       emit('success')
     }
   } catch (err: any) {
-    // 节点状态可能滞后于实际连通性；正常迁移连接失败时，直接询问是否改为面板强制迁移。
+    // 节点状态可能滞后于实际连通性；正常改节点连接失败时，仍在同一流程中询问是否改为面板强制迁移。
     if (!forceMigration.value && err?.code === 'SOURCE_HOST_UNAVAILABLE' && window.confirm(t('host.migrate.forcePanelConfirm'))) {
       forceMigration.value = true
       await handleSubmit(true)
@@ -263,7 +268,7 @@ watch(() => props.visible, (val) => {
     targetHostId.value = null
     targetImage.value = ''
     targetPlanId.value = null
-    forceMigration.value = props.sourceHostStatus === 'offline'
+    forceMigration.value = false
     plans.value = []
     images.value = []
   }
@@ -460,26 +465,6 @@ watch(() => props.visible, (val) => {
                 </div>
               </div>
 
-              <!-- 迁移方式 -->
-              <div
-                class="p-3 rounded-lg border"
-                :class="themeStore.isDark ? 'border-gray-700 bg-gray-800/60' : 'border-gray-200 bg-gray-50'"
-              >
-                <p class="text-sm font-medium text-themed mb-2">{{ t('host.migrate.modeTitle') }}</p>
-                <label class="flex items-start gap-2 text-sm text-themed-secondary cursor-pointer">
-                  <input v-model="forceMigration" type="checkbox" class="mt-0.5" />
-                  <span>
-                    <span class="block font-medium text-themed">{{ t('host.migrate.forcePanel') }}</span>
-                    <span class="block text-xs text-themed-muted mt-0.5">{{ t('host.migrate.forcePanelHint') }}</span>
-                  </span>
-                </label>
-                <p
-                  v-if="sourceHostStatus && sourceHostStatus !== 'online'"
-                  class="mt-2 text-xs text-orange-600 dark:text-orange-400"
-                >
-                  {{ t('host.migrate.sourceOfflineHint') }}
-                </p>
-              </div>
             </template>
           </div>
 
