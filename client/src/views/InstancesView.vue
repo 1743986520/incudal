@@ -574,6 +574,11 @@ function getInstancePackageName(instance: Instance): string | null {
   return (instance as any).packageName || (instance as any).package?.name || null
 }
 
+function isHourlyInstance(instance: Instance): boolean {
+  const billingMode = (instance as any).billingMode || (instance as any).billing_mode
+  return billingMode === 'hourly'
+}
+
 function getCardActionButtonClass(variant: 'default' | 'danger' = 'default'): string {
   if (variant === 'danger') {
     return themeStore.isDark
@@ -633,6 +638,14 @@ function formatExpiryDate(date: Date): string {
 }
 
 function getInstanceExpiryInfo(instance: Instance): InstanceExpiryInfo {
+  if (isHourlyInstance(instance)) {
+    return {
+      dateText: null,
+      remainingText: t('hourlyBilling.badge'),
+      className: 'text-blue-500 dark:text-blue-400',
+      title: null
+    }
+  }
   const expiresAt = instance.expires_at || (instance as any).expiresAt || null
   if (!expiresAt) {
     return {
@@ -1164,12 +1177,17 @@ async function confirmBatchDestroy(): Promise<void> {
           </template>
         </p>
       </div>
-      <RouterLink to="/instances/create" class="btn-primary w-full sm:w-auto justify-center">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        {{ configStore.freeSiteMode ? freeSiteCopy.instanceCreate : $t('instance.create') }}
-      </RouterLink>
+      <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+        <RouterLink to="/instances/create-hourly" class="btn-secondary w-full justify-center sm:w-auto">
+          {{ $t('hourlyBilling.createTitle') }}
+        </RouterLink>
+        <RouterLink to="/instances/create" class="btn-primary w-full justify-center sm:w-auto">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          {{ configStore.freeSiteMode ? freeSiteCopy.instanceCreate : $t('instance.create') }}
+        </RouterLink>
+      </div>
     </div>
 
     <!-- 搜索和筛选 -->
@@ -1559,7 +1577,8 @@ async function confirmBatchDestroy(): Promise<void> {
                       class="font-medium text-sm truncate"
                       :class="themeStore.isDark ? 'text-gray-100' : 'text-gray-900'"
                     >
-                      {{ instance.name }}
+                      <span>{{ instance.name }}</span>
+                      <span v-if="isHourlyInstance(instance)" class="ml-1.5 rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">{{ $t('hourlyBilling.badge') }}</span>
                     </div>
                     <div
                       class="text-xs truncate"
@@ -1792,8 +1811,8 @@ async function confirmBatchDestroy(): Promise<void> {
                   />
                 </div>
                 <div class="flex-1 min-w-0 cursor-pointer" @click="openInstanceDetail(instance.id)">
-                  <div class="flex items-center gap-2 mb-1">
-                    <div
+                    <div class="flex items-center gap-2 mb-1">
+                      <div
                       class="font-semibold truncate"
                       :class="themeStore.isDark ? 'text-gray-100' : 'text-gray-900'"
                     >
@@ -1803,6 +1822,7 @@ async function confirmBatchDestroy(): Promise<void> {
                       <span :class="['w-1 h-1 rounded-full', getStatusInfo(instance.status, t).dot]"></span>
                       <span class="text-[10px]">{{ getStatusInfo(instance.status, t).label }}</span>
                     </span>
+                    <span v-if="isHourlyInstance(instance)" class="badge badge-sm flex-shrink-0 bg-blue-500/10 text-blue-500">{{ $t('hourlyBilling.badge') }}</span>
                   </div>
                   <div
                     class="text-xs truncate"

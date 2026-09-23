@@ -42,7 +42,7 @@ import AnnouncementIcon from '@/components/icons/AnnouncementIcon.vue'
 import { getStatusInfo } from '@/utils/formatters'
 import { translateError } from '@/utils/errorHandler'
 import { freeSiteCopy, getFreeSiteBillingCycleLabel, getFreeSiteBillingCycleShort } from '@/utils/freeSiteFun'
-import type { Instance, InstanceWithDetails, Snapshot, UserQuota, UpdateInstanceRequest, Package, CloudInitState, CloudInitStatusResponse } from '@/types/api'
+import type { Instance, InstanceWithDetails, Snapshot, UserQuota, UpdateInstanceRequest, Package, CloudInitState, CloudInitStatusResponse, HourlyBillingInfo, HourlyBillingRecord } from '@/types/api'
 
 // 格式化镜像名称：优先使用 imageName，否则去掉 images: 前缀
 function formatImageName(image: string, imageName?: string | null): string {
@@ -139,6 +139,11 @@ interface TrafficData {
 }
 const trafficData = ref<TrafficData | null>(null)
 const trafficLoading = ref<boolean>(false)
+
+// 按小时计费数据
+const hourlyBilling = ref<HourlyBillingInfo | null>(null)
+const hourlyBillingRecords = ref<HourlyBillingRecord[]>([])
+const hourlyBillingLoading = ref<boolean>(false)
 
 // 端口映射
 const showAddPortModal = ref<boolean>(false)
@@ -429,6 +434,11 @@ const isSuspended = computed<boolean>(() => {
   return s === 'suspended'
 })
 
+const isHourlyInstance = computed<boolean>(() => {
+  const inst = instance.value as (InstanceWithDetails & { billing_mode?: string }) | null
+  return inst?.billingMode === 'hourly' || inst?.billing_mode === 'hourly'
+})
+
 const canDestroyExpiredSuspendedPaidInstance = computed<boolean>(() => {
   if (!instance.value || !isSuspended.value) return false
   return instance.value.suspend_reason === 'expired'
@@ -490,9 +500,13 @@ const isTrafficBillingSuspension = computed<boolean>(() => {
   const inst = instance.value as { suspendReason?: string | null; suspend_reason?: string | null } | null
   return (inst?.suspendReason ?? inst?.suspend_reason) === 'traffic_billing_insufficient_balance'
 })
+const isHourlyBillingSuspension = computed<boolean>(() => {
+  const inst = instance.value as { suspendReason?: string | null; suspend_reason?: string | null } | null
+  return (inst?.suspendReason ?? inst?.suspend_reason) === 'hourly_billing_insufficient_balance'
+})
 const canUnsuspend = computed<boolean>(() => {
   const inst = instance.value as { isHostOwner?: boolean; isInstanceOwner?: boolean } | null
-  return inst?.isHostOwner === true || (inst?.isInstanceOwner === true && isTrafficBillingSuspension.value)
+  return inst?.isHostOwner === true || (inst?.isInstanceOwner === true && (isTrafficBillingSuspension.value || isHourlyBillingSuspension.value))
 })
 const canSyncStatus = computed<boolean>(() => {
   const inst = instance.value
@@ -539,6 +553,8 @@ watch(() => route.params.id, async (newId, oldId) => {
         network: { bytesReceived: 0, bytesSent: 0 }
       }
       trafficData.value = null
+      hourlyBilling.value = null
+      hourlyBillingRecords.value = []
       snapshots.value = []
       hasPendingTransfer.value = false
       destroyInfo.value = null
@@ -840,6 +856,12 @@ async function loadInstance(): Promise<void> {
     const response = await api.instances.get(instanceId)
     instance.value = (response as { instance?: Instance }).instance || null
     if (instance.value) {
+      if (isHourlyInstance.value) {
+        await loadHourlyBillingData()
+      } else {
+        hourlyBilling.value = null
+        hourlyBillingRecords.value = []
+      }
       // 如果实例绑定了套餐，仅在 package_id 变化时加载套餐信息（套餐信息极少变化，不需要每5秒重新获取）
       if (instance.value.package_id && instance.value.package_id > 0) {
         if (lastFetchedPackageId !== instance.value.package_id) {
@@ -904,6 +926,24 @@ async function loadInstance(): Promise<void> {
     }
   } finally {
     loading.value = false
+  }
+}
+
+async function loadHourlyBillingData(): Promise<void> {
+  if (!instance.value || !isHourlyInstance.value || hourlyBillingLoading.value) return
+  hourlyBillingLoading.value = true
+  try {
+    const [billing, records] = await Promise.all([
+      api.instances.getHourlyBilling(instance.value.id),
+      api.instances.getHourlyBillingRecords(instance.value.id, 10)
+    ])
+    hourlyBilling.value = billing
+    hourlyBillingRecords.value = records.records || []
+  } catch (err) {
+    console.error('Failed to load hourly billing:', err)
+    if (!hourlyBilling.value) toast.error(t('hourlyBilling.loadFailed'))
+  } finally {
+    hourlyBillingLoading.value = false
   }
 }
 
@@ -1659,7 +1699,9 @@ async function handleUnsuspend(): Promise<void> {
   suspendLoading.value = true
   try {
     await api.instances.unsuspend(instance.value.id)
-    toast.success(t('instance.detail.actions.unsuspendSuccess'))
+    toast.success(isHourlyBillingSuspension.value
+      ? t('hourlyBilling.payDebtSuccess')
+      : t('instance.detail.actions.unsuspendSuccess'))
     await loadInstance()
   } catch (err: any) {
     toast.error(translateError(err))
@@ -2398,6 +2440,17 @@ function formatShortDate(dateStr: string | null | undefined): string {
   return `${year}-${month}-${day}`
 }
 
+function formatHourlyMoney(value: string | number | null | undefined): string {
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount.toFixed(4) : '-'
+}
+
+function formatHourlyDate(value: string | null | undefined): string {
+  if (!value) return t('hourlyBilling.noNextSettlement')
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
+}
+
 // 格式化函数现在在 @/utils/formatters 中
 </script>
 
@@ -2461,6 +2514,12 @@ function formatShortDate(dateStr: string | null | undefined): string {
               <h1 class="page-title max-w-full truncate">{{ instance.name }}</h1>
               <span :class="['badge', getStatusInfo(instance.status, t).class]">
                 {{ getStatusInfo(instance.status, t).label }}
+              </span>
+              <span
+                v-if="isHourlyInstance"
+                class="badge border border-blue-500/30 bg-blue-500/10 text-blue-500"
+              >
+                {{ $t('hourlyBilling.badge') }}
               </span>
             </div>
             <p class="page-description mt-0.5">{{ formatImageName(instance.image, (instance as any).imageName) }} · <span class="uppercase">{{ (instance as any).host?.name || (instance as any).host || '-' }}</span></p>
@@ -2728,7 +2787,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
             <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span class="hidden sm:inline ml-1">{{ isTrafficBillingSuspension && !canSuspend ? $t('instance.actions.payTrafficDebt') : $t('instance.actions.unsuspend') }}</span>
+            <span class="hidden sm:inline ml-1">{{ isHourlyBillingSuspension && !canSuspend ? $t('hourlyBilling.payDebt') : (isTrafficBillingSuspension && !canSuspend ? $t('instance.actions.payTrafficDebt') : $t('instance.actions.unsuspend')) }}</span>
           </button>
           <button v-if="canDeleteInstance" :disabled="isOperationDisabled" class="btn-danger btn-sm sm:btn" @click="handleAction('delete')">
             <svg v-if="actionLoading === 'delete'" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -3103,6 +3162,82 @@ function formatShortDate(dateStr: string | null | undefined): string {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <!-- Hourly Billing Card -->
+            <div v-if="isHourlyInstance && hourlyBilling" class="card p-4 sm:p-5">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h2 class="text-lg font-semibold text-themed">{{ $t('hourlyBilling.detailTitle') }}</h2>
+                    <span
+                      class="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                      :class="hourlyBilling.status === 'active'
+                        ? 'bg-emerald-500/10 text-emerald-500'
+                        : hourlyBilling.status === 'suspended'
+                          ? 'bg-red-500/10 text-red-500'
+                          : 'bg-gray-500/10 text-gray-500'"
+                    >
+                      {{ $t(`hourlyBilling.status${hourlyBilling.status.charAt(0).toUpperCase()}${hourlyBilling.status.slice(1)}`) }}
+                    </span>
+                  </div>
+                  <p class="mt-1 text-xs text-themed-muted">{{ $t('hourlyBilling.resourceHint') }}</p>
+                </div>
+                <div class="text-left sm:text-right">
+                  <div class="text-xs text-themed-muted">{{ $t('hourlyBilling.hourlyRate') }}</div>
+                  <div class="mt-1 text-2xl font-semibold text-themed">¥{{ formatHourlyMoney(hourlyBilling.hourlyPrice) }}<span class="text-xs font-normal text-themed-muted"> / {{ $t('hourlyBilling.hour') }}</span></div>
+                </div>
+              </div>
+
+              <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div class="rounded-xl border border-themed p-3">
+                  <div class="text-[11px] text-themed-muted">{{ $t('hourlyBilling.prepaidBalance') }}</div>
+                  <div class="mt-1 text-sm font-semibold text-themed">¥{{ formatHourlyMoney(hourlyBilling.prepaidBalance) }}</div>
+                </div>
+                <div class="rounded-xl border border-themed p-3">
+                  <div class="text-[11px] text-themed-muted">{{ $t('hourlyBilling.totalCost') }}</div>
+                  <div class="mt-1 text-sm font-semibold text-themed">¥{{ formatHourlyMoney(hourlyBilling.totalCost) }}</div>
+                </div>
+                <div class="rounded-xl border border-themed p-3">
+                  <div class="text-[11px] text-themed-muted">{{ $t('hourlyBilling.totalReserved') }}</div>
+                  <div class="mt-1 text-sm font-semibold text-themed">¥{{ formatHourlyMoney(hourlyBilling.totalReserved) }}</div>
+                </div>
+                <div class="rounded-xl border border-themed p-3">
+                  <div class="text-[11px] text-themed-muted">{{ $t('hourlyBilling.outstandingAmount') }}</div>
+                  <div class="mt-1 text-sm font-semibold" :class="Number(hourlyBilling.outstandingAmount) > 0 ? 'text-red-500' : 'text-themed'">¥{{ formatHourlyMoney(hourlyBilling.outstandingAmount) }}</div>
+                </div>
+              </div>
+
+              <div v-if="isHourlyBillingSuspension" class="mt-4 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <p class="text-sm text-amber-600 dark:text-amber-300">{{ $t('hourlyBilling.debtHint') }}</p>
+                <button v-if="canUnsuspend && !canSuspend" type="button" class="btn-primary btn-sm shrink-0" :disabled="suspendLoading" @click="handleUnsuspend">
+                  {{ suspendLoading ? $t('common.processing') : $t('hourlyBilling.payDebt') }}
+                </button>
+              </div>
+
+              <div class="mt-4 flex flex-col gap-1 text-xs text-themed-muted sm:flex-row sm:justify-between">
+                <span>{{ $t('hourlyBilling.nextSettlement') }}: {{ formatHourlyDate(hourlyBilling.nextSettlementAt) }}</span>
+                <span>{{ $t('hourlyBilling.recentRecords') }}: {{ hourlyBillingLoading ? $t('common.loading') : hourlyBillingRecords.length }}</span>
+              </div>
+              <div v-if="hourlyBillingRecords.length > 0" class="mt-3 overflow-x-auto rounded-lg border border-themed">
+                <table class="w-full min-w-[560px] text-xs">
+                  <thead class="border-b border-themed bg-themed-secondary text-themed-muted">
+                    <tr>
+                      <th class="px-3 py-2 text-left font-medium">{{ $t('hourlyBilling.recordPeriod') }}</th>
+                      <th class="px-3 py-2 text-right font-medium">{{ $t('hourlyBilling.recordAmount') }}</th>
+                      <th class="px-3 py-2 text-right font-medium">{{ $t('hourlyBilling.recordReserve') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-themed">
+                    <tr v-for="record in hourlyBillingRecords" :key="record.id">
+                      <td class="px-3 py-2 text-themed-muted">{{ formatHourlyDate(record.periodStart) }} – {{ formatHourlyDate(record.periodEnd) }}</td>
+                      <td class="px-3 py-2 text-right text-themed">¥{{ formatHourlyMoney(record.actualAmount) }}</td>
+                      <td class="px-3 py-2 text-right text-themed-muted">¥{{ formatHourlyMoney(record.reserveAmount) }} / ¥{{ formatHourlyMoney(record.releaseAmount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="mt-3 text-xs text-themed-muted">{{ $t('hourlyBilling.noRecords') }}</p>
             </div>
 
             <!-- Original Info Tab Content -->

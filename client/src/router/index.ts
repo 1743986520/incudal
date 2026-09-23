@@ -147,6 +147,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/instances/create-hourly',
+    name: 'hourly-instance-create',
+    component: () => import('@/views/HourlyInstanceCreateView.vue'),
+    meta: {
+      requiresAuth: true,
+      titleKey: 'hourlyBilling.createTitle',
+      title: '按小时创建实例'
+    }
+  },
+  {
     path: '/instances/:id',
     name: 'instance-detail',
     component: () => import('@/views/InstanceDetailView.vue'),
@@ -399,6 +409,12 @@ const routes: RouteRecordRaw[] = [
     name: 'admin-billing',
     component: () => import('@/views/admin/BillingView.vue'),
     meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.billing', title: '计费' }
+  },
+  {
+    path: '/admin/hourly-billing',
+    name: 'admin-hourly-billing',
+    component: () => import('@/views/admin/HourlyBillingView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'hourlyBilling.adminTitle', title: '按小时计费管理' }
   },
   {
     path: '/admin/aff',
