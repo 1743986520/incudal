@@ -95,7 +95,7 @@ const builtInArticles = computed<HelpArticle[]>(() => builtInTopicDefinitions.ma
 const seoDescription = computed(() => {
   const content = currentArticle.value?.summary || currentArticle.value?.content || t('help.description')
   return content
-    .replace(/[#*_>`~\[\]()!-]/g, ' ')
+    .replace(/[#*_>`~\x5B\]()!-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160)
