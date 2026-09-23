@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /instances
+Disallow: /profile
+Disallow: /wallet
+Disallow: /inbox
+Disallow: /terminal
+Disallow: /tickets
+Disallow: /api/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+
+Sitemap: https://incudal.di0.uk/sitemap.xml

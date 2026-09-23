@@ -32,6 +32,18 @@ function toAbsoluteUrl(url: string): string {
   return new URL(url, window.location.origin).href
 }
 
+function resolveCanonical(url: string, siteUrl: string): string {
+  try {
+    const canonicalUrl = new URL(url, window.location.origin)
+    const configuredSiteUrl = new URL(siteUrl, window.location.origin)
+    canonicalUrl.protocol = configuredSiteUrl.protocol
+    canonicalUrl.host = configuredSiteUrl.host
+    return canonicalUrl.toString()
+  } catch {
+    return url
+  }
+}
+
 function upsertMetaByName(name: string, content: string): void {
   let element = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
   if (!element) {
@@ -69,7 +81,7 @@ function applySeo(options: SeoOptions): void {
   const configStore = useConfigStore()
   const brandName = configStore.brandName?.trim() || 'Incudal'
   const image = toAbsoluteUrl(options.image || configStore.brandLogoUrl?.trim() || '/incudal_logo.webp')
-  const canonical = options.canonical || window.location.href
+  const canonical = resolveCanonical(options.canonical || window.location.href, configStore.seoSiteUrl)
   const robots = options.robots || defaultRobots
 
   document.title = options.title
@@ -112,13 +124,13 @@ function restoreDefaults(): void {
   upsertMetaByProperty('og:type', 'website')
   upsertMetaByProperty('og:title', title)
   upsertMetaByProperty('og:description', description)
-  upsertMetaByProperty('og:url', window.location.href)
+  upsertMetaByProperty('og:url', resolveCanonical(window.location.href, configStore.seoSiteUrl))
   upsertMetaByProperty('og:image', brandLogoUrl)
   upsertMetaByName('twitter:card', 'summary_large_image')
   upsertMetaByName('twitter:title', title)
   upsertMetaByName('twitter:description', description)
   upsertMetaByName('twitter:image', brandLogoUrl)
-  upsertCanonical(defaultCanonical || window.location.href)
+  upsertCanonical(resolveCanonical(defaultCanonical || window.location.href, configStore.seoSiteUrl))
 }
 
 export function usePageSeo(options: MaybeRefOrGetter<SeoOptions>): void {
