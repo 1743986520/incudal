@@ -7,6 +7,7 @@ import { useConfigStore } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import type { Package } from '@/types/api'
 import { translateError } from '@/utils/errorHandler'
+import { applySeoTracking } from '@/utils/seoTracking'
 import {
   systemSettingsNavigationItems,
   systemSettingsSections,
@@ -34,10 +35,12 @@ const savingEmailDomain = ref(false)
 const savingTransfer = ref(false)
 const savingFooterLinks = ref(false)
 const savingBrand = ref(false)
+const savingSeo = ref(false)
 const savingTicket = ref(false)
 const savingFreeSite = ref(false)
 const savingTicketImages = ref(false)
 const testingSmtp = ref(false)
+const submittingIndexNow = ref(false)
 const sendingTestEmail = ref(false)
 const testEmailTo = ref('')
 const popupPromoPackages = ref<Package[]>([])
@@ -99,6 +102,15 @@ const form = ref({
   brand_name: 'Incudal',
   brand_subtitle: '基于 Incus 的低价 NAT VPS',
   brand_logo_url: '/incudal_logo.webp',
+  seo_site_url: 'https://incudal.di0.uk',
+  seo_sitemap_path: '/sitemap.xml',
+  seo_verification_path: '',
+  seo_verification_content: '',
+  seo_indexnow_endpoint: 'https://api.indexnow.org/IndexNow',
+  seo_indexnow_key: '',
+  seo_tracking_enabled: false,
+  seo_tracking_script_url: 'https://www.googletagmanager.com/gtag/js',
+  seo_tracking_id: 'G-1HXQL8QTW2',
   // 邮箱域名白名单配置
   email_domain_whitelist_enabled: false,
   email_allowed_domains: '',
@@ -149,10 +161,10 @@ const numericConfigKeys = ['default_quota_host', 'default_quota_friend', 'defaul
 const floatConfigKeys = ['transfer_fee', 'balance_transfer_fee', 'free_site_register_gift_balance']
 
 // 布尔类型的配置键
-const booleanConfigKeys = ['registration_enabled', 'require_invite_code', 'hosting_feature_enabled', 'hosting_market_entry_enabled', 'aff_rebate_enabled', 'ticket_enabled', 'free_site_mode', 'free_site_register_gift_enabled', 'turnstile_enabled', 'smtp_enabled', 'smtp_secure', 'email_domain_whitelist_enabled', 'balance_transfer_enabled']
+const booleanConfigKeys = ['registration_enabled', 'require_invite_code', 'hosting_feature_enabled', 'hosting_market_entry_enabled', 'aff_rebate_enabled', 'ticket_enabled', 'free_site_mode', 'free_site_register_gift_enabled', 'turnstile_enabled', 'smtp_enabled', 'smtp_secure', 'email_domain_whitelist_enabled', 'balance_transfer_enabled', 'seo_tracking_enabled']
 
 // 字符串类型的配置键
-const stringConfigKeys = ['turnstile_site_key', 'turnstile_secret_key', 'avatar_api_base', 'smtp_host', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name', 'email_allowed_domains', 'admin_registration_emails', 'footer_contact_email', 'brand_name', 'brand_subtitle', 'brand_logo_url', 'hosting_notice']
+const stringConfigKeys = ['turnstile_site_key', 'turnstile_secret_key', 'avatar_api_base', 'smtp_host', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name', 'email_allowed_domains', 'admin_registration_emails', 'footer_contact_email', 'brand_name', 'brand_subtitle', 'brand_logo_url', 'seo_site_url', 'seo_sitemap_path', 'seo_verification_path', 'seo_verification_content', 'seo_indexnow_endpoint', 'seo_indexnow_key', 'seo_tracking_script_url', 'seo_tracking_id', 'hosting_notice']
 stringConfigKeys.push('popup_announcement', 'popup_promo_image_url', 'popup_promo_package_id', 'ticket_image_lsky_base_url', 'ticket_image_lsky_token', 'ticket_image_lsky_api_version', 'ticket_image_lsky_target_id')
 
 const jsonConfigKeys = ['invite_generation_costs']
@@ -168,6 +180,7 @@ const currentSection = computed(() =>
 const isAccessSection = computed(() => currentSectionKey.value === 'access')
 const isHostingSection = computed(() => currentSectionKey.value === 'hosting')
 const isBrandSection = computed(() => currentSectionKey.value === 'brand')
+const isSeoSection = computed(() => currentSectionKey.value === 'seo')
 const isSecuritySection = computed(() => currentSectionKey.value === 'security')
 const isMailSection = computed(() => currentSectionKey.value === 'mail')
 const isTicketSection = computed(() => currentSectionKey.value === 'tickets')
@@ -467,6 +480,75 @@ const hasBrandChanges = computed(() => {
     return String((form.value as any)[key]) !== config.value
   })
 })
+
+const seoKeys = [
+  'seo_site_url',
+  'seo_sitemap_path',
+  'seo_verification_path',
+  'seo_verification_content',
+  'seo_indexnow_endpoint',
+  'seo_indexnow_key',
+  'seo_tracking_enabled',
+  'seo_tracking_script_url',
+  'seo_tracking_id'
+]
+
+async function saveSeo() {
+  await saveConfigGroup(seoKeys, savingSeo)
+  await configStore.loadPublicConfig(true)
+  applySeoTracking({
+    enabled: configStore.seoTrackingEnabled,
+    scriptUrl: configStore.seoTrackingScriptUrl,
+    trackingId: configStore.seoTrackingId
+  })
+}
+
+const hasSeoChanges = computed(() => {
+  return seoKeys.some(key => {
+    const config = configs.value.find(c => c.key === key)
+    if (!config) return false
+    return String((form.value as any)[key]) !== config.value
+  })
+})
+
+function buildSeoUrl(path: string): string {
+  try {
+    return new URL(path || '/', `${form.value.seo_site_url.replace(/\/+$/, '')}/`).toString()
+  } catch {
+    return ''
+  }
+}
+
+const seoSitemapUrl = computed(() => buildSeoUrl(form.value.seo_sitemap_path))
+const seoVerificationUrl = computed(() => (
+  form.value.seo_verification_path ? buildSeoUrl(form.value.seo_verification_path) : ''
+))
+const googleSearchConsoleUrl = computed(() => {
+  if (!seoSitemapUrl.value) return 'https://search.google.com/search-console'
+  return `https://search.google.com/search-console/sitemaps?resource_id=${encodeURIComponent(`${form.value.seo_site_url.replace(/\/+$/, '')}/`)}`
+})
+
+async function submitIndexNow() {
+  submittingIndexNow.value = true
+  try {
+    const result = await api.systemConfig.submitIndexNow()
+    toast.success(`${t('admin.system.seo.submitSuccess')} (${result.submitted})`)
+  } catch (err: any) {
+    toast.error(`${t('admin.system.seo.submitFailed')}: ${err?.message || String(err)}`)
+  } finally {
+    submittingIndexNow.value = false
+  }
+}
+
+async function copySeoUrl(url: string) {
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.success(t('admin.system.seo.copySuccess'))
+  } catch {
+    toast.error(t('admin.system.seo.copyFailed'))
+  }
+}
 
 const ticketKeys = ['ticket_enabled']
 async function saveTicket() {
@@ -1271,6 +1353,172 @@ async function sendTestEmail() {
                 placeholder="/incudal_logo.webp"
               />
               <p class="text-xs text-themed-muted">{{ t('admin.system.brand.logoDesc') || '支持 http(s) 图片地址或站点内绝对路径。' }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Website SEO Settings -->
+        <div v-if="isSeoSection" class="space-y-6">
+          <div class="card p-6">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-2">
+              <div>
+                <h3 class="text-themed font-medium">{{ t('admin.system.seo.title') }}</h3>
+                <p class="text-sm text-themed-muted mt-1">{{ t('admin.system.seo.description') }}</p>
+              </div>
+              <button
+                type="button"
+                class="btn-primary text-sm px-4 py-1.5"
+                :disabled="!hasSeoChanges || savingSeo"
+                @click="saveSeo"
+              >
+                {{ savingSeo ? t('admin.system.saving') : t('admin.system.save') }}
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div class="space-y-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.siteUrl') }}</label>
+                <input
+                  v-model="form.seo_site_url"
+                  type="url"
+                  maxlength="500"
+                  class="input"
+                  placeholder="https://example.com"
+                />
+                <p class="text-xs text-themed-muted">{{ t('admin.system.seo.siteUrlHint') }}</p>
+              </div>
+              <div class="space-y-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.sitemapPath') }}</label>
+                <input
+                  v-model="form.seo_sitemap_path"
+                  type="text"
+                  maxlength="200"
+                  class="input font-mono"
+                  placeholder="/sitemap.xml"
+                />
+                <p class="text-xs text-themed-muted break-all">{{ seoSitemapUrl || t('admin.system.seo.invalidUrl') }}</p>
+              </div>
+              <div class="space-y-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.indexNowEndpoint') }}</label>
+                <input
+                  v-model="form.seo_indexnow_endpoint"
+                  type="url"
+                  maxlength="500"
+                  class="input"
+                  placeholder="https://api.indexnow.org/IndexNow"
+                />
+              </div>
+              <div class="space-y-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.indexNowKey') }}</label>
+                <input
+                  v-model="form.seo_indexnow_key"
+                  type="text"
+                  maxlength="256"
+                  class="input font-mono"
+                  :placeholder="t('admin.system.seo.indexNowKeyPlaceholder')"
+                />
+                <p class="text-xs text-themed-muted">{{ t('admin.system.seo.indexNowKeyHint') }}</p>
+              </div>
+            </div>
+
+            <div class="mt-6 flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="btn-secondary text-sm"
+                :disabled="submittingIndexNow || !form.seo_indexnow_key"
+                @click="submitIndexNow"
+              >
+                {{ submittingIndexNow ? t('admin.system.seo.submitting') : t('admin.system.seo.submitIndexNow') }}
+              </button>
+              <a
+                :href="googleSearchConsoleUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn-secondary text-sm"
+              >
+                {{ t('admin.system.seo.openSearchConsole') }}
+              </a>
+              <button
+                type="button"
+                class="btn-ghost text-sm"
+                :disabled="!seoSitemapUrl"
+                @click="copySeoUrl(seoSitemapUrl)"
+              >
+                {{ t('admin.system.seo.copySitemapUrl') }}
+              </button>
+            </div>
+            <p class="mt-3 text-xs text-themed-muted">{{ t('admin.system.seo.submitHint') }}</p>
+          </div>
+
+          <div class="card p-6">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h3 class="text-themed font-medium">{{ t('admin.system.seo.verificationTitle') }}</h3>
+                <p class="text-sm text-themed-muted mt-1">{{ t('admin.system.seo.verificationDescription') }}</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div class="space-y-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.verificationPath') }}</label>
+                <input
+                  v-model="form.seo_verification_path"
+                  type="text"
+                  maxlength="200"
+                  class="input font-mono"
+                  placeholder="/google-site-verification.html"
+                />
+                <p v-if="seoVerificationUrl" class="text-xs text-themed-muted break-all">{{ seoVerificationUrl }}</p>
+              </div>
+              <div class="space-y-2 md:col-span-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.verificationContent') }}</label>
+                <textarea
+                  v-model="form.seo_verification_content"
+                  rows="5"
+                  maxlength="20000"
+                  class="input min-h-[120px] resize-y font-mono text-sm"
+                  :placeholder="t('admin.system.seo.verificationContentPlaceholder')"
+                />
+                <p class="text-xs text-themed-muted">{{ t('admin.system.seo.verificationHint') }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h3 class="text-themed font-medium">{{ t('admin.system.seo.trackingTitle') }}</h3>
+                <p class="text-sm text-themed-muted mt-1">{{ t('admin.system.seo.trackingDescription') }}</p>
+              </div>
+            </div>
+            <div class="flex items-center justify-between p-4 rounded-lg bg-themed-secondary/50 mt-6">
+              <div class="flex-1">
+                <label class="text-sm font-medium text-themed">{{ t('admin.system.seo.trackingEnabled') }}</label>
+                <p class="text-xs text-themed-muted mt-1">{{ t('admin.system.seo.trackingEnabledHint') }}</p>
+              </div>
+              <input v-model="form.seo_tracking_enabled" type="checkbox" class="h-4 w-4 rounded" />
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div class="space-y-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.trackingScriptUrl') }}</label>
+                <input
+                  v-model="form.seo_tracking_script_url"
+                  type="url"
+                  maxlength="500"
+                  class="input"
+                  placeholder="https://www.googletagmanager.com/gtag/js"
+                />
+              </div>
+              <div class="space-y-2">
+                <label class="block text-sm text-themed-secondary">{{ t('admin.system.seo.trackingId') }}</label>
+                <input
+                  v-model="form.seo_tracking_id"
+                  type="text"
+                  maxlength="128"
+                  class="input font-mono"
+                  placeholder="G-1HXQL8QTW2"
+                />
+                <p class="text-xs text-themed-muted">{{ t('admin.system.seo.trackingIdHint') }}</p>
+              </div>
             </div>
           </div>
         </div>

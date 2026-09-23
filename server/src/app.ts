@@ -90,7 +90,7 @@ import vipLevelRoutes from './routes/vip-levels.js'
 import vipBenefitRoutes from './routes/vip-benefits.js'
 import officialCouponRoutes from './routes/official-coupons.js'
 import adminOfficialCouponRoutes from './routes/admin-official-coupons.js'
-import siteMetaRoutes from './routes/site-meta.js'
+import siteMetaRoutes, { handleSeoMetaRequest } from './routes/site-meta.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -155,6 +155,10 @@ const fastify = Fastify({
 fastify.addHook('onRequest', async (request) => {
   applyVerifiedClientIp(request)
 })
+
+// Serve configured SEO verification files and custom Sitemap paths before the
+// static-file server and SPA fallback.
+fastify.addHook('onRequest', handleSeoMetaRequest)
 
 // 自定义 schema 验证错误处理
 import type { FastifyError } from 'fastify'

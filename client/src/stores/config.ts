@@ -26,6 +26,7 @@ export const useConfigStore = defineStore('config', () => {
     const brandName = ref('Incudal')
     const brandSubtitle = ref('基于 Incus 的低价 NAT VPS')
     const brandLogoUrl = ref('/incudal_logo.webp')
+    const seoSiteUrl = ref('https://incudal.di0.uk')
     const registrationEnabled = ref(true)
     const requireInviteCode = ref(true)
     const ticketEnabled = ref(true)
@@ -41,6 +42,9 @@ export const useConfigStore = defineStore('config', () => {
     const footerTelegramLink = ref<string | null>('https://t.me/incudal_com')
     const hostingMarketEntryEnabled = ref(true)
     const hostingNotice = ref<string | null>(null)
+    const seoTrackingEnabled = ref(false)
+    const seoTrackingScriptUrl = ref('https://www.googletagmanager.com/gtag/js')
+    const seoTrackingId = ref<string | null>(null)
     const popupAnnouncement = ref<string | null>(null)
     const popupAnnouncementUpdatedAt = ref<string | null>(null)
     const popupPromoImageUrl = ref<string | null>(null)
@@ -70,6 +74,7 @@ export const useConfigStore = defineStore('config', () => {
                 brandName.value = config.brandName?.trim() || 'Incudal'
                 brandSubtitle.value = config.brandSubtitle?.trim() || '基于 Incus 的低价 NAT VPS'
                 brandLogoUrl.value = config.brandLogoUrl?.trim() || '/incudal_logo.webp'
+                seoSiteUrl.value = config.seoSiteUrl?.trim() || 'https://incudal.di0.uk'
                 transferFee.value = config.transferFee || 0
                 balanceTransferEnabled.value = config.balanceTransferEnabled ?? false
                 balanceTransferFee.value = config.balanceTransferFee || 0
@@ -77,6 +82,9 @@ export const useConfigStore = defineStore('config', () => {
                 footerTelegramLink.value = config.footerTelegramLink ?? null
                 hostingMarketEntryEnabled.value = config.hostingMarketEntryEnabled ?? true
                 hostingNotice.value = config.hostingNotice ?? null
+                seoTrackingEnabled.value = config.seoTrackingEnabled ?? false
+                seoTrackingScriptUrl.value = config.seoTrackingScriptUrl?.trim() || 'https://www.googletagmanager.com/gtag/js'
+                seoTrackingId.value = config.seoTrackingId?.trim() || null
                 popupAnnouncement.value = config.popupAnnouncement ?? null
                 popupAnnouncementUpdatedAt.value = config.popupAnnouncementUpdatedAt ?? null
                 popupPromoImageUrl.value = config.popupPromoImageUrl ?? null
@@ -98,6 +106,7 @@ export const useConfigStore = defineStore('config', () => {
         brandName,
         brandSubtitle,
         brandLogoUrl,
+        seoSiteUrl,
         registrationEnabled,
         requireInviteCode,
         ticketEnabled,
@@ -113,6 +122,9 @@ export const useConfigStore = defineStore('config', () => {
         footerTelegramLink,
         hostingMarketEntryEnabled,
         hostingNotice,
+        seoTrackingEnabled,
+        seoTrackingScriptUrl,
+        seoTrackingId,
         popupAnnouncement,
         popupAnnouncementUpdatedAt,
         popupPromoImageUrl,

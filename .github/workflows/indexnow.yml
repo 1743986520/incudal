@@ -26,5 +26,5 @@ jobs:
 
       - name: Notify IndexNow
         env:
-          SITE_URL: https://incudal.di0.uk
+          SITE_URL: ${{ vars.SITE_URL }}
         run: node scripts/submit-indexnow.mjs

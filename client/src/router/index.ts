@@ -347,6 +347,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'admin.system.sections.brand.title', title: '品牌与外观' }
   },
   {
+    path: '/admin/settings/seo',
+    name: 'admin-settings-seo',
+    component: () => import('@/views/admin/SystemConfigView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'admin.system.sections.seo.title', title: '网站 SEO 管理' }
+  },
+  {
     path: '/admin/settings/security',
     name: 'admin-settings-security',
     component: () => import('@/views/admin/SystemConfigView.vue'),

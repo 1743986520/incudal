@@ -48,6 +48,32 @@ const maxRegisterGiftPoints = 2147483647
 const maxTransferFee = 100
 const decimalMoneyPattern = /^\d+(?:\.\d{1,2})?$/
 const emailDomainPattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
+const seoTrackingIdPattern = /^[A-Za-z0-9._-]{1,128}$/
+const seoIndexNowKeyPattern = /^[A-Za-z0-9._-]{1,256}$/
+const seoPathPattern = /^\/(?!\/|api(?:\/|$))[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,199}$/
+
+function isHttpUrl(value: string): boolean {
+    try {
+        const url = new URL(value)
+        return ['http:', 'https:'].includes(url.protocol)
+    } catch {
+        return false
+    }
+}
+
+function isValidSeoSiteUrl(value: string): boolean {
+    if (!isHttpUrl(value)) return false
+    try {
+        const url = new URL(value)
+        return !url.search && !url.hash && url.username === '' && url.password === ''
+    } catch {
+        return false
+    }
+}
+
+function isValidSeoPath(value: string, allowEmpty = false): boolean {
+    return (allowEmpty && value === '') || seoPathPattern.test(value)
+}
 
 function isHttpImageUrl(value: string): boolean {
     try {
@@ -89,6 +115,16 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             db.getSystemConfigValueWithUpdatedAt('popup_announcement'),
             db.getSystemConfigValueWithUpdatedAt('popup_promo_image_url'),
             db.getSystemConfigValueWithUpdatedAt('popup_promo_package_id')
+        ])
+        const [seoSiteUrl, seoSitemapPath, seoVerificationPath, seoIndexNowEndpoint, seoIndexNowKey, seoTrackingEnabled, seoTrackingScriptUrl, seoTrackingId] = await Promise.all([
+            db.getSystemConfig('seo_site_url'),
+            db.getSystemConfig('seo_sitemap_path'),
+            db.getSystemConfig('seo_verification_path'),
+            db.getSystemConfig('seo_indexnow_endpoint'),
+            db.getSystemConfig('seo_indexnow_key'),
+            db.getSystemConfigBoolean('seo_tracking_enabled', false),
+            db.getSystemConfig('seo_tracking_script_url'),
+            db.getSystemConfig('seo_tracking_id')
         ])
 
         // 解析允许的邮箱域名列表
@@ -198,6 +234,14 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             brandName: brandName || 'Incudal',
             brandSubtitle: brandSubtitle || '基于 Incus 的低价 NAT VPS',
             brandLogoUrl: brandLogoUrl || '/incudal_logo.webp',
+            seoSiteUrl: seoSiteUrl || 'https://incudal.di0.uk',
+            seoSitemapPath: seoSitemapPath || '/sitemap.xml',
+            seoVerificationPath: seoVerificationPath || null,
+            seoIndexNowEndpoint: seoIndexNowEndpoint || 'https://api.indexnow.org/IndexNow',
+            seoIndexNowKey: seoIndexNowKey || null,
+            seoTrackingEnabled,
+            seoTrackingScriptUrl: seoTrackingScriptUrl || 'https://www.googletagmanager.com/gtag/js',
+            seoTrackingId: seoTrackingId || null,
             popupAnnouncement: popupAnnouncement ? popupAnnouncementConfig.value : null,
             popupAnnouncementUpdatedAt: popupAnnouncement ? popupAnnouncementConfig.updatedAt : null,
             popupPromoImageUrl: popupPromoPackage ? popupPromoImageUrl : null,
@@ -205,6 +249,95 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             popupPromoUpdatedAt: popupPromoPackage
                 ? [popupPromoImageUrlConfig.updatedAt, popupPromoPackageIdConfig.updatedAt].filter(Boolean).sort().pop() || null
                 : null
+        }
+    })
+
+    // 管理员：提交公开 Sitemap 中的 URL 到 IndexNow
+    fastify.post('/seo/indexnow/submit', {
+        onRequest: [fastify.authenticateAdmin]
+    }, async (_request: FastifyRequest, reply: FastifyReply) => {
+        const configuredSiteUrl = (await db.getSystemConfig('seo_site_url'))?.trim() || 'https://incudal.di0.uk'
+        const sitemapPath = (await db.getSystemConfig('seo_sitemap_path'))?.trim() || '/sitemap.xml'
+        const endpoint = (await db.getSystemConfig('seo_indexnow_endpoint'))?.trim() || 'https://api.indexnow.org/IndexNow'
+        const key = (await db.getSystemConfig('seo_indexnow_key'))?.trim() || ''
+
+        if (!isValidSeoSiteUrl(configuredSiteUrl) || !isValidSeoPath(sitemapPath) || !isHttpUrl(endpoint)) {
+            return reply.code(400).send({
+                error: 'SEO 站点地址、Sitemap 路径或 IndexNow 地址配置无效',
+                code: ErrorCode.CONFIG_INVALID_VALUE
+            })
+        }
+        if (!key || !seoIndexNowKeyPattern.test(key)) {
+            return reply.code(400).send({
+                error: '请先配置有效的 IndexNow Key',
+                code: ErrorCode.CONFIG_INVALID_VALUE
+            })
+        }
+
+        const siteUrl = configuredSiteUrl.replace(/\/+$/, '')
+        const sitemapUrl = new URL(sitemapPath, `${siteUrl}/`).toString()
+        const keyLocation = new URL(`/${key}.txt`, `${siteUrl}/`).toString()
+
+        try {
+            const sitemapResponse = await fetch(sitemapUrl)
+            if (!sitemapResponse.ok) {
+                return reply.code(502).send({
+                    error: `读取 Sitemap 失败（HTTP ${sitemapResponse.status}）`,
+                    code: 'SEO_SITEMAP_FETCH_FAILED'
+                })
+            }
+
+            const sitemapXml = await sitemapResponse.text()
+            const urls = [...sitemapXml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/g)]
+                .map(match => match[1].trim())
+                .filter(Boolean)
+                .slice(0, 10_000)
+
+            if (urls.length === 0) {
+                return reply.code(400).send({
+                    error: 'Sitemap 中没有可提交的 URL',
+                    code: 'SEO_SITEMAP_EMPTY'
+                })
+            }
+
+            const indexNowResponse = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    host: new URL(siteUrl).host,
+                    key,
+                    keyLocation,
+                    urlList: urls
+                })
+            })
+
+            if (!indexNowResponse.ok) {
+                return reply.code(502).send({
+                    error: `IndexNow 提交失败（HTTP ${indexNowResponse.status}）`,
+                    code: 'SEO_INDEXNOW_SUBMIT_FAILED'
+                })
+            }
+
+            await logAdminAction(_request.user.id, 'seo.indexnow.submit', {
+                ip: _request.ip,
+                userAgent: _request.headers['user-agent'],
+                metadata: {
+                    sitemapUrl,
+                    submitted: urls.length
+                }
+            })
+
+            return {
+                success: true,
+                submitted: urls.length,
+                sitemapUrl
+            }
+        } catch (error) {
+            fastify.log.error({ err: error }, 'IndexNow submission failed')
+            return reply.code(502).send({
+                error: 'IndexNow 提交请求失败',
+                code: 'SEO_INDEXNOW_SUBMIT_FAILED'
+            })
         }
     })
 
@@ -283,6 +416,15 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             'brand_name',
             'brand_subtitle',
             'brand_logo_url',
+            'seo_site_url',
+            'seo_sitemap_path',
+            'seo_verification_path',
+            'seo_verification_content',
+            'seo_indexnow_endpoint',
+            'seo_indexnow_key',
+            'seo_tracking_enabled',
+            'seo_tracking_script_url',
+            'seo_tracking_id',
             'popup_announcement',
             'popup_promo_image_url',
             'popup_promo_package_id',
@@ -334,7 +476,7 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
         ]
 
         // 布尔类型配置键
-        const booleanKeys = ['registration_enabled', 'require_invite_code', 'hosting_feature_enabled', 'hosting_market_entry_enabled', 'aff_rebate_enabled', 'ticket_enabled', 'free_site_mode', 'free_site_register_gift_enabled', 'turnstile_enabled', 'telegram_bot_enabled', 'telegram_group_join_enabled', 'telegram_vip_group_join_enabled', 'smtp_enabled', 'smtp_secure', 'email_domain_whitelist_enabled', 'balance_transfer_enabled']
+        const booleanKeys = ['registration_enabled', 'require_invite_code', 'hosting_feature_enabled', 'hosting_market_entry_enabled', 'aff_rebate_enabled', 'ticket_enabled', 'free_site_mode', 'free_site_register_gift_enabled', 'turnstile_enabled', 'telegram_bot_enabled', 'telegram_group_join_enabled', 'telegram_vip_group_join_enabled', 'smtp_enabled', 'smtp_secure', 'email_domain_whitelist_enabled', 'balance_transfer_enabled', 'seo_tracking_enabled']
         // 字符串类型配置键
         const stringKeys = [
             'turnstile_site_key',
@@ -345,6 +487,14 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             'brand_name',
             'brand_subtitle',
             'brand_logo_url',
+            'seo_site_url',
+            'seo_sitemap_path',
+            'seo_verification_path',
+            'seo_verification_content',
+            'seo_indexnow_endpoint',
+            'seo_indexnow_key',
+            'seo_tracking_script_url',
+            'seo_tracking_id',
             'telegram_bot_username',
             'telegram_bot_token',
             'telegram_webhook_secret',
@@ -435,6 +585,45 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
                         return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
                     }
                     if (config.value && !isHttpImageUrl(config.value) && !config.value.startsWith('/')) {
+                        return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
+                    }
+                }
+                if (config.key === 'seo_site_url') {
+                    config.value = config.value.trim().replace(/\/+$/, '')
+                    if (config.value.length > 500 || !isValidSeoSiteUrl(config.value)) {
+                        return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
+                    }
+                }
+                if (config.key === 'seo_sitemap_path' || config.key === 'seo_verification_path') {
+                    config.value = config.value.trim()
+                    const allowEmpty = config.key === 'seo_verification_path'
+                    const hasExpectedExtension = config.key === 'seo_sitemap_path'
+                        ? /\.xml$/i.test(config.value)
+                        : (allowEmpty && config.value === '') || /\.(?:html?|txt)$/i.test(config.value)
+                    if (!isValidSeoPath(config.value, allowEmpty) || !hasExpectedExtension) {
+                        return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
+                    }
+                }
+                if (config.key === 'seo_verification_content') {
+                    if (config.value.length > 20000) {
+                        return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
+                    }
+                }
+                if (config.key === 'seo_indexnow_endpoint' || config.key === 'seo_tracking_script_url') {
+                    config.value = config.value.trim()
+                    if (config.value.length > 500 || !isHttpUrl(config.value)) {
+                        return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
+                    }
+                }
+                if (config.key === 'seo_indexnow_key') {
+                    config.value = config.value.trim()
+                    if (config.value && !seoIndexNowKeyPattern.test(config.value)) {
+                        return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
+                    }
+                }
+                if (config.key === 'seo_tracking_id') {
+                    config.value = config.value.trim()
+                    if (config.value && !seoTrackingIdPattern.test(config.value)) {
                         return reply.code(400).send(apiError(ErrorCode.CONFIG_INVALID_VALUE, config.key))
                     }
                 }
