@@ -78,6 +78,7 @@ const userMenuItems: MenuItem[] = [
 const adminOnlyMenuItems: MenuItem[] = [
   { divider: true, label: 'nav.admin' },
   { name: 'admin-settings', path: '/admin/settings', icon: 'cog', label: 'nav.system' },
+  { name: 'admin-seo', path: '/admin/settings/seo', icon: 'sparkles', label: 'admin.system.sections.seo.title' },
   { name: 'admin-users', path: '/admin/users', icon: 'users', label: 'nav.users' },
   { name: 'admin-hosting', path: '/admin/hosting', icon: 'coin', label: 'nav.hosting' },
   { divider: true, label: 'nav.resources' },
@@ -121,6 +122,9 @@ const menuItems = computed<MenuItem[]>(() => {
 
 function isActive(item: MenuItem): boolean {
   if (item.name === 'dashboard') return route.path === '/dashboard'
+  if (item.name === 'admin-settings') {
+    return route.path !== '/admin/settings/seo' && route.path.startsWith('/admin/settings')
+  }
   if (!item.path) return false
   return route.path.startsWith(item.path)
 }
