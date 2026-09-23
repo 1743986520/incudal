@@ -11,6 +11,9 @@ export async function startSchedulers(): Promise<void> {
   const { startTrafficBillingScheduler } = await import('../services/traffic-billing-scheduler.js')
   startTrafficBillingScheduler()
 
+  const { startHourlyBillingScheduler } = await import('../services/hourly-billing-scheduler.js')
+  startHourlyBillingScheduler()
+
   // 启动自动快照/备份调度器
   const { startAutoPolicyScheduler } = await import('../services/auto-policy-scheduler.js')
   startAutoPolicyScheduler()

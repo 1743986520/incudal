@@ -674,10 +674,10 @@ async function selectPackage(pkg: Package, preferredPlanId?: number | null): Pro
     const memoryHalf = Math.ceil(memoryMax / 2)
     form.value.memory = Math.max(128, Math.min(Math.floor(memoryHalf / 64) * 64, memoryMax))
     
-    // 硬盘：最小512MB，步长0.1GB (102MB)，确保不超过套餐最大值
+    // 硬盘：最小512MB，步长512MB，确保不超过套餐最大值
     const diskMax = Math.max(512, pkg.disk_max) // 确保套餐最大值至少为512MB
     const diskHalf = Math.ceil(diskMax / 2)
-    form.value.disk = Math.max(512, Math.min(Math.floor(diskHalf / 102) * 102, diskMax))
+    form.value.disk = Math.max(512, Math.min(Math.floor(diskHalf / 512) * 512, diskMax))
   }
   
   isSwitchingPackage.value = false  // 结束切换套餐
@@ -935,7 +935,7 @@ watch(() => form.value.packageId, () => {
     const memoryMax = Math.max(128, selectedPackage.value.memory_max)
     const normalizedMemory = Math.max(128, Math.min(Math.floor(form.value.memory / 64) * 64, memoryMax))
     const diskMax = Math.max(512, selectedPackage.value.disk_max)
-    const normalizedDisk = Math.max(512, Math.min(Math.floor(form.value.disk / 102) * 102, diskMax))
+    const normalizedDisk = Math.max(512, Math.min(Math.floor(form.value.disk / 512) * 512, diskMax))
     form.value.memory = normalizedMemory
     form.value.disk = normalizedDisk
   }

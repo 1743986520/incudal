@@ -32,6 +32,8 @@ import {
   persistCloudInitStatus
 } from '../lib/cloud-init-status.js'
 import { payPendingTrafficBillAndUnsuspend } from '../services/traffic-billing-scheduler.js'
+import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance } from '../services/hourly-billing-scheduler.js'
+import { validateHourlyResources } from '../lib/hourly-billing.js'
 import { customAlphabet } from 'nanoid'
 
 // 自定义 nanoid，只使用小写字母和数字（Incus 不允许下划线）
@@ -234,6 +236,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           auto_renew?: boolean
           package_name: string | null
           package_plan_id: number | null
+          billing_mode?: 'package' | 'hourly'
           icon_badge_id: string | null
           billing_price: number | null
           monthly_traffic_limit: string | null
@@ -275,6 +278,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           hostId?: number
           packageName?: string | null
           packagePlanId?: number | null
+          billingMode?: 'package' | 'hourly'
           billingPrice?: number | null
           monthlyTrafficLimit?: string | null
           monthlyTrafficUsed?: string
@@ -319,6 +323,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           iconBadgeId: (instance as { icon_badge_id?: string | null }).icon_badge_id ?? null,
           packageName: instance.package_name || null,
           packagePlanId: instance.package_plan_id || null,
+          billingMode: instance.billing_mode || 'package',
           billingPrice: instance.billing_price || null,
           monthlyTrafficLimit: instance.monthly_traffic_limit || null,
           monthlyTrafficUsed: instance.monthly_traffic_used || '0',
@@ -485,6 +490,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           displayOrder: true,
           iconBadgeId: true,
           packagePlanId: true,
+          billingMode: true,
           billingPrice: true,
           monthlyTrafficLimit: true,
           monthlyTrafficUsed: true,
@@ -558,6 +564,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       displayOrder: i.displayOrder,
       iconBadgeId: i.iconBadgeId,
       packagePlanId: i.packagePlanId,
+      billingMode: (i as any).billingMode || 'package',
       billingPrice: i.billingPrice ? Number(i.billingPrice) : null,
       monthlyTrafficLimit: i.monthlyTrafficLimit ? i.monthlyTrafficLimit.toString() : null,
       monthlyTrafficUsed: i.monthlyTrafficUsed ? i.monthlyTrafficUsed.toString() : '0',
@@ -2143,6 +2150,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       package_id: number | null
       packageName?: string | null
       packagePlanId?: number | null
+      billingMode?: 'package' | 'hourly'
       planId?: number | null  // 方案ID（用于变更方案）
       planName?: string | null
       planPrice?: number | null  // 方案月价格
@@ -2227,6 +2235,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       package_id: instance.package_id,
       packageName: pkg?.name || null,
       packagePlanId: (instance as any).package_plan_id ?? null,
+      billingMode: (instance as any).billing_mode ?? 'package',
       planId: (instance as any).package_plan_id ?? null,
       planName: planName,
       planPrice: planPrice,
@@ -2466,7 +2475,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         // 仅在状态不一致且是有效状态时更新
         if (incusStatus !== 'unknown' && instance.status !== incusStatus) {
           console.log(`[StatusSync] Passive sync: Instance ${instance.id} status ${instance.status} → ${incusStatus}`)
+          if (instance.billing_mode === 'hourly' && instance.status === 'running' && incusStatus === 'stopped') {
+            await pauseHourlyBilling(instanceId)
+          }
           await db.updateInstanceStatus(instanceId, incusStatus as 'creating' | 'running' | 'stopped' | 'error')
+          if (instance.billing_mode === 'hourly' && incusStatus === 'running') {
+            await activateHourlyBilling(instanceId)
+          }
         }
       }
 
@@ -2766,6 +2781,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     }
 
+    if (instance.billing_mode === 'hourly') {
+      await pauseHourlyBilling(instanceId)
+    }
+
     // 执行封停
     await db.suspendInstance(instanceId, {
       suspendedBy: user.id,
@@ -2850,6 +2869,20 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         }
         return reply.code(400).send({ error: 'Unable to settle pending traffic bill' })
       }
+    }
+
+    if (instance.billing_mode === 'hourly' && instance.suspend_reason === 'hourly_billing_insufficient_balance' && !isAdmin) {
+      if (!isInstanceOwner) return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+      try {
+        await resumeHourlyBilling(instanceId, user.id)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : ''
+        if (message === 'BALANCE_INSUFFICIENT') return reply.code(400).send(apiError(ErrorCode.INSUFFICIENT_BALANCE))
+        return reply.code(400).send({ error: 'Unable to settle pending hourly bill' })
+      }
+      await db.unsuspendInstance(instanceId)
+      await createLog(user.id, 'instance', 'instance.hourly_debt_paid', `Paid hourly billing debt and unsuspended instance "${instance.name}"`, 'success', { instanceId })
+      return reply.code(200).send({ message: 'Hourly billing debt paid and instance unsuspended successfully' })
     }
 
     // 执行解封
@@ -3569,7 +3602,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     // 封禁状态检查：实例所有者不能删除被封禁的实例，仅节点所有者可以
     // 这是安全措施，防止用户绕过前端禁用按钮通过API直接删除
-    if (instance.status === 'suspended' && !isPrivilegedDeleter) {
+    const isHourlyInsufficientBalance = instance.billing_mode === 'hourly' && instance.suspend_reason === 'hourly_billing_insufficient_balance'
+    if (instance.status === 'suspended' && !isPrivilegedDeleter && !isHourlyInsufficientBalance) {
       if (instance.suspend_reason === 'expired') {
         return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
       }
@@ -3678,6 +3712,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
       await deleteInstance(client, instance.incus_id)
       incusDeleted = true
+
+      if (instance.billing_mode === 'hourly') {
+        await closeHourlyBilling(instanceId)
+      }
 
       // ===== 0.2 处理退款（节点所有者/管理员删除他人的付费实例时）=====
       let hostOwnerRefundAmount = 0
@@ -4816,8 +4854,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
     }
 
-    // 权限验证：管理员或宿主机所有者可以修改配置
-    if (user.role !== 'admin' && host.user_id !== user.id) {
+    const isHourlyInstance = instance.billing_mode === 'hourly'
+
+    // 按小时实例允许实例所有者调整资源；套餐/免费实例保持原有管理员或宿主机所有者权限。
+    if (user.role !== 'admin' && host.user_id !== user.id && !(isHourlyInstance && instance.user_id === user.id)) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
@@ -4834,6 +4874,30 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const newCpu = cpu ?? instance.cpu
     const newMemory = memory ?? instance.memory
     const newDisk = disk !== undefined ? Math.round(disk) : instance.disk
+
+    if (isHourlyInstance && (cpu !== undefined || memory !== undefined || disk !== undefined)) {
+      const hourlyAccount = await prisma.hourlyBillingAccount.findUnique({
+        where: { instanceId },
+        include: { pricingVersion: true }
+      })
+      if (!hourlyAccount) return reply.code(409).send({ error: 'Hourly billing account is missing', code: 'HOURLY_ACCOUNT_MISSING' })
+      try {
+        validateHourlyResources({ cpu: newCpu, memory: newMemory, disk: newDisk }, hourlyAccount.pricingVersion)
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : String(error), code: 'HOURLY_RESOURCE_INVALID' })
+      }
+      if (instance.status === 'running') {
+        try {
+          const settlement = await settleHourlyInstance(instanceId)
+          if (settlement.suspended) {
+            return reply.code(409).send({ error: 'Hourly billing balance is insufficient', code: 'HOURLY_BALANCE_INSUFFICIENT' })
+          }
+        } catch (error) {
+          return reply.code(409).send({ error: error instanceof Error ? error.message : String(error), code: 'HOURLY_SETTLEMENT_FAILED' })
+        }
+      }
+    }
+
     // 流量限制：如果传入null则清空，如果传入字符串则转换为BigInt
     let newTrafficLimit: bigint | null = null
     if (monthlyTrafficLimit !== undefined) {
@@ -4952,6 +5016,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         monthlyTrafficLimit: monthlyTrafficLimit !== undefined ? newTrafficLimit : undefined
       })
 
+      if (isHourlyInstance && instance.status === 'running') {
+        await activateHourlyBilling(instanceId)
+      }
+
       // 新配额系统：不再更新用户配额使用量（CPU/内存/磁盘不在用户级别限制）
 
       // 更新宿主机资源使用量
@@ -5026,6 +5094,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const sourceInstance = await db.getInstanceById(instanceId)
     if (!sourceInstance) {
       return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+    }
+
+    if (sourceInstance.billing_mode === 'hourly') {
+      return reply.code(400).send({
+        error: '按小时计费实例暂不支持复制',
+        code: 'HOURLY_INSTANCE_CLONE_UNSUPPORTED'
+      })
     }
 
     // AUTH004: 克隆实例仅限实例所有者，管理员和宿主机所有者禁止

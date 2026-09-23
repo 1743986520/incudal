@@ -415,6 +415,7 @@ export interface Instance {
   user_id?: number  // Only for admin
   host_id?: number  // Only for admin
   package_id: number | null
+  billingMode?: 'package' | 'hourly'
   displayOrder?: number
   display_order?: number
   image: string
@@ -508,6 +509,68 @@ export interface Instance {
   created_at: string
   createdAt?: string  // camelCase 别名
   updated_at: string
+}
+
+export interface HourlyPricing {
+  id: number
+  version: number
+  enabled: boolean
+  cpuUnitPercent: number
+  memoryUnitMb: number
+  diskUnitMb: number
+  minCpu: number
+  minMemoryMb: number
+  minDiskMb: number
+  cpuPricePerUnit: string
+  memoryPricePerUnit: string
+  diskPricePerUnit: string
+  reserveQuantum: string
+  trafficUnitPrice: string
+  trafficIncludedBytes: string
+  effectiveAt: string
+}
+
+export interface HourlyQuote {
+  cpuUnits: number
+  memoryUnits: number
+  diskUnits: number
+  cpuAmount: string
+  memoryAmount: string
+  diskAmount: string
+  hourlyPrice: string
+}
+
+export interface HourlyBillingInfo {
+  instanceId: number
+  billingMode: 'hourly'
+  status: 'active' | 'paused' | 'suspended' | 'closed'
+  pricing: HourlyPricing
+  resources: { cpu: number; memory: number; disk: number }
+  hourlyPrice: string
+  prepaidBalance: string
+  totalCost: string
+  totalReserved: string
+  totalReleased: string
+  outstandingAmount: string
+  lastSettledAt: string
+  nextSettlementAt: string | null
+}
+
+export interface HourlyBillingRecord {
+  id: number
+  periodStart: string
+  periodEnd: string
+  activeSeconds: number
+  cpu: number
+  memory: number
+  disk: number
+  cpuAmount: string
+  memoryAmount: string
+  diskAmount: string
+  actualAmount: string
+  reserveAmount: string
+  releaseAmount: string
+  status: 'paid' | 'pending'
 }
 
 /**
@@ -1871,6 +1934,8 @@ export interface RechargeOrder {
 export interface UserBalance {
   balance: number
   frozen: number
+  hourlyReserved?: number
+  totalBalance?: number
   totalRecharge: number
   totalConsume: number
 }

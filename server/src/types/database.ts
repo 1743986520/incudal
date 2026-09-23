@@ -191,6 +191,7 @@ export interface Instance {
   host_id: number
   package_id: number | null
   package_plan_id: number | null  // 套餐方案 ID：null 表示免费实例
+  billing_mode?: 'package' | 'hourly'
   display_order?: number
   storage_pool_name?: string | null
   image: string

@@ -147,6 +147,8 @@ export {
   performPlanChange,
   updateAutoRenew,
   getInstanceBillingInfo,
+  isHourlyInstance,
+  isPackageInstance,
   isFreeInstance,
   isPaidInstance,
   isExpired,

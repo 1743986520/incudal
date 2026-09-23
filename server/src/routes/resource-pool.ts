@@ -84,6 +84,13 @@ export default async function resourcePoolRoutes(fastify: FastifyInstance) {
         return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
       }
 
+      // Hourly instances must only be resized through the hourly billing
+      // validation/settlement path. Resource-pool credits have no billing
+      // snapshot and would otherwise change the hourly rate without settling.
+      if (instance.billing_mode === 'hourly') {
+        return reply.code(400).send({ error: 'Hourly instances cannot use resource-pool credits', code: 'HOURLY_RESOURCE_POOL_UNSUPPORTED' })
+      }
+
     // 检查实例所有权
     if (instance.user_id !== user.id) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
@@ -320,7 +327,7 @@ export default async function resourcePoolRoutes(fastify: FastifyInstance) {
     const { user } = request
     
     // 获取用户所有可用实例（包括免费和付费）
-    const instances = await db.getUserAllInstances(user.id)
+    const instances = (await db.getUserAllInstances(user.id)).filter(inst => inst.billingMode !== 'hourly')
     
     return {
       instances: instances.map(inst => ({

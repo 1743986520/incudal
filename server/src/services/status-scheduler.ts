@@ -18,6 +18,7 @@ import { getInstanceState } from '../lib/incus/incus-instances.js'
 import { mapInstanceStatus } from '../lib/incus/incus-utils.js'
 import { sendNotification } from '../lib/notifier.js'
 import * as db from '../db/index.js'
+import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling } from './hourly-billing-scheduler.js'
 
 // ==================== 配置常量 ====================
 
@@ -150,6 +151,7 @@ async function syncInstanceStatus(
         incusId: string
         name: string
         status: string
+        billingMode: 'package' | 'hourly'
         host: {
             id: number
             name: string
@@ -196,10 +198,16 @@ async function syncInstanceStatus(
 
         // 状态不一致，需要更新
         if (instance.status !== incusStatus) {
-            await db.updateInstanceStatus(
-                instance.id,
-                incusStatus as 'creating' | 'running' | 'stopped' | 'error'
-            )
+          if (instance.billingMode === 'hourly' && instance.status === 'running' && incusStatus === 'stopped') {
+            await pauseHourlyBilling(instance.id)
+          }
+          await db.updateInstanceStatus(
+            instance.id,
+            incusStatus as 'creating' | 'running' | 'stopped' | 'error'
+          )
+          if (instance.billingMode === 'hourly' && incusStatus === 'running') {
+            await activateHourlyBilling(instance.id)
+          }
             
             // 同时更新 lastSyncedAt
             await prisma.instance.updateMany({
@@ -247,6 +255,9 @@ async function syncInstanceStatus(
         // 如果实例不存在于 Incus，标记为已删除
         if (errorMessage.includes('not found') || errorMessage.includes('Instance not found')) {
             console.log(`[StatusSync] Instance ${instance.id} not found in Incus, marking as deleted`)
+            if (instance.billingMode === 'hourly') {
+                await closeHourlyBilling(instance.id)
+            }
             await db.updateInstanceStatus(instance.id, 'deleted')
             return {
                 changed: true,

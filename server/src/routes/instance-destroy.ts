@@ -13,6 +13,7 @@ import { sendHostManagedInstanceNotification, sendNotification } from '../lib/no
 import { sendInstanceDestroyRefundEmail } from '../lib/mailer.js'
 import { sendReleaseNotification } from '../lib/release-notifier.js'
 import { collectTrafficForRunningInstance } from '../services/instance-traffic-collector.js'
+import { closeHourlyBilling } from '../services/hourly-billing-scheduler.js'
 import {
   INSTANCE_OPERATION_LOCK_NAMESPACE,
   USER_DESTROY_BILLING_LOCK_NAMESPACE,
@@ -76,7 +77,11 @@ function canUserDestroyExpiredSuspendedPaidInstance(instance: {
   suspendReason?: string | null
   packagePlanId?: number | null
   expiresAt?: Date | null
+  billingMode?: string | null
 }): boolean {
+  if (instance.status === 'suspended' && instance.billingMode === 'hourly' && instance.suspendReason === 'hourly_billing_insufficient_balance') {
+    return true
+  }
   return instance.status === 'suspended'
     && instance.suspendReason === 'expired'
     && !!instance.packagePlanId
@@ -371,7 +376,7 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
       name: instance.name,
       canDestroy: false,
       cannotDestroyReason: '实例已删除',
-      isFreeInstance: !instance.packagePlanId,
+      isFreeInstance: db.isFreeInstance(instance),
       isFirstTime: false,
       feeWaiverEligible: false,
       refund: {
@@ -398,7 +403,7 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
       name: instance.name,
       canDestroy: false,
       cannotDestroyReason: '实例正在创建中，无法销毁',
-      isFreeInstance: !instance.packagePlanId,
+      isFreeInstance: db.isFreeInstance(instance),
       isFirstTime: false,
       feeWaiverEligible: false,
       refund: {
@@ -425,7 +430,7 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
       name: instance.name,
       canDestroy: false,
       cannotDestroyReason: '实例已被封停，无法销毁，请先联系管理员解封',
-      isFreeInstance: !instance.packagePlanId,
+      isFreeInstance: db.isFreeInstance(instance),
       isFirstTime: false,
       feeWaiverEligible: false,
       refund: {
@@ -448,7 +453,7 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
 
   const isErrorState = instance.status === 'error'
   const feeWaiver = isErrorState
-  const isFreeInstance = !instance.packagePlanId
+  const isFreeInstance = db.isFreeInstance(instance)
   const destroyRecords = await prisma.userDestroyRecord.findMany({
     where: { userId },
     orderBy: { destroyedAt: 'desc' }
@@ -572,7 +577,7 @@ async function executeDestroyForUser(
     return { id: instance.id, name: instance.name, success: false, skipped: true, reason: blockingTask.reason }
   }
 
-  const isFreeInstance = !instance.packagePlanId
+  const isFreeInstance = db.isFreeInstance(instance)
   const destroyRecords = await prisma.userDestroyRecord.findMany({
     where: { userId: user.id },
     orderBy: { destroyedAt: 'desc' }
@@ -643,7 +648,9 @@ async function executeDestroyForUser(
     await deleteInstance(client, instance.incusId)
     incusDeleted = true
 
-    if (!isFreeInstance) {
+    if (db.isHourlyInstance(instance)) {
+      await closeHourlyBilling(instanceId)
+    } else if (!isFreeInstance) {
       const billingResult = await settleUserDestroyBilling({
         requestUserId: user.id,
         instance,
@@ -915,7 +922,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     const feeWaiver = request.query.feeWaiver === 'error' && isErrorState
 
     // 免费实例检查
-    const isFreeInstance = !instance.packagePlanId
+    const isFreeInstance = db.isFreeInstance(instance)
 
     // 查询用户销毁记录（仅付费实例销毁计入）
     const destroyRecords = await prisma.userDestroyRecord.findMany({
@@ -1066,7 +1073,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     }
 
     // 免费实例检查
-    const isFreeInstance = !instance.packagePlanId
+    const isFreeInstance = db.isFreeInstance(instance)
 
     // 查询用户销毁记录
     const destroyRecords = await prisma.userDestroyRecord.findMany({
@@ -1155,7 +1162,9 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       await deleteInstance(client, instance.incusId)
       incusDeleted = true
 
-      if (!isFreeInstance) {
+      if (db.isHourlyInstance(instance)) {
+        await closeHourlyBilling(instanceId)
+      } else if (!isFreeInstance) {
         const billingResult = await settleUserDestroyBilling({
           requestUserId: user.id,
           instance,

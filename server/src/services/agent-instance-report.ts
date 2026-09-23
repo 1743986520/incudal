@@ -13,6 +13,7 @@ import { prisma } from '../db/prisma.js'
 import { withLock } from '../lib/distributed-lock.js'
 import { mapInstanceStatus } from '../lib/incus/incus-utils.js'
 import { calculateIncrement, isTransientEmptyCounterSample } from './traffic-utils.js'
+import { activateHourlyBilling, pauseHourlyBilling } from './hourly-billing-scheduler.js'
 
 interface NormalizedAgentInstanceItem {
   name: string
@@ -38,6 +39,7 @@ type ReportedDbInstance = {
   incusId: string
   userId: number
   status: InstanceStatus
+  billingMode: 'package' | 'hourly'
 }
 
 const maxAgentInstanceReportItems = 2000
@@ -344,6 +346,13 @@ async function processOneAgentInstanceReport(
           data: updateData
         })
         statusUpdated = updateResult.count
+        if (updateResult.count === 1 && instance.billingMode === 'hourly') {
+          if (item.status === 'running') {
+            await activateHourlyBilling(instance.id)
+          } else if (item.status === 'stopped') {
+            await pauseHourlyBilling(instance.id, now)
+          }
+        }
       }
     } else {
       skipped += 1
@@ -399,7 +408,8 @@ export async function processAgentInstanceReport(hostId: number, payload: unknow
       id: true,
       incusId: true,
       userId: true,
-      status: true
+      status: true,
+      billingMode: true
     }
   })
   const instanceByIncusId = new Map(instances.map(instance => [instance.incusId, instance]))

@@ -4,7 +4,7 @@
  */
 
 import { prisma } from './prisma.js'
-import type { Instance, PackagePlan, Prisma } from '@prisma/client'
+import { Prisma, type Instance, type PackagePlan } from '@prisma/client'
 import { getInstanceAffBinding, isAffRebateEnabled, processAffCommission } from './aff.js'
 import {
   countDiscountedChargesForInstance,
@@ -280,7 +280,8 @@ export async function failCreatingInstanceAndRefund(
         id: true,
         name: true,
         userId: true,
-        hostId: true
+        hostId: true,
+        billingMode: true
       }
     })
 
@@ -290,6 +291,44 @@ export async function failCreatingInstanceAndRefund(
 
     if (resourceRollback) {
       await decrementHostResourceCounters(tx, resourceRollback)
+    }
+
+    if (instance.billingMode === 'hourly') {
+      const account = await tx.hourlyBillingAccount.findUnique({ where: { instanceId } })
+      const prepaid = new Prisma.Decimal(account?.prepaidBalance ?? 0)
+      if (account && prepaid.gt(0)) {
+        const user = await tx.user.findUnique({ where: { id: instance.userId }, select: { balance: true } })
+        if (!user) throw new Error(`User ${instance.userId} not found during hourly provision refund`)
+        const balanceBefore = new Prisma.Decimal(user.balance)
+        const balanceAfter = balanceBefore.add(prepaid)
+        await tx.user.update({
+          where: { id: instance.userId },
+          data: {
+            balance: { increment: prepaid },
+            hourlyReservedBalance: { decrement: prepaid }
+          }
+        })
+        await tx.balanceLog.create({
+          data: {
+            userId: instance.userId,
+            instanceId,
+            type: 'hourly_release',
+            amount: prepaid,
+            balanceBefore,
+            balanceAfter,
+            remark: `按小时计费实例开通失败，退回冻结预付款：${instance.name}（${reason}）`
+          }
+        })
+        await tx.hourlyBillingAccount.update({
+          where: { id: account.id },
+          data: { status: 'closed', prepaidBalance: 0, totalReleased: { increment: prepaid }, nextSettlementAt: null, version: { increment: 1 } }
+        })
+        return { claimed: true, refundAmount: prepaid.toNumber() }
+      }
+      if (account) {
+        await tx.hourlyBillingAccount.update({ where: { id: account.id }, data: { status: 'closed', nextSettlementAt: null, version: { increment: 1 } } })
+      }
+      return { claimed: true, refundAmount: 0 }
     }
 
     const billingRecords = await tx.instanceBillingRecord.findMany({
@@ -839,7 +878,7 @@ export async function performRenewal(
   months: number
 ): Promise<{ newExpiresAt: Date; amount: number; balanceLogId: number; discountAmount?: number; hostingIncomeResult?: { hostOwnerId: number; hostName: string } | null }> {
   // 验证付费实例
-  if (!instance.packagePlanId) {
+  if (!isPackageInstance(instance)) {
     throw new Error('免费实例无需续费')
   }
 
@@ -1082,7 +1121,7 @@ export async function performPlanChange(
   const isVmPackage = pkg?.instanceType === 'vm'
 
   // 验证
-  if (!instance.packagePlanId) {
+  if (!isPackageInstance(instance)) {
     throw new Error('免费实例不支持升降级')
   }
 
@@ -1372,7 +1411,7 @@ export async function getInstanceBillingInfo(instanceId: number): Promise<{
 
   if (!instance) return null
 
-  const isPaid = instance.packagePlanId !== null
+  const isPaid = isPackageInstance(instance)
 
   // 判断是否为托管实例（节点所有者不是管理员）
   const isHostedInstance = instance.host?.user.role === 'user'
@@ -1477,15 +1516,23 @@ function addMonths(date: Date, months: number): Date {
 /**
  * 检查实例是否为免费实例
  */
-export function isFreeInstance(instance: { packagePlanId: number | null }): boolean {
-  return instance.packagePlanId === null
+export function isHourlyInstance(instance: { billingMode?: string | null; packagePlanId: number | null }): boolean {
+  return instance.billingMode === 'hourly'
+}
+
+export function isPackageInstance(instance: { billingMode?: string | null; packagePlanId: number | null }): boolean {
+  return !isHourlyInstance(instance) && instance.packagePlanId !== null
+}
+
+export function isFreeInstance(instance: { billingMode?: string | null; packagePlanId: number | null }): boolean {
+  return !isHourlyInstance(instance) && instance.packagePlanId === null
 }
 
 /**
  * 检查实例是否为付费实例
  */
-export function isPaidInstance(instance: { packagePlanId: number | null }): boolean {
-  return instance.packagePlanId !== null
+export function isPaidInstance(instance: { billingMode?: string | null; packagePlanId: number | null }): boolean {
+  return isPackageInstance(instance)
 }
 
 /**

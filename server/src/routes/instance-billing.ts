@@ -63,6 +63,7 @@ async function buildBatchRenewPreviewItem(userId: number, instanceId: number): P
       name: true,
       userId: true,
       packagePlanId: true,
+      billingMode: true,
       status: true,
       suspendReason: true
     }
@@ -107,7 +108,7 @@ async function buildBatchRenewPreviewItem(userId: number, instanceId: number): P
     }
   }
 
-  if (!instance.packagePlanId) {
+  if (!db.isPackageInstance(instance)) {
     return {
       id: instance.id,
       name: instance.name,
@@ -422,7 +423,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '实例已删除'))
     }
 
-    if (!instance.packagePlanId) {
+    if (!db.isPackageInstance(instance)) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '免费实例不支持使用优惠码'))
     }
 
@@ -434,7 +435,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
 
     // 先重新验证优惠码状态和方案适用范围；即使是幂等提交也不能绕过停用/失配检查。
-    const validation = await db.validateAffCode(normalizedCode, instance.packagePlanId, user.id)
+    const validation = await db.validateAffCode(normalizedCode, instance.packagePlanId!, user.id)
     if (!validation.valid || !validation.affCode) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, validation.error || '优惠码无效'))
     }
@@ -540,7 +541,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
 
     // 免费实例无需续费
-    if (!instance.packagePlanId) {
+    if (!db.isPackageInstance(instance)) {
       return reply.code(400).send({ error: '免费实例无需续费', code: 'FREE_INSTANCE' })
     }
 
@@ -776,7 +777,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
 
     // 免费实例不支持升降级
-    if (!instance.packagePlanId) {
+    if (!db.isPackageInstance(instance)) {
       return reply.code(400).send({ error: '免费实例不支持升降级', code: 'FREE_INSTANCE' })
     }
 
@@ -903,7 +904,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
 
     // 免费实例不支持升降级
-    if (!instance.packagePlanId) {
+    if (!db.isPackageInstance(instance)) {
       return reply.code(400).send({ error: '免费实例不支持升降级', code: 'FREE_INSTANCE' })
     }
 
@@ -1128,7 +1129,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     }
 
     // 免费实例不支持自动续费
-    if (!instance.packagePlanId) {
+    if (!db.isPackageInstance(instance)) {
       return reply.code(400).send({ error: '免费实例不支持自动续费', code: 'FREE_INSTANCE' })
     }
 
@@ -1213,6 +1214,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
           name: true,
           userId: true,
           packagePlanId: true,
+          billingMode: true,
           autoRenew: true,
           version: true,
           status: true,
@@ -1230,7 +1232,7 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
         continue
       }
 
-      if (!instance.packagePlanId) {
+      if (!db.isPackageInstance(instance)) {
         results.push({ id: instance.id, name: instance.name, success: false, skipped: true, reason: '免费实例不支持自动续费' })
         continue
       }

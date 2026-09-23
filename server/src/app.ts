@@ -90,6 +90,7 @@ import vipLevelRoutes from './routes/vip-levels.js'
 import vipBenefitRoutes from './routes/vip-benefits.js'
 import officialCouponRoutes from './routes/official-coupons.js'
 import adminOfficialCouponRoutes from './routes/admin-official-coupons.js'
+import hourlyBillingRoutes from './routes/hourly-billing.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -427,6 +428,7 @@ await fastify.register(balanceRoutes, { prefix: '/api/balance' })
 await fastify.register(hostingRoutes, { prefix: '/api/hosting' })
 await fastify.register(instanceBillingRoutes, { prefix: '/api/instances' })
 await fastify.register(instanceDestroyRoutes, { prefix: '/api/instances' })
+await fastify.register(hourlyBillingRoutes, { prefix: '/api' })
 await fastify.register(rechargeRoutes)
 await fastify.register(adminBillingRoutes)
 await fastify.register(adminStatisticsRoutes)

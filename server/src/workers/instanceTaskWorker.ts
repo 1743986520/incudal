@@ -61,6 +61,7 @@ import {
 } from './instance-task-lease.js'
 import { runWithIncusExecutionGuard, throwIfIncusExecutionAborted } from '../lib/incus/incus-execution-guard.js'
 import { notifyStoragePoolMissing } from '../lib/storage-pool-notify.js'
+import { activateHourlyBilling, pauseHourlyBilling } from '../services/hourly-billing-scheduler.js'
 
 // Worker 轮询间隔 (3 秒)
 const POLL_INTERVAL = 3000
@@ -678,6 +679,7 @@ async function executeStartTask(
       const ipv4 = extractIPv4(state)
       const ipv6 = extractIPv6(state)
       await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
+      await activateHourlyBilling(task.instanceId)
       const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
       await reconcileTrafficStateForInstanceIds([task.instanceId])
 
@@ -735,6 +737,7 @@ async function executeStartTask(
   }
 
   await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
+  await activateHourlyBilling(task.instanceId)
   const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
   await reconcileTrafficStateForInstanceIds([task.instanceId])
 
@@ -781,6 +784,7 @@ async function executeStopTask(
     // 如果 Incus 返回 "已经是停止状态"，自动修正数据库状态
     if (err instanceof Error && isAlreadyInStateError(err, 'stopped')) {
       console.log(`[Stop] 实例 ${instance.incus_id} 已经是停止状态，自动修正数据库`)
+      await pauseHourlyBilling(task.instanceId)
       await db.updateInstanceStatus(task.instanceId, 'stopped')
 
       // 发送通知（状态已同步）
@@ -794,6 +798,7 @@ async function executeStopTask(
     }
     throw err // 其他错误继续抛出
   }
+  await pauseHourlyBilling(task.instanceId)
   await db.updateInstanceStatus(task.instanceId, 'stopped')
 
   await sendNotification(task.userId, 'instance_stopped', {
@@ -815,6 +820,9 @@ async function executeRestartTask(
   updateProgress: (progress: string) => Promise<void>
 ): Promise<void> {
   await updateProgress('restarting')
+
+  // 重启期间按停止状态计费：先结算并释放本轮预付款，重新运行后由激活流程重新冻结。
+  await pauseHourlyBilling(task.instanceId)
 
   const collectResult = await collectTrafficForRunningInstance(task.instanceId)
   if (!collectResult.success) {
@@ -910,6 +918,7 @@ async function executeRestartTask(
   }
 
   await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
+  await activateHourlyBilling(task.instanceId)
 
   await sendNotification(task.userId, 'instance_restarted', {
     instanceName: instance.name,
@@ -934,6 +943,9 @@ async function executeRebuildTask(
   const imageAlias = task.imageAlias
   if (!imageAlias) throw new Error('未指定重装镜像')
   const allowCancelBusyUpdate = isAlpineImageAlias(instance.image) || isAlpineImageAlias(imageAlias)
+
+  // 重装过程中实例不运行，不应继续累计小时费用。
+  await pauseHourlyBilling(task.instanceId)
 
   // 关闭该实例的所有终端连接
   const closedSessions = closeInstanceSessions(task.instanceId, 'Instance is being rebuilt')
@@ -1249,6 +1261,7 @@ async function executeRebuildTask(
   }
 
   await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
+  await activateHourlyBilling(task.instanceId)
   const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
   await reconcileTrafficStateForInstanceIds([task.instanceId])
 
@@ -1300,6 +1313,9 @@ async function executeRecreateTask(
     })
     throw new Error('宿主机尚未创建可用的系统盘存储池，无法重建实例')
   }
+
+  // 重建会替换底层实例，旧实例停止到新实例启动前不计小时费用。
+  await pauseHourlyBilling(task.instanceId)
 
   const collectResult = await collectTrafficForRunningInstance(task.instanceId)
   if (!collectResult.success) {
@@ -1649,6 +1665,8 @@ async function executeRecreateTask(
       // 保留计费字段：packagePlanId, billingPrice, billingCycle, expiresAt, autoRenew 等
     }
   })
+
+  await activateHourlyBilling(task.instanceId)
 
   // 同步流量限速状态
   const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')

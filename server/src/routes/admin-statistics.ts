@@ -161,6 +161,7 @@ export default async function adminStatisticsRoutes(app: FastifyInstance): Promi
         prisma.instance.count({
           where: {
             status: { not: 'deleted' },
+            billingMode: 'package',
             packagePlanId: null
           }
         }),
@@ -172,7 +173,7 @@ export default async function adminStatisticsRoutes(app: FastifyInstance): Promi
         prisma.$queryRaw<ScalarRow[]>(Prisma.sql`
           SELECT COALESCE(SUM(ABS(amount)), 0)::numeric AS value
           FROM balance_logs
-          WHERE type IN ('consume', 'transfer_fee')
+          WHERE type IN ('consume', 'hourly_consume', 'transfer_fee')
         `),
         prisma.$queryRaw<ScalarRow[]>(Prisma.sql`
           SELECT COALESCE(SUM(amount), 0)::numeric AS value
@@ -235,7 +236,7 @@ export default async function adminStatisticsRoutes(app: FastifyInstance): Promi
           SELECT to_char(created_at + interval '8 hours', 'YYYY-MM-DD') AS bucket,
                  COALESCE(SUM(ABS(amount)), 0)::numeric AS value
           FROM balance_logs
-          WHERE type IN ('consume', 'transfer_fee')
+          WHERE type IN ('consume', 'hourly_consume', 'transfer_fee')
             AND created_at >= ${dailyWindow.start}
             AND created_at < ${dailyWindow.end}
           GROUP BY to_char(created_at + interval '8 hours', 'YYYY-MM-DD')
@@ -245,7 +246,7 @@ export default async function adminStatisticsRoutes(app: FastifyInstance): Promi
           SELECT to_char(created_at + interval '8 hours', 'YYYY-MM') AS bucket,
                  COALESCE(SUM(ABS(amount)), 0)::numeric AS value
           FROM balance_logs
-          WHERE type IN ('consume', 'transfer_fee')
+          WHERE type IN ('consume', 'hourly_consume', 'transfer_fee')
             AND created_at >= ${monthlyWindow.start}
             AND created_at < ${monthlyWindow.end}
           GROUP BY to_char(created_at + interval '8 hours', 'YYYY-MM')

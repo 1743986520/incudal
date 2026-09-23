@@ -35,6 +35,10 @@ import type {
   InstanceStats,
   DashboardSummary,
   CreateInstanceRequest,
+  HourlyPricing,
+  HourlyQuote,
+  HourlyBillingInfo,
+  HourlyBillingRecord,
   UpdateInstanceRequest,
   ChangeHostOptionsResponse,
   PortMapping,
@@ -949,6 +953,21 @@ const api = {
     getPassword: (id: number): Promise<{ rootPassword: string | null }> => http.get(`/instances/${id}/password`),
     getStats: (id: number): Promise<InstanceStats & { status?: string }> => http.get(`/instances/${id}/stats`),
     create: (data: CreateInstanceRequest): Promise<Instance> => http.post('/instances', data),
+    hourlyCatalog: (): Promise<{
+      enabled: boolean
+      pricing: HourlyPricing | null
+      hosts: Array<{ id: number; name: string; location: string | null; countryCode: string; architecture: string; instanceType: string; cpuAllowanceMax: number; memoryMax: number }>
+    }> => http.get('/hourly-billing/catalog'),
+    hourlyAvailableHosts: (params: { cpu?: number; memory?: number; disk?: number } = {}): Promise<{ hosts: Array<Record<string, unknown> & { id: number; isAvailable: boolean }> }> =>
+      http.get('/instances/hourly/available-hosts', { params }),
+    hourlyQuote: (data: { cpu: number; memory: number; disk: number }): Promise<{ pricing: HourlyPricing; resources: { cpu: number; memory: number; disk: number }; breakdown: HourlyQuote }> =>
+      http.post('/instances/hourly/quote', data),
+    createHourly: (data: { name: string; hostId: number; image: string; cpu: number; memory: number; disk: number; instanceType?: 'container' | 'vm'; sshKeyId?: number; sshKey?: string }): Promise<{ message: string; instanceId: number; billingMode: 'hourly'; pricingVersion: number; hourlyPrice: string; reservedAmount: string }> =>
+      http.post('/instances/hourly', data),
+    getHourlyBilling: (id: number): Promise<HourlyBillingInfo> => http.get(`/instances/${id}/hourly-billing`),
+    getHourlyBillingRecords: (id: number, limit = 50): Promise<{ records: HourlyBillingRecord[] }> => http.get(`/instances/${id}/hourly-billing/records`, { params: { limit } }),
+    hourlyResizePreview: (id: number, data: { cpu: number; memory: number; disk: number }): Promise<{ resources: { cpu: number; memory: number; disk: number }; pricing: HourlyPricing; breakdown: HourlyQuote }> =>
+      http.post(`/instances/${id}/hourly/resize-preview`, data),
     retryProvision: (id: number): Promise<{ message: string; status: string }> =>
       http.post(`/instances/${id}/retry-provision`, {}),
     getAvailableHosts: (params: Record<string, unknown> = {}): Promise<{ hosts: AvailableHost[] }> =>
@@ -3503,6 +3522,29 @@ const api = {
 
   // 管理员 API
   admin: {
+    getHourlyPricing: (): Promise<{ versions: HourlyPricing[] }> => http.get('/admin/hourly-billing/pricing'),
+    createHourlyPricingVersion: (data: {
+      version?: number
+      enabled?: boolean
+      cpuUnitPercent?: number
+      memoryUnitMb?: number
+      diskUnitMb?: number
+      minCpu?: number
+      minMemoryMb?: number
+      minDiskMb?: number
+      cpuPricePerUnit: string
+      memoryPricePerUnit: string
+      diskPricePerUnit: string
+      reserveQuantum?: string
+      trafficUnitPrice?: string
+      trafficIncludedBytes?: string
+      effectiveAt?: string
+    }): Promise<{ pricing: HourlyPricing }> => http.post('/admin/hourly-billing/pricing/versions', data),
+    setHourlyHostEnabled: (id: number, enabled: boolean): Promise<{ hostId: number; hourlyBillingEnabled: boolean }> =>
+      http.patch(`/admin/hourly-billing/hosts/${id}`, { enabled }),
+    getHourlyInstances: (): Promise<{ instances: Array<Record<string, unknown>> }> => http.get('/admin/hourly-billing/instances'),
+    getHourlyBillingRecords: (params: { instanceId?: number; limit?: number } = {}): Promise<{ records: Array<Record<string, unknown>> }> => http.get('/admin/hourly-billing/records', { params }),
+    reconcileHourlyBilling: (): Promise<{ message: string }> => http.post('/admin/hourly-billing/reconcile', {}),
     // ==================== 支付渠道管理 ====================
 
     // 获取支付渠道列表

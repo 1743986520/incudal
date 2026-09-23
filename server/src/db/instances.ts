@@ -41,6 +41,7 @@ export async function getInstancesByUserId(userId: number): Promise<Array<Instan
     host_id: inst.hostId,
     package_id: inst.packageId,
     package_plan_id: inst.packagePlanId,
+    billing_mode: inst.billingMode,
     storage_pool_name: inst.storagePoolName ?? null,
     icon_badge_id: inst.iconBadgeId,
     image: inst.image,
@@ -124,6 +125,7 @@ export async function getAllInstances(): Promise<Array<Instance & {
     host_id: inst.hostId,
     package_id: inst.packageId,
     package_plan_id: inst.packagePlanId,
+    billing_mode: inst.billingMode,
     storage_pool_name: inst.storagePoolName ?? null,
     icon_badge_id: inst.iconBadgeId,
     image: inst.image,
@@ -267,6 +269,7 @@ export async function getInstanceById(id: number): Promise<(Instance & {
     host_storage_driver: inst.host.storageDriver,
     last_ipv6_reassign_at: inst.lastIpv6ReassignAt?.toISOString() ?? null,
     package_plan_id: inst.packagePlanId ?? null,
+    billing_mode: inst.billingMode,
     auto_renew: inst.autoRenew,
     billing_price: inst.billingPrice ? Number(inst.billingPrice) : null
   }

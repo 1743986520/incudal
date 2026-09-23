@@ -530,7 +530,7 @@ export async function getUsersTotalConsumeMap(
       ), 0)::numeric AS "totalConsume"
     FROM balance_logs
     WHERE user_id IN (${Prisma.join(validUserIds)})
-      AND type = 'consume'
+      AND type IN ('consume', 'hourly_consume')
     GROUP BY user_id
   `)
 

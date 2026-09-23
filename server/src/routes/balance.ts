@@ -7,6 +7,7 @@ import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { sendBalanceAdjustedEmail } from '../lib/mailer.js'
+import { prisma } from '../db/prisma.js'
 
 const balanceTransferErrorStatus: Record<string, number> = {
   USER_NOT_FOUND: 404,
@@ -40,13 +41,20 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
     onRequest: [fastify.authenticate]
   }, async (request: FastifyRequest) => {
     const { user } = request
-    const balanceAmount = await db.getUserBalance(user.id)
+    const balanceRecord = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { balance: true, hourlyReservedBalance: true }
+    })
+    const balanceAmount = Number(balanceRecord?.balance ?? 0)
+    const hourlyReservedBalance = Number(balanceRecord?.hourlyReservedBalance ?? 0)
     const stats = await db.getUserConsumeStats(user.id)
 
     return {
       balance: {
         balance: balanceAmount,
-        frozen: 0,  // 暂无冻结功能
+        frozen: hourlyReservedBalance,
+        hourlyReserved: hourlyReservedBalance,
+        totalBalance: balanceAmount + hourlyReservedBalance,
         totalRecharge: stats.totalRecharge,
         totalConsume: stats.totalConsume,
         destroyedValue: stats.totalDestroyedValue

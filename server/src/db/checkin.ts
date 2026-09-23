@@ -459,6 +459,7 @@ export async function getUserInstancesForRedeem(userId: number) {
     where: {
       userId,
       status: { in: ['running', 'stopped'] },
+      billingMode: 'package',
       packagePlanId: null  // 只返回免费实例
     },
     include: {

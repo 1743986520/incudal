@@ -5333,6 +5333,16 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '没有找到可迁移的实例' })
     }
 
+    // 小时计费实例需要同时迁移 HourlyBillingAccount 与冻结预付款账务；
+    // 在迁移事务支持账务快照前禁止走旧的套餐迁移流程，避免实例被迁移成无账务实例。
+    const hourlyInstances = instances.filter(instance => instance.billingMode === 'hourly')
+    if (hourlyInstances.length > 0) {
+      return reply.code(400).send({
+        error: '按小时计费实例暂不支持批量迁移，请先使用专用迁移流程',
+        code: 'HOURLY_INSTANCE_MIGRATION_UNSUPPORTED'
+      })
+    }
+
     // 检查是否有付费实例
     const paidInstances = instances.filter(i => i.packagePlanId !== null)
     

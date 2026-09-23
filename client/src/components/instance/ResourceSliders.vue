@@ -39,7 +39,7 @@ const memoryMax = computed(() => Math.max(128, props.selectedPackage?.memory_max
 
 // 硬盘配置
 const diskMin = 512
-const diskStep = 102  // 约 0.1GB
+const diskStep = 512  // 0.5GB
 const diskMax = computed(() => Math.max(512, props.selectedPackage?.disk_max || 512))
 
 // CPU 额配转换为核心数

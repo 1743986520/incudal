@@ -197,12 +197,13 @@ export async function createInstanceAsync(
             where: { id: instanceId },
             select: {
               packagePlanId: true,
+              billingMode: true,
               billingPrice: true,
               expiresAt: true,
               packagePlan: { select: { name: true } }
             }
           })
-          const isPaid = instanceWithBilling?.packagePlanId !== null
+          const isPaid = instanceWithBilling ? db.isPackageInstance(instanceWithBilling) : false
 
           await sendInstanceCreatedEmail(user.email, {
             username: user.username,

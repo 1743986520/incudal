@@ -598,6 +598,7 @@ export async function getInstancesPaginated(options: PaginationOptions = {}): Pr
       user_avatar_badge_id: i.user.avatarBadgeId,
       package_name: i.package?.name || null,
       package_plan_id: i.packagePlanId,
+      billing_mode: i.billingMode,
       billing_price: i.billingPrice ? Number(i.billingPrice) : null,
       package_instance_type: i.package?.instanceType || 'container',
       allow_instance_deletion: i.package?.allowInstanceDeletion ?? true

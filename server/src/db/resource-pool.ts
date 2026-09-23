@@ -277,6 +277,7 @@ export async function getUserAllInstances(userId: number) {
     disk: inst.disk,
     monthlyTrafficLimit: inst.monthlyTrafficLimit,
     packagePlanId: inst.packagePlanId,
+    billingMode: inst.billingMode,
     host: inst.host
   }))
 }

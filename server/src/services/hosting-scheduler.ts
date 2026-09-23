@@ -4,6 +4,7 @@
  */
 
 import { schedule } from 'node-cron'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
 import {
   HOSTING_BALANCE_LOG_LOCK_NAMESPACE,
@@ -68,10 +69,11 @@ async function unfreezeHostingBalance(): Promise<void> {
         return
       }
 
-      const lockedAmounts = new Map<number, number>()
+      const lockedAmounts = new Map<number, Prisma.Decimal>()
       const lockedRecordIds: number[] = []
       for (const record of lockedRecords) {
-        lockedAmounts.set(record.userId, (lockedAmounts.get(record.userId) || 0) + Number(record.amount))
+        const currentAmount = lockedAmounts.get(record.userId) || new Prisma.Decimal(0)
+        lockedAmounts.set(record.userId, currentAmount.add(record.amount))
         lockedRecordIds.push(record.id)
       }
 
@@ -103,7 +105,7 @@ async function unfreezeHostingBalance(): Promise<void> {
           where: { id: userId },
           data: { hostingBalance: { increment: amount } }
         })
-        console.log(`[Hosting] Unfroze ${amount} for user ${userId}`)
+        console.log(`[Hosting] Unfroze ${amount.toFixed(8)} for user ${userId}`)
       }
     })
 

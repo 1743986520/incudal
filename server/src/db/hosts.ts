@@ -597,8 +597,9 @@ export async function selectAvailableHost(options: {
   disk: number
   hostId?: number | null
   ownerId?: number  // 套餐所有者ID，用于限制只能在该用户的宿主机上创建实例
+  requireHourlyBillingEnabled?: boolean
 }): Promise<(Host & { cpu_allowance_max?: number; memory_max?: number }) | null> {
-  const { packageHostIds, nodeSelectors = [], cpu, memory, disk, hostId, ownerId } = options
+  const { packageHostIds, nodeSelectors = [], cpu, memory, disk, hostId, ownerId, requireHourlyBillingEnabled = false } = options
 
   // 构建查询条件
   const where: {
@@ -606,8 +607,10 @@ export async function selectAvailableHost(options: {
     id?: number | { in: number[] }
     userId?: number
     tags?: { path: string[]; array_contains: string }
+    hourlyBillingEnabled?: boolean
   } = {
-    status: 'online'
+    status: 'online',
+    ...(requireHourlyBillingEnabled ? { hourlyBillingEnabled: true } : {})
   }
 
   // 安全检查：用户指定�?hostId 必须在套餐绑定的宿主机列表中
@@ -777,13 +780,18 @@ export async function selectAndReserveHostWithLock(
     hostId?: number | null
     ownerId?: number
     portCount?: number
+    requireHourlyBillingEnabled?: boolean
   }
 ): Promise<(Host & { cpu_allowance_max?: number; memory_max?: number }) | null> {
-  const { packageHostIds, nodeSelectors = [], cpu, memory, disk, hostId, ownerId, portCount = 0 } = options
+  const { packageHostIds, nodeSelectors = [], cpu, memory, disk, hostId, ownerId, portCount = 0, requireHourlyBillingEnabled = false } = options
 
   // 构建候选宿主机查询条件
   const whereConditions: string[] = ["status = 'online'"]
   const params: unknown[] = []
+
+  if (requireHourlyBillingEnabled) {
+    whereConditions.push('hourly_billing_enabled = true')
+  }
   
   if (hostId) {
     // 用户指定了特定宿主机

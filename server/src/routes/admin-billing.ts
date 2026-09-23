@@ -504,7 +504,7 @@ async function buildBatchPriceUpdatePreview(
       continue
     }
 
-    if (!instance.packagePlanId) {
+    if (!db.isPackageInstance(instance)) {
       items.push({
         id: instance.id,
         name: instance.name,
@@ -1045,7 +1045,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       }
 
       // 只有付费实例可以延期
-      if (!instance.packagePlanId || !instance.billingPrice) {
+      if (!db.isPackageInstance(instance) || !instance.billingPrice) {
         return reply.status(400).send({ error: '免费实例无需延期' })
       }
 
@@ -1658,7 +1658,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: '实例已删除' })
       }
 
-      if (!instance.packagePlanId) {
+      if (!db.isPackageInstance(instance)) {
         return reply.status(400).send({ error: '免费实例不支持应用优惠码' })
       }
 
@@ -1790,7 +1790,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: '实例已删除' })
       }
 
-      if (!instance.packagePlanId) {
+      if (!db.isPackageInstance(instance)) {
         return reply.status(400).send({ error: '免费实例不支持修改价格' })
       }
 
@@ -1827,7 +1827,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           throw new BatchPriceUpdateError('实例已删除')
         }
 
-        if (!currentInstance.packagePlanId) {
+        if (!db.isPackageInstance(currentInstance)) {
           throw new BatchPriceUpdateError('免费实例不支持修改价格')
         }
 
@@ -2016,7 +2016,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: '实例已删除' })
       }
 
-      if (!instance.packagePlanId) {
+      if (!db.isPackageInstance(instance)) {
         return reply.status(400).send({ error: '免费实例不支持修改价格' })
       }
 
@@ -3556,7 +3556,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(404).send({ error: '实例不存在' })
       }
 
-      if (!instance.packagePlanId || !instance.packagePlan) {
+      if (!db.isPackageInstance(instance) || !instance.packagePlan) {
         return reply.status(400).send({ error: '该实例不是付费实例，无法切换方案' })
       }
 
@@ -3675,7 +3675,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(404).send({ error: '实例不存在' })
       }
 
-      if (!instance.packagePlanId || !instance.packagePlan) {
+      if (!db.isPackageInstance(instance) || !instance.packagePlan) {
         return reply.status(400).send({ error: '该实例不是付费实例，无法切换方案' })
       }
 

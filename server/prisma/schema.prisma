@@ -249,6 +249,9 @@ enum BalanceLogType {
   hosting_withdraw  // 托管余额提现
   hosting_deduction // 托管实例销毁扣款（从面板余额补扣）
   invite_generate   // 生成邀请码扣款
+  hourly_reserve    // 按小时计费预付款冻结（从可用余额转入冻结余额）
+  hourly_release    // 按小时计费预付款释放
+  hourly_consume    // 按小时计费实际费用（从冻结余额结算）
 }
 
 enum VipBenefitRewardType {
@@ -356,6 +359,23 @@ enum TrafficBillingMode {
   usage
 }
 
+enum InstanceBillingMode {
+  package
+  hourly
+}
+
+enum HourlyBillingStatus {
+  active
+  paused
+  suspended
+  closed
+}
+
+enum HourlyBillingRecordStatus {
+  paid
+  pending
+}
+
 enum TrafficBillingRecordStatus {
   paid
   pending
@@ -379,7 +399,8 @@ model User {
   role         UserRole   @default(user)
   status       UserStatus @default(active)
   banReason    String?    @map("ban_reason") // 封禁原因（管理员可选填写）
-  balance      Decimal    @default(0) @db.Decimal(10, 2)
+  balance      Decimal    @default(0) @db.Decimal(20, 8)
+  hourlyReservedBalance Decimal @default(0) @map("hourly_reserved_balance") @db.Decimal(20, 8)
   avatarStyle  String     @default("bigSmile") @map("avatar_style") // bigSmile, croodles, notionists, lorelei
   avatarBadgeId String?   @map("avatar_badge_id")
   hasCreatedHostBefore Boolean @default(false) @map("has_created_host_before")
@@ -458,6 +479,8 @@ model User {
   // 计费相关
   balanceLogs           BalanceLog[]
   trafficBillingRecords TrafficBillingRecord[]
+  hourlyBillingRecords  HourlyBillingRecord[]
+  hourlyPricingVersions HourlyPricingVersion[] @relation("HourlyPricingVersionCreator")
   rechargeRecords       RechargeRecord[]
   rechargeCardsCreated  RechargeCard[] @relation("RechargeCardsCreated")
   rechargeCardsUsed     RechargeCard[] @relation("RechargeCardsUsed")
@@ -476,7 +499,7 @@ model User {
   officialCouponUsages   OfficialCouponUsage[]
 
   // 托管余额系统
-  hostingBalance      Decimal              @default(0) @map("hosting_balance") @db.Decimal(10, 2) // 可用托管余额
+  hostingBalance      Decimal              @default(0) @map("hosting_balance") @db.Decimal(20, 8) // 可用托管余额
   hostingBalanceLogs  HostingBalanceLog[]
   hostingWithdrawals  HostingWithdrawal[]
   hostingBlocksCreated  HostingUserBlock[] @relation("HostingBlocker")
@@ -690,6 +713,8 @@ model Host {
 
   // 转移控制
   transferEnabled Boolean @default(true) @map("transfer_enabled") // 是否允许该宿主机下的实例进行转移
+
+  hourlyBillingEnabled Boolean @default(false) @map("hourly_billing_enabled") // 是否允许创建按小时计费实例
 
   // 流量配置
   trafficResetDay Int @default(1) @map("traffic_reset_day") // 流量重置日（1-28），默认每月1号
@@ -1007,6 +1032,7 @@ model Instance {
   hostId           Int            @map("host_id")
   packageId        Int?           @map("package_id")
   packagePlanId    Int?           @map("package_plan_id")  // 套餐方案 ID：null 表示免费实例
+  billingMode      InstanceBillingMode @default(package) @map("billing_mode")
   storagePoolName  String?        @map("storage_pool_name")
   image            String
   status           InstanceStatus @default(creating)
@@ -1119,6 +1145,8 @@ model Instance {
   redeemCodeUsages RedeemCodeUsage[]
   billingRecords   InstanceBillingRecord[]  // 计费记录
   trafficBillingRecords TrafficBillingRecord[]
+  hourlyBillingAccount HourlyBillingAccount?
+  hourlyBillingRecords HourlyBillingRecord[]
   affBinding       AffBinding?              // AFF优惠码绑定
   officialCouponUsages OfficialCouponUsage[] // 官方优惠券使用记录
   resourcePoolLogs ResourcePoolLog[]        // 资源池应用记录
@@ -1136,6 +1164,7 @@ model Instance {
   @@index([expiresAt])      // 计费调度器使用：查找即将到期的实例
   @@index([autoRenew, expiresAt]) // 计费调度器使用：自动续费查询
   @@index([trafficBillingMode, status, nextTrafficBillingAt])
+  @@index([billingMode, status])
   @@index([userId, displayOrder, createdAt(sort: Desc)])
   @@map("instances")
 }
@@ -2183,9 +2212,9 @@ model BalanceLog {
   id            Int            @id @default(autoincrement())
   userId        Int            @map("user_id")
   type          BalanceLogType
-  amount        Decimal        @db.Decimal(10, 2) // 正数=增加，负数=减少
-  balanceBefore Decimal        @map("balance_before") @db.Decimal(10, 2)
-  balanceAfter  Decimal        @map("balance_after") @db.Decimal(10, 2)
+  amount        Decimal        @db.Decimal(20, 8) // 正数=增加，负数=减少
+  balanceBefore Decimal        @map("balance_before") @db.Decimal(20, 8)
+  balanceAfter  Decimal        @map("balance_after") @db.Decimal(20, 8)
 
   // 关联信息
   orderId    String? @map("order_id")    // 充值订单号
@@ -2493,6 +2522,95 @@ model TrafficBillingRecord {
   @@index([userId, createdAt(sort: Desc)])
   @@index([status])
   @@map("traffic_billing_records")
+}
+
+// ==================== 按小时计费模型 ====================
+
+model HourlyPricingVersion {
+  id              Int      @id @default(autoincrement())
+  version         Int      @unique
+  enabled         Boolean  @default(false)
+  cpuUnitPercent  Int      @default(5) @map("cpu_unit_percent")
+  memoryUnitMb    Int      @default(64) @map("memory_unit_mb")
+  diskUnitMb      Int      @default(512) @map("disk_unit_mb")
+  minCpu          Int      @default(15) @map("min_cpu")
+  minMemoryMb     Int      @default(128) @map("min_memory_mb")
+  minDiskMb       Int      @default(512) @map("min_disk_mb")
+  cpuPricePerUnit Decimal  @map("cpu_price_per_unit") @db.Decimal(20, 8)
+  memoryPricePerUnit Decimal @map("memory_price_per_unit") @db.Decimal(20, 8)
+  diskPricePerUnit Decimal @map("disk_price_per_unit") @db.Decimal(20, 8)
+  reserveQuantum  Decimal  @default(0.01) @map("reserve_quantum") @db.Decimal(20, 8)
+  // 按小时实例仍使用现有按量流量计费；价格单位沿用套餐的“分/GB”格式。
+  trafficUnitPrice Decimal @default(0) @map("traffic_unit_price") @db.Decimal(10, 2)
+  trafficIncludedBytes BigInt @default(0) @map("traffic_included_bytes")
+  effectiveAt     DateTime @default(now()) @map("effective_at")
+  createdBy       Int?     @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  creator         User? @relation("HourlyPricingVersionCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  accounts        HourlyBillingAccount[]
+  records         HourlyBillingRecord[]
+
+  @@index([enabled, effectiveAt])
+  @@map("hourly_pricing_versions")
+}
+
+model HourlyBillingAccount {
+  id              Int      @id @default(autoincrement())
+  instanceId      Int      @unique @map("instance_id")
+  pricingVersionId Int     @map("pricing_version_id")
+  lastSettledAt   DateTime @map("last_settled_at")
+  nextSettlementAt DateTime? @map("next_settlement_at")
+  prepaidBalance  Decimal  @default(0) @map("prepaid_balance") @db.Decimal(20, 8)
+  totalCost       Decimal  @default(0) @map("total_cost") @db.Decimal(20, 8)
+  totalReserved   Decimal  @default(0) @map("total_reserved") @db.Decimal(20, 8)
+  totalReleased   Decimal  @default(0) @map("total_released") @db.Decimal(20, 8)
+  outstandingAmount Decimal @default(0) @map("outstanding_amount") @db.Decimal(20, 8)
+  status          HourlyBillingStatus @default(paused)
+  version         Int      @default(0)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  instance        Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  pricingVersion  HourlyPricingVersion @relation(fields: [pricingVersionId], references: [id])
+  records         HourlyBillingRecord[]
+
+  @@index([status, nextSettlementAt])
+  @@map("hourly_billing_accounts")
+}
+
+model HourlyBillingRecord {
+  id              Int      @id @default(autoincrement())
+  settlementKey   String   @unique @map("settlement_key")
+  accountId       Int      @map("account_id")
+  instanceId      Int      @map("instance_id")
+  userId          Int      @map("user_id")
+  pricingVersionId Int     @map("pricing_version_id")
+  periodStart     DateTime @map("period_start")
+  periodEnd       DateTime @map("period_end")
+  activeSeconds   Int      @map("active_seconds")
+  cpu             Int
+  memory          Int
+  disk            Int
+  cpuAmount       Decimal  @map("cpu_amount") @db.Decimal(20, 8)
+  memoryAmount    Decimal  @map("memory_amount") @db.Decimal(20, 8)
+  diskAmount      Decimal  @map("disk_amount") @db.Decimal(20, 8)
+  actualAmount    Decimal  @map("actual_amount") @db.Decimal(20, 8)
+  reserveAmount   Decimal  @default(0) @map("reserve_amount") @db.Decimal(20, 8)
+  releaseAmount   Decimal  @default(0) @map("release_amount") @db.Decimal(20, 8)
+  status          HourlyBillingRecordStatus @default(paid)
+  balanceLogId    Int?     @map("balance_log_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  account         HourlyBillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  instance        Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pricingVersion  HourlyPricingVersion @relation(fields: [pricingVersionId], references: [id])
+
+  @@index([instanceId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("hourly_billing_records")
 }
 
 // ==================== AFF推荐计划模型 ====================
@@ -2981,6 +3099,7 @@ enum HostingActionType {
   unfreeze     // 自动解冻
   withdraw     // 提现
   admin_adjust // 管理员调整
+  hourly       // 按小时计费资源收入
 }
 
 enum WithdrawalStatus {
@@ -3134,7 +3253,7 @@ model HostingBalanceLog {
   userId     Int                 @map("user_id")
   type       HostingBalanceType
   actionType HostingActionType?  @map("action_type") // 具体操作类型（开通/续费/升级/销毁等）
-  amount     Decimal             @db.Decimal(10, 2) // 金额（正数）
+  amount     Decimal             @db.Decimal(20, 8) // 金额（正数）
   frozen     Boolean             @default(true)     // 是否冻结状态
   unfreezeAt DateTime?           @map("unfreeze_at") // 解冻时间
   relatedId  Int?                @map("related_id") // 关联ID（实例ID/提现ID）
