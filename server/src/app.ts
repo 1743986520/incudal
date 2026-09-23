@@ -91,6 +91,7 @@ import vipBenefitRoutes from './routes/vip-benefits.js'
 import officialCouponRoutes from './routes/official-coupons.js'
 import adminOfficialCouponRoutes from './routes/admin-official-coupons.js'
 import hourlyBillingRoutes from './routes/hourly-billing.js'
+import siteMetaRoutes, { handleSeoMetaRequest } from './routes/site-meta.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -155,6 +156,10 @@ const fastify = Fastify({
 fastify.addHook('onRequest', async (request) => {
   applyVerifiedClientIp(request)
 })
+
+// Serve configured SEO verification files and custom Sitemap paths before the
+// static-file server and SPA fallback.
+fastify.addHook('onRequest', handleSeoMetaRequest)
 
 // 自定义 schema 验证错误处理
 import type { FastifyError } from 'fastify'
@@ -447,6 +452,9 @@ await fastify.register(systemUpdateRoutes, { prefix: '/api/system-update' })
 await fastify.register(userInviteRoutes, { prefix: '/api/user-invites' })
 await fastify.register(vipLevelRoutes)
 await fastify.register(vipBenefitRoutes)
+
+// Search-engine discovery endpoints must be registered before the SPA fallback.
+await fastify.register(siteMetaRoutes)
 
 // 生产环境：注册静态文件服务
 if (process.env.NODE_ENV === 'production') {

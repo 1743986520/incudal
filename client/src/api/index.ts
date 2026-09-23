@@ -2254,6 +2254,14 @@ const api = {
       brandName?: string | null
       brandSubtitle?: string | null
       brandLogoUrl?: string | null
+      seoSiteUrl?: string | null
+      seoSitemapPath?: string | null
+      seoVerificationPath?: string | null
+      seoIndexNowEndpoint?: string | null
+      seoIndexNowKey?: string | null
+      seoTrackingEnabled?: boolean
+      seoTrackingScriptUrl?: string | null
+      seoTrackingId?: string | null
       popupAnnouncement?: string | null
       popupAnnouncementUpdatedAt?: string | null
       popupPromoImageUrl?: string | null
@@ -2286,6 +2294,8 @@ const api = {
       http.post('/system-config/smtp/send-test', { to }),
     list: (): Promise<{ configs: Array<{ id: number; key: string; value: string; type: string; label: string | null; description: string | null }> }> =>
       http.get('/system-config'),
+    submitIndexNow: (): Promise<{ success: boolean; submitted: number; sitemapUrl: string }> =>
+      http.post('/system-config/seo/indexnow/submit'),
     getDefaultQuota: (): Promise<{ quota: { hostLimit: number; friendLimit: number; packageLimit: number } }> =>
       http.get('/system-config/default-quota'),
     update: (configs: Array<{ key: string; value: string }>): Promise<{ message: string }> =>

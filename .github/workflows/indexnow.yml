@@ -1,0 +1,30 @@
+name: Notify search engines
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'client/index.html'
+      - 'client/public/**'
+      - 'client/src/views/LandingView.vue'
+      - 'client/src/views/MarketView.vue'
+      - 'client/src/views/HelpView.vue'
+      - 'client/src/locales/**'
+      - 'server/src/routes/site-meta.ts'
+      - 'server/src/routes/help.ts'
+      - 'scripts/submit-indexnow.mjs'
+  workflow_dispatch:
+
+jobs:
+  notify-indexnow:
+    name: Submit public URLs to IndexNow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Notify IndexNow
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: node scripts/submit-indexnow.mjs

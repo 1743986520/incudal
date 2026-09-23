@@ -6,10 +6,13 @@ import api from '@/api'
 import type { HelpArticleDetail, HelpArticleListItem } from '@/types/api'
 import { parseMarkdown } from '@/utils/markdown'
 import PublicSiteLayout from '@/components/public/PublicSiteLayout.vue'
+import { usePageSeo } from '@/composables/usePageSeo'
+import { useBrand } from '@/composables/useBrand'
 
 const route = useRoute()
 const router = useRouter()
 const { locale, t } = useI18n()
+const brand = useBrand()
 const HOSTING_TUTORIAL_SLUG = 'hosting-tutorial'
 
 // 列表视图
@@ -88,6 +91,30 @@ const builtInArticles = computed<HelpArticle[]>(() => builtInTopicDefinitions.ma
   created_at: '',
   updated_at: ''
 })))
+
+const seoDescription = computed(() => {
+  const content = currentArticle.value?.summary || currentArticle.value?.content || t('help.description')
+  return content
+    .replace(/[#*_>`~\[\]()!-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160)
+})
+
+usePageSeo(() => {
+  const article = currentArticle.value
+  const slug = typeof route.params.slug === 'string' ? route.params.slug : ''
+  const title = article
+    ? `${article.title} - ${brand.brandName}`
+    : `${t('nav.help')} - ${brand.brandName}`
+
+  return {
+    title,
+    description: seoDescription.value,
+    canonical: `${window.location.origin}${slug ? `/help/${encodeURIComponent(slug)}` : '/help'}`,
+    keywords: t('publicSite.seo.keywords').replace(/Incudal/g, brand.brandName)
+  }
+})
 
 const categoryCards = computed(() => categoryConfig.value.map(category => {
   const articleCategory = categories.value.find(item => item.category === category.id)
