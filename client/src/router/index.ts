@@ -22,7 +22,6 @@ const hiddenHostingRouteNames = new Set([
   'my-package-plan-edit',
   'hosting-wallet'
 ])
-const hiddenMailRouteNames = new Set(['mail', 'mail-domain'])
 
 // 处理 OAuth 登录码的函数
 async function handleOAuthCode(): Promise<boolean> {
@@ -161,19 +160,6 @@ const routes: RouteRecordRaw[] = [
     name: 'instance-detail',
     component: () => import('@/views/InstanceDetailView.vue'),
     meta: { requiresAuth: true, titleKey: 'nav.instanceDetail', title: '实例详情' }
-  },
-  // 域名邮箱
-  {
-    path: '/mail',
-    name: 'mail',
-    component: () => import('@/views/MailView.vue'),
-    meta: { requiresAuth: true, titleKey: 'nav.mail', title: '邮箱' }
-  },
-  {
-    path: '/mail/domains/:id',
-    name: 'mail-domain',
-    component: () => import('@/views/MailDomainView.vue'),
-    meta: { requiresAuth: true, titleKey: 'nav.mailDomain', title: '邮箱域名' }
   },
   {
     path: '/profile',
@@ -434,12 +420,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/admin/AdminInstanceCreateView.vue'),
     meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.adminCreateInstance', title: '管理员创建实例' }
   },
-  {
-    path: '/admin/mail',
-    name: 'admin-mail',
-    component: () => import('@/views/admin/AdminMailView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.mail', title: '邮箱' }
-  },
 // Help articles (public access)
   {
     path: '/help',
@@ -599,19 +579,6 @@ router.beforeEach(async (to: RouteLocationNormalized, _from: RouteLocationNormal
   if (to.name === 'tickets' && authStore.isAuthenticated && !authStore.isAdmin) {
     await configStore.loadPublicConfig()
     if (!configStore.ticketEnabled) {
-      next({ name: 'dashboard' })
-      return
-    }
-  }
-
-  if (
-    authStore.isAuthenticated &&
-    !authStore.isAdmin &&
-    typeof to.name === 'string' &&
-    hiddenMailRouteNames.has(to.name)
-  ) {
-    await configStore.loadPublicConfig()
-    if (!configStore.mailAvailable) {
       next({ name: 'dashboard' })
       return
     }

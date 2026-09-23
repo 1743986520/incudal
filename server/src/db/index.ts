@@ -183,8 +183,6 @@ export * from './points.js'
 // 导出抽奖系统相关操作
 export * from './lottery.js'
 
-// 导出域名邮箱模块操作
-export * from './mail.js'
 
 // 导出宿主机通知邮件队列相关操作
 export * from './host-notification-email-tasks.js'

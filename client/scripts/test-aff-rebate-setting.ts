@@ -14,7 +14,6 @@ const billingOperations = read('server/src/db/billing-operations.ts')
 const systemConfigRoutes = read('server/src/routes/system-config.ts')
 const adminBillingRoutes = read('server/src/routes/admin-billing.ts')
 const instanceRoutes = read('server/src/routes/instances.ts')
-const mailRoutes = read('server/src/routes/mail.ts')
 const configStore = read('client/src/stores/config.ts')
 const apiIndex = read('client/src/api/index.ts')
 const systemConfigView = read('client/src/views/admin/SystemConfigView.vue')
@@ -22,7 +21,6 @@ const walletView = read('client/src/views/WalletView.vue')
 const instanceCreateView = read('client/src/views/InstanceCreateView.vue')
 const instanceDetailView = read('client/src/views/InstanceDetailView.vue')
 const applyAffCodeModal = read('client/src/components/instance/modals/ApplyAffCodeModal.vue')
-const mailView = read('client/src/views/MailView.vue')
 const zhCN = read('client/src/locales/zh-CN.ts')
 const zhTW = read('client/src/locales/zh-TW.ts')
 const en = read('client/src/locales/en.ts')
@@ -57,12 +55,6 @@ assert.match(
   'Instance renewal and billing previews must honor the AFF rebate setting'
 )
 
-assert.match(
-  mailRoutes,
-  /isAffRebateEnabled/,
-  'Mail subscription renewal must honor the AFF rebate setting'
-)
-
 assert.doesNotMatch(
   affDb,
   /return true;?\s*(?:\r?\n\s*\/\/ 原来的逻辑)?/,
@@ -88,7 +80,6 @@ assert.match(walletView, /affDisabledByAdmin/, 'wallet AFF disabled state must u
 assert.match(instanceCreateView, /affRebateEnabled/, 'instance creation promo code UI must honor AFF rebate setting')
 assert.match(instanceDetailView, /affRebateEnabled/, 'instance detail AFF binding entry must honor AFF rebate setting')
 assert.match(applyAffCodeModal, /disabledReason/, 'AFF binding modal must support a disabled state reason')
-assert.match(mailView, /affRebateEnabled/, 'mail checkout AFF code UI must honor AFF rebate setting')
 
 for (const [name, locale] of [['zh-CN', zhCN], ['zh-TW', zhTW], ['en', en]] as const) {
   assert.match(locale, /affRebateEnabled/, `${name} must include AFF rebate setting title`)

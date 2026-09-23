@@ -48,7 +48,6 @@ const footerTelegramLink = computed(() => {
 
 const hiddenExpandMenuNames = new Set(['my-hosts', 'my-packages', 'hosting-wallet'])
 const hiddenWhenTicketDisabledMenuNames = new Set(['tickets'])
-const hiddenWhenMailUnavailableMenuNames = new Set(['mail'])
 const shouldHideHostingFeature = computed(() =>
   !authStore.isAdmin && authStore.user?.canAccessHostingFeature === false
 )
@@ -58,7 +57,6 @@ const userMenuItems: MenuItem[] = [
   { divider: true, label: 'nav.main' },
   { name: 'dashboard', path: '/dashboard', icon: 'home', label: 'nav.dashboard' },
   { name: 'instances', path: '/instances', icon: 'server', label: 'nav.instances' },
-  { name: 'mail', path: '/mail', icon: 'mail', label: 'nav.mail' },
   { name: 'terminal', path: '/terminal', icon: 'terminal', label: 'nav.terminal' },
   { name: 'extensions', path: '/extensions', icon: 'puzzle', label: 'nav.scripts' },
   { name: 'transfers', path: '/transfers', icon: 'transfer', label: 'nav.transfers' },
@@ -87,7 +85,6 @@ const adminOnlyMenuItems: MenuItem[] = [
   { name: 'my-packages', path: '/resources/packages', icon: 'package', label: 'nav.packages' },
   { name: 'admin-images', path: '/admin/images', icon: 'image', label: 'nav.images' },
   { name: 'admin-instance-create', path: '/admin/instances/create', icon: 'gift', label: 'nav.create' },
-  { name: 'admin-mail', path: '/admin/mail', icon: 'mail', label: 'nav.mail' },
   { divider: true, label: 'nav.operations' },
   { name: 'tickets', path: '/tickets', icon: 'ticket', label: 'nav.tickets' },
   { name: 'admin-billing', path: '/admin/billing', icon: 'wallet', label: 'nav.billing' },
@@ -107,10 +104,6 @@ const menuItems = computed<MenuItem[]>(() => {
 
   if (!authStore.isAdmin && !configStore.ticketEnabled) {
     baseItems = baseItems.filter(item => !item.name || !hiddenWhenTicketDisabledMenuNames.has(item.name))
-  }
-
-  if (!authStore.isAdmin && !configStore.mailAvailable) {
-    baseItems = baseItems.filter(item => !item.name || !hiddenWhenMailUnavailableMenuNames.has(item.name))
   }
 
   if (!shouldHideHostingFeature.value) {

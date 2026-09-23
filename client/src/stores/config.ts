@@ -32,7 +32,6 @@ export const useConfigStore = defineStore('config', () => {
     const ticketEnabled = ref(true)
     const freeSiteMode = ref(false)
     const affRebateEnabled = ref(false)
-    const mailAvailable = ref(true)
     const turnstileEnabled = ref(false)
     const turnstileSiteKey = ref<string | null>(null)
     const transferFee = ref(0)
@@ -67,7 +66,6 @@ export const useConfigStore = defineStore('config', () => {
                 ticketEnabled.value = config.ticketEnabled ?? true
                 freeSiteMode.value = config.freeSiteMode ?? false
                 affRebateEnabled.value = config.affRebateEnabled ?? false
-                mailAvailable.value = config.mailAvailable ?? true
                 turnstileEnabled.value = config.turnstileEnabled || false
                 turnstileSiteKey.value = config.turnstileSiteKey || null
                 avatarApiBase.value = config.avatarApiBase || 'https://api.dicebear.com/9.x'
@@ -112,7 +110,6 @@ export const useConfigStore = defineStore('config', () => {
         ticketEnabled,
         freeSiteMode,
         affRebateEnabled,
-        mailAvailable,
         turnstileEnabled,
         turnstileSiteKey,
         transferFee,

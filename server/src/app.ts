@@ -80,7 +80,6 @@ import adminHostingRoutes from './routes/admin-hosting.js'
 import affRoutes from './routes/aff.js'
 import entertainmentRoutes from './routes/entertainment.js'
 import adminEntertainmentRoutes from './routes/admin-entertainment.js'
-import mailRoutes from './routes/mail.js'
 import adminNotificationChannelsRoutes from './routes/admin-notification-channels.js'
 import telegramRoutes from './routes/telegram.js'
 import agentRoutes from './routes/agent.js'
@@ -444,7 +443,6 @@ await fastify.register(officialCouponRoutes, { prefix: '/api/official-coupons' }
 await fastify.register(adminOfficialCouponRoutes)
 await fastify.register(entertainmentRoutes, { prefix: '/api/entertainment' })
 await fastify.register(adminEntertainmentRoutes, { prefix: '/api/admin/entertainment' })
-await fastify.register(mailRoutes, { prefix: '/api/mail' })
 await fastify.register(adminNotificationChannelsRoutes, { prefix: '/api/admin/notification-channels' })
 await fastify.register(telegramRoutes, { prefix: '/api/telegram' })
 await fastify.register(agentRoutes, { prefix: '/api/agent' })

@@ -4,7 +4,6 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import * as db from '../db/index.js'
-import { hasAvailableMailOffering } from '../db/mail.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { isSmtpEnabled, testSmtpConnection, sendTestEmail, clearTransporterCache } from '../lib/mailer.js'
@@ -89,13 +88,12 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
     fastify.get('/public', {
         config: { rateLimit: { max: 60, timeWindow: '1 minute' } }
     }, async (_request: FastifyRequest, _reply: FastifyReply) => {
-        const [registrationEnabled, requireInviteCode, ticketEnabled, freeSiteMode, affRebateEnabled, mailAvailable, turnstileEnabled, turnstileSiteKey, avatarApiBase, smtpEnabled, emailDomainWhitelistEnabled, emailAllowedDomains, transferFee, balanceTransferEnabled, balanceTransferFee, footerContactEmail, footerTelegramLink, hostingMarketEntryEnabled, hostingNotice, brandName, brandSubtitle, brandLogoUrl, popupAnnouncementConfig, popupPromoImageUrlConfig, popupPromoPackageIdConfig] = await Promise.all([
+        const [registrationEnabled, requireInviteCode, ticketEnabled, freeSiteMode, affRebateEnabled, turnstileEnabled, turnstileSiteKey, avatarApiBase, smtpEnabled, emailDomainWhitelistEnabled, emailAllowedDomains, transferFee, balanceTransferEnabled, balanceTransferFee, footerContactEmail, footerTelegramLink, hostingMarketEntryEnabled, hostingNotice, brandName, brandSubtitle, brandLogoUrl, popupAnnouncementConfig, popupPromoImageUrlConfig, popupPromoPackageIdConfig] = await Promise.all([
             db.isRegistrationEnabled(),
             db.isInviteCodeRequired(),
             db.getSystemConfigBoolean('ticket_enabled', true),
             db.getSystemConfigBoolean('free_site_mode', false),
             db.getSystemConfigBoolean('aff_rebate_enabled', false),
-            hasAvailableMailOffering(),
             db.getSystemConfigBoolean('turnstile_enabled', false),
             db.getSystemConfig('turnstile_site_key'),
             db.getSystemConfig('avatar_api_base'),
@@ -217,7 +215,6 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             ticketEnabled,
             freeSiteMode,
             affRebateEnabled,
-            mailAvailable,
             turnstileEnabled,
             turnstileSiteKey: turnstileEnabled ? turnstileSiteKey : null,
             avatarApiBase: avatarApiBase || 'https://api.dicebear.com/9.x',

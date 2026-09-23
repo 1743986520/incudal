@@ -22,10 +22,6 @@ export async function startSchedulers(): Promise<void> {
   const { startBillingScheduler } = await import('../services/billing-scheduler.js')
   startBillingScheduler()
 
-  // 启动邮箱订阅过期检查调度器
-  const { startMailExpiryScheduler } = await import('../services/mail-expiry-scheduler.js')
-  startMailExpiryScheduler()
-
   // 启动托管余额调度器（解冻）
   const { startHostingScheduler } = await import('../services/hosting-scheduler.js')
   startHostingScheduler()
