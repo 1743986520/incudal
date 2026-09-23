@@ -80,6 +80,7 @@ export async function changeAffBalance(
       throw new Error('AFF 余额变动金额无效')
     }
     const run = async (client: Prisma.TransactionClient): Promise<AffBalanceChangeResult> => {
+      const { userId, type, amount, affCodeId, instanceId, originalAmount, remark } = input
       // Serialize AFF and main-balance operations for the same user before
       // taking the balance snapshot used by the ledger entry.
       await advisoryTransactionLock(client, USER_BALANCE_LOCK_NAMESPACE, userId)
@@ -377,6 +378,7 @@ export async function deleteAffCode(
 
     const instanceBindingCount = await prisma.affBinding.count({ where: { affCodeId: codeId } })
 
+    if (instanceBindingCount > 0) {
       return { success: false, error: '该优惠码已绑定订阅，无法删除' }
     }
 
