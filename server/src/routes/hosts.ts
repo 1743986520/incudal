@@ -433,6 +433,50 @@ function injectInstallVariable(script: string, name: string, value: string): str
   )
 }
 
+type HostInstallQuery = {
+  stage?: string
+  os?: string
+}
+
+const HOST_INSTALL_OS = new Set(['ubuntu', 'debian', 'rocky', 'alpine'])
+
+function readHostInstallTemplate(stage: 'bootstrap' | 'platform', os?: string): string {
+  const templateRoot = join(__dirname, '../../templates')
+  if (stage === 'bootstrap') {
+    return readFileSync(join(templateRoot, 'install.sh'), 'utf-8')
+  }
+
+  if (!os || !HOST_INSTALL_OS.has(os)) {
+    throw new Error('Unsupported installer platform')
+  }
+
+  // Keep platform, storage, and functional modules separate from the common
+  // entrypoint. The response is one executable payload after composition.
+  const moduleNames = [
+    `platform/${os}.sh`,
+    'prelude.sh',
+    'storage.sh',
+    'network.sh',
+    'system.sh',
+    'pps.sh',
+    'incus.sh',
+    'agent.sh',
+    'firewall.sh',
+    'uninstall.sh',
+    'guardian.sh',
+    'main.sh'
+  ]
+  return moduleNames
+    .map(moduleName => readFileSync(join(templateRoot, 'install', moduleName), 'utf-8'))
+    .join('\n')
+}
+
+function resolveHostInstallStage(query: HostInstallQuery): 'bootstrap' | 'platform' {
+  if (!query.stage || query.stage === 'bootstrap') return 'bootstrap'
+  if (query.stage === 'platform') return 'platform'
+  throw new Error('Unsupported installer stage')
+}
+
 function buildHostInstallCommand(panelUrl: string, installToken: string): string {
   const scriptUrl = `${panelUrl}/api/hosts/install.sh/${installToken}`
   const quotedScriptUrl = `'${scriptUrl.replace(/'/g, `'"'"'`)}'`
@@ -1194,20 +1238,14 @@ export default async function hostRoutes(fastify: FastifyInstance) {
   })
 
   // 通用安装脚本下载接口（无需鉴权，直接返回脚本模板，让用户在执行时输入 token）
-  fastify.get('/install.sh', async (request, reply) => {
+  fastify.get<{ Querystring: HostInstallQuery }>('/install.sh', async (request, reply) => {
     try {
-      const scriptPath = join(__dirname, '../../templates/install.sh')
-      let script: string
-      try {
-        script = readFileSync(scriptPath, 'utf-8')
-      } catch (err) {
-        request.log.error(err, 'Failed to read install script file')
-        return reply.code(500).send('# Error: Install script file not found')
-      }
-
-      // 注入面板地址（与 INJECT_TOKEN 使用相同的行锚定注入方式）
-      const frontendUrl = derivePanelUrl(request)
-      script = injectInstallVariable(script, 'INJECT_PANEL_URL', frontendUrl)
+      const stage = resolveHostInstallStage(request.query)
+      const script = injectInstallVariable(
+        readHostInstallTemplate(stage, request.query.os),
+        'INJECT_PANEL_URL',
+        derivePanelUrl(request)
+      )
 
       return reply
         .header('Content-Type', 'text/plain; charset=utf-8')
@@ -1215,12 +1253,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         .send(script)
     } catch (err) {
       request.log.error(err, 'Failed to generate generic install script')
-      return reply.code(500).send('# Error: Internal server error')
+      return reply.code(400).send('# Error: Invalid installer request')
     }
   })
 
   // 安装脚本下载接口（基于 installToken 鉴权，保留给老版本兼容）
-  fastify.get<{ Params: { token: string } }>('/install.sh/:token', async (request, reply) => {
+  fastify.get<{ Params: { token: string }; Querystring: HostInstallQuery }>('/install.sh/:token', async (request, reply) => {
     const { token } = request.params
 
     if (!token || token.length < 10) {
@@ -1261,61 +1299,67 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         return reply.code(403).send('# Error: Install token has expired (24 hours)')
       }
 
-      // 读取安装脚本
-      const scriptPath = join(__dirname, '../../templates/install.sh')
+      let stage: 'bootstrap' | 'platform'
+      try {
+        stage = resolveHostInstallStage(request.query)
+      } catch {
+        return reply.code(400).send('# Error: Invalid installer stage')
+      }
+
       let script: string
       try {
-        script = readFileSync(scriptPath, 'utf-8')
+        script = readHostInstallTemplate(stage, request.query.os)
       } catch (err) {
-        request.log.error(err, 'Failed to read install script file')
-        return reply.code(500).send('# Error: Install script file not found')
+        request.log.error(err, 'Failed to read install script template')
+        return reply.code(400).send('# Error: Unsupported installer platform')
       }
 
-      // 注入面板地址（与 INJECT_TOKEN 使用相同的行锚定注入方式）
       const frontendUrl = derivePanelUrl(request)
       script = injectInstallVariable(script, 'INJECT_PANEL_URL', frontendUrl)
-
-      // 将 token 注入脚本，用户无需手动输入
       script = injectInstallVariable(script, 'INJECT_TOKEN', token)
 
-      try {
-        const agentInstall = await issueHostAgentInstallToken(host.id, true)
-        script = injectInstallVariable(script, 'INJECT_AGENT_INSTALL_TOKEN', agentInstall.installToken)
-        script = injectInstallVariable(script, 'INJECT_AGENT_ENABLED', 'true')
+      // Agent credentials are issued only for the authenticated platform
+      // payload, not for the small bootstrap file.
+      if (stage === 'platform') {
+        try {
+          const agentInstall = await issueHostAgentInstallToken(host.id, true)
+          script = injectInstallVariable(script, 'INJECT_AGENT_INSTALL_TOKEN', agentInstall.installToken)
+          script = injectInstallVariable(script, 'INJECT_AGENT_ENABLED', 'true')
 
-        const agentBinaryUrl = process.env.INCUDAL_AGENT_BINARY_URL?.trim()
-        if (agentBinaryUrl) {
-          script = injectInstallVariable(script, 'INJECT_AGENT_BINARY_URL', agentBinaryUrl)
-          script = injectInstallVariable(
-            script,
-            'INJECT_AGENT_BINARY_SHA256',
-            process.env.INCUDAL_AGENT_BINARY_SHA256?.trim() || ''
+          const agentBinaryUrl = process.env.INCUDAL_AGENT_BINARY_URL?.trim()
+          if (agentBinaryUrl) {
+            script = injectInstallVariable(script, 'INJECT_AGENT_BINARY_URL', agentBinaryUrl)
+            script = injectInstallVariable(
+              script,
+              'INJECT_AGENT_BINARY_SHA256',
+              process.env.INCUDAL_AGENT_BINARY_SHA256?.trim() || ''
+            )
+          }
+
+          request.log.info(
+            {
+              hostId: host.id,
+              agentId: agentInstall.agent.agentId,
+              installTokenExpiresAt: agentInstall.installTokenExpiresAt
+            },
+            'Host install script prepared with one-time Agent install token'
+          )
+          await createLog(
+            null,
+            'host',
+            'host.agent_install_token_issue',
+            `为宿主机安装脚本生成 Agent 一次性安装 token: ${host.name} (#${host.id})`,
+            'success'
+          )
+        } catch (error) {
+          request.log.error(
+            { err: error, hostId: host.id },
+            'Failed to prepare Host Agent bootstrap credentials'
           )
         }
-
-        request.log.info(
-          {
-            hostId: host.id,
-            agentId: agentInstall.agent.agentId,
-            installTokenExpiresAt: agentInstall.installTokenExpiresAt
-          },
-          'Host install script prepared with one-time Agent install token'
-        )
-        await createLog(
-          null,
-          'host',
-          'host.agent_install_token_issue',
-          `为宿主机安装脚本生成 Agent 一次性安装 token: ${host.name} (#${host.id})`,
-          'success'
-        )
-      } catch (error) {
-        request.log.error(
-          { err: error, hostId: host.id },
-          'Failed to prepare Host Agent bootstrap credentials'
-        )
       }
 
-      request.log.info(`Install script downloaded for host ${host.name}`)
+      request.log.info({ hostId: host.id, stage, os: request.query.os }, `Install script downloaded for host ${host.name}`)
 
       return reply
         .header('Content-Type', 'text/plain; charset=utf-8')
@@ -1387,7 +1431,18 @@ export default async function hostRoutes(fastify: FastifyInstance) {
   })
 
   // 安装脚本的一次性回传通道：token 只在未完成且未过期的安装会话中有效。
-  fastify.post<{ Params: { token: string }; Body: { certificate?: string } }>('/tls-bootstrap/:token', async (request, reply) => {
+  fastify.post<{
+    Params: { token: string }
+    Body: {
+      certificate?: string
+      storagePool?: {
+        name?: string
+        driver?: string
+        purpose?: string
+        config?: Record<string, string>
+      }
+    }
+  }>('/tls-bootstrap/:token', async (request, reply) => {
     const { token } = request.params
     if (!token || token.length < 16 || !request.body?.certificate) {
       return reply.code(400).send({ error: 'Invalid TLS bootstrap payload' })
@@ -1396,16 +1451,48 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     if (!host || host.isInstalled || !host.installTokenExpire || host.installTokenExpire < new Date()) {
       return reply.code(403).send({ error: 'Invalid or expired install session' })
     }
+    const storagePool = request.body.storagePool
+    if (storagePool) {
+      const validName = typeof storagePool.name === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(storagePool.name)
+      const validDriver = typeof storagePool.driver === 'string' && ['zfs', 'lvm', 'btrfs', 'dir'].includes(storagePool.driver)
+      const validPurpose = storagePool.purpose === 'instance_data'
+      const config = storagePool.config || {}
+      const validConfig = Object.entries(config).every(([key, value]) =>
+        ['source', 'size'].includes(key) && typeof value === 'string' && /^[A-Za-z0-9_./:+=@%~-]+$/.test(value)
+      )
+      if (!validName || !validDriver || !validPurpose || !validConfig) {
+        return reply.code(400).send({ error: 'Invalid storage pool bootstrap payload' })
+      }
+    }
     try {
       const certificate = Buffer.from(request.body.certificate, 'base64').toString('utf8')
       const { certificateFingerprint, normalizeCertificatePem } = await import('../lib/incus/incus-tls.js')
       const normalized = normalizeCertificatePem(certificate)
       const fingerprint = certificateFingerprint(normalized)
-      await prisma.host.update({
-        where: { id: host.id },
-        data: { serverCertificate: normalized, serverFingerprint: fingerprint }
+      await prisma.$transaction(async tx => {
+        await tx.host.update({
+          where: { id: host.id },
+          data: { serverCertificate: normalized, serverFingerprint: fingerprint }
+        })
+        if (storagePool?.name && storagePool.driver) {
+          await tx.storagePool.upsert({
+            where: { hostId_name: { hostId: host.id, name: storagePool.name } },
+            create: {
+              hostId: host.id,
+              name: storagePool.name,
+              driver: storagePool.driver,
+              purpose: 'instance_data',
+              config: storagePool.config || {}
+            },
+            update: {
+              driver: storagePool.driver,
+              purpose: 'instance_data',
+              config: storagePool.config || {}
+            }
+          })
+        }
       })
-      return { success: true, fingerprint }
+      return { success: true, fingerprint, storagePool: storagePool?.name || null }
     } catch {
       return reply.code(400).send({ error: 'Invalid Incus server certificate' })
     }
