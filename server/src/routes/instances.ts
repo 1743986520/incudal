@@ -3561,19 +3561,20 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
   })
 
   // 删除实例
-  fastify.delete<{ Params: { id: string }; Body: { reason?: string } }>('/:id', {
+  fastify.delete<{ Params: { id: string }; Body: { reason?: string; force?: boolean } }>('/:id', {
     onRequest: [fastify.authenticate],
     schema: {
       body: {
         type: 'object',
         properties: {
-          reason: { type: 'string', maxLength: 500 }
+          reason: { type: 'string', maxLength: 500 },
+          force: { type: 'boolean' }
         }
       }
     }
-  }, async (request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string; force?: boolean } }>, reply: FastifyReply) => {
     const { id } = request.params
-    const { reason } = request.body || {}
+    const { reason, force: forcePanelDelete = false } = request.body || {}
     const instanceId = Number(id)
 
     if (isNaN(instanceId)) {
@@ -3637,16 +3638,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         operationType: 'delete_instance'
       })
     }
-
-
-
-    let incusDeleted = false
+    let incusDeleted = forcePanelDelete
+    let sourceHostUnavailable = false
+    let client: Awaited<ReturnType<typeof getIncusClient>> | null = null
     try {
-      // 复用上面已获取的host
-      if (!host) {
-        throw new Error('Host not found')
-      }
-
       // ===== 0. 关闭该实例的所有终端连接 =====
       const closedSessions = closeInstanceSessions(instanceId, 'Instance is being deleted')
       if (closedSessions > 0) {
@@ -3706,12 +3701,27 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
 
       // ===== 0.1 先确认 Incus 实例已删除，之后才允许退款和本地清理 =====
-      const client = await getIncusClient(host)
-      if (instance.status === 'running') {
-        await stopInstance(client, instance.incus_id, true)
+      // 节点完全离线时，允许用户确认后仅清理面板记录；退款仍按正常规则执行。
+      if (forcePanelDelete) {
+        request.log.warn({ instanceId, hostId: instance.host_id }, 'Force deleting instance from panel without contacting source host')
+      } else {
+        if (!host || host.status !== 'online') {
+          sourceHostUnavailable = true
+          throw new Error('Source host is unavailable')
+        }
+
+        try {
+          client = await getIncusClient(host)
+          if (instance.status === 'running') {
+            await stopInstance(client, instance.incus_id, true)
+          }
+          await deleteInstance(client, instance.incus_id)
+          incusDeleted = true
+        } catch (error) {
+          sourceHostUnavailable = true
+          throw error
+        }
       }
-      await deleteInstance(client, instance.incus_id)
-      incusDeleted = true
 
       if (instance.billing_mode === 'hourly') {
         await closeHourlyBilling(instanceId)
@@ -3783,7 +3793,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const proxySites = await getProxySitesByInstanceId(instanceId)
       if (proxySites.length > 0) {
         // 尝试删除 Caddy 远程配置
-        if (host.caddy_enabled && host.caddy_username && host.caddy_password) {
+        if (!forcePanelDelete && host?.caddy_enabled && host.caddy_username && host.caddy_password) {
           const targetHost = host.nat_public_ip || host.ip_address
           if (targetHost) {
             const caddyClient = createCaddyClient({
@@ -4010,8 +4020,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           data: { status: instance.status as InstanceStatus }
         })
       }
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      return reply.code(500).send({ error: errorMessage })
+      if (sourceHostUnavailable) {
+        request.log.warn({ instanceId, error }, 'Source host unavailable during instance deletion')
+        return reply.code(409).send({
+          error: '源节点无法连接，请确认是否强制从面板删除',
+          code: 'SOURCE_HOST_UNAVAILABLE'
+        })
+      }
+      request.log.error(error, '删除实例失败')
+      return reply.code(500).send({ error: '删除实例失败', code: 'INSTANCE_DELETE_FAILED' })
     }
   })
 

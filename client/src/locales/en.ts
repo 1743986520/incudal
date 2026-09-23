@@ -973,6 +973,7 @@ export default {
             updateFailed: 'Failed to save instance order',
         },
         confirmDelete: 'Are you sure to delete instance "{name}"? This action cannot be undone.',
+        forcePanelDeleteConfirm: 'The source host cannot be reached. Force deleting from the panel will skip host operations, clean up only panel records, and process any eligible refund. Continue?',
         createPage: {
             title: 'Create Instance',
             description: 'Select a package and configure your container instance',
@@ -1309,6 +1310,7 @@ export default {
             successWithRefund: 'Instance destroyed, refunded ¥{amount}',
             failed: 'Destroy failed',
             loadFailed: 'Failed to load destroy info',
+            forcePanelDeleteConfirm: 'The source host cannot be reached. Force deleting from the panel will skip host operations, clean up only panel records, and process any eligible refund. Continue?',
             // Cannot destroy reasons
             cannotDestroy: 'Cannot Destroy',
         },

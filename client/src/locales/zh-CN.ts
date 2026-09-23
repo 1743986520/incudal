@@ -970,6 +970,7 @@ export default {
             updateFailed: '保存实例顺序失败',
         },
         confirmDelete: '确定删除实例 "{name}"？此操作不可恢复。',
+        forcePanelDeleteConfirm: '源节点无法连接。强制从面板删除将跳过主机操作，只清理面板记录，并按规则处理退款。确定继续吗？',
         createPage: {
             title: '创建实例',
             description: '选择套餐并配置您的容器实例',
@@ -1306,6 +1307,7 @@ export default {
             successWithRefund: '实例已销毁，已退款 ¥{amount}',
             failed: '销毁失败',
             loadFailed: '加载销毁信息失败',
+            forcePanelDeleteConfirm: '源节点无法连接。强制从面板删除将跳过主机操作，只清理面板记录，并按规则处理退款。确定继续吗？',
             // 不可销毁原因
             cannotDestroy: '无法销毁',
         },

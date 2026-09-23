@@ -1017,10 +1017,10 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
 
   // ==================== 执行销毁 ====================
   // POST /api/instances/:id/destroy
-  fastify.post<{ Params: { id: string }; Querystring: { feeWaiver?: string } }>('/:id/destroy', {
+  fastify.post<{ Params: { id: string }; Querystring: { feeWaiver?: string; force?: string } }>('/:id/destroy', {
     onRequest: [fastify.authenticate],
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } }
-  }, async (request: FastifyRequest<{ Params: { id: string }; Querystring: { feeWaiver?: string } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Params: { id: string }; Querystring: { feeWaiver?: string; force?: string } }>, reply: FastifyReply) => {
     const { user } = request
     const instanceId = Number(request.params.id)
 
@@ -1087,6 +1087,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     // 异常实例免手续费
     const isErrorState = instance.status === 'error'
     const feeWaiver = request.query.feeWaiver === 'error' && isErrorState
+    const forcePanelDelete = request.query.force === 'true'
 
     let currentMonthlyTrafficUsed = instance.monthlyTrafficUsed
 
@@ -1147,20 +1148,31 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       })
     }
 
-    let incusDeleted = false
+    let incusDeleted = forcePanelDelete
+    let sourceHostUnavailable = false
     try {
       const host = await db.getHostById(instance.hostId)
-      if (!host) {
-        throw new Error('Host not found')
-      }
+      if (forcePanelDelete) {
+        request.log.warn({ instanceId, hostId: instance.hostId }, 'Force destroying instance from panel without contacting source host')
+      } else {
+        if (!host || host.status !== 'online') {
+          sourceHostUnavailable = true
+          throw new Error('Source host is unavailable')
+        }
 
-      const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
-      const client = await getIncusClient(host)
-      if (instance.status === 'running') {
-        await stopInstance(client, instance.incusId, true)
+        try {
+          const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
+          const client = await getIncusClient(host)
+          if (instance.status === 'running') {
+            await stopInstance(client, instance.incusId, true)
+          }
+          await deleteInstance(client, instance.incusId)
+          incusDeleted = true
+        } catch (error) {
+          sourceHostUnavailable = true
+          throw error
+        }
       }
-      await deleteInstance(client, instance.incusId)
-      incusDeleted = true
 
       if (db.isHourlyInstance(instance)) {
         await closeHourlyBilling(instanceId)
@@ -1297,8 +1309,15 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       if (!incusDeleted) {
         await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
       }
+      if (sourceHostUnavailable) {
+        request.log.warn({ instanceId, error }, 'Source host unavailable during instance destroy')
+        return reply.code(409).send({
+          error: '源节点无法连接，请确认是否强制从面板删除并退款',
+          code: 'SOURCE_HOST_UNAVAILABLE'
+        })
+      }
       request.log.error(error, '销毁实例失败')
-      return reply.code(500).send({ error: '销毁实例失败' })
+      return reply.code(500).send({ error: '销毁实例失败', code: 'INSTANCE_DESTROY_FAILED' })
     }
   })
 }

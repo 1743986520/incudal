@@ -980,8 +980,14 @@ const api = {
       http.post(`/ws/instances/${id}/terminal-ticket`, {}),
     updateOrder: (id: number, action: 'top' | 'up' | 'down' | 'bottom'): Promise<{ message: string; updated: number }> =>
       http.patch(`/instances/${id}/order`, { action }),
-    delete: (id: number, reason?: string): Promise<{ message: string; refundAmount?: number }> =>
-      http.delete(`/instances/${id}`, { data: reason ? { reason } : {}, timeout: TIMEOUT.LONG }),
+    delete: (id: number, reason?: string, force = false): Promise<{ message: string; refundAmount?: number }> =>
+      http.delete(`/instances/${id}`, {
+        data: {
+          ...(reason ? { reason } : {}),
+          ...(force ? { force: true } : {})
+        },
+        timeout: TIMEOUT.LONG
+      }),
     // 实例操作任务（异步模式）
     start: (id: number): Promise<{ message: string; taskId: number; status: string }> =>
       http.post(`/instances/${id}/start`, {}),
@@ -3165,14 +3171,20 @@ const api = {
     }> => http.get(`/instances/${instanceId}/destroy-info`),
 
     // 执行销毁
-    destroyInstance: (instanceId: number, options?: { feeWaiver?: string }): Promise<{
+    destroyInstance: (instanceId: number, options?: { feeWaiver?: string; force?: boolean }): Promise<{
       success: boolean
       message: string
       refundAmount: number
       feeAmount: number
       isFirstTime: boolean
       isFreeInstance: boolean
-    }> => http.post(`/instances/${instanceId}/destroy${options?.feeWaiver ? `?feeWaiver=${options.feeWaiver}` : ''}`),
+    }> => {
+      const params = new URLSearchParams()
+      if (options?.feeWaiver) params.set('feeWaiver', options.feeWaiver)
+      if (options?.force) params.set('force', 'true')
+      const query = params.toString()
+      return http.post(`/instances/${instanceId}/destroy${query ? `?${query}` : ''}`)
+    },
 
     getBatchDestroyInfo: (instanceIds: number[]): Promise<{
       items: Array<{

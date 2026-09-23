@@ -845,7 +845,14 @@ async function handleAction(instance: Instance, action: InstanceAction): Promise
         delete actionLoading.value[instance.id]
         return
       }
-      await api.instances.delete(instance.id)
+      try {
+        await api.instances.delete(instance.id)
+      } catch (error: any) {
+        if (error?.code !== 'SOURCE_HOST_UNAVAILABLE' || !window.confirm(t('instance.forcePanelDeleteConfirm'))) {
+          throw error
+        }
+        await api.instances.delete(instance.id, undefined, true)
+      }
       // 立即从本地列表移除，提供即时反馈
       instances.value = instances.value.filter(i => i.id !== instance.id)
       total.value = Math.max(0, total.value - 1)

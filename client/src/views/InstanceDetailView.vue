@@ -1245,12 +1245,30 @@ async function loadDestroyInfo(): Promise<void> {
   }
 }
 
+async function destroyInstanceWithPanelFallback(options?: { feeWaiver?: string }): Promise<Awaited<ReturnType<typeof api.billing.destroyInstance>>> {
+  if (!instance.value) throw new Error('Instance is not loaded')
+
+  try {
+    return await api.billing.destroyInstance(instance.value.id, options)
+  } catch (error) {
+    const apiErr = error as { code?: string }
+    if (apiErr.code !== 'SOURCE_HOST_UNAVAILABLE' || !window.confirm(t('instance.destroy.forcePanelDeleteConfirm'))) {
+      throw error
+    }
+
+    return await api.billing.destroyInstance(instance.value.id, {
+      ...(options || {}),
+      force: true
+    })
+  }
+}
+
 // 执行销毁
 async function handleDestroy(): Promise<void> {
   if (!instance.value || !destroyInfo.value?.canDestroy) return
   destroyLoading.value = true
   try {
-    const result = await api.billing.destroyInstance(instance.value.id)
+    const result = await destroyInstanceWithPanelFallback()
     if (result.isFreeInstance) {
       toast.success(t('instance.destroy.success'))
     } else {
@@ -1285,7 +1303,7 @@ async function handleErrorDestroy(): Promise<void> {
   if (!confirm(t('instance.errorBanner.confirmDestroy'))) return
   errorDestroyLoading.value = true
   try {
-    const result = await api.billing.destroyInstance(instance.value.id, { feeWaiver: 'error' })
+    const result = await destroyInstanceWithPanelFallback({ feeWaiver: 'error' })
     if (result.isFreeInstance) {
       toast.success(t('instance.destroy.success'))
     } else {
@@ -1439,7 +1457,14 @@ async function handleAction(action: InstanceAction): Promise<void> {
         return
       }
       
-      await api.instances.delete(instance.value.id)
+      try {
+        await api.instances.delete(instance.value.id)
+      } catch (error: any) {
+        if (error?.code !== 'SOURCE_HOST_UNAVAILABLE' || !window.confirm(t('instance.forcePanelDeleteConfirm'))) {
+          throw error
+        }
+        await api.instances.delete(instance.value.id, undefined, true)
+      }
       toast.success(t('instance.detail.actions.deleted'))
       router.push(getReturnPath())
       return

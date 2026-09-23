@@ -1117,6 +1117,7 @@ export default {
             updateFailed: '儲存實例順序失敗',
         },
         confirmDelete: '確定刪除實例「{name}」？此操作不可回復。',
+        forcePanelDeleteConfirm: '源節點無法連線。強制從面板刪除會跳過主機操作，只清理面板記錄，並按規則處理退款。確定繼續嗎？',
         createPage: {
             title: '建立實例',
             description: '選擇方案並設定您的容器實例',
@@ -1453,6 +1454,7 @@ export default {
             successWithRefund: '實例已銷毀，已退款 ¥{amount}',
             failed: '銷毀失敗',
             loadFailed: '載入銷毀資訊失敗',
+            forcePanelDeleteConfirm: '源節點無法連線。強制從面板刪除會跳過主機操作，只清理面板記錄，並按規則處理退款。確定繼續嗎？',
             // 不可銷毀原因
             cannotDestroy: '無法銷毀',
         },
