@@ -64,22 +64,26 @@ install_pps_guard() {
 table inet incudal_pps_guard {
   set blocked_v4 {
     type ether_addr . ipv4_addr
-    flags timeout
+    size 65535
+    flags dynamic,timeout
     timeout ${PPS_BLOCK_SECONDS}s
   }
   set blocked_v6 {
     type ether_addr . ipv6_addr
-    flags timeout
+    size 65535
+    flags dynamic,timeout
     timeout ${PPS_BLOCK_SECONDS}s
   }
   set observed_v4 {
     type ether_addr . ipv4_addr
-    flags timeout
+    size 65535
+    flags dynamic,timeout
     timeout ${PPS_OBSERVE_SECONDS}s
   }
   set observed_v6 {
     type ether_addr . ipv6_addr
-    flags timeout
+    size 65535
+    flags dynamic,timeout
     timeout ${PPS_OBSERVE_SECONDS}s
   }
   chain instance_pps_limit {
@@ -174,7 +178,12 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
         systemctl daemon-reload
-        systemctl enable --now incudal-pps-guard.service
+        if ! systemctl enable --now incudal-pps-guard.service; then
+            error "PPS 防护服务启动失败，最近日志如下："
+            systemctl status --no-pager --full incudal-pps-guard.service 2>&1 || true
+            journalctl -u incudal-pps-guard.service -n 40 --no-pager 2>&1 || true
+            return 1
+        fi
     elif command -v rc-service &>/dev/null; then
         cat > /etc/init.d/incudal-pps-guard <<'EOF'
 #!/sbin/openrc-run
@@ -201,4 +210,3 @@ EOF
         return 1
     fi
 }
-

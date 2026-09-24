@@ -75,6 +75,7 @@ AGENT_HEARTBEAT_INTERVAL_SECONDS="30"
 PPS_PROTECTION_ENABLED="true"
 PPS_LIMIT="${INJECT_PPS_LIMIT:-20000}"
 PPS_OPTION_EXPLICIT="false"
+INCUS_PRESEED_ACTIVE="false"
 # Storage is deliberately opt-in. The storage module prompts in TTY mode and
 # defaults non-interactive installs to a dependency-free DIR pool.
 STORAGE_DRIVER="${INJECT_STORAGE_DRIVER:-}"
@@ -299,7 +300,7 @@ installer_exit() {
     trap - EXIT
     if (( exit_code != 0 )); then
         error "安装脚本异常退出（退出码 ${exit_code}，命令: ${BASH_COMMAND:-unknown}）"
-        if [[ -f "$PRESEED_FILE" ]]; then
+        if [[ "${INCUS_PRESEED_ACTIVE:-false}" == "true" && -f "$PRESEED_FILE" ]]; then
             error "检测到未完成的 Incus preseed，配置如下："
             sed 's/^/  | /' "$PRESEED_FILE" >&2 || true
         fi

@@ -362,7 +362,9 @@ YAML
     # launched through `curl | bash`; otherwise a failed preseed can make the
     # parent shell return to its prompt without showing the actual Incus error.
     local init_rc
+    INCUS_PRESEED_ACTIVE="true"
     if incus admin init --preseed "$PRESEED_FILE" </dev/null; then
+        INCUS_PRESEED_ACTIVE="false"
         log "Incus preseed 初始化命令已返回成功"
     else
         init_rc=$?
