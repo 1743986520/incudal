@@ -32,7 +32,7 @@ INJECT_PPS_LIMIT=""
 PANEL_URL="${INJECT_PANEL_URL:-}"
 PANEL_URL="${PANEL_URL%/}"
 readonly PANEL_URL
-readonly SCRIPT_VERSION="2.1.2"
+readonly SCRIPT_VERSION="2.1.3"
 BRIDGE_SUBNET="10.10.0.1/22"
 readonly BRIDGE_NAME="incusbr0"
 readonly PRESEED_FILE="/tmp/.incus-preseed-$$.yaml"
