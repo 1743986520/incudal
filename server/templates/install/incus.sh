@@ -296,6 +296,25 @@ EOF
         storage_block+="$(storage_preseed_yaml)"
     fi
 
+    # A preseed with an empty profile list leaves a fresh Incus installation
+    # without a usable default profile.  Create the root disk and bridge
+    # devices together with the selected storage pool so the first instance
+    # can be launched immediately after installation.
+    local profile_block=" []"
+    if [[ "${STORAGE_DRIVER:-none}" != "none" ]]; then
+        profile_block=$'\n'
+        profile_block+=$'  - name: default\n'
+        profile_block+=$'    devices:\n'
+        profile_block+=$'      eth0:\n'
+        profile_block+=$'        name: eth0\n'
+        profile_block+="        network: ${BRIDGE_NAME}"$'\n'
+        profile_block+=$'        type: nic\n'
+        profile_block+=$'      root:\n'
+        profile_block+=$'        path: /\n'
+        profile_block+="        pool: ${STORAGE_POOL_NAME}"$'\n'
+        profile_block+="        type: disk"
+    fi
+
     # 写入文件
     cat > "$PRESEED_FILE" <<YAML
 config:
@@ -310,12 +329,18 @@ networks:
       $(echo -e "$ipv6_block")
       ${dns_block:+$dns_block}
 storage_pools:${storage_block}
-profiles: []
+profiles:${profile_block}
 cluster: null
 YAML
 
-    incus admin init --preseed < "$PRESEED_FILE"
+    # Incus reads preseed data from stdin.  Use a pipe instead of relying on
+    # /dev/stdin redirection; this also avoids AppArmor issues seen on Debian
+    # when the CLI reads a regular file through stdin.
+    if ! cat "$PRESEED_FILE" | incus admin init --preseed; then
+        error "Incus 初始化失败，预置配置如下："
+        sed 's/^/  | /' "$PRESEED_FILE" >&2
+        return 1
+    fi
     ensure_selected_storage_pool || return 1
     log "Incus 初始化完成"
 }
-
