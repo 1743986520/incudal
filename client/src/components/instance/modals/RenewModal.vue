@@ -118,7 +118,18 @@ async function handleAffApplied(_result: ApplyAffResult): Promise<void> {
 // 实际支付价格（考虑折扣）
 const actualPrice = computed(() => {
   if (!selectedRenewOption.value) return 0
-  return selectedRenewOption.value.discountedPrice
+  // Keep the calculation defensive for responses from older servers. The
+  // billing endpoint now always returns discountedPrice, but using the
+  // resolved discount here prevents the renewal dialog from charging/showing
+  // the original amount when a stale response omits that field.
+  const discountedPrice = selectedRenewOption.value.discountedPrice
+  if (typeof discountedPrice === 'number' && Number.isFinite(discountedPrice)) {
+    return discountedPrice
+  }
+  if (hasDiscount.value) {
+    return Number((selectedRenewOption.value.price * (1 - discountPercent.value / 100)).toFixed(2))
+  }
+  return selectedRenewOption.value.price
 })
 
 // 是否余额不足

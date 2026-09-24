@@ -3081,7 +3081,24 @@ const api = {
         billingCycle: number | null
         expiresAt: string | null
         autoRenew: boolean
-        renewPreview: Array<{ months: number; price: number; expiresAt: string }> | null
+        renewPreview: Array<{
+          months: number
+          price: number
+          discountedPrice: number
+          expiresAt: string
+        }> | null
+        affDiscount: {
+          discountRate: number
+          discountPercent: number
+          code?: string | null
+          supersedesOfficialCoupon?: boolean
+        } | null
+        officialCouponDiscount: {
+          discountRate: number
+          discountPercent: number
+          couponCode: string
+          couponName: string
+        } | null
       }
     }> => http.get(`/instances/${instanceId}/billing`),
 
