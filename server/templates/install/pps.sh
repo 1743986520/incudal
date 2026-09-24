@@ -180,7 +180,12 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
         systemctl daemon-reload
-        if ! systemctl enable --now incudal-pps-guard.service; then
+        # --now does not rerun an already-active oneshot service.  The first
+        # failed attempt leaves the unit enabled/active on some systemd
+        # versions, so an explicit restart is required after rewriting the
+        # generated nftables script.
+        systemctl enable incudal-pps-guard.service >/dev/null
+        if ! systemctl restart incudal-pps-guard.service; then
             error "PPS 防护服务启动失败，最近日志如下："
             systemctl status --no-pager --full incudal-pps-guard.service 2>&1 || true
             journalctl -u incudal-pps-guard.service -n 40 --no-pager 2>&1 || true
@@ -209,6 +214,10 @@ EOF
         log "TCP SYN 单一目的 IP 超过 ${PPS_SINGLE_TARGET_LIMIT} 包/秒时，将对该实例封锁目标 ${PPS_BLOCK_SECONDS} 秒；UDP 仅观察告警"
     else
         error "PPS 防护规则未能加载"
+        if command -v systemctl &>/dev/null; then
+            systemctl status --no-pager --full incudal-pps-guard.service 2>&1 || true
+            journalctl -u incudal-pps-guard.service -n 40 --no-pager 2>&1 || true
+        fi
         return 1
     fi
 }
