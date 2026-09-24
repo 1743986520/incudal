@@ -32,7 +32,7 @@ INJECT_PPS_LIMIT=""
 PANEL_URL="${INJECT_PANEL_URL:-}"
 PANEL_URL="${PANEL_URL%/}"
 readonly PANEL_URL
-readonly SCRIPT_VERSION="2.1.0"
+readonly SCRIPT_VERSION="2.1.1"
 BRIDGE_SUBNET="10.10.0.1/22"
 readonly BRIDGE_NAME="incusbr0"
 readonly PRESEED_FILE="/tmp/.incus-preseed-$$.yaml"
@@ -290,7 +290,24 @@ show_agent_summary_line() {
 cleanup() {
     rm -f "$PRESEED_FILE" 2>/dev/null || true
 }
-trap cleanup EXIT
+
+# Keep failures from disappearing back into the SSH prompt.  The preseed file
+# is intentionally printed on an unexpected exit so a remote installer can
+# be diagnosed without needing an interactive shell on the target host.
+installer_exit() {
+    local exit_code=$?
+    trap - EXIT
+    if (( exit_code != 0 )); then
+        error "安装脚本异常退出（退出码 ${exit_code}，命令: ${BASH_COMMAND:-unknown}）"
+        if [[ -f "$PRESEED_FILE" ]]; then
+            error "检测到未完成的 Incus preseed，配置如下："
+            sed 's/^/  | /' "$PRESEED_FILE" >&2 || true
+        fi
+    fi
+    cleanup
+    exit "$exit_code"
+}
+trap installer_exit EXIT
 
 # ========================== 显示横幅 ==========================
 show_banner() {
@@ -685,4 +702,3 @@ confirm_install() {
         exit 0
     fi
 }
-

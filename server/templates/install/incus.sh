@@ -355,13 +355,15 @@ profiles:${profile_block}
 cluster: null
 YAML
 
+    info "正在执行 Incus preseed 初始化（文件: ${PRESEED_FILE}）..."
+
     # Incus 7.x also accepts the preseed path directly.  Passing the file as
     # an argument avoids a nested stdin/pipe when this installer itself is
     # launched through `curl | bash`; otherwise a failed preseed can make the
     # parent shell return to its prompt without showing the actual Incus error.
     local init_rc
-    if incus admin init --preseed "$PRESEED_FILE"; then
-        :
+    if incus admin init --preseed "$PRESEED_FILE" </dev/null; then
+        log "Incus preseed 初始化命令已返回成功"
     else
         init_rc=$?
         error "Incus 初始化失败（退出码 ${init_rc}；请检查上方 Incus 原始错误），预置配置如下："
