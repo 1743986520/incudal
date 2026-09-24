@@ -119,6 +119,27 @@ ensure_root_idmap() {
     [[ "$changed" == "true" ]]
 }
 
+# Repair the default profile when re-running the installer against a partially
+# initialized daemon.  A previous preseed attempt may have created the bridge
+# or pool before failing, so the early-return path must not leave the profile
+# unusable.
+ensure_default_profile() {
+    [[ "${STORAGE_DRIVER:-none}" != "none" ]] || return 0
+
+    if ! incus profile show default >/dev/null 2>&1; then
+        incus profile create default >/dev/null
+    fi
+
+    local profile_config
+    profile_config=$(incus profile show default 2>/dev/null || true)
+    if ! grep -qE '^[[:space:]]+root:' <<< "$profile_config"; then
+        incus profile device add default root disk path=/ pool="$STORAGE_POOL_NAME" >/dev/null
+    fi
+    if ! grep -qE '^[[:space:]]+eth0:' <<< "$profile_config"; then
+        incus profile device add default eth0 nic name=eth0 network="$BRIDGE_NAME" >/dev/null
+    fi
+}
+
 # 步骤 3: 安装 Incus
 install_incus() {
     step "步骤 [3/5]  安装 Incus..."
@@ -222,6 +243,7 @@ init_incus() {
     if incus network show "$BRIDGE_NAME" &>/dev/null; then
         info "网桥 ${BRIDGE_NAME} 已存在，跳过网络初始化"
         ensure_selected_storage_pool || return 1
+        ensure_default_profile || return 1
         return 0
     fi
 
@@ -342,5 +364,6 @@ YAML
         return 1
     fi
     ensure_selected_storage_pool || return 1
+    ensure_default_profile || return 1
     log "Incus 初始化完成"
 }
