@@ -703,12 +703,18 @@ async function executeDestroyForUser(
       memoryUsed: usedResources.memoryUsed,
       diskUsed: usedResources.diskUsed
     })
-    await prisma.host.update({
-      where: { id: instance.hostId },
-      data: { natPortsUsedCount: actualPortsUsed }
-    })
+      await prisma.host.update({
+        where: { id: instance.hostId },
+        data: { natPortsUsedCount: actualPortsUsed }
+      })
 
-    await createLog(
+      // 实例删除成功后释放该实例占用的官方优惠券次数，
+      // 包括新购及此前续费产生的使用记录。
+      await prisma.$transaction(async (tx) => {
+        await db.releaseOfficialCouponUsageByInstance(instanceId, tx)
+      })
+
+      await createLog(
       user.id,
       'billing',
       'instance.user_destroy',

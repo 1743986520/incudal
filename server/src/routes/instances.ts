@@ -4048,6 +4048,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         data: { natPortsUsedCount: actualPortsUsed }
       })
 
+      // 实例删除成功后释放官方优惠券使用次数及实例关联记录。
+      await prisma.$transaction(async (tx) => {
+        await db.releaseOfficialCouponUsageByInstance(instanceId, tx)
+      })
+
       // ===== 10. 发送通知 =====
       // 判断是否是宿主机所有者删除他人的实例
       if (isPrivilegedDeleter && instance.user_id !== user.id) {

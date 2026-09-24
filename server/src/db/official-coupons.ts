@@ -327,24 +327,28 @@ export async function releaseOfficialCouponUsageByInstance(
   instanceId: number,
   tx: Prisma.TransactionClient
 ): Promise<{ couponId: number; couponCode: string; discountAmount: number; userId: number } | null> {
-  const usage = await tx.officialCouponUsage.findFirst({
+  const usages = await tx.officialCouponUsage.findMany({
     where: { instanceId },
     include: { coupon: { select: { id: true, code: true } } }
   })
 
-  if (!usage) return null
+  if (usages.length === 0) return null
 
-  await tx.officialCouponUsage.delete({ where: { id: usage.id } })
-  await tx.officialCoupon.updateMany({
-    where: { id: usage.couponId, usedCount: { gt: 0 } },
-    data: { usedCount: { decrement: 1 } }
-  })
+  // 删除实例时释放该实例产生的全部官方券使用记录（新购及续费），
+  // 否则 limited/recurring 券会永久占用次数，用户也会继续被使用记录限制。
+  for (const usage of usages) {
+    await tx.officialCouponUsage.delete({ where: { id: usage.id } })
+    await tx.officialCoupon.updateMany({
+      where: { id: usage.couponId, usedCount: { gt: 0 } },
+      data: { usedCount: { decrement: 1 } }
+    })
+  }
 
   return {
-    couponId: usage.couponId,
-    couponCode: usage.coupon.code,
-    discountAmount: Number(usage.discountAmount),
-    userId: usage.userId
+    couponId: usages[0].couponId,
+    couponCode: usages[0].coupon.code,
+    discountAmount: usages.reduce((sum, usage) => sum + Number(usage.discountAmount), 0),
+    userId: usages[0].userId
   }
 }
 
