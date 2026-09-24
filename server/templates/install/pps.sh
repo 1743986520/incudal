@@ -106,8 +106,6 @@ table inet incudal_pps_guard {
     iifname "${BRIDGE_NAME}" meta l4proto tcp tcp flags & (syn | ack) == syn jump instance_pps_limit
   }
 }
-EOF
-}
 
 manage_pps_guard() {
     echo ""
@@ -159,6 +157,10 @@ manage_pps_guard() {
     esac
     pause_return
 }
+EOF
+}
+
+
 GUARD
     chmod 0755 /usr/local/sbin/incudal-pps-guard
 
@@ -209,4 +211,57 @@ EOF
         error "PPS 防护规则未能加载"
         return 1
     fi
+}
+
+# Main-installer PPS menu.  The similarly named function inside the GUARD
+# heredoc is only for the generated one-shot service and is not visible here.
+manage_pps_guard() {
+    echo ""
+    divider
+    echo -e "  ${BOLD}每实例 PPS 防护${NC}"
+    divider
+    if nft list table inet incudal_pps_guard >/dev/null 2>&1; then
+        echo -e "  当前状态  :  ${GREEN}运行中${NC}"
+        if [[ -f /etc/incudal/pps-guard.conf ]]; then
+            local saved_limit=""
+            saved_limit=$(sed -nE 's/^PPS_LIMIT=([0-9]+)$/\1/p' /etc/incudal/pps-guard.conf | head -n1 || true)
+            [[ -n "$saved_limit" ]] && PPS_LIMIT="$saved_limit"
+        fi
+        echo -e "  当前阈值  :  ${GREEN}${PPS_LIMIT} 包/秒${NC}"
+    else
+        echo -e "  当前状态  :  ${YELLOW}未启用${NC}"
+    fi
+    echo ""
+    echo -e "    ${CYAN}1)${NC} 启用 / 更新防护"
+    echo -e "    ${RED}2)${NC} 关闭防护"
+    echo -e "    ${CYAN}0)${NC} 返回"
+    echo ""
+    echo -ne "  ${BOLD}请选择 [0-2]: ${NC}"
+    local choice=""
+    read -r choice
+    case "$choice" in
+        1)
+            echo -ne "  ${BOLD}每实例 PPS 上限 [默认 ${PPS_LIMIT}]: ${NC}"
+            local requested=""
+            read -r requested
+            if [[ -n "$requested" ]]; then
+                if [[ "$requested" =~ ^[0-9]+$ ]] && (( requested >= PPS_MIN_LIMIT && requested <= 500000 )); then
+                    PPS_LIMIT="$requested"
+                else
+                    warn "无效阈值，继续使用 ${PPS_LIMIT}"
+                fi
+            fi
+            PPS_PROTECTION_ENABLED="true"
+            if [[ -f /etc/incudal/pps-guard.conf ]]; then
+                sed -i -E "s/^PPS_LIMIT=[0-9]+$/PPS_LIMIT=${PPS_LIMIT}/" /etc/incudal/pps-guard.conf
+            fi
+            install_pps_guard
+            ;;
+        2)
+            disable_pps_guard
+            ;;
+        0) return 0 ;;
+        *) warn "无效选项" ;;
+    esac
+    pause_return
 }
