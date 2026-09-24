@@ -393,12 +393,6 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.billing', title: '计费' }
   },
   {
-    path: '/admin/hourly-billing',
-    name: 'admin-hourly-billing',
-    component: () => import('@/views/admin/HourlyBillingView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'hourlyBilling.adminTitle', title: '按小时计费管理' }
-  },
-  {
     path: '/admin/aff',
     name: 'admin-aff',
     redirect: { path: '/admin/billing', query: { tab: 'affConversions' } },

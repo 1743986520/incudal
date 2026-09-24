@@ -11,6 +11,7 @@ import type { CreatePackageRequest, UpdatePackageRequest } from '../types/api.js
 import { removeDangerousChars, validateName, validateText } from '../lib/security.js'
 import { sendToChannel } from '../lib/notifier.js'
 import { prisma } from '../db/prisma.js'
+import { Prisma } from '@prisma/client'
 import { normalizeTrafficMultiplier } from '../lib/traffic-multiplier.js'
 import { calculateAllocatedHostResources, HOST_RESOURCE_INSTANCE_STATUSES } from '../lib/host-resource-usage.js'
 import { calculateVipLevel, getVipBadgeStyleForLevel, getVipRules } from '../services/vip-levels.js'
@@ -57,6 +58,16 @@ type PackagePlanResponse = {
   price: number
   billingCycle: number
   setupFee: number
+  hourlyMinCpu: number
+  hourlyCpuUnitPercent: number
+  hourlyCpuPricePerUnit: string
+  hourlyMinMemoryMb: number
+  hourlyMemoryUnitMb: number
+  hourlyMemoryPricePerUnit: string
+  hourlyMinDiskMb: number
+  hourlyDiskUnitMb: number
+  hourlyDiskPricePerUnit: string
+  hourlyReserveQuantum: string
   trafficResetEnabled: boolean
   trafficResetPrice: number
   monthlyPrice: number
@@ -64,6 +75,80 @@ type PackagePlanResponse = {
   isSoldOut: boolean
   sortOrder: number
   slaGuarantee: number | null
+}
+
+type HourlyPlanPricingInput = {
+  hourlyMinCpu?: number
+  hourlyCpuUnitPercent?: number
+  hourlyCpuPricePerUnit?: string | number
+  hourlyMinMemoryMb?: number
+  hourlyMemoryUnitMb?: number
+  hourlyMemoryPricePerUnit?: string | number
+  hourlyMinDiskMb?: number
+  hourlyDiskUnitMb?: number
+  hourlyDiskPricePerUnit?: string | number
+  hourlyReserveQuantum?: string | number
+}
+
+function decimalString(value: unknown, field: string): string {
+  try {
+    const decimal = new Prisma.Decimal(String(value ?? '0'))
+    if (!decimal.isFinite() || decimal.lt(0)) throw new Error()
+    return decimal.toDecimalPlaces(8).toFixed(8)
+  } catch {
+    throw new Error(`${field} 必须是有效的非负数字`)
+  }
+}
+
+function normalizeHourlyPlanPricing(
+  input: HourlyPlanPricingInput,
+  resources: { cpu: number; memory: number; disk: number },
+  fallback?: HourlyPlanPricingInput
+): Required<HourlyPlanPricingInput> {
+  const value = <K extends keyof HourlyPlanPricingInput>(key: K, defaultValue: Required<HourlyPlanPricingInput>[K]) =>
+    input[key] ?? fallback?.[key] ?? defaultValue
+
+  const result = {
+    hourlyMinCpu: Number(value('hourlyMinCpu', 15)),
+    hourlyCpuUnitPercent: Number(value('hourlyCpuUnitPercent', 5)),
+    hourlyCpuPricePerUnit: decimalString(value('hourlyCpuPricePerUnit', '0'), 'CPU 单位价格'),
+    hourlyMinMemoryMb: Number(value('hourlyMinMemoryMb', 128)),
+    hourlyMemoryUnitMb: Number(value('hourlyMemoryUnitMb', 64)),
+    hourlyMemoryPricePerUnit: decimalString(value('hourlyMemoryPricePerUnit', '0'), '内存单位价格'),
+    hourlyMinDiskMb: Number(value('hourlyMinDiskMb', 512)),
+    hourlyDiskUnitMb: Number(value('hourlyDiskUnitMb', 512)),
+    hourlyDiskPricePerUnit: decimalString(value('hourlyDiskPricePerUnit', '0'), '硬盘单位价格'),
+    hourlyReserveQuantum: decimalString(value('hourlyReserveQuantum', '0.01'), '预付款额度')
+  }
+
+  const integerFields = [
+    result.hourlyMinCpu,
+    result.hourlyCpuUnitPercent,
+    result.hourlyMinMemoryMb,
+    result.hourlyMemoryUnitMb,
+    result.hourlyMinDiskMb,
+    result.hourlyDiskUnitMb
+  ]
+  if (integerFields.some(fieldValue => !Number.isInteger(fieldValue) || fieldValue <= 0)) {
+    throw new Error('按小时计费的最低值和步长必须是正整数')
+  }
+  if (result.hourlyMinCpu < 15 || result.hourlyMinMemoryMb < 128 || result.hourlyMinDiskMb < 512) {
+    throw new Error('按小时计费最低配置不能低于 CPU 15%、内存 128 MB、硬盘 512 MB')
+  }
+  if (resources.cpu < result.hourlyMinCpu || (resources.cpu - result.hourlyMinCpu) % result.hourlyCpuUnitPercent !== 0) {
+    throw new Error('方案 CPU 不符合按小时计费的最低值或步长')
+  }
+  if (resources.memory < result.hourlyMinMemoryMb || (resources.memory - result.hourlyMinMemoryMb) % result.hourlyMemoryUnitMb !== 0) {
+    throw new Error('方案内存不符合按小时计费的最低值或步长')
+  }
+  if (resources.disk < result.hourlyMinDiskMb || (resources.disk - result.hourlyMinDiskMb) % result.hourlyDiskUnitMb !== 0) {
+    throw new Error('方案硬盘不符合按小时计费的最低值或步长')
+  }
+  if (new Prisma.Decimal(result.hourlyReserveQuantum).lte(0)) {
+    throw new Error('预付款额度必须大于 0')
+  }
+
+  return result
 }
 
 type PackagePlanSummary = {
@@ -127,6 +212,16 @@ function serializePackagePlan(plan: any, pkg: { instance_type?: string | null })
     price: Number(plan.price),
     billingCycle: plan.billingCycle,
     setupFee: Number(plan.setupFee),
+    hourlyMinCpu: plan.hourlyMinCpu,
+    hourlyCpuUnitPercent: plan.hourlyCpuUnitPercent,
+    hourlyCpuPricePerUnit: new Prisma.Decimal(plan.hourlyCpuPricePerUnit).toDecimalPlaces(8).toFixed(8),
+    hourlyMinMemoryMb: plan.hourlyMinMemoryMb,
+    hourlyMemoryUnitMb: plan.hourlyMemoryUnitMb,
+    hourlyMemoryPricePerUnit: new Prisma.Decimal(plan.hourlyMemoryPricePerUnit).toDecimalPlaces(8).toFixed(8),
+    hourlyMinDiskMb: plan.hourlyMinDiskMb,
+    hourlyDiskUnitMb: plan.hourlyDiskUnitMb,
+    hourlyDiskPricePerUnit: new Prisma.Decimal(plan.hourlyDiskPricePerUnit).toDecimalPlaces(8).toFixed(8),
+    hourlyReserveQuantum: new Prisma.Decimal(plan.hourlyReserveQuantum).toDecimalPlaces(8).toFixed(8),
     trafficResetEnabled: plan.trafficResetEnabled,
     trafficResetPrice: Number(plan.trafficResetPrice),
     monthlyPrice: db.calculateMonthlyPrice(plan),
@@ -2322,6 +2417,16 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       price: number
       billingCycle?: number
       setupFee?: number
+      hourlyMinCpu?: number
+      hourlyCpuUnitPercent?: number
+      hourlyCpuPricePerUnit?: string | number
+      hourlyMinMemoryMb?: number
+      hourlyMemoryUnitMb?: number
+      hourlyMemoryPricePerUnit?: string | number
+      hourlyMinDiskMb?: number
+      hourlyDiskUnitMb?: number
+      hourlyDiskPricePerUnit?: string | number
+      hourlyReserveQuantum?: string | number
       trafficResetEnabled?: boolean
       trafficResetPrice?: number
       isActive?: boolean
@@ -2350,7 +2455,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
-    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, billingMode, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
+    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, billingMode, price, billingCycle, hourlyMinCpu, hourlyCpuUnitPercent, hourlyCpuPricePerUnit, hourlyMinMemoryMb, hourlyMemoryUnitMb, hourlyMemoryPricePerUnit, hourlyMinDiskMb, hourlyDiskUnitMb, hourlyDiskPricePerUnit, hourlyReserveQuantum, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
     const normalizedSwapSize = pkg.instance_type === 'vm' ? 0 : swapSize
     const normalizedBillingMode = billingMode ?? 'package'
 
@@ -2390,8 +2495,22 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     if (disk < 512 || disk > 104857600) {
       return reply.code(400).send({ error: '磁盘必须在 512 MB - 100 TB 之间' })
     }
-    if (normalizedBillingMode === 'hourly' && ((cpu - 15) % 5 !== 0 || (memory - 128) % 64 !== 0 || (disk - 512) % 512 !== 0)) {
-      return reply.code(400).send({ error: '按小时计费方案的资源必须从 CPU 15%、内存 128 MB、硬盘 512 MB 起按 5%、64 MB、512 MB 递增' })
+    let hourlyPricing: ReturnType<typeof normalizeHourlyPlanPricing>
+    try {
+      hourlyPricing = normalizeHourlyPlanPricing({
+        hourlyMinCpu,
+        hourlyCpuUnitPercent,
+        hourlyCpuPricePerUnit,
+        hourlyMinMemoryMb,
+        hourlyMemoryUnitMb,
+        hourlyMemoryPricePerUnit,
+        hourlyMinDiskMb,
+        hourlyDiskUnitMb,
+        hourlyDiskPricePerUnit,
+        hourlyReserveQuantum
+      }, normalizedBillingMode === 'hourly' ? { cpu, memory, disk } : { cpu: 15, memory: 128, disk: 512 })
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : '按小时计费配置无效' })
     }
     if (normalizedSwapSize < 0 || normalizedSwapSize > 1048576) {
       return reply.code(400).send({ error: 'SWAP 必须在 0-1048576 MB 之间' })
@@ -2455,6 +2574,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         price: normalizedBillingMode === 'hourly' ? 0 : price,
         billingCycle: normalizedBillingMode === 'hourly' ? 1 : billingCycle,
         setupFee: 0,  // 开通费固定为0
+        ...hourlyPricing,
         trafficResetEnabled: effectiveResetEnabled ?? false,
         trafficResetPrice: normalizedTrafficResetPrice.value,
         isActive,
@@ -2503,6 +2623,16 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       price?: number
       billingCycle?: number
       setupFee?: number
+      hourlyMinCpu?: number
+      hourlyCpuUnitPercent?: number
+      hourlyCpuPricePerUnit?: string | number
+      hourlyMinMemoryMb?: number
+      hourlyMemoryUnitMb?: number
+      hourlyMemoryPricePerUnit?: string | number
+      hourlyMinDiskMb?: number
+      hourlyDiskUnitMb?: number
+      hourlyDiskPricePerUnit?: string | number
+      hourlyReserveQuantum?: string | number
       trafficResetEnabled?: boolean
       trafficResetPrice?: number
       isActive?: boolean
@@ -2538,7 +2668,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '方案不存在' })
     }
 
-    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, billingMode, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
+    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, billingMode, price, billingCycle, hourlyMinCpu, hourlyCpuUnitPercent, hourlyCpuPricePerUnit, hourlyMinMemoryMb, hourlyMemoryUnitMb, hourlyMemoryPricePerUnit, hourlyMinDiskMb, hourlyDiskUnitMb, hourlyDiskPricePerUnit, hourlyReserveQuantum, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
     const normalizedSwapSize = pkg.instance_type === 'vm' ? 0 : swapSize
     const nextBillingMode = billingMode ?? existingPlan.billingMode
 
@@ -2585,8 +2715,33 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     const nextCpu = cpu ?? existingPlan.cpu
     const nextMemory = memory ?? existingPlan.memory
     const nextDisk = disk ?? existingPlan.disk
-    if (nextBillingMode === 'hourly' && ((nextCpu - 15) % 5 !== 0 || (nextMemory - 128) % 64 !== 0 || (nextDisk - 512) % 512 !== 0)) {
-      return reply.code(400).send({ error: '按小时计费方案的资源必须从 CPU 15%、内存 128 MB、硬盘 512 MB 起按 5%、64 MB、512 MB 递增' })
+    let hourlyPricing: ReturnType<typeof normalizeHourlyPlanPricing>
+    try {
+      hourlyPricing = normalizeHourlyPlanPricing({
+        hourlyMinCpu,
+        hourlyCpuUnitPercent,
+        hourlyCpuPricePerUnit,
+        hourlyMinMemoryMb,
+        hourlyMemoryUnitMb,
+        hourlyMemoryPricePerUnit,
+        hourlyMinDiskMb,
+        hourlyDiskUnitMb,
+        hourlyDiskPricePerUnit,
+        hourlyReserveQuantum
+      }, nextBillingMode === 'hourly' ? { cpu: nextCpu, memory: nextMemory, disk: nextDisk } : { cpu: 15, memory: 128, disk: 512 }, {
+        hourlyMinCpu: existingPlan.hourlyMinCpu,
+        hourlyCpuUnitPercent: existingPlan.hourlyCpuUnitPercent,
+        hourlyCpuPricePerUnit: existingPlan.hourlyCpuPricePerUnit.toString(),
+        hourlyMinMemoryMb: existingPlan.hourlyMinMemoryMb,
+        hourlyMemoryUnitMb: existingPlan.hourlyMemoryUnitMb,
+        hourlyMemoryPricePerUnit: existingPlan.hourlyMemoryPricePerUnit.toString(),
+        hourlyMinDiskMb: existingPlan.hourlyMinDiskMb,
+        hourlyDiskUnitMb: existingPlan.hourlyDiskUnitMb,
+        hourlyDiskPricePerUnit: existingPlan.hourlyDiskPricePerUnit.toString(),
+        hourlyReserveQuantum: existingPlan.hourlyReserveQuantum.toString()
+      })
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : '按小时计费配置无效' })
     }
     if (normalizedSwapSize !== undefined && (normalizedSwapSize < 0 || normalizedSwapSize > 1048576)) {
       return reply.code(400).send({ error: 'SWAP 必须在 0-1048576 MB 之间' })
@@ -2660,6 +2815,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       if (billingMode !== undefined) updateData.billingMode = nextBillingMode
       if (price !== undefined || nextBillingMode === 'hourly') updateData.price = nextBillingMode === 'hourly' ? 0 : price
       if (billingCycle !== undefined || nextBillingMode === 'hourly') updateData.billingCycle = nextBillingMode === 'hourly' ? 1 : billingCycle
+      Object.assign(updateData, hourlyPricing)
       // setupFee 已废弃，不再接受更新
       if (trafficResetEnabled !== undefined || trafficBillingMode !== undefined) updateData.trafficResetEnabled = nextTrafficResetEnabled
       if (trafficResetPrice !== undefined || trafficResetEnabled !== undefined || trafficBillingMode !== undefined) updateData.trafficResetPrice = normalizedTrafficResetPrice.value

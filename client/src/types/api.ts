@@ -512,8 +512,8 @@ export interface Instance {
 }
 
 export interface HourlyPricing {
-  id: number
-  version: number
+  id: number | null
+  version: number | null
   enabled: boolean
   cpuUnitPercent: number
   memoryUnitMb: number
@@ -527,7 +527,7 @@ export interface HourlyPricing {
   reserveQuantum: string
   trafficUnitPrice: string
   trafficIncludedBytes: string
-  effectiveAt: string
+  effectiveAt: string | null
 }
 
 export interface HourlyQuote {
@@ -1768,6 +1768,16 @@ export interface PackagePlan {
   price: number
   billingCycle: number // 账期（月）
   setupFee: number    // 开通费（分）
+  hourlyMinCpu: number
+  hourlyCpuUnitPercent: number
+  hourlyCpuPricePerUnit: string
+  hourlyMinMemoryMb: number
+  hourlyMemoryUnitMb: number
+  hourlyMemoryPricePerUnit: string
+  hourlyMinDiskMb: number
+  hourlyDiskUnitMb: number
+  hourlyDiskPricePerUnit: string
+  hourlyReserveQuantum: string
   trafficResetEnabled: boolean
   trafficResetPrice: number
   monthlyPrice: number

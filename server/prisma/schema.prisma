@@ -2451,6 +2451,19 @@ model PackagePlan {
   price               Decimal @db.Decimal(10, 2)                                     // 价格
   billingCycle        Int     @default(1) @map("billing_cycle")                      // 计费周期（月）
   setupFee            Decimal @default(0) @map("setup_fee") @db.Decimal(10, 2)       // 开通费
+
+  // 按小时计费配置：必须跟随方案保存，不再使用全局独立价格
+  hourlyMinCpu              Int     @default(15) @map("hourly_min_cpu")
+  hourlyCpuUnitPercent      Int     @default(5) @map("hourly_cpu_unit_percent")
+  hourlyCpuPricePerUnit     Decimal @default(0) @map("hourly_cpu_price_per_unit") @db.Decimal(20, 8)
+  hourlyMinMemoryMb         Int     @default(128) @map("hourly_min_memory_mb")
+  hourlyMemoryUnitMb        Int     @default(64) @map("hourly_memory_unit_mb")
+  hourlyMemoryPricePerUnit  Decimal @default(0) @map("hourly_memory_price_per_unit") @db.Decimal(20, 8)
+  hourlyMinDiskMb           Int     @default(512) @map("hourly_min_disk_mb")
+  hourlyDiskUnitMb          Int     @default(512) @map("hourly_disk_unit_mb")
+  hourlyDiskPricePerUnit    Decimal @default(0) @map("hourly_disk_price_per_unit") @db.Decimal(20, 8)
+  hourlyReserveQuantum      Decimal @default(0.01) @map("hourly_reserve_quantum") @db.Decimal(20, 8)
+
   trafficResetEnabled Boolean @default(false) @map("traffic_reset_enabled")          // 是否允许用户自助重置流量
   trafficResetPrice   Decimal @default(0) @map("traffic_reset_price") @db.Decimal(10, 2) // 每次重置流量价格（分）
 
@@ -2469,6 +2482,8 @@ model PackagePlan {
   package   Package    @relation(fields: [packageId], references: [id], onDelete: Cascade)
   instances Instance[]
   affCodes  AffCode[]  // AFF优惠码
+  hourlyBillingAccounts HourlyBillingAccount[]
+  hourlyBillingRecords  HourlyBillingRecord[]
 
   @@unique([packageId, name]) // 同一套餐下方案名称唯一
   @@index([packageId, isActive])
@@ -2528,6 +2543,7 @@ model TrafficBillingRecord {
 
 // ==================== 按小时计费模型 ====================
 
+// 旧版独立按小时计费的历史价格快照。新实例不再引用此表，价格配置统一放在 PackagePlan。
 model HourlyPricingVersion {
   id              Int      @id @default(autoincrement())
   version         Int      @unique
@@ -2560,7 +2576,9 @@ model HourlyPricingVersion {
 model HourlyBillingAccount {
   id              Int      @id @default(autoincrement())
   instanceId      Int      @unique @map("instance_id")
-  pricingVersionId Int     @map("pricing_version_id")
+  // 新实例直接读取所属方案的按小时价格；pricingVersionId 仅兼容旧的独立按小时实例。
+  packagePlanId   Int?     @map("package_plan_id")
+  pricingVersionId Int?    @map("pricing_version_id")
   lastSettledAt   DateTime @map("last_settled_at")
   nextSettlementAt DateTime? @map("next_settlement_at")
   prepaidBalance  Decimal  @default(0) @map("prepaid_balance") @db.Decimal(20, 8)
@@ -2574,9 +2592,11 @@ model HourlyBillingAccount {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   instance        Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  pricingVersion  HourlyPricingVersion @relation(fields: [pricingVersionId], references: [id])
+  packagePlan     PackagePlan? @relation(fields: [packagePlanId], references: [id], onDelete: SetNull)
+  pricingVersion  HourlyPricingVersion? @relation(fields: [pricingVersionId], references: [id])
   records         HourlyBillingRecord[]
 
+  @@index([packagePlanId])
   @@index([status, nextSettlementAt])
   @@map("hourly_billing_accounts")
 }
@@ -2587,7 +2607,8 @@ model HourlyBillingRecord {
   accountId       Int      @map("account_id")
   instanceId      Int      @map("instance_id")
   userId          Int      @map("user_id")
-  pricingVersionId Int     @map("pricing_version_id")
+  packagePlanId   Int?     @map("package_plan_id")
+  pricingVersionId Int?    @map("pricing_version_id")
   periodStart     DateTime @map("period_start")
   periodEnd       DateTime @map("period_end")
   activeSeconds   Int      @map("active_seconds")
@@ -2607,10 +2628,12 @@ model HourlyBillingRecord {
   account         HourlyBillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   instance        Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pricingVersion  HourlyPricingVersion @relation(fields: [pricingVersionId], references: [id])
+  packagePlan     PackagePlan? @relation(fields: [packagePlanId], references: [id], onDelete: SetNull)
+  pricingVersion  HourlyPricingVersion? @relation(fields: [pricingVersionId], references: [id])
 
   @@index([instanceId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
+  @@index([packagePlanId])
   @@index([status])
   @@map("hourly_billing_records")
 }

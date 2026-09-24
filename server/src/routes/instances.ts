@@ -32,8 +32,8 @@ import {
   persistCloudInitStatus
 } from '../lib/cloud-init-status.js'
 import { payPendingTrafficBillAndUnsuspend } from '../services/traffic-billing-scheduler.js'
-import { activateHourlyBilling, closeHourlyBilling, getCurrentHourlyPricing, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance } from '../services/hourly-billing-scheduler.js'
-import { validateHourlyResources } from '../lib/hourly-billing.js'
+import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance } from '../services/hourly-billing-scheduler.js'
+import { hourlyPricingFromPackagePlan, validateHourlyResources } from '../lib/hourly-billing.js'
 import { customAlphabet } from 'nanoid'
 
 // 自定义 nanoid，只使用小写字母和数字（Incus 不允许下划线）
@@ -950,15 +950,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     const selectedPlanIsHourly = selectedPlan?.billingMode === 'hourly'
-    let hourlyPricing: Awaited<ReturnType<typeof getCurrentHourlyPricing>> = null
+    let hourlyPricing: ReturnType<typeof hourlyPricingFromPackagePlan> | null = null
     if (selectedPlanIsHourly) {
       if (promoCode && promoCode.trim()) {
         return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '按小时计费方案不支持优惠码'))
       }
-      hourlyPricing = await getCurrentHourlyPricing()
-      if (!hourlyPricing) {
-        return reply.code(503).send({ error: '当前没有启用按小时计费价格', code: 'HOURLY_BILLING_DISABLED' })
-      }
+      hourlyPricing = hourlyPricingFromPackagePlan(selectedPlan!)
       try {
         validateHourlyResources({
           cpu: selectedPlan!.cpu,
@@ -1243,7 +1240,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       nodeSelectors: JSON.parse(pkgWithExtras.node_selectors || '[]'),
       billingMode: selectedPlanIsHourly ? 'hourly' : 'package',
       packagePlanId: selectedPlan?.id ?? null,
-      hourlyPricingVersionId: hourlyPricing?.id ?? null,
+      hourlyPackagePlanId: selectedPlan?.id ?? null,
       createdAt: new Date().toISOString()
     }
 
@@ -1478,7 +1475,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           await tx.hourlyBillingAccount.create({
             data: {
               instanceId: instance.id,
-              pricingVersionId: hourlyPricing.id,
+              packagePlanId: selectedPlan!.id,
               lastSettledAt: new Date(),
               nextSettlementAt: null,
               prepaidBalance: reserveAmount,
@@ -4978,11 +4975,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     if (isHourlyInstance && (cpu !== undefined || memory !== undefined || disk !== undefined)) {
       const hourlyAccount = await prisma.hourlyBillingAccount.findUnique({
         where: { instanceId },
-        include: { pricingVersion: true }
+        include: { packagePlan: true, pricingVersion: true }
       })
       if (!hourlyAccount) return reply.code(409).send({ error: 'Hourly billing account is missing', code: 'HOURLY_ACCOUNT_MISSING' })
       try {
-        validateHourlyResources({ cpu: newCpu, memory: newMemory, disk: newDisk }, hourlyAccount.pricingVersion)
+        const pricing = hourlyAccount.packagePlan
+          ? hourlyPricingFromPackagePlan(hourlyAccount.packagePlan)
+          : hourlyAccount.pricingVersion
+        if (!pricing) throw new Error('Hourly billing pricing is missing')
+        validateHourlyResources({ cpu: newCpu, memory: newMemory, disk: newDisk }, pricing)
       } catch (error) {
         return reply.code(400).send({ error: error instanceof Error ? error.message : String(error), code: 'HOURLY_RESOURCE_INVALID' })
       }

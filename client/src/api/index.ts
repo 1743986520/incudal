@@ -953,17 +953,10 @@ const api = {
     getPassword: (id: number): Promise<{ rootPassword: string | null }> => http.get(`/instances/${id}/password`),
     getStats: (id: number): Promise<InstanceStats & { status?: string }> => http.get(`/instances/${id}/stats`),
     create: (data: CreateInstanceRequest): Promise<Instance> => http.post('/instances', data),
-    hourlyCatalog: (): Promise<{
-      enabled: boolean
-      pricing: HourlyPricing | null
-      hosts: Array<{ id: number; name: string; location: string | null; countryCode: string; architecture: string; instanceType: string; cpuAllowanceMax: number; memoryMax: number }>
-    }> => http.get('/hourly-billing/catalog'),
-    hourlyAvailableHosts: (params: { cpu?: number; memory?: number; disk?: number } = {}): Promise<{ hosts: Array<Record<string, unknown> & { id: number; isAvailable: boolean }> }> =>
+    hourlyAvailableHosts: (params: { planId?: number; cpu?: number; memory?: number; disk?: number } = {}): Promise<{ hosts: Array<Record<string, unknown> & { id: number; isAvailable: boolean }> }> =>
       http.get('/instances/hourly/available-hosts', { params }),
-    hourlyQuote: (data: { cpu: number; memory: number; disk: number }): Promise<{ pricing: HourlyPricing; resources: { cpu: number; memory: number; disk: number }; breakdown: HourlyQuote }> =>
+    hourlyQuote: (data: { planId: number; cpu: number; memory: number; disk: number }): Promise<{ pricing: HourlyPricing; resources: { cpu: number; memory: number; disk: number }; breakdown: HourlyQuote }> =>
       http.post('/instances/hourly/quote', data),
-    createHourly: (data: { name: string; hostId: number; image: string; cpu: number; memory: number; disk: number; instanceType?: 'container' | 'vm'; sshKeyId?: number; sshKey?: string }): Promise<{ message: string; instanceId: number; billingMode: 'hourly'; pricingVersion: number; hourlyPrice: string; reservedAmount: string }> =>
-      http.post('/instances/hourly', data),
     getHourlyBilling: (id: number): Promise<HourlyBillingInfo> => http.get(`/instances/${id}/hourly-billing`),
     getHourlyBillingRecords: (id: number, limit = 50): Promise<{ records: HourlyBillingRecord[] }> => http.get(`/instances/${id}/hourly-billing/records`, { params: { limit } }),
     hourlyResizePreview: (id: number, data: { cpu: number; memory: number; disk: number }): Promise<{ resources: { cpu: number; memory: number; disk: number }; pricing: HourlyPricing; breakdown: HourlyQuote }> =>
@@ -2090,6 +2083,16 @@ const api = {
       price: number
       billingCycle?: number
       setupFee?: number
+      hourlyMinCpu?: number
+      hourlyCpuUnitPercent?: number
+      hourlyCpuPricePerUnit?: string | number
+      hourlyMinMemoryMb?: number
+      hourlyMemoryUnitMb?: number
+      hourlyMemoryPricePerUnit?: string | number
+      hourlyMinDiskMb?: number
+      hourlyDiskUnitMb?: number
+      hourlyDiskPricePerUnit?: string | number
+      hourlyReserveQuantum?: string | number
       trafficResetEnabled?: boolean
       trafficResetPrice?: number
       isActive?: boolean
@@ -2118,6 +2121,16 @@ const api = {
       price?: number
       billingCycle?: number
       setupFee?: number
+      hourlyMinCpu?: number
+      hourlyCpuUnitPercent?: number
+      hourlyCpuPricePerUnit?: string | number
+      hourlyMinMemoryMb?: number
+      hourlyMemoryUnitMb?: number
+      hourlyMemoryPricePerUnit?: string | number
+      hourlyMinDiskMb?: number
+      hourlyDiskUnitMb?: number
+      hourlyDiskPricePerUnit?: string | number
+      hourlyReserveQuantum?: string | number
       trafficResetEnabled?: boolean
       trafficResetPrice?: number
       isActive?: boolean
@@ -3547,24 +3560,6 @@ const api = {
 
   // 管理员 API
   admin: {
-    getHourlyPricing: (): Promise<{ versions: HourlyPricing[] }> => http.get('/admin/hourly-billing/pricing'),
-    createHourlyPricingVersion: (data: {
-      version?: number
-      enabled?: boolean
-      cpuUnitPercent?: number
-      memoryUnitMb?: number
-      diskUnitMb?: number
-      minCpu?: number
-      minMemoryMb?: number
-      minDiskMb?: number
-      cpuPricePerUnit: string
-      memoryPricePerUnit: string
-      diskPricePerUnit: string
-      reserveQuantum?: string
-      trafficUnitPrice?: string
-      trafficIncludedBytes?: string
-      effectiveAt?: string
-    }): Promise<{ pricing: HourlyPricing }> => http.post('/admin/hourly-billing/pricing/versions', data),
     setHourlyHostEnabled: (id: number, enabled: boolean): Promise<{ hostId: number; hourlyBillingEnabled: boolean }> =>
       http.patch(`/admin/hourly-billing/hosts/${id}`, { enabled }),
     getHourlyInstances: (): Promise<{ instances: Array<Record<string, unknown>> }> => http.get('/admin/hourly-billing/instances'),

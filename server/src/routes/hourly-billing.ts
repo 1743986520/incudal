@@ -1,16 +1,17 @@
 import type { FastifyInstance } from 'fastify'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
+import { canUserAccessPackage } from '../db/package-shares.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import {
   calculateHourlyBreakdown,
+  hourlyPricingFromPackagePlan,
   serializeHourlyDecimal,
   validateHourlyResources,
+  type HourlyPricingLike,
   type HourlyResources
 } from '../lib/hourly-billing.js'
 import {
-  getCurrentHourlyPricing,
-  quoteHourlyResources,
   runHourlyBillingJob
 } from '../services/hourly-billing-scheduler.js'
 
@@ -22,11 +23,20 @@ function parseResources(input: Partial<HourlyResources>): HourlyResources {
   }
 }
 
-function serializePricing(pricing: NonNullable<Awaited<ReturnType<typeof getCurrentHourlyPricing>>>) {
+type PricingResponseSource = HourlyPricingLike & {
+  id?: number | null
+  version?: number | null
+  enabled?: boolean
+  effectiveAt?: Date | null
+  trafficUnitPrice?: Prisma.Decimal | string | number
+  trafficIncludedBytes?: bigint | string | number
+}
+
+function serializePricing(pricing: PricingResponseSource) {
   return {
-    id: pricing.id,
-    version: pricing.version,
-    enabled: pricing.enabled,
+    id: pricing.id ?? null,
+    version: pricing.version ?? null,
+    enabled: pricing.enabled ?? true,
     cpuUnitPercent: pricing.cpuUnitPercent,
     memoryUnitMb: pricing.memoryUnitMb,
     diskUnitMb: pricing.diskUnitMb,
@@ -37,9 +47,9 @@ function serializePricing(pricing: NonNullable<Awaited<ReturnType<typeof getCurr
     memoryPricePerUnit: serializeHourlyDecimal(pricing.memoryPricePerUnit),
     diskPricePerUnit: serializeHourlyDecimal(pricing.diskPricePerUnit),
     reserveQuantum: serializeHourlyDecimal(pricing.reserveQuantum),
-    trafficUnitPrice: pricing.trafficUnitPrice.toString(),
-    trafficIncludedBytes: pricing.trafficIncludedBytes.toString(),
-    effectiveAt: pricing.effectiveAt.toISOString()
+    trafficUnitPrice: String(pricing.trafficUnitPrice ?? '0'),
+    trafficIncludedBytes: String(pricing.trafficIncludedBytes ?? '0'),
+    effectiveAt: pricing.effectiveAt?.toISOString() ?? null
   }
 }
 
@@ -63,35 +73,28 @@ function canAccessInstance(user: { id: number; role: string }, instance: { userI
   return user.role === 'admin' || user.id === instance.userId || user.id === instance.host.userId
 }
 
+async function getHourlyPlanForUser(user: { id: number; role: string }, planId: number) {
+  const plan = await prisma.packagePlan.findUnique({ where: { id: planId } })
+  if (!plan || plan.billingMode !== 'hourly' || !plan.isActive || plan.isSoldOut) return null
+  if (user.role !== 'admin' && !(await canUserAccessPackage(user.id, plan.packageId))) return null
+  return plan
+}
+
 export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
-  fastify.get('/hourly-billing/catalog', { onRequest: [fastify.authenticate] }, async () => {
-    const pricing = await getCurrentHourlyPricing()
-    const hosts = await prisma.host.findMany({
-      where: { status: 'online', hourlyBillingEnabled: true },
-      select: {
-        id: true,
-        name: true,
-        location: true,
-        countryCode: true,
-        architecture: true,
-        instanceType: true,
-        cpuAllowanceMax: true,
-        memoryMax: true
-      },
-      orderBy: { id: 'asc' }
+  fastify.get('/hourly-billing/catalog', { onRequest: [fastify.authenticate] }, async (_request, reply) => {
+    return reply.code(410).send({
+      error: '按小时价格已随套餐方案配置，请先选择按小时计费方案',
+      code: 'HOURLY_PLAN_REQUIRED'
     })
-    return {
-      enabled: Boolean(pricing),
-      pricing: pricing ? serializePricing(pricing) : null,
-      hosts
-    }
   })
 
-  fastify.get<{ Querystring: { cpu?: string; memory?: string; disk?: string } }>('/instances/hourly/available-hosts', {
+  fastify.get<{ Querystring: { planId?: string; cpu?: string; memory?: string; disk?: string } }>('/instances/hourly/available-hosts', {
     onRequest: [fastify.authenticate]
   }, async (request, reply) => {
-    const pricing = await getCurrentHourlyPricing()
-    if (!pricing) return reply.code(404).send({ error: 'Hourly billing is not enabled', code: 'HOURLY_BILLING_DISABLED' })
+    const planId = Number(request.query.planId)
+    const plan = Number.isInteger(planId) && planId > 0 ? await getHourlyPlanForUser(request.user, planId) : null
+    if (!plan) return reply.code(404).send({ error: '按小时计费方案不存在或无权访问', code: 'HOURLY_PLAN_NOT_FOUND' })
+    const pricing = hourlyPricingFromPackagePlan(plan)
     const resources = parseResources({
       cpu: request.query.cpu ? Number(request.query.cpu) : pricing.minCpu,
       memory: request.query.memory ? Number(request.query.memory) : pricing.minMemoryMb,
@@ -138,17 +141,21 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
     }
   })
 
-  fastify.post<{ Body: HourlyResources }>('/instances/hourly/quote', {
+  fastify.post<{ Body: HourlyResources & { planId: number } }>('/instances/hourly/quote', {
     onRequest: [fastify.authenticate],
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } }
   }, async (request, reply) => {
     try {
+      const planId = Number(request.body.planId)
+      const plan = Number.isInteger(planId) && planId > 0 ? await getHourlyPlanForUser(request.user, planId) : null
+      if (!plan) return reply.code(404).send({ error: '按小时计费方案不存在或无权访问', code: 'HOURLY_PLAN_NOT_FOUND' })
+      const pricing = hourlyPricingFromPackagePlan(plan)
       const resources = parseResources(request.body)
-      const { pricing, breakdown } = await quoteHourlyResources(resources)
+      const breakdown = calculateHourlyBreakdown(resources, pricing)
       return { pricing: serializePricing(pricing), resources, breakdown: serializeBreakdown(breakdown) }
     } catch (error) {
       const message = errorMessage(error)
-      return reply.code(message === 'HOURLY_BILLING_DISABLED' ? 404 : 400).send({ error: message, code: 'HOURLY_QUOTE_INVALID' })
+      return reply.code(400).send({ error: message, code: 'HOURLY_QUOTE_INVALID' })
     }
   })
 
@@ -166,17 +173,21 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
     const id = Number(request.params.id)
     const instance = await prisma.instance.findUnique({
       where: { id },
-      include: { host: { select: { userId: true } }, hourlyBillingAccount: { include: { pricingVersion: true } } }
+      include: { host: { select: { userId: true } }, hourlyBillingAccount: { include: { packagePlan: true, pricingVersion: true } } }
     })
     if (!instance || instance.billingMode !== 'hourly' || !instance.hourlyBillingAccount) return reply.code(404).send({ error: 'Hourly billing account not found' })
     if (!canAccessInstance(request.user, instance)) return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     const account = instance.hourlyBillingAccount
-    const breakdown = calculateHourlyBreakdown({ cpu: instance.cpu, memory: instance.memory, disk: instance.disk }, account.pricingVersion)
+    const pricing = account.packagePlan
+      ? hourlyPricingFromPackagePlan(account.packagePlan)
+      : account.pricingVersion
+    if (!pricing) return reply.code(409).send({ error: 'Hourly billing pricing is missing', code: 'HOURLY_PRICING_MISSING' })
+    const breakdown = calculateHourlyBreakdown({ cpu: instance.cpu, memory: instance.memory, disk: instance.disk }, pricing)
     return {
       instanceId: id,
       billingMode: instance.billingMode,
       status: account.status,
-      pricing: serializePricing(account.pricingVersion),
+      pricing: serializePricing(pricing),
       resources: { cpu: instance.cpu, memory: instance.memory, disk: instance.disk },
       hourlyPrice: serializeHourlyDecimal(breakdown.hourlyPrice),
       prepaidBalance: serializeHourlyDecimal(account.prepaidBalance),
@@ -218,12 +229,15 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
 
   fastify.post<{ Params: { id: string }; Body: HourlyResources }>('/instances/:id/hourly/resize-preview', { onRequest: [fastify.authenticateUser] }, async (request, reply) => {
     const id = Number(request.params.id)
-    const instance = await prisma.instance.findUnique({ where: { id }, include: { hourlyBillingAccount: { include: { pricingVersion: true } } } })
+    const instance = await prisma.instance.findUnique({ where: { id }, include: { hourlyBillingAccount: { include: { packagePlan: true, pricingVersion: true } } } })
     if (!instance || instance.billingMode !== 'hourly' || !instance.hourlyBillingAccount) return reply.code(404).send({ error: 'Hourly instance not found' })
     if (instance.userId !== request.user.id && request.user.role !== 'admin') return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     try {
       const resources = parseResources(request.body)
-      const pricing = instance.hourlyBillingAccount.pricingVersion
+      const pricing = instance.hourlyBillingAccount.packagePlan
+        ? hourlyPricingFromPackagePlan(instance.hourlyBillingAccount.packagePlan)
+        : instance.hourlyBillingAccount.pricingVersion
+      if (!pricing) throw new Error('Hourly billing pricing is missing')
       const breakdown = calculateHourlyBreakdown(resources, pricing)
       return { resources, pricing: serializePricing(pricing), breakdown: serializeBreakdown(breakdown) }
     } catch (error) {
@@ -231,77 +245,18 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
     }
   })
 
-  fastify.get('/admin/hourly-billing/pricing', { onRequest: [fastify.authenticateAdmin] }, async () => {
-    const versions = await prisma.hourlyPricingVersion.findMany({ orderBy: { version: 'desc' }, take: 100 })
-    return { versions: versions.map(serializePricing) }
+  fastify.get('/admin/hourly-billing/pricing', { onRequest: [fastify.authenticateAdmin] }, async (_request, reply) => {
+    return reply.code(410).send({
+      error: '按小时价格已搬入套餐方案，请在方案编辑页配置',
+      code: 'HOURLY_PRICING_MOVED_TO_PLAN'
+    })
   })
 
-  fastify.post<{ Body: {
-    version?: number
-    enabled?: boolean
-    cpuUnitPercent?: number
-    memoryUnitMb?: number
-    diskUnitMb?: number
-    minCpu?: number
-    minMemoryMb?: number
-    minDiskMb?: number
-    cpuPricePerUnit: string | number
-    memoryPricePerUnit: string | number
-    diskPricePerUnit: string | number
-    reserveQuantum?: string | number
-    trafficUnitPrice?: string | number
-    trafficIncludedBytes?: string
-    effectiveAt?: string
-  } }>('/admin/hourly-billing/pricing/versions', { onRequest: [fastify.authenticateAdmin] }, async (request, reply) => {
-    const body = request.body
-    try {
-      const cpuUnitPercent = body.cpuUnitPercent ?? 5
-      const memoryUnitMb = body.memoryUnitMb ?? 64
-      const diskUnitMb = body.diskUnitMb ?? 512
-      const minCpu = body.minCpu ?? 15
-      const minMemoryMb = body.minMemoryMb ?? 128
-      const minDiskMb = body.minDiskMb ?? 512
-      const effectiveAt = body.effectiveAt ? new Date(body.effectiveAt) : new Date()
-      const cpuPricePerUnit = new Prisma.Decimal(String(body.cpuPricePerUnit))
-      const memoryPricePerUnit = new Prisma.Decimal(String(body.memoryPricePerUnit))
-      const diskPricePerUnit = new Prisma.Decimal(String(body.diskPricePerUnit))
-      const reserveQuantum = new Prisma.Decimal(String(body.reserveQuantum ?? '0.01'))
-      const trafficUnitPrice = new Prisma.Decimal(String(body.trafficUnitPrice ?? '0'))
-      const trafficIncludedBytes = BigInt(body.trafficIncludedBytes || '0')
-      if (!Number.isInteger(cpuUnitPercent) || !Number.isInteger(memoryUnitMb) || !Number.isInteger(diskUnitMb) || cpuUnitPercent <= 0 || memoryUnitMb <= 0 || diskUnitMb <= 0) throw new Error('Invalid resource unit')
-      if (![minCpu, minMemoryMb, minDiskMb].every(Number.isInteger) || minCpu < 15 || minMemoryMb < 128 || minDiskMb < 512 || minCpu % cpuUnitPercent !== 0 || minMemoryMb % memoryUnitMb !== 0 || minDiskMb % diskUnitMb !== 0) throw new Error('Minimum resources are below the product minimum or do not align with their units')
-      if (Number.isNaN(effectiveAt.getTime())) throw new Error('Invalid effectiveAt')
-      if (cpuPricePerUnit.lt(0) || memoryPricePerUnit.lt(0) || diskPricePerUnit.lt(0) || reserveQuantum.lte(0) || trafficUnitPrice.lt(0) || trafficIncludedBytes < 0n) throw new Error('Prices must be non-negative, trafficIncludedBytes must be non-negative, and reserveQuantum must be positive')
-      const version = body.version ?? ((await prisma.hourlyPricingVersion.aggregate({ _max: { version: true } }))._max.version ?? 0) + 1
-      const pricing = await prisma.$transaction(async tx => {
-        // A future version becomes active at effectiveAt; keep the current
-        // version enabled until then so quotes do not unexpectedly disappear.
-        if (body.enabled !== false && effectiveAt <= new Date()) await tx.hourlyPricingVersion.updateMany({ data: { enabled: false } })
-        return tx.hourlyPricingVersion.create({
-          data: {
-            version,
-            enabled: body.enabled !== false,
-            cpuUnitPercent,
-            memoryUnitMb,
-            diskUnitMb,
-            minCpu,
-            minMemoryMb,
-            minDiskMb,
-            cpuPricePerUnit,
-            memoryPricePerUnit,
-            diskPricePerUnit,
-            reserveQuantum,
-            trafficUnitPrice,
-            trafficIncludedBytes,
-            effectiveAt,
-            createdBy: request.user.id
-          }
-        })
-      })
-      return reply.code(201).send({ pricing: serializePricing(pricing) })
-    } catch (error) {
-      return reply.code(400).send({ error: errorMessage(error), code: 'HOURLY_PRICING_INVALID' })
-    }
+  fastify.post('/admin/hourly-billing/pricing/versions', { onRequest: [fastify.authenticateAdmin] }, async (_request, reply) => {
+    return reply.code(410).send({
+      error: '按小时价格已搬入套餐方案，请在方案编辑页配置',
+      code: 'HOURLY_PRICING_MOVED_TO_PLAN'
+    })
   })
 
   fastify.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/admin/hourly-billing/hosts/:id', { onRequest: [fastify.authenticateAdmin] }, async (request, reply) => {

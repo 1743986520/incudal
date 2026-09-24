@@ -15,6 +15,38 @@ export interface HourlyPricingLike {
   reserveQuantum: Prisma.Decimal | string | number
 }
 
+/**
+ * PackagePlan 是新的按小时计费价格来源。
+ * 保留旧字段名只用于让计算器继续复用，避免任何金额计算退回 JavaScript number。
+ */
+export interface PackagePlanHourlyPricingSource {
+  hourlyCpuUnitPercent: number
+  hourlyMemoryUnitMb: number
+  hourlyDiskUnitMb: number
+  hourlyMinCpu: number
+  hourlyMinMemoryMb: number
+  hourlyMinDiskMb: number
+  hourlyCpuPricePerUnit: Prisma.Decimal | string | number
+  hourlyMemoryPricePerUnit: Prisma.Decimal | string | number
+  hourlyDiskPricePerUnit: Prisma.Decimal | string | number
+  hourlyReserveQuantum: Prisma.Decimal | string | number
+}
+
+export function hourlyPricingFromPackagePlan(plan: PackagePlanHourlyPricingSource): HourlyPricingLike {
+  return {
+    cpuUnitPercent: plan.hourlyCpuUnitPercent,
+    memoryUnitMb: plan.hourlyMemoryUnitMb,
+    diskUnitMb: plan.hourlyDiskUnitMb,
+    minCpu: plan.hourlyMinCpu,
+    minMemoryMb: plan.hourlyMinMemoryMb,
+    minDiskMb: plan.hourlyMinDiskMb,
+    cpuPricePerUnit: plan.hourlyCpuPricePerUnit,
+    memoryPricePerUnit: plan.hourlyMemoryPricePerUnit,
+    diskPricePerUnit: plan.hourlyDiskPricePerUnit,
+    reserveQuantum: plan.hourlyReserveQuantum
+  }
+}
+
 export interface HourlyResources {
   cpu: number
   memory: number

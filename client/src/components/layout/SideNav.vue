@@ -89,7 +89,6 @@ const adminOnlyMenuItems: MenuItem[] = [
   { divider: true, label: 'nav.operations' },
   { name: 'tickets', path: '/tickets', icon: 'ticket', label: 'nav.tickets' },
   { name: 'admin-billing', path: '/admin/billing', icon: 'wallet', label: 'nav.billing' },
-  { name: 'admin-hourly-billing', path: '/admin/hourly-billing', icon: 'wallet', label: 'hourlyBilling.adminTitle' },
   { name: 'admin-broadcast', path: '/admin/broadcast', icon: 'bell', label: 'nav.broadcast' },
   { name: 'admin-update', path: '/admin/update', icon: 'refresh', label: 'nav.updates' },
   { name: 'admin-logs', path: '/logs', icon: 'logs', label: 'nav.logs' },

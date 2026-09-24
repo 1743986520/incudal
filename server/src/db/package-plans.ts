@@ -99,6 +99,16 @@ export interface CreatePlanInput {
   price: number
   billingCycle?: number
   setupFee?: number
+  hourlyMinCpu?: number
+  hourlyCpuUnitPercent?: number
+  hourlyCpuPricePerUnit?: string | number
+  hourlyMinMemoryMb?: number
+  hourlyMemoryUnitMb?: number
+  hourlyMemoryPricePerUnit?: string | number
+  hourlyMinDiskMb?: number
+  hourlyDiskUnitMb?: number
+  hourlyDiskPricePerUnit?: string | number
+  hourlyReserveQuantum?: string | number
   trafficResetEnabled?: boolean
   trafficResetPrice?: number
   isActive?: boolean
@@ -131,6 +141,16 @@ export async function createPlan(input: CreatePlanInput): Promise<PackagePlan> {
     price,
     billingCycle = 1,
     setupFee = 0,
+    hourlyMinCpu = 15,
+    hourlyCpuUnitPercent = 5,
+    hourlyCpuPricePerUnit = 0,
+    hourlyMinMemoryMb = 128,
+    hourlyMemoryUnitMb = 64,
+    hourlyMemoryPricePerUnit = 0,
+    hourlyMinDiskMb = 512,
+    hourlyDiskUnitMb = 512,
+    hourlyDiskPricePerUnit = 0,
+    hourlyReserveQuantum = 0.01,
     trafficResetEnabled = false,
     trafficResetPrice = 0,
     isActive = true,
@@ -160,6 +180,16 @@ export async function createPlan(input: CreatePlanInput): Promise<PackagePlan> {
       price,
       billingCycle,
       setupFee,
+      hourlyMinCpu,
+      hourlyCpuUnitPercent,
+      hourlyCpuPricePerUnit,
+      hourlyMinMemoryMb,
+      hourlyMemoryUnitMb,
+      hourlyMemoryPricePerUnit,
+      hourlyMinDiskMb,
+      hourlyDiskUnitMb,
+      hourlyDiskPricePerUnit,
+      hourlyReserveQuantum,
       trafficResetEnabled,
       trafficResetPrice,
       isActive,
@@ -191,6 +221,16 @@ export interface UpdatePlanInput {
   price?: number
   billingCycle?: number
   setupFee?: number
+  hourlyMinCpu?: number
+  hourlyCpuUnitPercent?: number
+  hourlyCpuPricePerUnit?: string | number
+  hourlyMinMemoryMb?: number
+  hourlyMemoryUnitMb?: number
+  hourlyMemoryPricePerUnit?: string | number
+  hourlyMinDiskMb?: number
+  hourlyDiskUnitMb?: number
+  hourlyDiskPricePerUnit?: string | number
+  hourlyReserveQuantum?: string | number
   trafficResetEnabled?: boolean
   trafficResetPrice?: number
   isActive?: boolean

@@ -29,6 +29,16 @@ interface PackagePlan {
   price: number
   billingCycle: number
   setupFee: number
+  hourlyMinCpu: number
+  hourlyCpuUnitPercent: number
+  hourlyCpuPricePerUnit: string
+  hourlyMinMemoryMb: number
+  hourlyMemoryUnitMb: number
+  hourlyMemoryPricePerUnit: string
+  hourlyMinDiskMb: number
+  hourlyDiskUnitMb: number
+  hourlyDiskPricePerUnit: string
+  hourlyReserveQuantum: string
   monthlyPrice: number
   isActive: boolean
   isSoldOut: boolean

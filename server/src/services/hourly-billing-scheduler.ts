@@ -7,6 +7,7 @@ import {
   calculateHourlyBreakdown,
   calculateHourlyCost,
   ceilToQuantum,
+  hourlyPricingFromPackagePlan,
   serializeHourlyDecimal,
   type HourlyResources
 } from '../lib/hourly-billing.js'
@@ -30,6 +31,30 @@ type SettlementResult = {
     serverFingerprint: string | null
     allowPrivateNetwork: boolean
   } | null
+}
+
+type HourlyPricingSource = {
+  packagePlan?: Parameters<typeof hourlyPricingFromPackagePlan>[0] | null
+  pricingVersion?: HourlyPricingSourceVersion | null
+}
+
+type HourlyPricingSourceVersion = {
+  cpuUnitPercent: number
+  memoryUnitMb: number
+  diskUnitMb: number
+  minCpu: number
+  minMemoryMb: number
+  minDiskMb: number
+  cpuPricePerUnit: Prisma.Decimal
+  memoryPricePerUnit: Prisma.Decimal
+  diskPricePerUnit: Prisma.Decimal
+  reserveQuantum: Prisma.Decimal
+}
+
+function getAccountPricing(account: HourlyPricingSource) {
+  if (account.packagePlan) return hourlyPricingFromPackagePlan(account.packagePlan)
+  if (account.pricingVersion) return account.pricingVersion
+  throw new Error('HOURLY_PRICING_MISSING')
 }
 
 function zero(): Prisma.Decimal {
@@ -164,6 +189,7 @@ async function settleInTransaction(
   const initialAccount = await tx.hourlyBillingAccount.findUnique({
     where: { instanceId },
     include: {
+      packagePlan: true,
       pricingVersion: true,
       instance: {
         include: {
@@ -197,6 +223,7 @@ async function settleInTransaction(
   const account = await tx.hourlyBillingAccount.findUnique({
     where: { id: initialAccount.id },
     include: {
+      packagePlan: true,
       pricingVersion: true,
       instance: {
         include: {
@@ -236,14 +263,15 @@ async function settleInTransaction(
     memory: account.instance.memory,
     disk: account.instance.disk
   }
-  const breakdown = calculateHourlyBreakdown(resources, account.pricingVersion)
+  const pricing = getAccountPricing(account)
+  const breakdown = calculateHourlyBreakdown(resources, pricing)
   const cpuAmount = calculateHourlyCost(breakdown.cpuAmount, activeSeconds)
   const memoryAmount = calculateHourlyCost(breakdown.memoryAmount, activeSeconds)
   const diskAmount = calculateHourlyCost(breakdown.diskAmount, activeSeconds)
   const actualAmount = cpuAmount.add(memoryAmount).add(diskAmount)
   const existingPrepaid = new Prisma.Decimal(account.prepaidBalance)
   const requiredAdditional = actualAmount.gt(existingPrepaid)
-    ? ceilToQuantum(actualAmount.sub(existingPrepaid), new Prisma.Decimal(account.pricingVersion.reserveQuantum))
+    ? ceilToQuantum(actualAmount.sub(existingPrepaid), new Prisma.Decimal(pricing.reserveQuantum))
     : zero()
 
   const user = await tx.user.findUnique({
@@ -293,6 +321,7 @@ async function settleInTransaction(
         accountId: account.id,
         instanceId,
         userId: account.instance.userId,
+        packagePlanId: account.packagePlanId,
         pricingVersionId: account.pricingVersionId,
         periodStart,
         periodEnd: now,
@@ -344,25 +373,11 @@ async function settleInTransaction(
   return { instanceId, suspended, host: account.instance.host }
 }
 
-export async function getCurrentHourlyPricing() {
-  return prisma.hourlyPricingVersion.findFirst({
-    where: { enabled: true, effectiveAt: { lte: new Date() } },
-    orderBy: [{ effectiveAt: 'desc' }, { version: 'desc' }]
-  })
-}
-
-export async function quoteHourlyResources(resources: HourlyResources) {
-  const pricing = await getCurrentHourlyPricing()
-  if (!pricing) throw new Error('HOURLY_BILLING_DISABLED')
-  const breakdown = calculateHourlyBreakdown(resources, pricing)
-  return { pricing, breakdown }
-}
-
 export async function activateHourlyBilling(instanceId: number): Promise<boolean> {
   return runSerializableTransaction(async tx => {
     const account = await tx.hourlyBillingAccount.findUnique({
       where: { instanceId },
-      include: { pricingVersion: true, instance: true }
+      include: { packagePlan: true, pricingVersion: true, instance: true }
     })
     if (!account) return false
     await tx.$queryRaw(Prisma.sql`
@@ -373,7 +388,7 @@ export async function activateHourlyBilling(instanceId: number): Promise<boolean
     `)
     const lockedAccount = await tx.hourlyBillingAccount.findUnique({
       where: { id: account.id },
-      include: { pricingVersion: true, instance: true }
+      include: { packagePlan: true, pricingVersion: true, instance: true }
     })
     if (!lockedAccount) return false
     if (lockedAccount.status === 'active') return lockedAccount.instance.status === 'running'
@@ -417,7 +432,7 @@ export async function activateHourlyBilling(instanceId: number): Promise<boolean
     if (prepaid.lte(0)) {
       const user = await tx.user.findUnique({ where: { id: lockedAccount.instance.userId }, select: { balance: true } })
       if (!user) throw new Error('USER_NOT_FOUND')
-      const quantum = new Prisma.Decimal(lockedAccount.pricingVersion.reserveQuantum)
+      const quantum = new Prisma.Decimal(getAccountPricing(lockedAccount).reserveQuantum)
       const reserveResult = await reserveForHourlyCharge(tx, {
         userId: lockedAccount.instance.userId,
         instanceId,
@@ -464,7 +479,7 @@ export async function resumeHourlyBilling(instanceId: number, userId: number): P
   await runSerializableTransaction(async tx => {
     const account = await tx.hourlyBillingAccount.findUnique({
       where: { instanceId },
-      include: { pricingVersion: true, instance: true }
+      include: { packagePlan: true, pricingVersion: true, instance: true }
     })
     if (!account || account.instance.userId !== userId) throw new Error('HOURLY_ACCOUNT_NOT_FOUND')
     await tx.$queryRaw(Prisma.sql`
@@ -475,13 +490,13 @@ export async function resumeHourlyBilling(instanceId: number, userId: number): P
     `)
     const lockedAccount = await tx.hourlyBillingAccount.findUnique({
       where: { id: account.id },
-      include: { pricingVersion: true, instance: true }
+      include: { packagePlan: true, pricingVersion: true, instance: true }
     })
     if (!lockedAccount || lockedAccount.instance.userId !== userId) throw new Error('HOURLY_ACCOUNT_NOT_FOUND')
     if (lockedAccount.status !== 'suspended') return
 
     const outstanding = new Prisma.Decimal(lockedAccount.outstandingAmount)
-    const quantum = new Prisma.Decimal(lockedAccount.pricingVersion.reserveQuantum)
+    const quantum = new Prisma.Decimal(getAccountPricing(lockedAccount).reserveQuantum)
     const reserveAmount = ceilToQuantum(outstanding.add(quantum), quantum)
     const user = await tx.user.findUnique({ where: { id: userId }, select: { balance: true } })
     if (!user) throw new Error('USER_NOT_FOUND')

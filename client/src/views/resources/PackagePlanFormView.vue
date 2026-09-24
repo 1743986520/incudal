@@ -48,6 +48,16 @@ const planForm = ref({
   trafficBillingMode: 'package' as 'package' | 'usage',
   trafficUnitPrice: 0,
   billingMode: 'package' as 'package' | 'hourly',
+  hourlyMinCpu: 15,
+  hourlyCpuUnitPercent: 5,
+  hourlyCpuPricePerUnit: '0.00000000',
+  hourlyMinMemoryMb: 128,
+  hourlyMemoryUnitMb: 64,
+  hourlyMemoryPricePerUnit: '0.00000000',
+  hourlyMinDiskMb: 512,
+  hourlyDiskUnitMb: 512,
+  hourlyDiskPricePerUnit: '0.00000000',
+  hourlyReserveQuantum: '0.01000000',
   price: 0,
   billingCycle: 1,
   trafficResetEnabled: false,
@@ -130,6 +140,16 @@ function resetForCreate(sortOrder: number): void {
     trafficBillingMode: 'package',
     trafficUnitPrice: 0,
     billingMode: 'package',
+    hourlyMinCpu: 15,
+    hourlyCpuUnitPercent: 5,
+    hourlyCpuPricePerUnit: '0.00000000',
+    hourlyMinMemoryMb: 128,
+    hourlyMemoryUnitMb: 64,
+    hourlyMemoryPricePerUnit: '0.00000000',
+    hourlyMinDiskMb: 512,
+    hourlyDiskUnitMb: 512,
+    hourlyDiskPricePerUnit: '0.00000000',
+    hourlyReserveQuantum: '0.01000000',
     price: 0,
     billingCycle: 1,
     trafficResetEnabled: false,
@@ -156,6 +176,16 @@ function applyPlan(plan: PackagePlan): void {
     trafficBillingMode: plan.trafficBillingMode || 'package',
     trafficUnitPrice: (plan.trafficUnitPrice || 0) / 100,
     billingMode: plan.billingMode || 'package',
+    hourlyMinCpu: plan.hourlyMinCpu ?? 15,
+    hourlyCpuUnitPercent: plan.hourlyCpuUnitPercent ?? 5,
+    hourlyCpuPricePerUnit: plan.hourlyCpuPricePerUnit ?? '0.00000000',
+    hourlyMinMemoryMb: plan.hourlyMinMemoryMb ?? 128,
+    hourlyMemoryUnitMb: plan.hourlyMemoryUnitMb ?? 64,
+    hourlyMemoryPricePerUnit: plan.hourlyMemoryPricePerUnit ?? '0.00000000',
+    hourlyMinDiskMb: plan.hourlyMinDiskMb ?? 512,
+    hourlyDiskUnitMb: plan.hourlyDiskUnitMb ?? 512,
+    hourlyDiskPricePerUnit: plan.hourlyDiskPricePerUnit ?? '0.00000000',
+    hourlyReserveQuantum: plan.hourlyReserveQuantum ?? '0.01000000',
     price: plan.price / 100,
     billingCycle: plan.billingCycle,
     trafficResetEnabled: Boolean(plan.trafficResetEnabled),
@@ -243,6 +273,26 @@ async function savePlan(): Promise<void> {
   }
 
   const hourlyBilling = planForm.value.billingMode === 'hourly'
+  if (hourlyBilling) {
+    const hourly = planForm.value
+    const integerFields = [hourly.hourlyMinCpu, hourly.hourlyCpuUnitPercent, hourly.hourlyMinMemoryMb, hourly.hourlyMemoryUnitMb, hourly.hourlyMinDiskMb, hourly.hourlyDiskUnitMb]
+    const validDecimal = (value: string, allowZero = true): boolean => {
+      if (!/^(?:0|[0-9]+)(?:\.[0-9]{1,8})?$/.test(value.trim())) return false
+      return allowZero || Number(value) > 0
+    }
+    if (integerFields.some(value => !Number.isInteger(value) || value <= 0) || hourly.hourlyMinCpu < 15 || hourly.hourlyMinMemoryMb < 128 || hourly.hourlyMinDiskMb < 512) {
+      formError.value = t('resources.plans.hourlyPricingInvalid')
+      return
+    }
+    if (hourly.cpu < hourly.hourlyMinCpu || (hourly.cpu - hourly.hourlyMinCpu) % hourly.hourlyCpuUnitPercent !== 0 ||
+        hourly.memory < hourly.hourlyMinMemoryMb || (hourly.memory - hourly.hourlyMinMemoryMb) % hourly.hourlyMemoryUnitMb !== 0 ||
+        hourly.disk < hourly.hourlyMinDiskMb || (hourly.disk - hourly.hourlyMinDiskMb) % hourly.hourlyDiskUnitMb !== 0 ||
+        !validDecimal(hourly.hourlyCpuPricePerUnit) || !validDecimal(hourly.hourlyMemoryPricePerUnit) ||
+        !validDecimal(hourly.hourlyDiskPricePerUnit) || !validDecimal(hourly.hourlyReserveQuantum, false)) {
+      formError.value = t('resources.plans.hourlyPricingInvalid')
+      return
+    }
+  }
   const priceCents = hourlyBilling ? 0 : normalizePlanPriceCents(planForm.value.price)
   if (priceCents === null) {
     formError.value = t('resources.plans.priceRangeError', { max: MAX_PACKAGE_PLAN_PRICE.toFixed(2) })
@@ -286,6 +336,16 @@ async function savePlan(): Promise<void> {
       trafficBillingMode: planForm.value.trafficBillingMode,
       trafficUnitPrice: trafficUnitPriceCents ?? 0,
       billingMode: planForm.value.billingMode,
+      hourlyMinCpu: planForm.value.hourlyMinCpu,
+      hourlyCpuUnitPercent: planForm.value.hourlyCpuUnitPercent,
+      hourlyCpuPricePerUnit: planForm.value.hourlyCpuPricePerUnit,
+      hourlyMinMemoryMb: planForm.value.hourlyMinMemoryMb,
+      hourlyMemoryUnitMb: planForm.value.hourlyMemoryUnitMb,
+      hourlyMemoryPricePerUnit: planForm.value.hourlyMemoryPricePerUnit,
+      hourlyMinDiskMb: planForm.value.hourlyMinDiskMb,
+      hourlyDiskUnitMb: planForm.value.hourlyDiskUnitMb,
+      hourlyDiskPricePerUnit: planForm.value.hourlyDiskPricePerUnit,
+      hourlyReserveQuantum: planForm.value.hourlyReserveQuantum,
       price: priceCents,
       billingCycle: hourlyBilling ? 1 : planForm.value.billingCycle,
       trafficResetEnabled: usageBilling ? false : planForm.value.trafficResetEnabled,
@@ -407,6 +467,53 @@ async function savePlan(): Promise<void> {
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.trafficUnitPrice') }} ({{ t('resources.plans.priceUnit') }} / GB) *</label>
                 <input v-model.number="planForm.trafficUnitPrice" type="number" min="0.0001" :max="MAX_PACKAGE_PLAN_PRICE" step="0.0001" class="input" />
                 <p class="mt-1 text-xs text-themed-muted">{{ t('resources.plans.hourlySettlement') }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="planForm.billingMode === 'hourly'" class="card p-5">
+            <h2 class="text-base font-medium text-themed">{{ t('resources.plans.hourlyPricingConfig') }}</h2>
+            <p class="mt-1 text-xs text-themed-muted">{{ t('resources.plans.hourlyPricingConfigHint') }}</p>
+            <div class="mt-4 grid gap-4 sm:grid-cols-3">
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMinCpu') }} (%)</label>
+                <input v-model.number="planForm.hourlyMinCpu" type="number" min="15" step="1" class="input" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyCpuUnit') }} (%)</label>
+                <input v-model.number="planForm.hourlyCpuUnitPercent" type="number" min="1" step="1" class="input" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyCpuPrice') }}</label>
+                <input v-model="planForm.hourlyCpuPricePerUnit" type="text" inputmode="decimal" class="input" placeholder="0.00000000" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMinMemory') }} (MB)</label>
+                <input v-model.number="planForm.hourlyMinMemoryMb" type="number" min="128" step="1" class="input" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMemoryUnit') }} (MB)</label>
+                <input v-model.number="planForm.hourlyMemoryUnitMb" type="number" min="1" step="1" class="input" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMemoryPrice') }}</label>
+                <input v-model="planForm.hourlyMemoryPricePerUnit" type="text" inputmode="decimal" class="input" placeholder="0.00000000" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMinDisk') }} (MB)</label>
+                <input v-model.number="planForm.hourlyMinDiskMb" type="number" min="512" step="1" class="input" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyDiskUnit') }} (MB)</label>
+                <input v-model.number="planForm.hourlyDiskUnitMb" type="number" min="1" step="1" class="input" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyDiskPrice') }}</label>
+                <input v-model="planForm.hourlyDiskPricePerUnit" type="text" inputmode="decimal" class="input" placeholder="0.00000000" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyReserveQuantum') }}</label>
+                <input v-model="planForm.hourlyReserveQuantum" type="text" inputmode="decimal" class="input" placeholder="0.01000000" />
               </div>
             </div>
           </section>
