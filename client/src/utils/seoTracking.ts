@@ -33,8 +33,8 @@ export function applySeoTracking(options: TrackingOptions): void {
 
   const trackingWindow = window as TrackingWindow
   trackingWindow.dataLayer = trackingWindow.dataLayer || []
-  trackingWindow.gtag = (...args: unknown[]) => {
-    trackingWindow.dataLayer?.push(args)
+  trackingWindow.gtag = function gtag() {
+    trackingWindow.dataLayer?.push(arguments)
   }
   trackingWindow.gtag('js', new Date())
   trackingWindow.gtag('config', trackingId)
