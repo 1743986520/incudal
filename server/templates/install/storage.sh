@@ -122,7 +122,13 @@ storage_preseed_yaml() {
     else
         printf '      size: %s\n' "$STORAGE_SIZE"
     fi
-    [[ "$STORAGE_DRIVER" == lvm ]] && printf '      lvm.use_thinpool: "true"\n'
+    if [[ "$STORAGE_DRIVER" == lvm ]]; then
+        printf '      lvm.use_thinpool: "true"\n'
+    fi
+    # A command substitution returns the status of its final command.  The
+    # old `[[ ... ]] && printf ...` form returned 1 for btrfs/dir, which made
+    # the preseed assembly abort before Incus was even called.
+    return 0
 }
 
 install_selected_storage_deps() {
