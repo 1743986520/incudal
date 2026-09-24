@@ -107,6 +107,10 @@ table inet incudal_pps_guard {
   }
 }
 
+# The systemd oneshot executes this generated file directly.  Defining the
+# function alone exits successfully without ever loading the nftables table.
+install_pps_guard
+
 manage_pps_guard() {
     echo ""
     divider
