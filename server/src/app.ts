@@ -246,6 +246,7 @@ await fastify.register(helmet, {
         "'self'",
         'https://challenges.cloudflare.com',
         'https://static.cloudflareinsights.com',
+        'https://www.googletagmanager.com',
       ],
       styleSrc: [
         "'self'",
@@ -277,6 +278,10 @@ await fastify.register(helmet, {
         'https://cloudflareinsights.com',
         'https://api.dicebear.com',
         'https://dicebear.incudal.com',
+        'https://www.google-analytics.com',
+        'https://analytics.google.com',
+        'https://region1.google-analytics.com',
+        'https://stats.g.doubleclick.net',
       ],
       frameSrc: [
         "'self'",
