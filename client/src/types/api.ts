@@ -1764,6 +1764,7 @@ export interface PackagePlan {
   packageId?: number
   name: string
   description: string | null
+  billingMode: 'package' | 'hourly'
   price: number
   billingCycle: number // 账期（月）
   setupFee: number    // 开通费（分）

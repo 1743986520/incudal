@@ -26,6 +26,7 @@ export async function suspendInstanceByExpiry(
     const result = await tx.instance.updateMany({
       where: {
         id: instanceId,
+        billingMode: 'package',
         packagePlanId: { not: null },
         status: { in: ['running', 'stopped'] },
         expiresAt: { not: null, lt: now }
@@ -218,6 +219,7 @@ export async function getExpiringInstances(
 export async function getExpiredUnsuspendedInstances(): Promise<Instance[]> {
   return prisma.instance.findMany({
     where: {
+      billingMode: 'package',
       packagePlanId: { not: null },  // 明确排除免费实例
       expiresAt: {
         not: null,

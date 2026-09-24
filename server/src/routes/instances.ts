@@ -32,7 +32,7 @@ import {
   persistCloudInitStatus
 } from '../lib/cloud-init-status.js'
 import { payPendingTrafficBillAndUnsuspend } from '../services/traffic-billing-scheduler.js'
-import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance } from '../services/hourly-billing-scheduler.js'
+import { activateHourlyBilling, closeHourlyBilling, getCurrentHourlyPricing, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance } from '../services/hourly-billing-scheduler.js'
 import { validateHourlyResources } from '../lib/hourly-billing.js'
 import { customAlphabet } from 'nanoid'
 
@@ -674,6 +674,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Package must bind at least one host', code: 'PACKAGE_NO_HOSTS' })
     }
 
+    const selectedPlanForHosts = planIdNum !== null ? await getPlanById(planIdNum) : null
+    if (planIdNum !== null && (!selectedPlanForHosts || selectedPlanForHosts.packageId !== packageIdNum)) {
+      return reply.code(400).send(apiError(ErrorCode.PLAN_NOT_FOUND, '方案不存在或不属于该套餐'))
+    }
+    const requireHourlyBillingEnabled = selectedPlanForHosts?.billingMode === 'hourly'
+
     // 判断是自己的套餐还是共享的套餐
     if (pkg.user_id !== user.id) {
       // 共享的套餐，返回套餐所有者的节点
@@ -687,16 +693,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       parseInt(disk, 10),
       {
         userId: user.id,
-        packageOwnerId
+        packageOwnerId,
+        hourlyBillingOnly: requireHourlyBillingEnabled
       }
     )
 
     let baseTrafficLimit = pkg.monthly_traffic_limit ? BigInt(pkg.monthly_traffic_limit) : null
-    if (planIdNum !== null) {
-      const selectedPlan = await getPlanById(planIdNum)
-      if (selectedPlan && selectedPlan.packageId === packageIdNum) {
-        baseTrafficLimit = selectedPlan.trafficLimit
-      }
+    if (selectedPlanForHosts) {
+      baseTrafficLimit = selectedPlanForHosts.trafficLimit
     }
     const hostTrafficMultipliers = (pkg as { host_traffic_multipliers?: Record<string, number> }).host_traffic_multipliers || {}
 
@@ -945,6 +949,30 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '该套餐为免费套餐，不需要选择方案'))
     }
 
+    const selectedPlanIsHourly = selectedPlan?.billingMode === 'hourly'
+    let hourlyPricing: Awaited<ReturnType<typeof getCurrentHourlyPricing>> = null
+    if (selectedPlanIsHourly) {
+      if (promoCode && promoCode.trim()) {
+        return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '按小时计费方案不支持优惠码'))
+      }
+      hourlyPricing = await getCurrentHourlyPricing()
+      if (!hourlyPricing) {
+        return reply.code(503).send({ error: '当前没有启用按小时计费价格', code: 'HOURLY_BILLING_DISABLED' })
+      }
+      try {
+        validateHourlyResources({
+          cpu: selectedPlan!.cpu,
+          memory: selectedPlan!.memory,
+          disk: selectedPlan!.disk
+        }, hourlyPricing)
+      } catch (error) {
+        return reply.code(400).send({
+          error: error instanceof Error ? error.message : '方案资源不符合按小时计费的最低配置或步长',
+          code: 'HOURLY_RESOURCE_INVALID'
+        })
+      }
+    }
+
     // 1.3.1 禁止用户自己开通自己的付费套餐
     // 规则：套餐是自己的 + 套餐是付费的 + 不是节点所有者在自己节点上创建免费实例
     if (isOwnPackage && packageIsPaid && !isHostOwnerCreatingFree) {
@@ -959,7 +987,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     let finalPrice = 0
     let actualPrice = 0
 
-    if (selectedPlan) {
+    if (selectedPlan && !selectedPlanIsHourly) {
       billing = calculateCreateBilling(selectedPlan)
       finalPrice = billing.totalPrice
       actualPrice = billing.totalPrice
@@ -1084,7 +1112,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       memory: requestedMemory,
       disk: requestedDisk,
       hostId: hostId,
-      ownerId: pkg.user_id!  // 套餐所有者ID，限制只能在其宿主机上创建实例
+      ownerId: pkg.user_id!,  // 套餐所有者ID，限制只能在其宿主机上创建实例
+      requireHourlyBillingEnabled: selectedPlanIsHourly
     })
 
     console.log(`Pre-check result: ${preCheckHost ? preCheckHost.name : 'No available host'}`)
@@ -1212,6 +1241,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // retry silently removing SSH access.
       sshPublicKey: sshKey || null,
       nodeSelectors: JSON.parse(pkgWithExtras.node_selectors || '[]'),
+      billingMode: selectedPlanIsHourly ? 'hourly' : 'package',
+      packagePlanId: selectedPlan?.id ?? null,
+      hourlyPricingVersionId: hourlyPricing?.id ?? null,
       createdAt: new Date().toISOString()
     }
 
@@ -1241,7 +1273,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           disk: requestedDisk,
           hostId: hostId,
           ownerId: pkg.user_id!,
-          portCount: reservedNatPortCount
+          portCount: reservedNatPortCount,
+          requireHourlyBillingEnabled: selectedPlanIsHourly
         })
 
         if (!lockedHost) {
@@ -1380,6 +1413,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             hostId: lockedHost.id,
             packageId,
             packagePlanId: selectedPlan?.id ?? null,
+            billingMode: selectedPlanIsHourly ? 'hourly' : 'package',
             image,
             cpu: requestedCpu,
             memory: requestedMemory,
@@ -1399,15 +1433,60 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             limitsIngress: instanceQuota.limitsIngress,
             limitsEgress: instanceQuota.limitsEgress,
             // 计费信息（付费方案）
-            expiresAt: billing?.expiresAt ?? null,
-            billingPrice: billing?.price ?? null,
-            billingCycle: billing?.billingCycle ?? null,
+            expiresAt: selectedPlanIsHourly ? null : (billing?.expiresAt ?? null),
+            billingPrice: selectedPlanIsHourly ? null : (billing?.price ?? null),
+            billingCycle: selectedPlanIsHourly ? null : (billing?.billingCycle ?? null),
             trafficBillingMode: selectedPlan?.trafficBillingMode ?? 'package',
             trafficUnitPrice: selectedPlan?.trafficUnitPrice ?? 0,
             nextTrafficBillingAt: selectedPlan?.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             autoRenew: false
           }
         })
+
+        if (selectedPlanIsHourly && hourlyPricing) {
+          const reserveAmount = new Prisma.Decimal(hourlyPricing.reserveQuantum)
+          const walletUser = await tx.user.findUnique({
+            where: { id: user.id },
+            select: { balance: true }
+          })
+          if (!walletUser) throw new Error('USER_NOT_FOUND: 用户不存在')
+
+          const balanceBefore = new Prisma.Decimal(walletUser.balance)
+          const balanceAfter = balanceBefore.sub(reserveAmount)
+          const walletUpdate = await tx.user.updateMany({
+            where: { id: user.id, balance: { gte: reserveAmount } },
+            data: {
+              balance: { decrement: reserveAmount },
+              hourlyReservedBalance: { increment: reserveAmount }
+            }
+          })
+          if (walletUpdate.count !== 1) {
+            throw new Error('BALANCE_INSUFFICIENT: 余额不足，需要冻结按小时计费预付款')
+          }
+
+          await tx.balanceLog.create({
+            data: {
+              userId: user.id,
+              instanceId: instance.id,
+              type: 'hourly_reserve',
+              amount: reserveAmount.neg(),
+              balanceBefore,
+              balanceAfter,
+              remark: `创建按小时计费方案实例，冻结预付款 ${reserveAmount.toFixed(8)}`
+            }
+          })
+          await tx.hourlyBillingAccount.create({
+            data: {
+              instanceId: instance.id,
+              pricingVersionId: hourlyPricing.id,
+              lastSettledAt: new Date(),
+              nextSettlementAt: null,
+              prepaidBalance: reserveAmount,
+              totalReserved: reserveAmount,
+              status: 'paused'
+            }
+          })
+        }
 
         // 更新余额日志，添加 instanceId（因为创建时实例还不存在）
         if (balanceLogId) {
@@ -1750,6 +1829,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       memory: requestedMemory,
       disk: requestedDisk,
        portCount: reservedNatPortCount
+    }).then(async () => {
+      if (selectedPlanIsHourly) {
+        await activateHourlyBilling(instanceId)
+      }
     }).catch(err => {
       const errorMessage = err instanceof Error ? err.message : String(err)
       fastify.log.error({ err: errorMessage }, `实例 ${instanceId} 创建失败`)

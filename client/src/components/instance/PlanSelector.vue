@@ -13,6 +13,7 @@ interface PackagePlan {
   id: number
   name: string
   description: string | null
+  billingMode: 'package' | 'hourly'
   cpu: number
   memory: number
   disk: number
@@ -245,6 +246,14 @@ function handleSelect(plan: PackagePlan): void {
               >
                 {{ props.soldOutLabel || t('instance.selector.planSoldOut') }}
               </span>
+              <span
+                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                :class="plan.billingMode === 'hourly'
+                  ? (themeStore.isDark ? 'bg-purple-500/15 text-purple-300' : 'bg-purple-50 text-purple-700')
+                  : (themeStore.isDark ? 'bg-blue-500/15 text-blue-300' : 'bg-blue-50 text-blue-700')"
+              >
+                {{ plan.billingMode === 'hourly' ? t('resources.plans.hourlyBilling') : t('resources.plans.packageBilling') }}
+              </span>
               <!-- SLA 保证标签 -->
               <span
                 v-if="plan.slaGuarantee !== null"
@@ -270,14 +279,20 @@ function handleSelect(plan: PackagePlan): void {
           </div>
           <!-- 价格 -->
           <div class="text-right flex-shrink-0">
-            <div
+            <div v-if="plan.billingMode !== 'hourly'"
               class="text-xl font-bold"
               :class="themeStore.isDark ? 'text-white' : 'text-gray-900'"
             >
               ¥{{ formatPrice(plan.price) }}
             </div>
-            <div class="text-xs text-themed-muted">
+            <div v-else class="text-xl font-bold" :class="themeStore.isDark ? 'text-purple-300' : 'text-purple-700'">
+              {{ t('resources.plans.hourlyBilling') }}
+            </div>
+            <div v-if="plan.billingMode !== 'hourly'" class="text-xs text-themed-muted">
               {{ getBillingCycleLabel(plan.billingCycle) }}
+            </div>
+            <div v-else class="text-xs text-themed-muted">
+              {{ t('resources.plans.hourlyBillingOrderHint') }}
             </div>
           </div>
         </div>

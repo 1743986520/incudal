@@ -100,6 +100,12 @@ function getPromoBillingCycleLabel(months: number): string {
   return `${months} ${t('billing.cycle.months')}`
 }
 
+function getPromoBillingLabel(plan: { billingMode: 'package' | 'hourly'; billingCycle: number }): string {
+  return plan.billingMode === 'hourly'
+    ? t('resources.plans.hourlyBilling')
+    : getPromoBillingCycleLabel(plan.billingCycle)
+}
+
 function shouldShowAnnouncement(): boolean {
   const currentId = announcementId.value
   if (
@@ -305,10 +311,15 @@ watch(visible, (isVisible) => {
                         </div>
                         <div class="shrink-0 text-right">
                           <div class="text-sm font-semibold" :class="themeStore.isDark ? 'text-emerald-300' : 'text-emerald-700'">
-                            ¥{{ formatPromoPrice(plan.price) }}
+                            <template v-if="plan.billingMode === 'hourly'">
+                              {{ t('resources.plans.hourlyBilling') }}
+                            </template>
+                            <template v-else>
+                              ¥{{ formatPromoPrice(plan.price) }}
+                            </template>
                           </div>
                           <div class="text-xs" :class="themeStore.isDark ? 'text-gray-500' : 'text-gray-500'">
-                            {{ getPromoBillingCycleLabel(plan.billingCycle) }}
+                            {{ getPromoBillingLabel(plan) }}
                           </div>
                         </div>
                       </div>

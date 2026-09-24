@@ -53,6 +53,7 @@ type PackagePlanResponse = {
   trafficLimitSpeed: string
   trafficBillingMode: 'package' | 'usage'
   trafficUnitPrice: number
+  billingMode: 'package' | 'hourly'
   price: number
   billingCycle: number
   setupFee: number
@@ -122,6 +123,7 @@ function serializePackagePlan(plan: any, pkg: { instance_type?: string | null })
     trafficLimitSpeed: plan.trafficLimitSpeed,
     trafficBillingMode: plan.trafficBillingMode,
     trafficUnitPrice: Number(plan.trafficUnitPrice),
+    billingMode: plan.billingMode,
     price: Number(plan.price),
     billingCycle: plan.billingCycle,
     setupFee: Number(plan.setupFee),
@@ -195,8 +197,9 @@ function summarizePackagePlans(plans: any[]): PackagePlanSummary {
   const soldOutPlans = plans.filter(plan => plan.isActive && plan.isSoldOut)
   const inactivePlans = plans.filter(plan => !plan.isActive)
   const metricPlans = availablePlans.length > 0 ? availablePlans : plans
-  const priceRange = getNumberRange(metricPlans.map(plan => Number(plan.price)))
-  const monthlyPriceRange = getNumberRange(metricPlans.map(plan => db.calculateMonthlyPrice(plan)))
+  const priceMetricPlans = metricPlans.filter(plan => plan.billingMode !== 'hourly')
+  const priceRange = getNumberRange(priceMetricPlans.map(plan => Number(plan.price)))
+  const monthlyPriceRange = getNumberRange(priceMetricPlans.map(plan => db.calculateMonthlyPrice(plan)))
   const cpuRange = getNumberRange(metricPlans.map(plan => plan.cpu))
   const memoryRange = getNumberRange(metricPlans.map(plan => plan.memory))
   const diskRange = getNumberRange(metricPlans.map(plan => plan.disk))
@@ -480,6 +483,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           trafficLimitSpeed: true,
           trafficBillingMode: true,
           trafficUnitPrice: true,
+          billingMode: true,
           price: true,
           billingCycle: true,
           setupFee: true,
@@ -587,6 +591,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
           trafficLimitSpeed: p.trafficLimitSpeed,
           trafficBillingMode: p.trafficBillingMode,
           trafficUnitPrice: Number(p.trafficUnitPrice),
+          billingMode: p.billingMode,
           price: p.price,
           billingCycle: p.billingCycle,
           setupFee: p.setupFee,
@@ -2313,6 +2318,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       trafficLimitSpeed?: string
       trafficBillingMode?: 'package' | 'usage'
       trafficUnitPrice?: number
+      billingMode?: 'package' | 'hourly'
       price: number
       billingCycle?: number
       setupFee?: number
@@ -2344,8 +2350,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
-    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
+    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, billingMode, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
     const normalizedSwapSize = pkg.instance_type === 'vm' ? 0 : swapSize
+    const normalizedBillingMode = billingMode ?? 'package'
 
     if (isActive !== undefined && typeof isActive !== 'boolean') {
       return reply.code(400).send({ error: 'isActive 必须为布尔值' })
@@ -2355,6 +2362,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     }
     if (trafficResetEnabled !== undefined && typeof trafficResetEnabled !== 'boolean') {
       return reply.code(400).send({ error: 'trafficResetEnabled 必须为布尔值' })
+    }
+    if (normalizedBillingMode !== 'package' && normalizedBillingMode !== 'hourly') {
+      return reply.code(400).send({ error: 'billingMode 必须为 package 或 hourly' })
     }
 
     // 验证方案名称：允许 emoji，但仍禁止危险字符
@@ -2380,12 +2390,18 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     if (disk < 512 || disk > 104857600) {
       return reply.code(400).send({ error: '磁盘必须在 512 MB - 100 TB 之间' })
     }
+    if (normalizedBillingMode === 'hourly' && ((cpu - 15) % 5 !== 0 || (memory - 128) % 64 !== 0 || (disk - 512) % 512 !== 0)) {
+      return reply.code(400).send({ error: '按小时计费方案的资源必须从 CPU 15%、内存 128 MB、硬盘 512 MB 起按 5%、64 MB、512 MB 递增' })
+    }
     if (normalizedSwapSize < 0 || normalizedSwapSize > 1048576) {
       return reply.code(400).send({ error: 'SWAP 必须在 0-1048576 MB 之间' })
     }
-    const priceError = validatePackagePlanPrice(price)
+    const priceError = validatePackagePlanPrice(normalizedBillingMode === 'hourly' ? 0 : price)
     if (priceError) {
       return reply.code(400).send({ error: priceError })
+    }
+    if (normalizedBillingMode === 'hourly' && price !== 0) {
+      return reply.code(400).send({ error: '按小时计费方案的固定价格必须为 0' })
     }
     const trafficBilling = validateTrafficBilling({ mode: trafficBillingMode, trafficLimit, trafficLimitSpeed, trafficUnitPrice })
     if (trafficBilling.error) {
@@ -2406,13 +2422,16 @@ export default async function packageRoutes(fastify: FastifyInstance) {
 
     // 用户托管节点的方案只能按月计费
     if (user.role !== 'admin') {
-      const actualBillingCycle = billingCycle ?? 1
+      const actualBillingCycle = normalizedBillingMode === 'hourly' ? 1 : (billingCycle ?? 1)
       if (actualBillingCycle !== 1) {
         return reply.code(400).send({
           error: '用户托管节点的方案仅支持按月计费',
           code: 'HOSTING_MONTHLY_ONLY'
         })
       }
+    }
+    if (normalizedBillingMode === 'hourly' && billingCycle !== undefined && billingCycle !== 1) {
+      return reply.code(400).send({ error: '按小时计费方案不支持季度或年度账期' })
     }
 
     try {
@@ -2432,8 +2451,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         trafficLimitSpeed,
         trafficBillingMode: trafficBilling.mode,
         trafficUnitPrice: trafficBilling.trafficUnitPrice,
-        price,
-        billingCycle,
+        billingMode: normalizedBillingMode,
+        price: normalizedBillingMode === 'hourly' ? 0 : price,
+        billingCycle: normalizedBillingMode === 'hourly' ? 1 : billingCycle,
         setupFee: 0,  // 开通费固定为0
         trafficResetEnabled: effectiveResetEnabled ?? false,
         trafficResetPrice: normalizedTrafficResetPrice.value,
@@ -2479,6 +2499,7 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       trafficLimitSpeed?: string
       trafficBillingMode?: 'package' | 'usage'
       trafficUnitPrice?: number
+      billingMode?: 'package' | 'hourly'
       price?: number
       billingCycle?: number
       setupFee?: number
@@ -2517,8 +2538,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '方案不存在' })
     }
 
-    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
+    const { name, description, cpu, memory, disk, portLimit, snapshotLimit, backupLimit, siteLimit, swapSize, trafficLimit, trafficLimitSpeed, trafficBillingMode, trafficUnitPrice, billingMode, price, billingCycle, trafficResetEnabled, trafficResetPrice, isActive, isSoldOut, sortOrder, slaGuarantee } = request.body
     const normalizedSwapSize = pkg.instance_type === 'vm' ? 0 : swapSize
+    const nextBillingMode = billingMode ?? existingPlan.billingMode
 
     if (isActive !== undefined && typeof isActive !== 'boolean') {
       return reply.code(400).send({ error: 'isActive 必须为布尔值' })
@@ -2528,6 +2550,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     }
     if (trafficResetEnabled !== undefined && typeof trafficResetEnabled !== 'boolean') {
       return reply.code(400).send({ error: 'trafficResetEnabled 必须为布尔值' })
+    }
+    if (nextBillingMode !== 'package' && nextBillingMode !== 'hourly') {
+      return reply.code(400).send({ error: 'billingMode 必须为 package 或 hourly' })
     }
 
     let planName: string | undefined
@@ -2557,13 +2582,23 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     if (disk !== undefined && (disk < 512 || disk > 104857600)) {
       return reply.code(400).send({ error: '磁盘必须在 512 MB - 100 TB 之间' })
     }
+    const nextCpu = cpu ?? existingPlan.cpu
+    const nextMemory = memory ?? existingPlan.memory
+    const nextDisk = disk ?? existingPlan.disk
+    if (nextBillingMode === 'hourly' && ((nextCpu - 15) % 5 !== 0 || (nextMemory - 128) % 64 !== 0 || (nextDisk - 512) % 512 !== 0)) {
+      return reply.code(400).send({ error: '按小时计费方案的资源必须从 CPU 15%、内存 128 MB、硬盘 512 MB 起按 5%、64 MB、512 MB 递增' })
+    }
     if (normalizedSwapSize !== undefined && (normalizedSwapSize < 0 || normalizedSwapSize > 1048576)) {
       return reply.code(400).send({ error: 'SWAP 必须在 0-1048576 MB 之间' })
     }
-    if (price !== undefined) {
-      const priceError = validatePackagePlanPrice(price)
+    if (price !== undefined || nextBillingMode === 'hourly') {
+      const nextPrice = nextBillingMode === 'hourly' ? 0 : (price ?? Number(existingPlan.price))
+      const priceError = validatePackagePlanPrice(nextPrice)
       if (priceError) {
         return reply.code(400).send({ error: priceError })
+      }
+      if (nextBillingMode === 'hourly' && price !== undefined && price !== 0) {
+        return reply.code(400).send({ error: '按小时计费方案的固定价格必须为 0' })
       }
     }
     const trafficBilling = validateTrafficBilling({
@@ -2598,6 +2633,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
         code: 'HOSTING_MONTHLY_ONLY'
       })
     }
+    if (nextBillingMode === 'hourly' && billingCycle !== undefined && billingCycle !== 1) {
+      return reply.code(400).send({ error: '按小时计费方案不支持季度或年度账期' })
+    }
 
     try {
       const updateData: any = {}
@@ -2619,8 +2657,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       if (trafficLimitSpeed !== undefined) updateData.trafficLimitSpeed = trafficLimitSpeed
       if (trafficBillingMode !== undefined) updateData.trafficBillingMode = trafficBilling.mode
       if (trafficUnitPrice !== undefined || trafficBillingMode !== undefined) updateData.trafficUnitPrice = trafficBilling.trafficUnitPrice
-      if (price !== undefined) updateData.price = price
-      if (billingCycle !== undefined) updateData.billingCycle = billingCycle
+      if (billingMode !== undefined) updateData.billingMode = nextBillingMode
+      if (price !== undefined || nextBillingMode === 'hourly') updateData.price = nextBillingMode === 'hourly' ? 0 : price
+      if (billingCycle !== undefined || nextBillingMode === 'hourly') updateData.billingCycle = nextBillingMode === 'hourly' ? 1 : billingCycle
       // setupFee 已废弃，不再接受更新
       if (trafficResetEnabled !== undefined || trafficBillingMode !== undefined) updateData.trafficResetEnabled = nextTrafficResetEnabled
       if (trafficResetPrice !== undefined || trafficResetEnabled !== undefined || trafficBillingMode !== undefined) updateData.trafficResetPrice = normalizedTrafficResetPrice.value

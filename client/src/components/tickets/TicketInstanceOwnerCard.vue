@@ -514,7 +514,9 @@ async function unsuspendInstance(): Promise<void> {
 async function deleteInstanceWithRefund(): Promise<void> {
   if (!instance.value || !canDeleteWithRefund.value) return
 
-  const isPaidInstance = !!mergedInstance.value.packagePlanId
+  const billingMode = (mergedInstance.value as { billingMode?: string; billing_mode?: string }).billingMode
+    || (mergedInstance.value as { billing_mode?: string }).billing_mode
+  const isPaidInstance = !!mergedInstance.value.packagePlanId && billingMode !== 'hourly'
   const confirmMessage = isPaidInstance
     ? t('admin.billing.deleteRefundWarning')
     : t('instance.confirmDelete', { name: mergedInstance.value.name })

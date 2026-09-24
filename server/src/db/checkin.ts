@@ -518,7 +518,8 @@ export async function userHasPaidInstance(userId: number): Promise<boolean> {
   const count = await prisma.instance.count({
     where: {
       userId,
-      packagePlanId: { not: null }  // packagePlanId 不为空表示付费实例
+      billingMode: 'package',
+      packagePlanId: { not: null }
     }
   })
   return count > 0

@@ -34,8 +34,9 @@ const availableCount = computed(() => plans.value.filter(plan => plan.isActive &
 const soldOutCount = computed(() => plans.value.filter(plan => plan.isActive && plan.isSoldOut).length)
 const inactiveCount = computed(() => plans.value.filter(plan => !plan.isActive).length)
 const minPrice = computed(() => {
-  const candidates = plans.value.filter(plan => plan.isActive && !plan.isSoldOut)
-  const source = candidates.length > 0 ? candidates : plans.value
+  const packagePlans = plans.value.filter(plan => plan.billingMode !== 'hourly')
+  const candidates = packagePlans.filter(plan => plan.isActive && !plan.isSoldOut)
+  const source = candidates.length > 0 ? candidates : packagePlans
   if (source.length === 0) return null
   return Math.min(...source.map(plan => plan.price))
 })

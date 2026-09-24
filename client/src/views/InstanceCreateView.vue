@@ -55,6 +55,7 @@ interface PackagePlan {
   id: number
   name: string
   description: string | null
+  billingMode: 'package' | 'hourly'
   cpu: number
   memory: number
   disk: number
@@ -117,6 +118,9 @@ const availableImages = ref<ImageOption[]>([])
 const systemImageCache = new Map<string, { images: ImageOption[]; ts: number }>()
 const SYSTEM_IMAGE_TTL = 120_000
 const packagePlans = ref<PackagePlan[]>([])
+const hourlyQuote = ref<{ hourlyPrice: string } | null>(null)
+const hourlyQuoteLoading = ref(false)
+let hourlyQuoteRequestSeq = 0
 const imagesLoading = ref<boolean>(false)
 const hostsLoading = ref<boolean>(false)
 const plansLoading = ref<boolean>(false)
@@ -226,6 +230,7 @@ const selectedPackage = computed<Package | undefined>(() => packages.value.find(
 
 // 当前选中的方案
 const selectedPlan = computed<PackagePlan | undefined>(() => packagePlans.value.find(p => p.id === form.value.planId))
+const isHourlyPlan = computed<boolean>(() => selectedPlan.value?.billingMode === 'hourly')
 
 const prerequisitePackageName = computed<string | null>(() => {
   if (!selectedPackage.value?.required_package_id) return null
@@ -270,7 +275,7 @@ function getBillingCycleLabel(months: number): string {
 
 // 方案价格计算（注意：数据库存储为分，需要转换为元）
 const planPriceInfo = computed(() => {
-  if (!selectedPlan.value) return null
+  if (!selectedPlan.value || selectedPlan.value.billingMode === 'hourly') return null
   const plan = selectedPlan.value
   // 价格单位转换：分 -> 元
   const planPriceYuan = plan.price / 100
@@ -637,6 +642,8 @@ function selectRegion(regionCode: string | null): void {
 
 async function selectPackage(pkg: Package, preferredPlanId?: number | null): Promise<void> {
   isSwitchingPackage.value = true  // 开始切换套餐
+  hourlyQuoteRequestSeq += 1
+  hourlyQuote.value = null
   
   form.value.packageId = pkg.id
   form.value.hostId = null
@@ -761,10 +768,41 @@ function selectPlan(plan: PackagePlan): void {
   form.value.cpu = plan.cpu
   form.value.memory = plan.memory
   form.value.disk = plan.disk
+  void loadHourlyPlanQuote(plan)
   // 重置优惠码状态
   resetPromoCode()
   // 加载可用宿主机
   loadAvailableHosts()
+}
+
+async function loadHourlyPlanQuote(plan: PackagePlan): Promise<void> {
+  const requestSeq = ++hourlyQuoteRequestSeq
+  if (plan.billingMode !== 'hourly') {
+    hourlyQuote.value = null
+    hourlyQuoteLoading.value = false
+    return
+  }
+
+  hourlyQuoteLoading.value = true
+  try {
+    const response = await api.instances.hourlyQuote({
+      cpu: plan.cpu,
+      memory: plan.memory,
+      disk: plan.disk
+    })
+    if (requestSeq === hourlyQuoteRequestSeq) {
+      hourlyQuote.value = { hourlyPrice: response.breakdown.hourlyPrice }
+    }
+  } catch {
+    if (requestSeq === hourlyQuoteRequestSeq) hourlyQuote.value = null
+  } finally {
+    if (requestSeq === hourlyQuoteRequestSeq) hourlyQuoteLoading.value = false
+  }
+}
+
+function formatHourlyPlanPrice(value: string | null | undefined): string {
+  const price = Number(value)
+  return Number.isFinite(price) ? price.toFixed(2) : '-'
 }
 
 /**
@@ -786,7 +824,7 @@ function resetPromoCode(): void {
  * 官方券可用于直营与托管套餐，AFF 码仍遵守托管节点的原有使用限制。
  */
 async function verifyPromoCode(): Promise<void> {
-  if (!form.value.promoCode.trim() || !form.value.planId || !form.value.packageId) {
+  if (isHourlyPlan.value || !form.value.promoCode.trim() || !form.value.planId || !form.value.packageId) {
     resetPromoCode()
     return
   }
@@ -1304,7 +1342,7 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
               <div class="space-y-4">
                 <div class="p-4 rounded-xl border-2" :class="themeStore.isDark ? 'border-blue-500/30 bg-blue-500/5' : 'border-blue-200 bg-blue-50/50'">
                   <div class="flex items-center justify-between mb-3">
-                    <span class="px-2.5 py-1 rounded-full text-xs font-medium" :class="themeStore.isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700'">{{ getBillingCycleLabel(selectedPlan.billingCycle) }}</span>
+                    <span class="px-2.5 py-1 rounded-full text-xs font-medium" :class="isHourlyPlan ? (themeStore.isDark ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-100 text-purple-700') : (themeStore.isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700')">{{ isHourlyPlan ? $t('resources.plans.hourlyBilling') : getBillingCycleLabel(selectedPlan.billingCycle) }}</span>
                     <span v-if="selectedPlan.slaGuarantee" class="flex items-center gap-1 text-xs text-green-500">
                       <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
                       SLA {{ selectedPlan.slaGuarantee }}%
@@ -1332,9 +1370,20 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
                     <div class="flex justify-between gap-3"><span class="text-themed-muted">{{ $t('resources.plans.billingCycle') }}</span><span class="font-medium text-themed">{{ $t('resources.plans.settlementHourly') }}</span></div>
                     <p class="pt-1 text-xs text-amber-600 dark:text-amber-400">{{ $t('resources.plans.hourlySettlement') }}</p>
                   </div>
+                  <div v-if="isHourlyPlan" class="mt-3 rounded-lg border border-purple-200 bg-purple-50/70 px-3 py-2 text-xs text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/10 dark:text-purple-300">
+                    {{ $t('resources.plans.hourlyBillingOrderHint') }}
+                  </div>
+                  <div v-if="isHourlyPlan" class="mt-3 flex items-center justify-between gap-3 border-t pt-3 text-sm" :class="themeStore.isDark ? 'border-blue-500/20' : 'border-blue-200'">
+                    <span class="text-themed-muted">{{ $t('hourlyBilling.hourlyPrice') }}</span>
+                    <span class="font-semibold text-themed">
+                      <template v-if="hourlyQuote">约 ¥{{ formatHourlyPlanPrice(hourlyQuote.hourlyPrice) }} / {{ $t('hourlyBilling.hour') }}</template>
+                      <template v-else-if="hourlyQuoteLoading">{{ $t('common.loading') }}</template>
+                      <template v-else>-</template>
+                    </span>
+                  </div>
                 </div>
                 <!-- 优惠码 -->
-                <div class="space-y-3">
+                <div v-if="!isHourlyPlan" class="space-y-3">
                   <div>
                     <label class="label text-xs uppercase tracking-wide text-themed-muted mb-2">{{ configStore.freeSiteMode ? freeSiteCopy.createPromoCode : $t('aff.promoCode') }}</label>
                     <div class="relative">

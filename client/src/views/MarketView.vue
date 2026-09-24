@@ -291,7 +291,9 @@ function getPackagePriceLabel(pkg: PublicPackage): string {
 
   const startPrice = getStartingMonthlyPrice(pkg)
   if (startPrice === null) {
-    return t('publicSite.market.free')
+    return pkg.plans.some(plan => plan.billingMode === 'hourly')
+      ? t('resources.plans.hourlyBilling')
+      : t('publicSite.market.free')
   }
 
   return t('publicSite.market.fromMonthly', { price: formatPublicPrice(startPrice) })
@@ -311,6 +313,12 @@ function getPlanLabel(pkg: PublicPackage): string {
 
 function getMarketPlanCycleLabel(months: number): string {
   return configStore.freeSiteMode ? getFreeSiteBillingCycleLabel(months) : t('publicSite.market.planCycle', { months })
+}
+
+function getMarketPlanBillingLabel(plan: PublicPackage['plans'][number]): string {
+  return plan.billingMode === 'hourly'
+    ? t('resources.plans.hourlyBilling')
+    : getMarketPlanCycleLabel(plan.billingCycle)
 }
 
 function getMarketMonthlyPriceLabel(price: number): string {
@@ -1018,7 +1026,7 @@ onUnmounted(() => {
                                 {{ plan.name }}
                               </div>
                               <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] opacity-70">
-                                <span>{{ getMarketPlanCycleLabel(plan.billingCycle) }}</span>
+                                <span>{{ getMarketPlanBillingLabel(plan) }}</span>
                                 <span
                                   v-if="plan.isSoldOut"
                                   class="rounded-lg border px-1.5 py-0.5 opacity-100"
@@ -1029,12 +1037,18 @@ onUnmounted(() => {
                               </div>
                             </div>
                             <div class="shrink-0 text-right">
-                              <div class="text-sm font-medium">
-                                {{ configStore.freeSiteMode ? freeSiteCopy.moneyJustForShow : `¥${formatPublicPrice(plan.price)}` }}
-                              </div>
-                              <div class="mt-0.5 text-[11px] opacity-70">
-                                {{ getMarketMonthlyPriceLabel(plan.monthlyPrice) }}
-                              </div>
+                              <template v-if="plan.billingMode === 'hourly'">
+                                <div class="text-sm font-medium">{{ t('resources.plans.hourlyBilling') }}</div>
+                                <div class="mt-0.5 text-[11px] opacity-70">{{ t('resources.plans.hourlyBillingPriceHint') }}</div>
+                              </template>
+                              <template v-else>
+                                <div class="text-sm font-medium">
+                                  {{ configStore.freeSiteMode ? freeSiteCopy.moneyJustForShow : `¥${formatPublicPrice(plan.price)}` }}
+                                </div>
+                                <div class="mt-0.5 text-[11px] opacity-70">
+                                  {{ getMarketMonthlyPriceLabel(plan.monthlyPrice) }}
+                                </div>
+                              </template>
                             </div>
                           </div>
 
@@ -1081,16 +1095,22 @@ onUnmounted(() => {
                           {{ selectedPlan.name }}
                         </div>
                         <div class="mt-1 text-xs" :class="ui.statBlockLabel">
-                          {{ getMarketPlanCycleLabel(selectedPlan.billingCycle) }} · {{ getNetworkLabel(selectedPackage) }}
+                          {{ getMarketPlanBillingLabel(selectedPlan) }} · {{ getNetworkLabel(selectedPackage) }}
                         </div>
                       </div>
                       <div class="shrink-0 text-right">
-                        <div class="text-xl font-normal tracking-[-0.02em]" :class="ui.title">
-                          {{ configStore.freeSiteMode ? freeSiteCopy.moneyJustForShow : `¥${formatPublicPrice(selectedPlan.price)}` }}
-                        </div>
-                        <div class="mt-0.5 text-[11px]" :class="ui.statBlockLabel">
-                          {{ getMarketMonthlyPriceLabel(selectedPlan.monthlyPrice) }}
-                        </div>
+                        <template v-if="selectedPlan.billingMode === 'hourly'">
+                          <div class="text-base font-medium" :class="ui.title">{{ t('resources.plans.hourlyBilling') }}</div>
+                          <div class="mt-0.5 text-[11px]" :class="ui.statBlockLabel">{{ t('resources.plans.hourlyBillingPriceHint') }}</div>
+                        </template>
+                        <template v-else>
+                          <div class="text-xl font-normal tracking-[-0.02em]" :class="ui.title">
+                            {{ configStore.freeSiteMode ? freeSiteCopy.moneyJustForShow : `¥${formatPublicPrice(selectedPlan.price)}` }}
+                          </div>
+                          <div class="mt-0.5 text-[11px]" :class="ui.statBlockLabel">
+                            {{ getMarketMonthlyPriceLabel(selectedPlan.monthlyPrice) }}
+                          </div>
+                        </template>
                       </div>
                     </div>
 

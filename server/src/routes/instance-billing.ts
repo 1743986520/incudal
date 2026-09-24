@@ -787,6 +787,10 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '方案不存在', code: 'PLAN_NOT_FOUND' })
     }
 
+    if (newPlan.billingMode !== 'package') {
+      return reply.code(400).send({ error: '按小时计费方案不能通过固定周期升降级入口切换', code: 'HOURLY_PLAN_REQUIRED' })
+    }
+
     // 验证方案属于同一套餐
     if (newPlan.packageId !== instance.packageId) {
       return reply.code(400).send({ error: '新方案必须属于同一套餐', code: 'PLAN_NOT_IN_PACKAGE' })
@@ -912,6 +916,10 @@ export default async function instanceBillingRoutes(fastify: FastifyInstance) {
     const newPlan = await db.getPlanById(newPlanId)
     if (!newPlan) {
       return reply.code(404).send({ error: '方案不存在', code: 'PLAN_NOT_FOUND' })
+    }
+
+    if (newPlan.billingMode !== 'package') {
+      return reply.code(400).send({ error: '按小时计费方案不能通过固定周期升降级入口切换', code: 'HOURLY_PLAN_REQUIRED' })
     }
 
     // 验证方案属于同一套餐

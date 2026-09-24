@@ -146,16 +146,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/instances/create-hourly',
-    name: 'hourly-instance-create',
-    component: () => import('@/views/HourlyInstanceCreateView.vue'),
-    meta: {
-      requiresAuth: true,
-      titleKey: 'hourlyBilling.createTitle',
-      title: '按小时创建实例'
-    }
-  },
-  {
     path: '/instances/:id',
     name: 'instance-detail',
     component: () => import('@/views/InstanceDetailView.vue'),

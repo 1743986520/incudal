@@ -1178,9 +1178,6 @@ async function confirmBatchDestroy(): Promise<void> {
         </p>
       </div>
       <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-        <RouterLink to="/instances/create-hourly" class="btn-secondary w-full justify-center sm:w-auto">
-          {{ $t('hourlyBilling.createTitle') }}
-        </RouterLink>
         <RouterLink to="/instances/create" class="btn-primary w-full justify-center sm:w-auto">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1988,7 +1985,7 @@ async function confirmBatchDestroy(): Promise<void> {
                 <span class="text-xs">{{ actionLoading[instance.id] === 'restart' ? '...' : $t('instance.actions.restart') }}</span>
               </button>
               <button
-                v-if="(instance.status?.toLowerCase() === 'error' || !instance.packagePlanId) && (instance as any).allow_instance_deletion !== false"
+                v-if="(instance.status?.toLowerCase() === 'error' || isHourlyInstance(instance) || !instance.packagePlanId) && (instance as any).allow_instance_deletion !== false"
                 :disabled="!!actionLoading[instance.id]"
                 class="btn-ghost btn-sm flex-1 text-red-500 hover:text-red-400"
                 @click.stop="handleAction(instance, 'delete')"
@@ -2269,7 +2266,7 @@ async function confirmBatchDestroy(): Promise<void> {
                     </button>
 
                     <button
-                      v-if="(instance.status?.toLowerCase() === 'error' || !instance.packagePlanId) && (instance as any).allow_instance_deletion !== false"
+                      v-if="(instance.status?.toLowerCase() === 'error' || isHourlyInstance(instance) || !instance.packagePlanId) && (instance as any).allow_instance_deletion !== false"
                       :disabled="!!actionLoading[instance.id]"
                       class="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
                       :class="getCardActionButtonClass('danger')"

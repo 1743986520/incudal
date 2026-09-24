@@ -4,7 +4,7 @@
  */
 
 import { prisma } from './prisma.js'
-import type { PackagePlan, TrafficBillingMode } from '@prisma/client'
+import type { InstanceBillingMode, PackagePlan, TrafficBillingMode } from '@prisma/client'
 import { applyTrafficMultiplier } from '../lib/traffic-multiplier.js'
 import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
 
@@ -95,6 +95,7 @@ export interface CreatePlanInput {
   trafficLimitSpeed?: string
   trafficBillingMode?: TrafficBillingMode
   trafficUnitPrice?: number
+  billingMode?: InstanceBillingMode
   price: number
   billingCycle?: number
   setupFee?: number
@@ -126,6 +127,7 @@ export async function createPlan(input: CreatePlanInput): Promise<PackagePlan> {
     trafficLimitSpeed = '1Mbit',
     trafficBillingMode = 'package',
     trafficUnitPrice = 0,
+    billingMode = 'package',
     price,
     billingCycle = 1,
     setupFee = 0,
@@ -154,6 +156,7 @@ export async function createPlan(input: CreatePlanInput): Promise<PackagePlan> {
       trafficLimitSpeed,
       trafficBillingMode,
       trafficUnitPrice,
+      billingMode,
       price,
       billingCycle,
       setupFee,
@@ -184,6 +187,7 @@ export interface UpdatePlanInput {
   trafficLimitSpeed?: string
   trafficBillingMode?: TrafficBillingMode
   trafficUnitPrice?: number
+  billingMode?: InstanceBillingMode
   price?: number
   billingCycle?: number
   setupFee?: number
@@ -400,6 +404,7 @@ export function getPlanResources(plan: PackagePlan) {
  */
 export function getPlanBilling(plan: PackagePlan) {
   return {
+    billingMode: plan.billingMode,
     price: Number(plan.price),
     billingCycle: plan.billingCycle,
     setupFee: Number(plan.setupFee),

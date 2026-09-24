@@ -15,6 +15,7 @@ type PopupPromoPackage = {
         memory: number
         disk: number
         trafficLimit: string
+        billingMode: 'package' | 'hourly'
         price: number
         billingCycle: number
         isSoldOut: boolean

@@ -1031,7 +1031,7 @@ model Instance {
   userId           Int            @map("user_id")
   hostId           Int            @map("host_id")
   packageId        Int?           @map("package_id")
-  packagePlanId    Int?           @map("package_plan_id")  // 套餐方案 ID：null 表示免费实例
+  packagePlanId    Int?           @map("package_plan_id")  // 套餐方案 ID：按小时方案也保留关联，免费实例为 null
   billingMode      InstanceBillingMode @default(package) @map("billing_mode")
   storagePoolName  String?        @map("storage_pool_name")
   image            String
@@ -2446,6 +2446,8 @@ model PackagePlan {
   trafficUnitPrice Decimal @default(0) @map("traffic_unit_price") @db.Decimal(10, 2)
 
   // ========== 计费配置 ==========
+  // 方案收费方式：固定账期套餐，或使用该方案资源按小时计费
+  billingMode         InstanceBillingMode @default(package) @map("billing_mode")
   price               Decimal @db.Decimal(10, 2)                                     // 价格
   billingCycle        Int     @default(1) @map("billing_cycle")                      // 计费周期（月）
   setupFee            Decimal @default(0) @map("setup_fee") @db.Decimal(10, 2)       // 开通费

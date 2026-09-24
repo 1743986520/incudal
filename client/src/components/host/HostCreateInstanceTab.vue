@@ -38,6 +38,7 @@ interface GiftPlan {
   id: number
   name: string
   description: string | null
+  billingMode: 'package' | 'hourly'
   cpu: number
   memory: number
   disk: number
@@ -205,7 +206,7 @@ async function loadPlans(packageId: number): Promise<void> {
   selectedPlanId.value = null
   try {
     const res = await api.packages.getPlans(packageId)
-    plans.value = (res.plans || []).filter(plan => plan.isActive)
+    plans.value = (res.plans || []).filter(plan => plan.isActive && plan.billingMode !== 'hourly')
     selectedPlanId.value = plans.value.find(plan => !plan.isSoldOut)?.id ?? null
   } catch {
     plans.value = []

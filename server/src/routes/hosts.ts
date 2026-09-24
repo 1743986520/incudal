@@ -33,6 +33,7 @@ import { generateIncusConfig } from '../lib/incus-config-generator.js'
 import { sendAdminInstanceCreatedEmail, sendRenewalPriceUpdatedEmail } from '../lib/mailer.js'
 import { generateRandomIPv4, generateRandomIPv6 } from '../lib/ip-calculator.js'
 import { calculateCreateBilling } from '../db/billing-operations.js'
+import { closeHourlyBilling } from '../services/hourly-billing-scheduler.js'
 import { getDnsRecordType } from '../lib/network-address.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { issueHostAgentInstallToken } from '../lib/host-agent-credentials.js'
@@ -3190,6 +3191,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           }
         }
 
+        // 小时计费实例由宿主机删除时也必须完成实际费用结算并释放剩余预付款。
+        // 不能走固定周期实例的退款分支，否则会留下冻结余额。
+        if (instance.billingMode === 'hourly') {
+          await closeHourlyBilling(instance.id)
+        }
+
         // ===== 8. 更新实例状态为 deleted =====
         await db.updateInstanceStatus(instance.id, 'deleted')
 
@@ -4546,6 +4553,10 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         
         // 如果实例在 Incus 中不存在，标记为已删除并回滚资源
         if (errorMessage.includes('not found') || errorMessage.includes('Instance not found')) {
+          if (instance.billingMode === 'hourly') {
+            await closeHourlyBilling(instance.id)
+          }
+
           // 1. 更新实例状态为已删除
           await db.updateInstanceStatus(instance.id, 'deleted')
           
@@ -4988,6 +4999,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     const paidInstances = await prisma.instance.findMany({
       where: {
         hostId,
+        billingMode: 'package',
         packagePlanId: { not: null },
         status: { not: 'deleted' },
         expiresAt: { not: null }  // 必须有到期时间才能延期
@@ -5431,7 +5443,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     }
 
     // 检查是否有付费实例
-    const paidInstances = instances.filter(i => i.packagePlanId !== null)
+    const paidInstances = instances.filter(i => i.billingMode === 'package' && i.packagePlanId !== null)
     
     // 如果有付费实例，必须提供目标方案
     let targetPlan: Awaited<ReturnType<typeof db.getPlanById>> | null = null
@@ -5747,7 +5759,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         const affBinding = await getInstanceAffBinding(instance.id)
 
         // 16. 判断是否为付费实例，决定使用哪个套餐/方案
-        const isPaidInstance = instance.packagePlanId !== null
+        const isPaidInstance = instance.billingMode === 'package' && instance.packagePlanId !== null
         const finalPackageId = isPaidInstance && targetPackage ? targetPackage.id : instance.packageId
         const finalPlanId = isPaidInstance && targetPlan ? targetPlan.id : instance.packagePlanId
         const finalBillingPrice = isPaidInstance && targetPlan ? Number(targetPlan.price) / 100 : instance.billingPrice
@@ -6103,6 +6115,13 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       }
       if (selectedPlan.isSoldOut) {
         return reply.code(400).send({ error: '方案已售罄', code: 'PLAN_SOLD_OUT' })
+      }
+
+      if (selectedPlan.billingMode === 'hourly') {
+        return reply.code(400).send({
+          error: '按小时计费方案不能通过赠送实例入口创建，请由用户在套餐创建入口开通',
+          code: 'HOURLY_PLAN_REQUIRED'
+        })
       }
 
       billing = calculateCreateBilling(selectedPlan)
@@ -6684,7 +6703,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         id: { in: instanceIds },
         hostId: hostId,
         status: { not: 'deleted' },
-        packagePlanId: { not: null }  // 只处理付费实例
+        billingMode: 'package',
+        packagePlanId: { not: null }  // 只处理固定周期付费实例
       },
       include: {
         user: { select: { id: true, username: true } }

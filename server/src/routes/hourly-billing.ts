@@ -1,12 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { Prisma } from '@prisma/client'
-import * as db from '../db/index.js'
 import { prisma } from '../db/prisma.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
-import { validateName, encryptSensitiveData } from '../lib/security.js'
-import { generateIncusConfig, generateRandomPassword } from '../lib/incus-config-generator.js'
-import { createInstanceAsync } from './instances/create-async.js'
-import { customAlphabet } from 'nanoid'
 import {
   calculateHourlyBreakdown,
   serializeHourlyDecimal,
@@ -14,22 +9,11 @@ import {
   type HourlyResources
 } from '../lib/hourly-billing.js'
 import {
-  activateHourlyBilling,
   getCurrentHourlyPricing,
   quoteHourlyResources,
   runHourlyBillingJob
 } from '../services/hourly-billing-scheduler.js'
-import {
-  getSystemImageAvailabilityForHost,
-  isImageCompatibleWithInstanceType,
-  isImageCompatibleWithMemory,
-  isValidSystemImage
-} from '../db/images.js'
-import { resolveStoragePoolForNewInstance } from '../db/storage-pools.js'
-import { failCreatingInstanceAndRefund } from '../db/billing-operations.js'
-import type { Host } from '../types/database.js'
 
-const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8)
 function parseResources(input: Partial<HourlyResources>): HourlyResources {
   return {
     cpu: Number(input.cpu),
@@ -77,51 +61,6 @@ function errorMessage(error: unknown): string {
 
 function canAccessInstance(user: { id: number; role: string }, instance: { userId: number; host: { userId: number } }): boolean {
   return user.role === 'admin' || user.id === instance.userId || user.id === instance.host.userId
-}
-
-async function buildHourlyCreateConfig(params: {
-  name: string
-  image: string
-  instanceType: 'container' | 'vm'
-  sshKey?: string
-  host: Host
-  ipv4: string | null
-  ipv6: string | null
-  password: string
-}) {
-  const network = params.ipv4 || params.ipv6
-    ? {
-        ipAddress: params.ipv4 ? `${params.ipv4}/22` : undefined,
-        gateway: params.ipv4 ? '10.10.0.1' : undefined,
-        dns: params.ipv4 ? ['10.10.0.1'] : undefined,
-        ipv6Address: params.ipv6 ? `${params.ipv6}/128` : undefined,
-        ipv6Gateway: params.host.ipv6_gateway || undefined
-      }
-    : undefined
-
-  if (params.instanceType === 'vm') {
-    const { generateVmConfig } = await import('../lib/incus-config-vm.js')
-    return generateVmConfig({
-      instanceName: params.name,
-      instanceIdSeed: params.name,
-      imageAlias: params.image,
-      rootPassword: params.password,
-      sshKey: params.sshKey,
-      network,
-      extraShellCommands: undefined
-    }).configPayload
-  }
-
-  return generateIncusConfig({
-    instanceName: params.name,
-    imageAlias: params.image,
-    rootPassword: params.password,
-    sshKey: params.sshKey,
-    networkMode: 'nat',
-    type: 'container',
-    network,
-    extraShellCommands: undefined
-  }).configPayload
 }
 
 export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
@@ -213,248 +152,14 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
     }
   })
 
-  fastify.post<{
-    Body: {
-      name: string
-      hostId: number
-      image: string
-      cpu: number
-      memory: number
-      disk: number
-      instanceType?: 'container' | 'vm'
-      sshKeyId?: number
-      sshKey?: string
-    }
-  }>('/instances/hourly', {
+  fastify.post('/instances/hourly', {
     onRequest: [fastify.authenticateUser],
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
-  }, async (request, reply) => {
-    const { user } = request
-    const { name, hostId, image, instanceType = 'container', sshKeyId } = request.body
-    let { sshKey } = request.body
-    const resources = parseResources(request.body)
-
-    if (!Number.isInteger(hostId) || hostId <= 0) {
-      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, '宿主机参数无效'))
-    }
-    const nameValidation = validateName(name, 'Instance name', 2, 64)
-    if (!nameValidation.valid) return reply.code(400).send({ error: nameValidation.message, code: 'INVALID_NAME' })
-    if (sshKeyId && !sshKey) {
-      const key = await db.getSSHKeyById(sshKeyId)
-      if (!key || key.user_id !== user.id) return reply.code(400).send(apiError(ErrorCode.SSH_KEY_NOT_OWNED))
-      sshKey = key.public_key
-    }
-    if (!sshKey) return reply.code(400).send(apiError(ErrorCode.SSH_KEY_REQUIRED))
-    if (!['container', 'vm'].includes(instanceType)) return reply.code(400).send({ error: 'Invalid instance type' })
-    if (!await isValidSystemImage(image)) return reply.code(400).send(apiError(ErrorCode.IMAGE_NOT_FOUND))
-
-    let pricing: Awaited<ReturnType<typeof getCurrentHourlyPricing>>
-    let breakdown: ReturnType<typeof calculateHourlyBreakdown>
-    try {
-      const quote = await quoteHourlyResources(resources)
-      pricing = quote.pricing
-      breakdown = quote.breakdown
-    } catch (error) {
-      const message = errorMessage(error)
-      return reply.code(message === 'HOURLY_BILLING_DISABLED' ? 404 : 400).send({ error: message, code: 'HOURLY_QUOTE_INVALID' })
-    }
-
-    const hostPreview = await db.selectAvailableHost({ ...resources, hostId, requireHourlyBillingEnabled: true })
-    if (!hostPreview) return reply.code(400).send(apiError(ErrorCode.HOST_UNAVAILABLE))
-    if (!await isImageCompatibleWithInstanceType(image, instanceType)) return reply.code(400).send(apiError(ErrorCode.IMAGE_TYPE_MISMATCH))
-    if (!await isImageCompatibleWithMemory(image, resources.memory)) return reply.code(400).send(apiError(ErrorCode.IMAGE_MEMORY_INCOMPATIBLE))
-    const hostType = hostPreview.instance_type || 'container'
-    if ((instanceType === 'vm' && hostType === 'container') || (instanceType === 'container' && hostType === 'vm')) {
-      return reply.code(400).send(apiError(ErrorCode.HOST_INSTANCE_TYPE_MISMATCH))
-    }
-    const availability = await getSystemImageAvailabilityForHost(image, hostId, { instanceType, memory: resources.memory })
-    if (!availability.ok) return reply.code(400).send(apiError(ErrorCode.INSTANCE_IMAGE_UNAVAILABLE))
-
-    const host = await db.getHostById(hostId)
-    if (!host) return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
-    const password = generateRandomPassword(16)
-    const incusId = `u${user.id}-${nanoid()}`
-    const now = new Date()
-    const reserveQuantum = new Prisma.Decimal(pricing!.reserveQuantum)
-    const portLimit = 0
-
-    let instanceId = 0
-    let lockedHost: Awaited<ReturnType<typeof db.selectAndReserveHostWithLock>>
-    try {
-      const result = await prisma.$transaction(async tx => {
-        const reservedHost = await db.selectAndReserveHostWithLock(tx, {
-          cpu: resources.cpu,
-          memory: resources.memory,
-          disk: resources.disk,
-          hostId,
-          portCount: 0,
-          requireHourlyBillingEnabled: true
-        })
-        if (!reservedHost) throw new Error('HOST_RESOURCES_INSUFFICIENT')
-
-        const walletUser = await tx.user.findUnique({ where: { id: user.id }, select: { balance: true } })
-        if (!walletUser) throw new Error('USER_NOT_FOUND')
-        const balanceBefore = new Prisma.Decimal(walletUser.balance)
-        if (balanceBefore.lt(reserveQuantum)) throw new Error('BALANCE_INSUFFICIENT')
-        const balanceAfter = balanceBefore.sub(reserveQuantum)
-        const walletUpdate = await tx.user.updateMany({
-          where: { id: user.id, balance: { gte: reserveQuantum } },
-          data: {
-            balance: { decrement: reserveQuantum },
-            hourlyReservedBalance: { increment: reserveQuantum }
-          }
-        })
-        if (walletUpdate.count !== 1) throw new Error('BALANCE_INSUFFICIENT')
-
-        const snapshotSpecs = {
-          billingMode: 'hourly',
-          pricingVersionId: pricing!.id,
-          pricingVersion: pricing!.version,
-          cpu: resources.cpu,
-          memory: resources.memory,
-          disk: resources.disk,
-          trafficBillingMode: 'usage',
-          createdAt: now.toISOString()
-        }
-        const instance = await tx.instance.create({
-          data: {
-            incusId,
-            name,
-            userId: user.id,
-            hostId: reservedHost.id,
-            packageId: null,
-            packagePlanId: null,
-            billingMode: 'hourly',
-            image,
-            cpu: resources.cpu,
-            memory: resources.memory,
-            disk: resources.disk,
-            networkMode: 'nat',
-            status: 'creating',
-            snapshottedSpecs: snapshotSpecs,
-            sshPort: 22,
-            rootPassword: encryptSensitiveData(password),
-            portLimit,
-            monthlyTrafficLimit: pricing!.trafficIncludedBytes,
-            trafficBillingMode: 'usage',
-            trafficUnitPrice: pricing!.trafficUnitPrice,
-            nextTrafficBillingAt: pricing!.trafficUnitPrice.gt(0) ? new Date(now.getTime() + 60 * 60 * 1000) : null
-          }
-        })
-        const balanceLog = await tx.balanceLog.create({
-          data: {
-            userId: user.id,
-            instanceId: instance.id,
-            type: 'hourly_reserve',
-            amount: reserveQuantum.neg(),
-            balanceBefore,
-            balanceAfter,
-            remark: `创建按小时计费实例，冻结预付款 ${serializeHourlyDecimal(reserveQuantum)}`
-          }
-        })
-        await tx.hourlyBillingAccount.create({
-          data: {
-            instanceId: instance.id,
-            pricingVersionId: pricing!.id,
-            lastSettledAt: now,
-            nextSettlementAt: null,
-            prepaidBalance: reserveQuantum,
-            totalReserved: reserveQuantum,
-            status: 'paused'
-          }
-        })
-        return { instanceId: instance.id, host: reservedHost, balanceLogId: balanceLog.id }
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 })
-      instanceId = result.instanceId
-      lockedHost = result.host
-    } catch (error) {
-      const message = errorMessage(error)
-      if (message.includes('BALANCE_INSUFFICIENT')) return reply.code(400).send(apiError(ErrorCode.BALANCE_INSUFFICIENT, '余额不足，需要冻结 ¥0.01'))
-      if (message.includes('HOST_RESOURCES_INSUFFICIENT')) return reply.code(503).send(apiError(ErrorCode.HOST_RESOURCES_INSUFFICIENT))
-      throw error
-    }
-
-    const actualHost = (await db.getHostById(lockedHost!.id)) || (lockedHost as unknown as Host)
-    try {
-      const needsIpv6 = false
-      const reservedAddresses = await db.reserveInstanceIpAddresses({
-        instanceId,
-        hostId: actualHost.id,
-        allocateIpv4: true,
-        ipv6Subnet: needsIpv6 ? actualHost.ipv6_subnet : null
-      })
-      const selectedStoragePool = await resolveStoragePoolForNewInstance(actualHost.id, { packageId: null })
-      if (!selectedStoragePool) throw new Error('STORAGE_POOL_NOT_CONFIGURED')
-      const configPayload = await buildHourlyCreateConfig({
-        name: incusId,
-        image,
-        instanceType,
-        sshKey,
-        host: actualHost,
-        ipv4: reservedAddresses.ipv4,
-        ipv6: reservedAddresses.ipv6,
-        password
-      })
-      await prisma.instance.update({
-        where: { id: instanceId },
-        data: { storagePoolName: selectedStoragePool }
-      })
-
-      void createInstanceAsync(instanceId, actualHost, {
-        name: incusId,
-        image,
-        cpu: resources.cpu,
-        memory: resources.memory,
-        disk: resources.disk,
-        cloudInitConfig: configPayload,
-        networkMode: 'nat',
-        instanceType,
-        portLimit,
-        storagePool: selectedStoragePool,
-        ipv4Address: reservedAddresses.ipv4,
-        ipv6Address: reservedAddresses.ipv6,
-        ipv6Gateway: actualHost.ipv6_gateway || null,
-        hostInterface: actualHost.ipv6_parent_interface || 'eth0'
-      }, user.id, resources).then(async () => {
-        await activateHourlyBilling(instanceId)
-      }).catch(error => {
-        fastify.log.error({ err: errorMessage(error), instanceId }, 'Hourly instance provisioning failed')
-      })
-
-      return reply.code(202).send({
-        message: 'Hourly instance creation queued',
-        instanceId,
-        billingMode: 'hourly',
-        pricingVersion: pricing!.version,
-        hourlyPrice: serializeHourlyDecimal(breakdown!.hourlyPrice),
-        reservedAmount: serializeHourlyDecimal(reserveQuantum)
-      })
-    } catch (error) {
-      const message = errorMessage(error)
-      // The transaction above has already reserved host capacity and wallet
-      // funds. This preparation phase runs before createInstanceAsync starts,
-      // so its normal failure handler cannot compensate the reservation.
-      try {
-        await prisma.ipAddress.deleteMany({ where: { instanceId } })
-      } catch (cleanupError) {
-        fastify.log.error({ err: cleanupError, instanceId }, 'Failed to release hourly provisioning IP reservation')
-      }
-      try {
-        await failCreatingInstanceAndRefund(instanceId, message, {
-          hostId: actualHost.id,
-          cpu: resources.cpu,
-          memory: resources.memory,
-          disk: resources.disk,
-          portCount: 0
-        })
-      } catch (settlementError) {
-        fastify.log.error({ err: settlementError, instanceId }, 'Failed to compensate hourly instance creation')
-      }
-      if (message === 'STORAGE_POOL_NOT_CONFIGURED') {
-        return reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED))
-      }
-      return reply.code(500).send({ error: message, code: 'HOURLY_CREATE_FAILED' })
-    }
+  }, async (_request, reply) => {
+    return reply.code(410).send({
+      error: '按小时计费实例必须通过套餐方案创建',
+      code: 'HOURLY_PLAN_REQUIRED'
+    })
   })
 
   fastify.get<{ Params: { id: string } }>('/instances/:id/hourly-billing', { onRequest: [fastify.authenticate] }, async (request, reply) => {

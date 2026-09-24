@@ -2086,6 +2086,7 @@ const api = {
       trafficLimitSpeed?: string
       trafficBillingMode?: 'package' | 'usage'
       trafficUnitPrice?: number
+      billingMode?: 'package' | 'hourly'
       price: number
       billingCycle?: number
       setupFee?: number
@@ -2113,6 +2114,7 @@ const api = {
       trafficLimitSpeed?: string
       trafficBillingMode?: 'package' | 'usage'
       trafficUnitPrice?: number
+      billingMode?: 'package' | 'hourly'
       price?: number
       billingCycle?: number
       setupFee?: number
@@ -2277,6 +2279,7 @@ const api = {
           memory: number
           disk: number
           trafficLimit: string
+          billingMode: 'package' | 'hourly'
           price: number
           billingCycle: number
           isSoldOut: boolean
@@ -3523,6 +3526,7 @@ const api = {
         id: number
         name: string
         description: string | null
+        billingMode: 'package' | 'hourly'
         price: number
         billingCycle: number
         cpu: number
@@ -5247,5 +5251,3 @@ const api = {
 }
 
 export default api
-
-

@@ -35,6 +35,7 @@ interface Instance {
   site_limit?: number | null
   swapSize?: number | null
   packagePlanId?: number | null
+  billingMode?: 'package' | 'hourly'
   instanceType?: 'container' | 'vm'
   billingPrice?: number | null
   expiresAt?: string | null
@@ -109,6 +110,10 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+function isHourlyInstance(instance: Instance): boolean {
+  return instance.billingMode === 'hourly' || (instance as Instance & { billing_mode?: string }).billing_mode === 'hourly'
+}
 
 const itemShell = (selected: boolean, expanded: boolean) => [
   props.isDark ? 'border-gray-800 bg-[#0d0d0f] hover:border-gray-700' : 'border-gray-200 bg-white hover:border-gray-300',
@@ -187,7 +192,7 @@ function getDetailError(id: number): string { return props.detailConfigErrors[id
                     </button>
                     <span :class="['badge whitespace-nowrap', props.getStatusInfo(instance.status).class]">{{ props.getStatusInfo(instance.status).label }}</span>
                     <span class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium" :class="props.isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'">{{ props.getInstanceTypeLabel(instance) }}</span>
-                    <span v-if="instance.packagePlanId" class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium" :class="props.isDark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-700'">{{ props.formatMoney(instance.billingPrice) }}</span>
+                    <span v-if="instance.packagePlanId && !isHourlyInstance(instance)" class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium" :class="props.isDark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-700'">{{ props.formatMoney(instance.billingPrice) }}</span>
                   </div>
 
                   <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" :class="textMuted(props.isDark)">
@@ -226,7 +231,7 @@ function getDetailError(id: number): string { return props.detailConfigErrors[id
                 <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <div class="rounded-xl border px-3 py-2" :class="props.isDark ? 'border-gray-800 bg-black/30' : 'border-gray-200 bg-white/80'">
                     <div class="text-[11px] uppercase tracking-wide" :class="textMuted(props.isDark)">{{ t('billing.renewPrice') }}</div>
-                    <div class="mt-1 text-sm font-semibold" :class="textStrong(props.isDark)">{{ instance.packagePlanId ? props.formatMoney(instance.billingPrice) : '-' }}</div>
+                    <div class="mt-1 text-sm font-semibold" :class="textStrong(props.isDark)">{{ instance.packagePlanId && !isHourlyInstance(instance) ? props.formatMoney(instance.billingPrice) : '-' }}</div>
                   </div>
                   <div class="rounded-xl border px-3 py-2" :class="props.isDark ? 'border-gray-800 bg-black/30' : 'border-gray-200 bg-white/80'">
                     <div class="text-[11px] uppercase tracking-wide" :class="textMuted(props.isDark)">{{ t('billing.expiresAt') }}</div>
@@ -239,7 +244,7 @@ function getDetailError(id: number): string { return props.detailConfigErrors[id
                     <svg v-if="props.isInstanceSyncing(instance.id)" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
                     <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   </button>
-                  <button v-if="instance.packagePlanId" class="btn-ghost btn-sm" :title="t('host.price.editPrice')" @click="emit('open-price', instance)">
+                  <button v-if="instance.packagePlanId && !isHourlyInstance(instance)" class="btn-ghost btn-sm" :title="t('host.price.editPrice')" @click="emit('open-price', instance)">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   </button>
                   <button class="btn-secondary btn-sm" @click="emit('open-single-config', instance.id)">{{ t('host.batchConfig.button') }}</button>
@@ -315,7 +320,7 @@ function getDetailError(id: number): string { return props.detailConfigErrors[id
                 <button class="btn-secondary btn-sm" :disabled="props.isInstanceSyncing(instance.id)" @click="emit('sync-instance', instance)">{{ props.isInstanceSyncing(instance.id) ? t('common.syncing') : t('admin.hosts.batchSyncStatus') }}</button>
                 <button v-if="props.getDetailConfig(instance.id)?.swap.available && props.canToggleSwap(instance)" class="btn-secondary btn-sm" :disabled="props.isSwapActionLoading(instance.id)" @click="emit('toggle-swap', instance)">{{ props.isSwapActionLoading(instance.id) ? t('common.processing') : (props.getDetailConfig(instance.id)?.swap.enabled ? t('instanceConfig.swap.disableButton') : t('instanceConfig.swap.enableButton')) }}</button>
                 <button v-if="instance.trafficData && Number(instance.trafficData.monthlyUsed) > 0" class="btn-secondary btn-sm" :disabled="props.resettingTrafficId === instance.id" @click="emit('open-reset-traffic', instance)">{{ t('admin.hosts.resetTraffic') }}</button>
-                <button v-if="instance.packagePlanId" class="btn-secondary btn-sm" @click="emit('open-price', instance)">{{ t('host.price.editPrice') }}</button>
+                <button v-if="instance.packagePlanId && !isHourlyInstance(instance)" class="btn-secondary btn-sm" @click="emit('open-price', instance)">{{ t('host.price.editPrice') }}</button>
                 <button v-if="props.canRecreateInstance(instance)" class="btn-secondary btn-sm" :disabled="props.recreateLoading" @click="emit('open-recreate', instance)">{{ props.recreateLoading && props.recreateTargetId === instance.id ? t('common.processing') : t('instance.detail.recreate.title') }}</button>
                 <button class="btn-danger btn-sm" @click="emit('open-delete', instance.id)">{{ t('common.delete') }}</button>
                 <button class="btn-primary btn-sm" @click="emit('open-detail', instance.id)">{{ t('common.details') }}</button>

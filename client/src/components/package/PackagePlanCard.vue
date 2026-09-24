@@ -110,14 +110,28 @@ function emitStatus(status: PlanStatus): void {
           >
             {{ statusOptions.find(option => option.value === currentStatus)?.label }}
           </span>
+          <span
+            class="rounded-full px-2 py-0.5 text-xs font-medium"
+            :class="plan.billingMode === 'hourly'
+              ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+              : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'"
+          >
+            {{ t(plan.billingMode === 'hourly' ? 'resources.plans.hourlyBilling' : 'resources.plans.packageBilling') }}
+          </span>
         </div>
         <p v-if="plan.description" class="mt-1 max-w-3xl text-sm text-themed-muted">{{ plan.description }}</p>
       </div>
 
       <div class="flex flex-col gap-3 lg:items-end">
         <div class="text-left lg:text-right">
-          <div class="text-2xl font-semibold tracking-normal text-themed">¥{{ formatPrice(plan.price) }}</div>
-          <div class="text-xs text-themed-muted">{{ getBillingCycleLabel(plan.billingCycle) }}</div>
+          <template v-if="plan.billingMode === 'hourly'">
+            <div class="text-lg font-semibold tracking-normal text-themed">{{ t('resources.plans.hourlyBilling') }}</div>
+            <div class="text-xs text-themed-muted">{{ t('resources.plans.hourlyBillingPriceHint') }}</div>
+          </template>
+          <template v-else>
+            <div class="text-2xl font-semibold tracking-normal text-themed">¥{{ formatPrice(plan.price) }}</div>
+            <div class="text-xs text-themed-muted">{{ getBillingCycleLabel(plan.billingCycle) }}</div>
+          </template>
         </div>
       </div>
     </div>

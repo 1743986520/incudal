@@ -155,6 +155,7 @@ export default async function adminStatisticsRoutes(app: FastifyInstance): Promi
         prisma.instance.count({
           where: {
             status: { not: 'deleted' },
+            billingMode: 'package',
             packagePlanId: { not: null }
           }
         }),

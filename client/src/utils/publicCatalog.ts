@@ -20,6 +20,7 @@ export interface PublicPackagePlan {
   trafficLimitSpeed: string
   trafficBillingMode: 'package' | 'usage'
   trafficUnitPrice: number
+  billingMode: 'package' | 'hourly'
   price: number
   billingCycle: number
   setupFee: number
@@ -151,8 +152,13 @@ export function getStartingMonthlyPrice(pkg: Pick<PublicPackage, 'isPaid' | 'pla
     return null
   }
 
-  const availablePlans = pkg.plans.filter(plan => !plan.isSoldOut)
-  const pricePlans = availablePlans.length > 0 ? availablePlans : pkg.plans
+  const packagePlans = pkg.plans.filter(plan => plan.billingMode !== 'hourly')
+  if (packagePlans.length === 0) {
+    return null
+  }
+
+  const availablePlans = packagePlans.filter(plan => !plan.isSoldOut)
+  const pricePlans = availablePlans.length > 0 ? availablePlans : packagePlans
 
   return pricePlans.reduce((minPrice, plan) => {
     if (plan.monthlyPrice < minPrice) {

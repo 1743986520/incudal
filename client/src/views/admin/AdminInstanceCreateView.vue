@@ -294,7 +294,7 @@ async function loadPlans(packageId: number): Promise<void> {
     const res = await api.packages.getPlans(packageId) as any
     if (requestSeq !== plansRequestSeq || form.value.packageId !== packageId) return
 
-    plans.value = ((res.plans || []) as PackagePlan[]).filter(p => p.isActive)
+    plans.value = ((res.plans || []) as PackagePlan[]).filter(p => p.isActive && p.billingMode !== 'hourly')
     // 默认选中第一个方案
     selectedPlanId.value = plans.value.find(plan => !plan.isSoldOut)?.id ?? null
   } catch {

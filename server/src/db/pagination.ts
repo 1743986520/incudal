@@ -625,13 +625,15 @@ export async function getAvailableHosts(
   options: {
     userId?: number       // 当前用户ID
     packageOwnerId?: number  // 套餐所有者ID（如果是共享套餐）
+    hourlyBillingOnly?: boolean
   } = {}
 ): Promise<any[]> {
-  const { userId, packageOwnerId } = options
+  const { userId, packageOwnerId, hourlyBillingOnly = false } = options
 
   // 构建查询条件
   const whereCondition: any = {
-    status: 'online'
+    status: 'online',
+    ...(hourlyBillingOnly ? { hourlyBillingEnabled: true } : {})
   }
 
   // 修复：当套餐绑定了宿主机时，直接使用绑定列表查询，不添加额外的所有权限制

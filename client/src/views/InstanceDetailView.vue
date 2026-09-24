@@ -279,7 +279,18 @@ const canDeleteInstance = computed<boolean>(() => {
   const inst = instance.value as { isHostOwner?: boolean } | null
   if (inst?.isHostOwner === true) return true
   
-  // 付费实例禁止删除（无论套餐是否允许）
+  const billingMode = (instance.value as { billingMode?: string; billing_mode?: string }).billingMode
+    || (instance.value as { billing_mode?: string }).billing_mode
+
+  // 按小时实例虽然保留方案关联，但销毁时需要结算实际费用并退回剩余预付款。
+  // 仍遵守套餐的删除开关。
+  if (billingMode === 'hourly') {
+    if (!instance.value.package_id) return true
+    if (!instancePackage.value) return false
+    return (instancePackage.value as any).allow_instance_deletion !== false
+  }
+
+  // 固定周期付费实例禁止删除（无论套餐是否允许）
   if (instance.value.packagePlanId) return false
   
   // 没有套餐时允许删除

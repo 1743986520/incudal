@@ -699,12 +699,14 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         }),
         prisma.instance.count({
           where: {
+            billingMode: 'package',
             packagePlanId: { not: null },
             status: { notIn: ['deleted'] }
           }
         }),
         prisma.instance.count({
           where: {
+            billingMode: 'package',
             packagePlanId: { not: null },
             status: { notIn: ['deleted', 'suspended'] },
             expiresAt: { gt: now }
@@ -712,12 +714,14 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         }),
         prisma.instance.count({
           where: {
+            billingMode: 'package',
             packagePlanId: { not: null },
             status: 'suspended'
           }
         }),
         prisma.instance.count({
           where: {
+            billingMode: 'package',
             packagePlanId: { not: null },
             expiresAt: {
               not: null,
@@ -2261,6 +2265,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       const { page: pageNum, pageSize: size, skip } = db.parsePagination(request.query as { page?: string; pageSize?: string }, { maxPageSize: 100 })
 
       const where: Record<string, unknown> = {
+        billingMode: 'package',
         packagePlanId: { not: null }
       }
 
@@ -2333,6 +2338,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         // 查询所有有付费实例的节点（不受筛选条件影响）
         prisma.instance.findMany({
           where: {
+            billingMode: 'package',
             packagePlanId: { not: null },
             status: { notIn: ['deleted'] }
           },
@@ -2892,6 +2898,13 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         }
         if (selectedPlan.isSoldOut) {
           return reply.status(400).send({ error: '方案已售罄', code: 'PLAN_SOLD_OUT' })
+        }
+
+        if (selectedPlan.billingMode === 'hourly') {
+          return reply.status(400).send({
+            error: '按小时计费方案请由用户在套餐创建入口开通',
+            code: 'HOURLY_PLAN_REQUIRED'
+          })
         }
 
         // 计算费用
@@ -3567,6 +3580,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       const allPlans = await prisma.packagePlan.findMany({
         where: {
           packageId: instance.packageId!,
+          billingMode: 'package',
           isActive: true,
           isSoldOut: false
         },
@@ -3690,6 +3704,10 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       if (!newPlan) {
         return reply.status(404).send({ error: '新方案不存在' })
+      }
+
+      if (newPlan.billingMode !== 'package') {
+        return reply.status(400).send({ error: '按小时计费方案不能通过固定周期升降级入口切换', code: 'HOURLY_PLAN_REQUIRED' })
       }
 
       if (!newPlan.isActive) {

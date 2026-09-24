@@ -47,6 +47,7 @@ const planForm = ref({
   trafficLimitSpeed: 10,
   trafficBillingMode: 'package' as 'package' | 'usage',
   trafficUnitPrice: 0,
+  billingMode: 'package' as 'package' | 'hourly',
   price: 0,
   billingCycle: 1,
   trafficResetEnabled: false,
@@ -128,6 +129,7 @@ function resetForCreate(sortOrder: number): void {
     trafficLimitSpeed: 10,
     trafficBillingMode: 'package',
     trafficUnitPrice: 0,
+    billingMode: 'package',
     price: 0,
     billingCycle: 1,
     trafficResetEnabled: false,
@@ -153,6 +155,7 @@ function applyPlan(plan: PackagePlan): void {
     trafficLimitSpeed: bytesToMbps(plan.trafficLimitSpeed),
     trafficBillingMode: plan.trafficBillingMode || 'package',
     trafficUnitPrice: (plan.trafficUnitPrice || 0) / 100,
+    billingMode: plan.billingMode || 'package',
     price: plan.price / 100,
     billingCycle: plan.billingCycle,
     trafficResetEnabled: Boolean(plan.trafficResetEnabled),
@@ -239,7 +242,8 @@ async function savePlan(): Promise<void> {
     return
   }
 
-  const priceCents = normalizePlanPriceCents(planForm.value.price)
+  const hourlyBilling = planForm.value.billingMode === 'hourly'
+  const priceCents = hourlyBilling ? 0 : normalizePlanPriceCents(planForm.value.price)
   if (priceCents === null) {
     formError.value = t('resources.plans.priceRangeError', { max: MAX_PACKAGE_PLAN_PRICE.toFixed(2) })
     return
@@ -281,8 +285,9 @@ async function savePlan(): Promise<void> {
       trafficLimitSpeed: mbpsToBytes(planForm.value.trafficLimitSpeed) || '0',
       trafficBillingMode: planForm.value.trafficBillingMode,
       trafficUnitPrice: trafficUnitPriceCents ?? 0,
+      billingMode: planForm.value.billingMode,
       price: priceCents,
-      billingCycle: planForm.value.billingCycle,
+      billingCycle: hourlyBilling ? 1 : planForm.value.billingCycle,
       trafficResetEnabled: usageBilling ? false : planForm.value.trafficResetEnabled,
       trafficResetPrice: usageBilling ? 0 : trafficResetPriceCents,
       isActive: planForm.value.status !== 'inactive',
@@ -357,6 +362,14 @@ async function savePlan(): Promise<void> {
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.description') }}</label>
                 <input v-model="planForm.description" type="text" class="input" :placeholder="t('resources.plans.descriptionPlaceholder')" />
               </div>
+              <div>
+                <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.billingMode') }}</label>
+                <select v-model="planForm.billingMode" class="input">
+                  <option value="package">{{ t('resources.plans.packageBilling') }}</option>
+                  <option value="hourly">{{ t('resources.plans.hourlyBilling') }}</option>
+                </select>
+                <p class="mt-1 text-xs text-themed-muted">{{ t(planForm.billingMode === 'hourly' ? 'resources.plans.hourlyBillingHint' : 'resources.plans.packageBillingHint') }}</p>
+              </div>
             </div>
           </section>
 
@@ -365,15 +378,15 @@ async function savePlan(): Promise<void> {
             <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">CPU (%)</label>
-                <input v-model.number="planForm.cpu" type="number" min="15" max="10000" class="input" />
+                <input v-model.number="planForm.cpu" type="number" min="15" max="10000" step="5" class="input" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('admin.packages.memory') }} (MB)</label>
-                <input v-model.number="planForm.memory" type="number" min="128" max="62144" class="input" />
+                <input v-model.number="planForm.memory" type="number" min="128" max="62144" step="64" class="input" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('admin.packages.disk') }} (MB)</label>
-                <input v-model.number="planForm.disk" type="number" min="512" max="104857600" class="input" />
+                <input v-model.number="planForm.disk" type="number" min="512" max="104857600" step="512" class="input" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.trafficBillingMode') }}</label>
@@ -427,16 +440,19 @@ async function savePlan(): Promise<void> {
           <section class="card p-5">
             <h2 class="text-base font-medium text-themed">{{ t('resources.plans.billingConfig') }}</h2>
             <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
+              <div v-if="planForm.billingMode !== 'hourly'">
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.price') }} ({{ t('resources.plans.priceUnit') }})</label>
                 <input v-model.number="planForm.price" type="number" min="0" :max="MAX_PACKAGE_PLAN_PRICE" step="0.01" class="input" />
                 <p class="mt-1 text-xs text-themed-muted">{{ t('resources.plans.priceRangeHint', { max: MAX_PACKAGE_PLAN_PRICE.toFixed(2) }) }}</p>
               </div>
-              <div>
+              <div v-if="planForm.billingMode !== 'hourly'">
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.billingCycle') }}</label>
                 <select v-model.number="planForm.billingCycle" class="input">
                   <option v-for="opt in billingCycleOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
                 </select>
+              </div>
+              <div v-else class="rounded-lg border px-3 py-2 text-sm text-themed-muted sm:col-span-2 lg:col-span-2">
+                {{ t('resources.plans.hourlyBillingPriceHint') }}
               </div>
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.slaGuarantee') }} (%)</label>

@@ -119,6 +119,7 @@ interface Instance {
   } | null
   // 付费实例标识
   packagePlanId?: number | null
+  billingMode?: 'package' | 'hourly'
   // 实例类型：容器或虚拟机
   instanceType?: 'container' | 'vm'
   // 续费价格
@@ -1030,6 +1031,10 @@ function getExpiryValue(instance: Instance): string | null {
   return instance.expiresAt || instance.expires_at || null
 }
 
+function isHourlyInstance(instance: Instance): boolean {
+  return instance.billingMode === 'hourly' || (instance as Instance & { billing_mode?: string }).billing_mode === 'hourly'
+}
+
 function getSuspendReason(instance: Instance): string | null {
   return instance.suspendReason || instance.suspend_reason || null
 }
@@ -1153,6 +1158,7 @@ function getSwapDisplay(instance: Instance): string {
 }
 
 function getExpirySummary(instance: Instance): string {
+  if (isHourlyInstance(instance)) return t('hourlyBilling.badge')
   const expiry = getExpiryValue(instance)
   if (!expiry) return t('billing.neverExpires')
 
