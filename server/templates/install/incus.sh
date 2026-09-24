@@ -355,13 +355,18 @@ profiles:${profile_block}
 cluster: null
 YAML
 
-    # Incus reads preseed data from stdin.  Use a pipe instead of relying on
-    # /dev/stdin redirection; this also avoids AppArmor issues seen on Debian
-    # when the CLI reads a regular file through stdin.
-    if ! cat "$PRESEED_FILE" | incus admin init --preseed; then
-        error "Incus 初始化失败，预置配置如下："
+    # Incus 7.x also accepts the preseed path directly.  Passing the file as
+    # an argument avoids a nested stdin/pipe when this installer itself is
+    # launched through `curl | bash`; otherwise a failed preseed can make the
+    # parent shell return to its prompt without showing the actual Incus error.
+    local init_rc
+    if incus admin init --preseed "$PRESEED_FILE"; then
+        :
+    else
+        init_rc=$?
+        error "Incus 初始化失败（退出码 ${init_rc}；请检查上方 Incus 原始错误），预置配置如下："
         sed 's/^/  | /' "$PRESEED_FILE" >&2
-        return 1
+        return "$init_rc"
     fi
     ensure_selected_storage_pool || return 1
     ensure_default_profile || return 1
