@@ -774,10 +774,10 @@ function selectPlan(plan: PackagePlan): void {
   }
 
   form.value.planId = plan.id
-  // 使用方案的固定资源配置
-  form.value.cpu = plan.cpu
-  form.value.memory = plan.memory
-  form.value.disk = plan.disk
+  // 按小时方案的基础资源就是方案配置的最低值；套餐方案使用固定资源配置
+  form.value.cpu = plan.billingMode === 'hourly' ? (plan.hourlyMinCpu ?? plan.cpu) : plan.cpu
+  form.value.memory = plan.billingMode === 'hourly' ? (plan.hourlyMinMemoryMb ?? plan.memory) : plan.memory
+  form.value.disk = plan.billingMode === 'hourly' ? (plan.hourlyMinDiskMb ?? plan.disk) : plan.disk
   void loadHourlyPlanQuote(plan)
   // 重置优惠码状态
   resetPromoCode()
@@ -795,11 +795,14 @@ async function loadHourlyPlanQuote(plan: PackagePlan): Promise<void> {
 
   hourlyQuoteLoading.value = true
   try {
+    const cpu = plan.billingMode === 'hourly' ? (plan.hourlyMinCpu ?? plan.cpu) : plan.cpu
+    const memory = plan.billingMode === 'hourly' ? (plan.hourlyMinMemoryMb ?? plan.memory) : plan.memory
+    const disk = plan.billingMode === 'hourly' ? (plan.hourlyMinDiskMb ?? plan.disk) : plan.disk
     const response = await api.instances.hourlyQuote({
       planId: plan.id,
-      cpu: plan.cpu,
-      memory: plan.memory,
-      disk: plan.disk
+      cpu,
+      memory,
+      disk
     })
     if (requestSeq === hourlyQuoteRequestSeq) {
       hourlyQuote.value = { hourlyPrice: response.breakdown.hourlyPrice }

@@ -161,12 +161,13 @@ function resetForCreate(sortOrder: number): void {
 }
 
 function applyPlan(plan: PackagePlan): void {
+  const isHourly = plan.billingMode === 'hourly'
   planForm.value = {
     name: plan.name,
     description: plan.description || '',
-    cpu: plan.cpu,
-    memory: plan.memory,
-    disk: plan.disk,
+    cpu: isHourly ? (plan.hourlyMinCpu ?? plan.cpu) : plan.cpu,
+    memory: isHourly ? (plan.hourlyMinMemoryMb ?? plan.memory) : plan.memory,
+    disk: isHourly ? (plan.hourlyMinDiskMb ?? plan.disk) : plan.disk,
     portLimit: plan.portLimit,
     snapshotLimit: plan.snapshotLimit,
     swapSize: plan.swapSize || 0,
@@ -194,6 +195,14 @@ function applyPlan(plan: PackagePlan): void {
     sortOrder: plan.sortOrder,
     slaGuarantee: plan.slaGuarantee
   }
+}
+
+function handleBillingModeChange(): void {
+  if (planForm.value.billingMode !== 'hourly') return
+
+  planForm.value.cpu = planForm.value.hourlyMinCpu
+  planForm.value.memory = planForm.value.hourlyMinMemoryMb
+  planForm.value.disk = planForm.value.hourlyMinDiskMb
 }
 
 function bytesToGB(bytes: string | null | undefined): number {
@@ -284,10 +293,7 @@ async function savePlan(): Promise<void> {
       formError.value = t('resources.plans.hourlyPricingInvalid')
       return
     }
-    if (hourly.cpu < hourly.hourlyMinCpu || (hourly.cpu - hourly.hourlyMinCpu) % hourly.hourlyCpuUnitPercent !== 0 ||
-        hourly.memory < hourly.hourlyMinMemoryMb || (hourly.memory - hourly.hourlyMinMemoryMb) % hourly.hourlyMemoryUnitMb !== 0 ||
-        hourly.disk < hourly.hourlyMinDiskMb || (hourly.disk - hourly.hourlyMinDiskMb) % hourly.hourlyDiskUnitMb !== 0 ||
-        !validDecimal(hourly.hourlyCpuPricePerUnit) || !validDecimal(hourly.hourlyMemoryPricePerUnit) ||
+    if (!validDecimal(hourly.hourlyCpuPricePerUnit) || !validDecimal(hourly.hourlyMemoryPricePerUnit) ||
         !validDecimal(hourly.hourlyDiskPricePerUnit) || !validDecimal(hourly.hourlyReserveQuantum, false)) {
       formError.value = t('resources.plans.hourlyPricingInvalid')
       return
@@ -323,9 +329,9 @@ async function savePlan(): Promise<void> {
     const data = {
       name: planForm.value.name.trim(),
       description: planForm.value.description.trim() || undefined,
-      cpu: planForm.value.cpu,
-      memory: planForm.value.memory,
-      disk: planForm.value.disk,
+      cpu: hourlyBilling ? planForm.value.hourlyMinCpu : planForm.value.cpu,
+      memory: hourlyBilling ? planForm.value.hourlyMinMemoryMb : planForm.value.memory,
+      disk: hourlyBilling ? planForm.value.hourlyMinDiskMb : planForm.value.disk,
       portLimit: planForm.value.portLimit,
       snapshotLimit: planForm.value.snapshotLimit,
       backupLimit: 0,
@@ -424,7 +430,7 @@ async function savePlan(): Promise<void> {
               </div>
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.billingMode') }}</label>
-                <select v-model="planForm.billingMode" class="input">
+                <select v-model="planForm.billingMode" class="input" @change="handleBillingModeChange">
                   <option value="package">{{ t('resources.plans.packageBilling') }}</option>
                   <option value="hourly">{{ t('resources.plans.hourlyBilling') }}</option>
                 </select>
@@ -434,17 +440,17 @@ async function savePlan(): Promise<void> {
           </section>
 
           <section class="card p-5">
-            <h2 class="text-base font-medium text-themed">{{ t('resources.plans.resourceConfig') }}</h2>
+            <h2 class="text-base font-medium text-themed">{{ t(planForm.billingMode === 'hourly' ? 'resources.plans.trafficConfig' : 'resources.plans.resourceConfig') }}</h2>
             <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
+              <div v-if="planForm.billingMode !== 'hourly'">
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">CPU (%)</label>
                 <input v-model.number="planForm.cpu" type="number" min="15" max="10000" step="5" class="input" />
               </div>
-              <div>
+              <div v-if="planForm.billingMode !== 'hourly'">
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('admin.packages.memory') }} (MB)</label>
                 <input v-model.number="planForm.memory" type="number" min="128" max="62144" step="64" class="input" />
               </div>
-              <div>
+              <div v-if="planForm.billingMode !== 'hourly'">
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('admin.packages.disk') }} (MB)</label>
                 <input v-model.number="planForm.disk" type="number" min="512" max="104857600" step="512" class="input" />
               </div>

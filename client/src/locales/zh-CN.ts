@@ -6436,6 +6436,7 @@ export default {
             hourlyReserveQuantum: '预付款额度（元）',
             hourlyPricingInvalid: '请检查按小时计费的最低值、步长、单价和预付款额度',
             resourceConfig: '资源配置',
+            trafficConfig: '流量配置',
             portLimit: '端口数',
             snapshotLimit: '快照数',
             backupLimit: '备份数',

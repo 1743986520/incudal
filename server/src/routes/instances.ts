@@ -958,9 +958,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       hourlyPricing = hourlyPricingFromPackagePlan(selectedPlan!)
       try {
         validateHourlyResources({
-          cpu: selectedPlan!.cpu,
-          memory: selectedPlan!.memory,
-          disk: selectedPlan!.disk
+          cpu: selectedPlan!.hourlyMinCpu,
+          memory: selectedPlan!.hourlyMinMemoryMb,
+          disk: selectedPlan!.hourlyMinDiskMb
         }, hourlyPricing)
       } catch (error) {
         return reply.code(400).send({
@@ -1034,11 +1034,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 2. 确定请求的资源
-    // 如果是付费方案，使用方案的固定资源配置
+    // 按小时方案使用其最低配置，普通方案使用固定资源配置
     // 如果是免费套餐，使用用户请求的资源或默认值
-    const requestedCpu = selectedPlan ? selectedPlan.cpu : (cpu || 15)
-    const requestedMemory = selectedPlan ? selectedPlan.memory : (memory || 128)
-    const requestedDisk = selectedPlan ? selectedPlan.disk : (disk || 512)
+    const requestedCpu = selectedPlan
+      ? (selectedPlanIsHourly ? selectedPlan.hourlyMinCpu : selectedPlan.cpu)
+      : (cpu || 15)
+    const requestedMemory = selectedPlan
+      ? (selectedPlanIsHourly ? selectedPlan.hourlyMinMemoryMb : selectedPlan.memory)
+      : (memory || 128)
+    const requestedDisk = selectedPlan
+      ? (selectedPlanIsHourly ? selectedPlan.hourlyMinDiskMb : selectedPlan.disk)
+      : (disk || 512)
 
     // 注意：能否开通实例只跟宿主机的资源有关，不检查套餐包资源限制
     // 宿主机资源检查在 selectAvailableHost 中进行

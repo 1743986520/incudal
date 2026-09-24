@@ -6435,6 +6435,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             hourlyReserveQuantum: 'Reserve quantum',
             hourlyPricingInvalid: 'Check the hourly minimums, steps, unit prices, and reserve quantum.',
             resourceConfig: 'Resource Configuration',
+            trafficConfig: 'Traffic Configuration',
             portLimit: 'Ports',
             snapshotLimit: 'Snapshots',
             backupLimit: 'Backups',

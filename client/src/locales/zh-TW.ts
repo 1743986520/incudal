@@ -7154,6 +7154,7 @@ export default {
             hourlyReserveQuantum: '預付款額度（元）',
             hourlyPricingInvalid: '請檢查按小時計費的最低值、步長、單價和預付款額度',
             resourceConfig: '資源設定',
+            trafficConfig: '流量設定',
             portLimit: '連接埠數',
             snapshotLimit: '快照數',
             backupLimit: '備份數',
