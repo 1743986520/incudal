@@ -32,7 +32,15 @@ export async function checkTransferLock(instanceId: number, reply: FastifyReply)
   return false
 }
 
-export async function claimInstanceForDelete(instanceId: number, currentStatus: InstanceStatus): Promise<boolean> {
+export async function claimInstanceForDelete(
+  instanceId: number,
+  currentStatus: InstanceStatus,
+  options: {
+    deletionBillingPending?: boolean
+    deletionBillingMode?: 'privileged_delete' | 'hourly_close' | null
+    deletionRefundableValue?: number | null
+  } = {}
+): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const locked = await tryAdvisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     if (!locked) return false
@@ -58,7 +66,14 @@ export async function claimInstanceForDelete(instanceId: number, currentStatus: 
         id: instanceId,
         status: currentStatus
       },
-      data: { status: 'deleted' }
+      data: {
+        status: 'deleted',
+        deletionBillingPending: options.deletionBillingPending === true,
+        deletionRemoteDeleted: false,
+        deletionBillingMode: options.deletionBillingMode ?? null,
+        deletionRefundableValue: options.deletionRefundableValue ?? null,
+        deletionFeeWaiver: false
+      }
     })
 
     return result.count === 1

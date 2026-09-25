@@ -6,11 +6,12 @@
  * - 官方券不建立 AFF 绑定，也不产生 AFF 返利
  * - 适用范围按套餐归属判定：管理员创建的套餐为官方直营，普通用户创建的套餐为托管
  * - 次数控制在使用事务内通过 advisory lock + 条件更新完成，避免并发超发
+ * - limited 模式按实际折价月数累计，不按续费交易次数累计
  */
 
 import { Prisma, type OfficialCoupon, type OfficialCouponRenewalMode, type OfficialCouponScope } from '@prisma/client'
 import { prisma } from './prisma.js'
-import { OFFICIAL_COUPON_LOCK_NAMESPACE, tryAdvisoryTransactionLock } from './advisory-locks.js'
+import { OFFICIAL_COUPON_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from './advisory-locks.js'
 import { ErrorCode, type ErrorCodeType } from '../lib/errors.js'
 import {
   generateOfficialCouponCode,
@@ -212,12 +213,18 @@ export async function reserveOfficialCouponUsage(params: {
   instanceId: number
   originalPrice: number
   discountAmount: number
+  /** 本次实际享受折价的月数；用于 limited 模式的月数上限累计。 */
+  discountedMonths: number
   /** purchase=新购占次；renewal=续费占次（跳过每用户新购次数检查） */
   mode?: 'purchase' | 'renewal'
   tx: Prisma.TransactionClient
 }): Promise<{ couponId: number; usageId: number }> {
   const { tx } = params
   const code = normalizeOfficialCouponCode(params.code)
+
+  if (!Number.isInteger(params.discountedMonths) || params.discountedMonths < 1) {
+    throw new Error('Official coupon usage must contain at least one discounted month')
+  }
 
   const coupon = await tx.officialCoupon.findUnique({ where: { code } })
   if (!coupon) {
@@ -266,7 +273,8 @@ export async function reserveOfficialCouponUsage(params: {
       instanceId: params.instanceId,
       type: params.mode === 'renewal' ? 'renewal' : 'purchase',
       originalPrice: new Prisma.Decimal(params.originalPrice),
-      discountAmount: new Prisma.Decimal(params.discountAmount)
+      discountAmount: new Prisma.Decimal(params.discountAmount),
+      discountedMonths: params.discountedMonths
     }
   })
 
@@ -293,16 +301,18 @@ export async function getInstancePurchaseCoupon(
 }
 
 /**
- * 统计某实例对该券已折价的次数（含首次购买与已折价的续费）
+ * 统计某实例对该券已经享受折价的月数（含首次购买与已折价的续费）。
  */
-export async function countDiscountedChargesForInstance(
+export async function countDiscountedMonthsForInstance(
   couponId: number,
   instanceId: number,
   client: DbClient = prisma
 ): Promise<number> {
-  return client.officialCouponUsage.count({
-    where: { couponId, instanceId }
+  const result = await client.officialCouponUsage.aggregate({
+    where: { couponId, instanceId },
+    _sum: { discountedMonths: true }
   })
+  return result._sum.discountedMonths ?? 0
 }
 
 /**
@@ -334,14 +344,31 @@ export async function releaseOfficialCouponUsageByInstance(
 
   if (usages.length === 0) return null
 
-  // 删除实例时释放该实例产生的全部官方券使用记录（新购及续费），
-  // 否则 limited/recurring 券会永久占用次数，用户也会继续被使用记录限制。
+  // 这个函数只用于“开通失败并全额回滚”。成功删除实例不能调用它，
+  // 否则 reusable=false 的券会被同一用户重复使用。
+  const usageCountByCoupon = new Map<number, number>()
+  for (const usage of usages) {
+    usageCountByCoupon.set(usage.couponId, (usageCountByCoupon.get(usage.couponId) || 0) + 1)
+  }
+
+  // 与预占路径使用同一把券级 advisory lock，避免释放与新购/续费并发
+  // 时出现 used_count 与 usage rows 不一致。
+  for (const couponId of usageCountByCoupon.keys()) {
+    await advisoryTransactionLock(tx, OFFICIAL_COUPON_LOCK_NAMESPACE, couponId)
+  }
+
   for (const usage of usages) {
     await tx.officialCouponUsage.delete({ where: { id: usage.id } })
-    await tx.officialCoupon.updateMany({
-      where: { id: usage.couponId, usedCount: { gt: 0 } },
-      data: { usedCount: { decrement: 1 } }
+  }
+
+  for (const [couponId, usageCount] of usageCountByCoupon) {
+    const updated = await tx.officialCoupon.updateMany({
+      where: { id: couponId, usedCount: { gte: usageCount } },
+      data: { usedCount: { decrement: usageCount } }
     })
+    if (updated.count !== 1) {
+      throw new Error(`Official coupon ${couponId} usage count is inconsistent`)
+    }
   }
 
   return {
@@ -548,7 +575,7 @@ export async function updateOfficialCoupon(
 
   const nextRenewalMode = data.renewalMode !== undefined ? data.renewalMode : current.renewalMode
   if (data.renewalMode !== undefined) updateData.renewalMode = data.renewalMode
-  // 仅 limited 模式使用折价次数上限，其余模式统一留空避免误读
+  // 仅 limited 模式使用折价月数上限，其余模式统一留空避免误读
   if (nextRenewalMode !== 'limited') {
     updateData.discountedChargeLimit = null
   } else if (data.discountedChargeLimit !== undefined) {

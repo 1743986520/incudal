@@ -184,7 +184,7 @@ function parseCouponInput(body: CouponBody, overrides: CouponInputOverrides = {}
     result.renewalMode = mode as OfficialCouponRenewalMode
   }
 
-  // 折价次数上限：仅 limited 模式需要。
+  // 折价月数上限：仅 limited 模式需要。
   // 部分更新时若只传 discountedChargeLimit，按 limited 校验并透传，
   // 由 db.updateOfficialCoupon 依据当前模式决定是否生效。
   const effectiveRenewalMode = (body.renewalMode ?? (partial ? 'limited' : 'purchase_only')) as OfficialCouponRenewalMode

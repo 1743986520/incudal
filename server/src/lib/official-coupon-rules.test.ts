@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  calculateDiscountAmountForMonths,
   generateOfficialCouponCode,
+  getDiscountedMonthsForPurchase,
+  getDiscountedMonthsForRenewal,
   isCouponScopeMatched,
   isValidDiscountRate,
   normalizeOfficialCouponCode,
@@ -63,21 +66,68 @@ test('purchase_only renewals are never discounted', () => {
   assert.equal(shouldDiscountRenewal({ renewalMode: 'purchase_only', discountedChargeLimit: 9, discountedChargeCount: 1 }), false)
 })
 
+test('purchase_only coupons still discount the full initial purchase term', () => {
+  assert.equal(getDiscountedMonthsForPurchase({
+    renewalMode: 'purchase_only',
+    discountedChargeLimit: null,
+    purchaseMonths: 12
+  }), 12)
+})
+
 test('recurring renewals are always discounted', () => {
   assert.equal(shouldDiscountRenewal({ renewalMode: 'recurring', discountedChargeLimit: null, discountedChargeCount: 0 }), true)
   assert.equal(shouldDiscountRenewal({ renewalMode: 'recurring', discountedChargeLimit: null, discountedChargeCount: 999 }), true)
 })
 
-test('limited renewals discount until the charge limit is reached', () => {
-  // 填 9：含首次购买共折价 9 次，第 10 次原价
+test('limited renewals discount until the month limit is reached', () => {
+  // 兼容旧字段名：现在按含首次购买的折价月数累计
   const limited = (count: number) => shouldDiscountRenewal({ renewalMode: 'limited', discountedChargeLimit: 9, discountedChargeCount: count })
-  assert.equal(limited(0), true)   // 首次购买
-  assert.equal(limited(1), true)   // 第 2 次（第 1 次续费）
-  assert.equal(limited(8), true)   // 第 9 次
-  assert.equal(limited(9), false)  // 第 10 次，原价
+  assert.equal(limited(0), true)
+  assert.equal(limited(8), true)
+  assert.equal(limited(9), false)
 })
 
 test('limited renewals with a missing or invalid limit never discount', () => {
   assert.equal(shouldDiscountRenewal({ renewalMode: 'limited', discountedChargeLimit: null, discountedChargeCount: 1 }), false)
   assert.equal(shouldDiscountRenewal({ renewalMode: 'limited', discountedChargeLimit: 0, discountedChargeCount: 1 }), false)
+})
+
+test('limited coupons cap a 12-month renewal at the remaining discounted months', () => {
+  assert.equal(getDiscountedMonthsForRenewal({
+    renewalMode: 'limited',
+    discountedChargeLimit: 3,
+    discountedMonthsUsed: 0,
+    requestedMonths: 12
+  }), 3)
+  assert.equal(getDiscountedMonthsForRenewal({
+    renewalMode: 'limited',
+    discountedChargeLimit: 3,
+    discountedMonthsUsed: 2,
+    requestedMonths: 12
+  }), 1)
+  assert.equal(getDiscountedMonthsForRenewal({
+    renewalMode: 'limited',
+    discountedChargeLimit: 3,
+    discountedMonthsUsed: 3,
+    requestedMonths: 12
+  }), 0)
+})
+
+test('limited coupons also cap the initial purchase duration', () => {
+  assert.equal(getDiscountedMonthsForPurchase({
+    renewalMode: 'limited',
+    discountedChargeLimit: 3,
+    purchaseMonths: 12
+  }), 3)
+  assert.equal(getDiscountedMonthsForPurchase({
+    renewalMode: 'recurring',
+    discountedChargeLimit: null,
+    purchaseMonths: 12
+  }), 12)
+})
+
+test('discount amount is prorated to the discounted months', () => {
+  // 12 个月原价 ¥120，只有 3 个月按 90% 折价，实际只减 ¥27。
+  assert.equal(calculateDiscountAmountForMonths(120, 12, 3, 0.9), 27)
+  assert.equal(calculateDiscountAmountForMonths(120, 12, 12, 0.9), 108)
 })

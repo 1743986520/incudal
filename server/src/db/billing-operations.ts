@@ -5,15 +5,19 @@
 
 import { prisma } from './prisma.js'
 import { Prisma, type Instance, type PackagePlan } from '@prisma/client'
-import { getInstanceAffBinding, isAffRebateEnabled, processAffCommission } from './aff.js'
+import { getInstanceAffBinding, isAffRebateEnabled, processAffCommission, reverseAffCommissionForInstance } from './aff.js'
 import {
-  countDiscountedChargesForInstance,
+  countDiscountedMonthsForInstance,
   getInstancePurchaseCoupon,
   releaseOfficialCouponUsageByInstance,
   reserveOfficialCouponUsage,
   validateOfficialCoupon
 } from './official-coupons.js'
-import { shouldDiscountRenewal } from '../lib/official-coupon-rules.js'
+import {
+  calculateDiscountAmountForMonths,
+  getRemainingDiscountedMonths,
+  getDiscountedMonthsForRenewal
+} from '../lib/official-coupon-rules.js'
 import { getInstanceBillingLineageIds } from './billing-records.js'
 import {
   calculateDiscountAmount,
@@ -32,6 +36,8 @@ import { normalizePlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js
 import {
   HOSTING_BALANCE_LOG_LOCK_NAMESPACE,
   INSTANCE_OPERATION_LOCK_NAMESPACE,
+  USER_BALANCE_LOCK_NAMESPACE,
+  USER_DESTROY_BILLING_LOCK_NAMESPACE,
   advisoryTransactionLock,
   tryAdvisoryTransactionLock
 } from './advisory-locks.js'
@@ -158,12 +164,17 @@ export function calculateMonthlyPrice(instance: { billingPrice: any; billingCycl
  * @param instanceId 实例 ID
  * @returns { maxRefundable, lastPaymentAmount }
  */
-export async function getMaxRefundable(instanceId: number): Promise<{ maxRefundable: number; lastPaymentAmount: number }> {
-  const billingLineageInstanceIds = await getInstanceBillingLineageIds(instanceId)
+type BillingDbClient = Prisma.TransactionClient | typeof prisma
+
+async function getMaxRefundableForClient(
+  client: BillingDbClient,
+  instanceId: number
+): Promise<{ maxRefundable: number; lastPaymentAmount: number }> {
+  const billingLineageInstanceIds = await getInstanceBillingLineageIds(instanceId, client)
   const instanceIds = billingLineageInstanceIds.length > 0 ? billingLineageInstanceIds : [instanceId]
 
   const [totalConsumed, refundRecords, lastPayment] = await Promise.all([
-    prisma.instanceBillingRecord.aggregate({
+    client.instanceBillingRecord.aggregate({
       where: {
         instanceId: { in: instanceIds },
         type: { in: ['newPurchase', 'renew', 'upgrade'] },
@@ -171,14 +182,14 @@ export async function getMaxRefundable(instanceId: number): Promise<{ maxRefunda
       },
       _sum: { amount: true }
     }),
-    prisma.instanceBillingRecord.findMany({
+    client.instanceBillingRecord.findMany({
       where: {
         instanceId: { in: instanceIds },
         type: 'refund'
       },
       select: { amount: true }
     }),
-    prisma.instanceBillingRecord.findFirst({
+    client.instanceBillingRecord.findFirst({
       where: {
         instanceId: { in: instanceIds },
         // 仅查询 newPurchase/renew（upgrade 记录的 amount 是差价，不是完整周期金额）
@@ -204,8 +215,476 @@ export async function getMaxRefundable(instanceId: number): Promise<{ maxRefunda
   }
 }
 
+export async function getMaxRefundable(instanceId: number): Promise<{ maxRefundable: number; lastPaymentAmount: number }> {
+  return getMaxRefundableForClient(prisma, instanceId)
+}
+
+export async function getMaxRefundableInTransaction(
+  tx: Prisma.TransactionClient,
+  instanceId: number
+): Promise<number> {
+  const result = await getMaxRefundableForClient(tx, instanceId)
+  return result.maxRefundable
+}
+
 function roundCurrency(value: number): number {
   return Number(value.toFixed(2))
+}
+
+export interface UserDestroyBillingSettlementParams {
+  requestUserId: number
+  instance: {
+    id: number
+    userId: number
+    hostId: number
+    name: string
+  }
+  refundableValue: number
+  feeWaiver: boolean
+}
+
+export interface PrivilegedDeletionBillingSettlementParams {
+  instance: {
+    id: number
+    userId: number
+    hostId: number
+    name: string
+  }
+  requestedRefundAmount: number
+  remark: string
+}
+
+function clearDeletionBillingStateData() {
+  return {
+    deletionBillingPending: false,
+    deletionRemoteDeleted: true,
+    deletionBillingMode: null,
+    deletionRefundableValue: null,
+    deletionFeeWaiver: false
+  }
+}
+
+interface BillingValueBreakdown {
+  hasPositiveBillingRecords: boolean
+  totalUserValue: number
+  totalHostedValue: number
+  remainingUserValue: number
+  remainingHostedValue: number
+}
+
+/**
+ * 计算计费血缘的净价值。
+ *
+ * 官方优惠券的用户账单是折后价，但托管收入按原价入账；退款时不能
+ * 直接拿用户退款金额扣托管余额，否则优惠差额会永久留在托管主账户。
+ * 先把历史 refund 按账单时间顺序冲销，再计算剩余服务价值，也能避免
+ * 降级/管理员部分退款后再次销毁实例时重复退款。
+ */
+async function getBillingValueBreakdownForClient(
+  client: BillingDbClient,
+  instanceId: number
+): Promise<BillingValueBreakdown> {
+  const lineageInstanceIds = await getInstanceBillingLineageIds(instanceId, client)
+  const instanceIds = lineageInstanceIds.length > 0 ? lineageInstanceIds : [instanceId]
+  const [billingRecords, refundRecords, couponUsages] = await Promise.all([
+    client.instanceBillingRecord.findMany({
+      where: {
+        instanceId: { in: instanceIds },
+        type: { in: ['newPurchase', 'renew', 'upgrade'] },
+        amount: { gt: 0 }
+      },
+      select: {
+        type: true,
+        amount: true,
+        periodStart: true,
+        periodEnd: true,
+        createdAt: true
+      },
+      orderBy: [{ periodStart: 'asc' }, { createdAt: 'asc' }]
+    }),
+    client.instanceBillingRecord.findMany({
+      where: {
+        instanceId: { in: instanceIds },
+        type: 'refund',
+        amount: { lt: 0 }
+      },
+      select: { amount: true },
+      orderBy: { createdAt: 'asc' }
+    }),
+    client.officialCouponUsage.findMany({
+      where: { instanceId: { in: instanceIds } },
+      select: {
+        id: true,
+        type: true,
+        originalPrice: true,
+        createdAt: true
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
+    })
+  ])
+
+  // 账单记录没有直接关联 coupon usage，按购买/续费类型及时间顺序配对。
+  // 这是兼容现有数据模型的稳定匹配方式；升级记录不会消耗优惠券记录。
+  const couponUsageQueues = new Map<string, Array<{ originalPrice: number }>>([
+    ['purchase', []],
+    ['renewal', []]
+  ])
+  for (const usage of couponUsages) {
+    const queue = couponUsageQueues.get(usage.type)
+    if (queue) queue.push({ originalPrice: Number(usage.originalPrice) })
+  }
+
+  const values = billingRecords.map(record => {
+    const rawUserAmount = Number(record.amount)
+    const userAmount = Number.isFinite(rawUserAmount) ? Math.max(0, rawUserAmount) : 0
+    const usageType = record.type === 'newPurchase'
+      ? 'purchase'
+      : record.type === 'renew'
+        ? 'renewal'
+        : null
+    const couponUsage = usageType ? couponUsageQueues.get(usageType)?.shift() : undefined
+    const originalPrice = couponUsage ? Number(couponUsage.originalPrice) : userAmount
+    const hostedAmount = Number.isFinite(originalPrice) && originalPrice > 0 ? originalPrice : userAmount
+
+    return {
+      userAmount,
+      hostedAmount,
+      netUserAmount: userAmount,
+      netHostedAmount: hostedAmount,
+      periodStart: new Date(record.periodStart),
+      periodEnd: new Date(record.periodEnd)
+    }
+  })
+
+  // Refund records do not carry a source billing-record id. FIFO allocation is
+  // deterministic and matches the existing billing model's chronological
+  // purchase/renewal periods; hosted value is reduced in the same ratio as
+  // the user's paid value, including official-coupon original-price subsidy.
+  let remainingRefund = refundRecords.reduce((sum, record) => {
+    const amount = Math.abs(Number(record.amount))
+    return Number.isFinite(amount) ? sum + amount : sum
+  }, 0)
+  for (const value of values) {
+    if (remainingRefund <= 0) break
+    const refundedUserAmount = Math.min(value.netUserAmount, remainingRefund)
+    value.netUserAmount = Math.max(0, value.netUserAmount - refundedUserAmount)
+    value.netHostedAmount = value.userAmount > 0
+      ? value.hostedAmount * (value.netUserAmount / value.userAmount)
+      : 0
+    remainingRefund -= refundedUserAmount
+  }
+
+  let totalUserValue = 0
+  let totalHostedValue = 0
+  let remainingUserValue = 0
+  let remainingHostedValue = 0
+  const now = new Date()
+
+  for (const value of values) {
+    totalUserValue += value.netUserAmount
+    totalHostedValue += value.netHostedAmount
+
+    const totalMs = value.periodEnd.getTime() - value.periodStart.getTime()
+    if (totalMs <= 0 || value.periodEnd <= now) continue
+
+    const remainingRatio = Math.min(
+      Math.max(value.periodEnd.getTime() - now.getTime(), 0) / totalMs,
+      1
+    )
+    remainingUserValue += value.netUserAmount * remainingRatio
+    remainingHostedValue += value.netHostedAmount * remainingRatio
+  }
+
+  return {
+    hasPositiveBillingRecords: values.length > 0,
+    totalUserValue: roundCurrency(totalUserValue),
+    totalHostedValue: roundCurrency(totalHostedValue),
+    remainingUserValue: roundCurrency(remainingUserValue),
+    remainingHostedValue: roundCurrency(remainingHostedValue)
+  }
+}
+
+/**
+ * 计算托管节点应该回收的退款收入。
+ * `allowHistorical` 用于管理员全额退款：即使服务期已过，也要按
+ * 历史托管实收价回收；用户自助销毁只允许按当前未使用价值回收。
+ */
+async function calculateHostedRefundAmountForClient(
+  client: BillingDbClient,
+  instanceId: number,
+  requestedUserRefund: number,
+  options: { allowHistorical?: boolean } = {}
+): Promise<number> {
+  const requestedAmount = Number(requestedUserRefund)
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) return 0
+
+  const breakdown = await getBillingValueBreakdownForClient(client, instanceId)
+  if (!breakdown.hasPositiveBillingRecords) return roundCurrency(requestedAmount)
+
+  const allowHistorical = options.allowHistorical !== false
+  const useHistoricalValue = allowHistorical
+    && (breakdown.remainingUserValue <= 0 || requestedAmount > breakdown.remainingUserValue)
+  const baseUserValue = useHistoricalValue ? breakdown.totalUserValue : breakdown.remainingUserValue
+  const baseHostedValue = useHistoricalValue ? breakdown.totalHostedValue : breakdown.remainingHostedValue
+  if (baseUserValue <= 0 || baseHostedValue <= 0) return 0
+
+  const refundRatio = Math.min(Math.max(requestedAmount / baseUserValue, 0), 1)
+  return roundCurrency(baseHostedValue * refundRatio)
+}
+
+export async function getHostedRefundAmountInTransaction(
+  tx: Prisma.TransactionClient,
+  instanceId: number,
+  requestedUserRefund: number,
+  options: { allowHistorical?: boolean } = {}
+): Promise<number> {
+  return calculateHostedRefundAmountForClient(tx, instanceId, requestedUserRefund, options)
+}
+
+/**
+ * Settles a user-initiated deletion refund after Incus has been confirmed
+ * absent. The unique UserDestroyRecord and refund billing record make this
+ * operation safe to retry after a process/database failure.
+ */
+export async function settleUserDestroyBilling(
+  params: UserDestroyBillingSettlementParams
+): Promise<{ refundAmount: number; feeAmount: number; isFirstTime: boolean }> {
+  const { requestUserId, instance, feeWaiver } = params
+
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instance.id)
+    await advisoryTransactionLock(tx, USER_DESTROY_BILLING_LOCK_NAMESPACE, requestUserId)
+    await advisoryTransactionLock(tx, USER_BALANCE_LOCK_NAMESPACE, instance.userId)
+
+    const deletionState = await tx.instance.findUnique({
+      where: { id: instance.id },
+      select: { deletionRemoteDeleted: true }
+    })
+    if (!deletionState?.deletionRemoteDeleted) {
+      throw new Error('REMOTE_DELETION_NOT_CONFIRMED')
+    }
+
+    const existingDestroy = await tx.userDestroyRecord.findUnique({
+      where: { instanceId: instance.id }
+    })
+    if (existingDestroy) {
+      await tx.instance.update({
+        where: { id: instance.id },
+        data: clearDeletionBillingStateData()
+      })
+      return {
+        refundAmount: Number(existingDestroy.refundAmount),
+        feeAmount: Number(existingDestroy.feeAmount),
+        isFirstTime: existingDestroy.isFirstTime
+      }
+    }
+
+    const destroyCount = await tx.userDestroyRecord.count({
+      where: { userId: requestUserId }
+    })
+    const isFirstTime = destroyCount === 0
+    const maxRefundable = await getMaxRefundableInTransaction(tx, instance.id)
+    const refundableValue = roundCurrency(Math.min(Math.max(0, params.refundableValue), maxRefundable))
+    const feeAmount = !feeWaiver && !isFirstTime
+      ? roundCurrency(refundableValue * 0.10)
+      : 0
+    const refundAmount = roundCurrency(Math.max(0, refundableValue - feeAmount))
+    const hostedRefundAmount = refundAmount > 0
+      // The destruction fee is retained by the platform, so only the amount
+      // actually returned to the user may be recovered from the host owner.
+      ? await calculateHostedRefundAmountForClient(tx, instance.id, refundAmount, { allowHistorical: false })
+      : 0
+
+    if (refundAmount > 0) {
+      const currentUser = await tx.user.findUnique({
+        where: { id: instance.userId },
+        select: { balance: true }
+      })
+      if (!currentUser) throw new Error(`User ${instance.userId} not found during instance destroy refund`)
+
+      const oldBalance = Number(currentUser.balance)
+      const newBalance = roundCurrency(oldBalance + refundAmount)
+      await tx.user.update({
+        where: { id: instance.userId },
+        data: { balance: { increment: refundAmount } }
+      })
+
+      const balanceLog = await tx.balanceLog.create({
+        data: {
+          userId: instance.userId,
+          type: 'refund',
+          amount: refundAmount,
+          balanceBefore: oldBalance,
+          balanceAfter: newBalance,
+          instanceId: instance.id,
+          remark: `用户销毁实例退款：${instance.name}${feeWaiver ? '（异常实例免手续费）' : feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : '（首次销毁免手续费）'}`
+        }
+      })
+
+      await tx.instanceBillingRecord.create({
+        data: {
+          instanceId: instance.id,
+          userId: instance.userId,
+          type: 'refund',
+          amount: -refundAmount,
+          months: 0,
+          periodStart: new Date(),
+          periodEnd: new Date(),
+          balanceLogId: balanceLog.id,
+          remark: `用户销毁实例退款${feeWaiver ? '（异常实例免手续费）' : feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : '（首次销毁免手续费）'}`
+        }
+      })
+
+      await deductHostingBalance(
+        instance.hostId,
+        hostedRefundAmount,
+        instance.id,
+        `用户销毁托管实例退款扣除：${instance.name}`,
+        tx
+      )
+    }
+
+    await tx.userDestroyRecord.create({
+      data: {
+        userId: requestUserId,
+        hostId: instance.hostId,
+        instanceId: instance.id,
+        instanceName: instance.name,
+        refundAmount,
+        feeAmount,
+        isFirstTime
+      }
+    })
+
+    await tx.instance.update({
+      where: { id: instance.id },
+      data: clearDeletionBillingStateData()
+    })
+
+    return { refundAmount, feeAmount, isFirstTime }
+  })
+}
+
+/**
+ * Settles a host/admin deletion refund. The amount is capped again inside
+ * the instance lock so a manual refund cannot race this operation into a
+ * double refund. It is also idempotent because the refund record consumes
+ * the remaining refundable amount.
+ */
+export async function settlePrivilegedDeletionBilling(
+  params: PrivilegedDeletionBillingSettlementParams
+): Promise<number> {
+  const { instance } = params
+
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instance.id)
+    await advisoryTransactionLock(tx, USER_BALANCE_LOCK_NAMESPACE, instance.userId)
+
+    const deletionState = await tx.instance.findUnique({
+      where: { id: instance.id },
+      select: { deletionRemoteDeleted: true }
+    })
+    if (!deletionState?.deletionRemoteDeleted) {
+      throw new Error('REMOTE_DELETION_NOT_CONFIRMED')
+    }
+
+    const maxRefundable = await getMaxRefundableInTransaction(tx, instance.id)
+    const refundAmount = roundCurrency(Math.min(Math.max(0, params.requestedRefundAmount), maxRefundable))
+    const hostedRefundAmount = refundAmount > 0
+      ? await calculateHostedRefundAmountForClient(tx, instance.id, refundAmount)
+      : 0
+
+    if (refundAmount > 0) {
+      const currentUser = await tx.user.findUnique({
+        where: { id: instance.userId },
+        select: { balance: true }
+      })
+      if (!currentUser) throw new Error(`User ${instance.userId} not found during privileged deletion refund`)
+
+      const oldBalance = Number(currentUser.balance)
+      const newBalance = roundCurrency(oldBalance + refundAmount)
+      await tx.user.update({
+        where: { id: instance.userId },
+        data: { balance: { increment: refundAmount } }
+      })
+
+      const balanceLog = await tx.balanceLog.create({
+        data: {
+          userId: instance.userId,
+          type: 'refund',
+          amount: refundAmount,
+          balanceBefore: oldBalance,
+          balanceAfter: newBalance,
+          instanceId: instance.id,
+          remark: params.remark
+        }
+      })
+
+      await tx.instanceBillingRecord.create({
+        data: {
+          instanceId: instance.id,
+          userId: instance.userId,
+          type: 'refund',
+          amount: -refundAmount,
+          months: 0,
+          periodStart: new Date(),
+          periodEnd: new Date(),
+          balanceLogId: balanceLog.id,
+          remark: params.remark
+        }
+      })
+
+      await deductHostingBalance(
+        instance.hostId,
+        hostedRefundAmount,
+        instance.id,
+        `删除托管实例退款扣除：${instance.name}`,
+        tx
+      )
+    }
+
+    await tx.instance.update({
+      where: { id: instance.id },
+      data: clearDeletionBillingStateData()
+    })
+
+    return refundAmount
+  })
+}
+
+/**
+ * Completes the non-refund billing leg of an hourly-instance deletion.
+ *
+ * Hourly billing closes its account and releases prepaid balance in its own
+ * serializable transaction. The deletion marker is finalized separately so a
+ * crash between those two commits can be retried safely by the recovery job.
+ */
+export async function completeHourlyDeletionBilling(instanceId: number): Promise<void> {
+  await prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const instance = await tx.instance.findUnique({
+      where: { id: instanceId },
+      select: {
+        deletionBillingPending: true,
+        deletionRemoteDeleted: true,
+        deletionBillingMode: true
+      }
+    })
+
+    if (!instance || !instance.deletionBillingPending) return
+    if (!instance.deletionRemoteDeleted) {
+      throw new Error('REMOTE_DELETION_NOT_CONFIRMED')
+    }
+    if (instance.deletionBillingMode !== 'hourly_close') {
+      throw new Error('INVALID_HOURLY_DELETION_BILLING_MODE')
+    }
+
+    await tx.instance.update({
+      where: { id: instanceId },
+      data: clearDeletionBillingStateData()
+    })
+  })
 }
 
 export interface FailedProvisionSettlementResult {
@@ -219,6 +698,49 @@ export interface FailedProvisionResourceRollback {
   memory: number
   disk: number
   portCount?: number
+}
+
+/**
+ * Claims a failed provision before any external cleanup is attempted.
+ *
+ * The row remains `creating` while Incus is being cleaned up. That makes the
+ * instance non-retryable and prevents the success path from resurrecting it,
+ * while still ensuring that a cleanup failure cannot trigger a refund.
+ */
+export async function claimCreatingInstanceForCleanup(
+  instanceId: number,
+  options: { reclaimPendingBefore?: Date } = {}
+): Promise<boolean> {
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const cleanupState: Prisma.InstanceWhereInput = options.reclaimPendingBefore
+      ? {
+          OR: [
+            { provisioningCleanupPending: false },
+            {
+              provisioningCleanupPending: true,
+              updatedAt: { lt: options.reclaimPendingBefore }
+            }
+          ]
+        }
+      : { provisioningCleanupPending: false }
+
+    const claimed = await tx.instance.updateMany({
+      where: {
+        id: instanceId,
+        status: 'creating',
+        ...cleanupState
+      },
+      data: {
+        provisioningCleanupPending: true,
+        version: { increment: 1 },
+        updatedAt: new Date()
+      }
+    })
+
+    return claimed.count === 1
+  })
 }
 
 /**
@@ -246,14 +768,18 @@ export async function failCreatingInstanceAndRollbackResources(
       await decrementHostResourceCounters(tx, resourceRollback)
     }
 
-    return true
+    return claimed.count === 1
   })
 }
 
 /**
- * Atomically marks a creating instance as failed and fully reverses its charge.
+ * Atomically settles a creating instance after its external resource has been
+ * confirmed absent, marking it failed and fully reversing its charge.
  *
- * The instance advisory lock and status claim make this safe when the async
+ * Callers must claim the instance with claimCreatingInstanceForCleanup() and
+ * complete the Incus cleanup before calling this function. Requiring the
+ * persistent cleanup flag means a network/API failure cannot accidentally
+ * turn into a refund, and the state claim remains idempotent when the
  * provisioner and timeout scheduler race each other. Existing refund records
  * are subtracted so retries cannot refund the same purchase twice.
  */
@@ -266,8 +792,16 @@ export async function failCreatingInstanceAndRefund(
     await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
 
     const claimed = await tx.instance.updateMany({
-      where: { id: instanceId, status: 'creating' },
-      data: { status: 'error' }
+      where: {
+        id: instanceId,
+        status: 'creating',
+        provisioningCleanupPending: true
+      },
+      data: {
+        status: 'error',
+        provisioningCleanupPending: false,
+        version: { increment: 1 }
+      }
     })
 
     if (claimed.count === 0) {
@@ -350,6 +884,10 @@ export async function failCreatingInstanceAndRefund(
     // 开通失败即未成交：释放官方优惠券使用次数，使用户可以重新下单
     const releasedCoupon = await releaseOfficialCouponUsageByInstance(instanceId, tx)
 
+    // 新购已经发放的 AFF 返利也必须随失败开通一起回滚，避免平台在
+    // 用户收到全额退款后仍永久承担一笔推荐佣金。
+    await reverseAffCommissionForInstance(instanceId, tx)
+
     if (refundAmount <= 0) {
       return { claimed: true, refundAmount: 0 }
     }
@@ -423,7 +961,7 @@ export async function calculateInstanceRemainingRefundQuote(instance: {
   billingCycle: number | null
   expiresAt: Date | null
   packagePlanId: number | null
-}): Promise<InstanceRemainingRefundQuote> {
+}, client: BillingDbClient = prisma): Promise<InstanceRemainingRefundQuote> {
   const isPaid = !!(instance.packagePlanId && instance.expiresAt && instance.billingPrice)
 
   if (!isPaid) {
@@ -450,49 +988,19 @@ export async function calculateInstanceRemainingRefundQuote(instance: {
   }
 
   const remainingDays = calculateRemainingDays(expiresAt, now)
-  const billingLineageInstanceIds = await getInstanceBillingLineageIds(instance.id)
-  const instanceIds = billingLineageInstanceIds.length > 0 ? billingLineageInstanceIds : [instance.id]
-  const [maxRefundableInfo, positiveBillingRecords] = await Promise.all([
-    getMaxRefundable(instance.id),
-    prisma.instanceBillingRecord.findMany({
-      where: {
-        instanceId: { in: instanceIds },
-        type: { in: ['newPurchase', 'renew', 'upgrade'] },
-        amount: { gt: 0 }
-      },
-      select: {
-        amount: true,
-        periodStart: true,
-        periodEnd: true
-      },
-      orderBy: { periodStart: 'asc' }
-    })
+  const [maxRefundableInfo, billingValueBreakdown] = await Promise.all([
+    getMaxRefundableForClient(client, instance.id),
+    getBillingValueBreakdownForClient(client, instance.id)
   ])
   const { maxRefundable } = maxRefundableInfo
 
-  let remainingValue = 0
-
-  for (const record of positiveBillingRecords) {
-    const periodStart = new Date(record.periodStart)
-    const periodEnd = new Date(record.periodEnd)
-    const totalMs = periodEnd.getTime() - periodStart.getTime()
-
-    if (totalMs <= 0 || periodEnd <= now) {
-      continue
-    }
-
-    const remainingMs = Math.max(0, periodEnd.getTime() - now.getTime())
-    const unusedRatio = Math.min(remainingMs / totalMs, 1)
-    remainingValue += Number(record.amount) * unusedRatio
-  }
-
-  remainingValue = roundCurrency(remainingValue)
+  let remainingValue = billingValueBreakdown.remainingUserValue
 
   // 兼容历史/异常数据：如果缺少正向计费记录，则回退到旧逻辑，
   // 避免老实例直接变成 0 退款。
-  if (positiveBillingRecords.length === 0 && instance.billingPrice && instance.billingCycle) {
+  if (!billingValueBreakdown.hasPositiveBillingRecords && instance.billingPrice && instance.billingCycle) {
     let discountRate = 0
-    const affBinding = await getInstanceAffBinding(instance.id)
+    const affBinding = await getInstanceAffBinding(instance.id, client)
     if (affBinding?.affCode?.enabled) {
       discountRate = Number(affBinding.affCode.discountRate) || 0
     }
@@ -640,6 +1148,12 @@ export async function calculatePlanChange(
     remainingDays,
     discountRate
   )
+  const priceDiff = calcResult.priceDiff < 0
+    ? -Math.min(
+        Math.abs(calcResult.priceDiff),
+        (await getMaxRefundable(instance.id)).maxRefundable
+      )
+    : calcResult.priceDiff
 
   return {
     oldPlan,
@@ -651,7 +1165,7 @@ export async function calculatePlanChange(
     newPlanCost: calcResult.newPlanCost,
     discountRate,
     discountAmount: calcResult.discountAmount,
-    priceDiff: calcResult.priceDiff,
+    priceDiff,
     isUpgrade: calcResult.isUpgrade,
     newExpiresAt: expiresAt, // 到期时间保持不变
     newConfig: {
@@ -745,6 +1259,8 @@ export interface RenewalDiscountResolution {
   discountAmount: number
   /** 折后应付金额（元） */
   finalAmount: number
+  /** 官方优惠券剩余可折价月数；null 表示本次不受月数上限限制。 */
+  discountedMonths: number | null
   /** 生效的 AFF 优惠码（source === 'aff' 时） */
   affCodeId: number | null
   affCodeCode: string | null
@@ -772,13 +1288,15 @@ export interface RenewalDiscountInstanceInput {
 export async function resolveInstanceRenewalDiscount(
   instance: RenewalDiscountInstanceInput,
   originalAmount: number,
-  tx?: Prisma.TransactionClient
+  tx?: Prisma.TransactionClient,
+  requestedMonths?: number
 ): Promise<RenewalDiscountResolution> {
   const resolution: RenewalDiscountResolution = {
     source: null,
     discountRate: 0,
     discountAmount: 0,
     finalAmount: originalAmount,
+    discountedMonths: null,
     affCodeId: null,
     affCodeCode: null,
     supersedesOfficialCoupon: false,
@@ -811,12 +1329,24 @@ export async function resolveInstanceRenewalDiscount(
   const applyOfficialCouponDiscount = (
     discountRate: number,
     couponCode: string,
-    couponName: string
+    couponName: string,
+    discountedMonthsRemaining: number | null
   ): void => {
     resolution.source = 'official_coupon'
     resolution.discountRate = discountRate
-    resolution.discountAmount = calculateDiscountAmount(originalAmount, discountRate)
-    resolution.finalAmount = calculateDiscountedPrice(originalAmount, discountRate)
+    resolution.discountedMonths = discountedMonthsRemaining
+    const effectiveDiscountedMonths = requestedMonths === undefined || discountedMonthsRemaining === null
+      ? requestedMonths
+      : Math.min(requestedMonths, discountedMonthsRemaining)
+    resolution.discountAmount = requestedMonths === undefined
+      ? calculateDiscountAmount(originalAmount, discountRate)
+      : calculateDiscountAmountForMonths(
+          originalAmount,
+          requestedMonths,
+          effectiveDiscountedMonths ?? 0,
+          discountRate
+        )
+    resolution.finalAmount = Number((originalAmount - resolution.discountAmount).toFixed(2))
     resolution.officialCouponCode = couponCode
     resolution.officialCouponName = couponName
   }
@@ -826,17 +1356,19 @@ export async function resolveInstanceRenewalDiscount(
   let officialDiscountRate = 0
   let officialCouponCode: string | null = null
   let officialCouponName: string | null = null
+  let officialDiscountedMonths: number | null = null
 
   if (!affOverridesOfficial && instance.packageId !== null) {
     const purchaseCoupon = await getInstancePurchaseCoupon(instance.id, tx)
     if (purchaseCoupon) {
       const { coupon } = purchaseCoupon
-      const discountedChargeCount = await countDiscountedChargesForInstance(coupon.id, instance.id, tx)
-      if (shouldDiscountRenewal({
+      const discountedMonthsUsed = await countDiscountedMonthsForInstance(coupon.id, instance.id, tx)
+      if (getDiscountedMonthsForRenewal({
         renewalMode: coupon.renewalMode,
         discountedChargeLimit: coupon.discountedChargeLimit,
-        discountedChargeCount
-      })) {
+        discountedMonthsUsed,
+        requestedMonths: requestedMonths ?? 1
+      }) > 0) {
         const validation = await validateOfficialCoupon({
           code: coupon.code,
           packageId: instance.packageId,
@@ -850,6 +1382,11 @@ export async function resolveInstanceRenewalDiscount(
           officialDiscountRate = validation.discountRate
           officialCouponCode = coupon.code
           officialCouponName = coupon.name
+          officialDiscountedMonths = getRemainingDiscountedMonths({
+            renewalMode: coupon.renewalMode,
+            discountedChargeLimit: coupon.discountedChargeLimit,
+            discountedMonthsUsed
+          })
         }
       }
     }
@@ -858,7 +1395,12 @@ export async function resolveInstanceRenewalDiscount(
   if (affOverridesOfficial) {
     applyAffDiscount()
   } else if (officialUsable) {
-    applyOfficialCouponDiscount(officialDiscountRate, officialCouponCode!, officialCouponName!)
+    applyOfficialCouponDiscount(
+      officialDiscountRate,
+      officialCouponCode!,
+      officialCouponName!,
+      officialDiscountedMonths
+    )
   } else if (affUsable) {
     applyAffDiscount()
   }
@@ -905,6 +1447,7 @@ export async function performRenewal(
   let finalAmount = originalAmount
   let discountSource: 'official_coupon' | 'aff' | null = null
   let appliedOfficialCouponCode: string | null = null
+  let appliedOfficialCouponDiscountedMonths = 0
   let appliedAffCodeId: number | null = null
   let appliedAffCodeCode: string | null = null
 
@@ -930,11 +1473,16 @@ export async function performRenewal(
       packageId: instance.packageId,
       packagePlanId: instance.packagePlanId,
       userId
-    }, originalAmount, tx)
+    }, originalAmount, tx, months)
     discountAmount = discount.discountAmount
     finalAmount = discount.finalAmount
     discountSource = discount.source
     appliedOfficialCouponCode = discount.officialCouponCode
+    if (discount.source === 'official_coupon') {
+      appliedOfficialCouponDiscountedMonths = discount.discountedMonths === null
+        ? months
+        : Math.min(months, discount.discountedMonths)
+    }
     appliedAffCodeId = discount.affCodeId
     appliedAffCodeCode = discount.affCodeCode
 
@@ -948,12 +1496,10 @@ export async function performRenewal(
       throw new Error('用户不存在')
     }
 
-    const oldBalance = Number(user.balance)
-    if (oldBalance < finalAmount) {
+    const balanceSnapshot = Number(user.balance)
+    if (balanceSnapshot < finalAmount) {
       throw new Error('余额不足')
     }
-
-    const newBalance = Number((oldBalance - finalAmount).toFixed(2))
 
     // 扣除余额（使用条件更新确保并发安全）
     const updateResult = await tx.user.updateMany({
@@ -967,6 +1513,14 @@ export async function performRenewal(
     if (updateResult.count === 0) {
       throw new Error('余额不足或并发冲突')
     }
+
+    const updatedUser = await tx.user.findUnique({
+      where: { id: userId },
+      select: { balance: true }
+    })
+    if (!updatedUser) throw new Error('用户不存在')
+    const newBalance = Number(updatedUser.balance)
+    const oldBalance = Number((newBalance + finalAmount).toFixed(2))
 
     // 乐观锁：检查实例版本号并更新
     const instanceUpdateResult = await tx.instance.updateMany({
@@ -1047,6 +1601,7 @@ export async function performRenewal(
         instanceId: instance.id,
         originalPrice: originalAmount,
         discountAmount,
+        discountedMonths: appliedOfficialCouponDiscountedMonths,
         mode: 'renewal',
         tx
       })
@@ -1178,12 +1733,12 @@ export async function performPlanChange(
       throw new Error('用户不存在')
     }
 
-    const oldBalance = Number(user.balance)
+    const balanceSnapshot = Number(user.balance)
     let hostingIncomeResult: { hostOwnerId: number; hostName: string } | null = null
 
     // 升级需要补差价
     if (changeResult.priceDiff > 0) {
-      if (oldBalance < changeResult.priceDiff) {
+      if (balanceSnapshot < changeResult.priceDiff) {
         throw new Error(`余额不足，需补差价 ${changeResult.priceDiff} 元`)
       }
 
@@ -1196,14 +1751,22 @@ export async function performPlanChange(
         throw new Error('余额不足或并发冲突')
       }
 
+      const updatedUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: { balance: true }
+      })
+      if (!updatedUser) throw new Error('用户不存在')
+      const balanceAfter = Number(updatedUser.balance)
+      const balanceBefore = roundCurrency(balanceAfter + changeResult.priceDiff)
+
       // 升级扣费记录
       await tx.balanceLog.create({
         data: {
           userId,
           type: 'consume',
           amount: -changeResult.priceDiff,
-          balanceBefore: oldBalance,
-          balanceAfter: oldBalance - changeResult.priceDiff,
+          balanceBefore,
+          balanceAfter,
           instanceId: instance.id,
           remark: `升级方案：${changeResult.oldPlan.name} → ${newPlan.name}`
         }
@@ -1230,26 +1793,72 @@ export async function performPlanChange(
 
     // 降级退款到余额
     if (changeResult.priceDiff < 0) {
-      refundAmount = Math.abs(changeResult.priceDiff)
-      const newBalance = oldBalance + refundAmount
+      const requestedRefundAmount = Math.abs(changeResult.priceDiff)
+      const maxRefundable = (await getMaxRefundableForClient(tx, instance.id)).maxRefundable
+      refundAmount = roundCurrency(Math.min(requestedRefundAmount, maxRefundable))
 
-      await tx.user.update({
-        where: { id: userId },
-        data: { balance: { increment: refundAmount } }
-      })
+      if (refundAmount > 0) {
+        const updatedUser = await tx.user.update({
+          where: { id: userId },
+          data: { balance: { increment: refundAmount } },
+          select: { balance: true }
+        })
+        const newBalance = Number(updatedUser.balance)
+        const oldBalance = roundCurrency(newBalance - refundAmount)
 
-      // 降级退款记录
-      await tx.balanceLog.create({
-        data: {
-          userId,
-          type: 'refund',
-          amount: refundAmount,
-          balanceBefore: oldBalance,
-          balanceAfter: newBalance,
-          instanceId: instance.id,
-          remark: `降级方案退款：${changeResult.oldPlan.name} → ${newPlan.name}`
+        // 降级退款记录
+        const downgradeRefundLog = await tx.balanceLog.create({
+          data: {
+            userId,
+            type: 'refund',
+            amount: refundAmount,
+            balanceBefore: oldBalance,
+            balanceAfter: newBalance,
+            instanceId: instance.id,
+            remark: `降级方案退款：${changeResult.oldPlan.name} → ${newPlan.name}`
+          }
+        })
+
+        // 退款可能来自官方券折后账单；托管收入按原价比例同步回收。
+        const hostedRefundAmount = await calculateHostedRefundAmountForClient(
+          tx,
+          instance.id,
+          refundAmount
+        )
+
+        // 余额日志不是实例退款上限的唯一账本；必须同步写入 refund
+        // billing record，否则之后销毁实例/管理员退款会再次退回这笔钱。
+        await tx.instanceBillingRecord.create({
+          data: {
+            instanceId: instance.id,
+            userId,
+            type: 'refund',
+            amount: -refundAmount,
+            months: 0,
+            periodStart: new Date(),
+            periodEnd: new Date(),
+            balanceLogId: downgradeRefundLog.id,
+            remark: `降级方案退款：${changeResult.oldPlan.name} → ${newPlan.name}`
+          }
+        })
+
+        if (hostedRefundAmount > 0) {
+          const hostingOwner = await resolveHostedIncomeOwner(tx, instance.hostId)
+          if (hostingOwner) {
+            await deductHostingBalance(
+              instance.hostId,
+              hostedRefundAmount,
+              instance.id,
+              `实例降级退款扣除托管收入：${instance.name}`,
+              tx
+            )
+            hostingIncomeResult = {
+              hostOwnerId: hostingOwner.userId,
+              hostName: hostingOwner.hostName
+            }
+          }
         }
-      })
+      }
     }
 
     const monthlyTrafficLimit = await resolveInstanceTrafficLimitForHost(tx as any, {
@@ -1320,7 +1929,7 @@ export async function performPlanChange(
       data: {
         instanceId: instance.id,
         userId,
-        type: changeResult.isUpgrade ? 'upgrade' : 'downgrade',
+    type: changeResult.isUpgrade ? 'upgrade' : 'downgrade',
         amount: changeResult.priceDiff > 0 ? changeResult.priceDiff : 0,
         months: 0, // 升降级不改变时长
         periodStart: new Date(),
@@ -1333,7 +1942,9 @@ export async function performPlanChange(
   })
 
   return {
-    priceDiff: changeResult.priceDiff,
+    priceDiff: changeResult.priceDiff < 0
+      ? -(refundAmount || 0)
+      : changeResult.priceDiff,
     newConfig: changeResult.newConfig,
     needRestart: true,  // 升降级后需要重启实例才能生效
     refundAmount,
@@ -1474,14 +2085,26 @@ export async function getInstanceBillingInfo(instanceId: number): Promise<{
       ? originalPreview.filter(p => p.months === 1)
       : originalPreview
 
-    renewPreview = filteredPreview.map(p => ({
-      months: p.months,
-      amount: p.amount,  // 原价（元）
-      discountedAmount: discountRate > 0
-        ? Number((p.amount * (1 - discountRate)).toFixed(2))  // 折扣价（元，保留两位小数）
-        : p.amount,
-      expiresAt: p.expiresAt
-    }))
+    renewPreview = filteredPreview.map(p => {
+      const discountedMonths = discount.source === 'official_coupon' && discount.discountedMonths !== null
+        ? Math.min(p.months, discount.discountedMonths)
+        : (discount.source ? p.months : 0)
+      const previewDiscountAmount = discount.source && discountRate > 0
+        ? calculateDiscountAmountForMonths(
+            p.amount,
+            p.months,
+            discountedMonths,
+            discountRate
+          )
+        : 0
+
+      return {
+        months: p.months,
+        amount: p.amount,  // 原价（元）
+        discountedAmount: Number((p.amount - previewDiscountAmount).toFixed(2)),
+        expiresAt: p.expiresAt
+      }
+    })
   }
 
   return {
@@ -1737,7 +2360,7 @@ export async function recordHostingIncome(
  * @param hostId 节点ID
  * @param amount 金额（元）
  * @param instanceId 实例ID
- * @param type 类型：'purchase' | 'renew'
+ * @param type 类型：'purchase' | 'renew' | 'upgrade'
  * @param tx 可选的事务客户端
  * @returns 如果是用户托管节点，返回节点所有者信息；否则返回 null
  */
@@ -1745,7 +2368,7 @@ export async function processHostingIncome(
   hostId: number,
   amount: number,
   instanceId: number,
-  type: 'purchase' | 'renew',
+  type: 'purchase' | 'renew' | 'upgrade',
   tx?: any
 ): Promise<{ hostOwnerId: number; hostName: string } | null> {
   const client = tx || prisma
@@ -1772,7 +2395,9 @@ export async function processHostingIncome(
   // 用户托管节点，记录托管收入
   const remark = type === 'purchase'
     ? `用户购买实例收入（冻结30天）`
-    : `用户续费实例收入（冻结30天）`
+    : type === 'renew'
+      ? `用户续费实例收入（冻结30天）`
+      : `用户升级实例收入（冻结30天）`
 
   await recordHostingIncome(host.userId, amount, instanceId, remark, type, client)
 

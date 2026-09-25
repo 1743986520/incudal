@@ -4,7 +4,7 @@
  */
 
 // 主类
-export { IncusClient } from './incus-client.js'
+export { IncusClient, IncusApiError, isIncusNotFoundError } from './incus-client.js'
 
 // 实例管理
 export * from './incus-instances.js'
@@ -40,4 +40,3 @@ export {
     renameInstance,
     instanceExists
 } from './incus-restore.js'
-

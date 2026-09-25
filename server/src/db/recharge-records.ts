@@ -3,6 +3,7 @@
  */
 
 import { prisma } from './prisma.js'
+import { Prisma } from '@prisma/client'
 import type { RechargeRecord, RechargeStatus } from '@prisma/client'
 import { nanoid } from 'nanoid'
 import { getTodayRange } from '../lib/timezone.js'
@@ -545,10 +546,11 @@ export async function getUserRechargeStats(userId: number): Promise<{
   pendingCount: number
 }> {
   const [totalResult, totalCount, pendingCount] = await Promise.all([
-    prisma.rechargeRecord.aggregate({
-      where: { userId, status: 'completed' },
-      _sum: { amount: true }
-    }),
+    prisma.$queryRaw<Array<{ value: unknown }>>(Prisma.sql`
+      SELECT COALESCE(SUM(COALESCE("actual_amount", "amount")), 0)::numeric AS value
+      FROM "recharge_records"
+      WHERE "user_id" = ${userId} AND "status" = 'completed'
+    `),
     prisma.rechargeRecord.count({
       where: { userId, status: 'completed' }
     }),
@@ -559,8 +561,8 @@ export async function getUserRechargeStats(userId: number): Promise<{
 
   return {
     // 注意：Prisma aggregate 返回的 Decimal 类型需要先转为字符串再转数字
-    totalRecharge: totalResult._sum?.amount !== null && totalResult._sum?.amount !== undefined
-      ? parseFloat(String(totalResult._sum.amount))
+    totalRecharge: totalResult[0]?.value !== null && totalResult[0]?.value !== undefined
+      ? parseFloat(String(totalResult[0].value))
       : 0,
     totalCount,
     pendingCount
@@ -586,21 +588,29 @@ export async function getSystemRechargeStats(dateRange?: { start: Date; end: Dat
     whereCompleted.completedAt = { gte: dateRange.start, lte: dateRange.end }
   }
 
+  const completedDateFilter = dateRange
+    ? Prisma.sql`AND "completed_at" >= ${dateRange.start} AND "completed_at" <= ${dateRange.end}`
+    : Prisma.empty
+
   const [totalResult, totalCount, pendingResult, pendingCount, todayResult, todayCount] = await Promise.all([
-    prisma.rechargeRecord.aggregate({
-      where: whereCompleted,
-      _sum: { amount: true }
-    }),
+    prisma.$queryRaw<Array<{ value: unknown }>>(Prisma.sql`
+      SELECT COALESCE(SUM(COALESCE("actual_amount", "amount")), 0)::numeric AS value
+      FROM "recharge_records"
+      WHERE "status" = 'completed' ${completedDateFilter}
+    `),
     prisma.rechargeRecord.count({ where: whereCompleted }),
-    prisma.rechargeRecord.aggregate({
-      where: { status: 'pending' },
-      _sum: { amount: true }
-    }),
+    prisma.$queryRaw<Array<{ value: unknown }>>(Prisma.sql`
+      SELECT COALESCE(SUM(COALESCE("actual_amount", "amount")), 0)::numeric AS value
+      FROM "recharge_records"
+      WHERE "status" = 'pending'
+    `),
     prisma.rechargeRecord.count({ where: { status: 'pending' } }),
-    prisma.rechargeRecord.aggregate({
-      where: { status: 'completed', completedAt: { gte: today, lt: tomorrow } },
-      _sum: { amount: true }
-    }),
+    prisma.$queryRaw<Array<{ value: unknown }>>(Prisma.sql`
+      SELECT COALESCE(SUM(COALESCE("actual_amount", "amount")), 0)::numeric AS value
+      FROM "recharge_records"
+      WHERE "status" = 'completed'
+        AND "completed_at" >= ${today} AND "completed_at" < ${tomorrow}
+    `),
     prisma.rechargeRecord.count({
       where: { status: 'completed', completedAt: { gte: today, lt: tomorrow } }
     })
@@ -608,16 +618,16 @@ export async function getSystemRechargeStats(dateRange?: { start: Date; end: Dat
 
   return {
     // 注意：Prisma aggregate 返回的 Decimal 类型需要先转为字符串再转数字
-    totalRecharge: totalResult._sum?.amount !== null && totalResult._sum?.amount !== undefined
-      ? parseFloat(String(totalResult._sum.amount))
+    totalRecharge: totalResult[0]?.value !== null && totalResult[0]?.value !== undefined
+      ? parseFloat(String(totalResult[0].value))
       : 0,
     totalCount,
-    pendingAmount: pendingResult._sum?.amount !== null && pendingResult._sum?.amount !== undefined
-      ? parseFloat(String(pendingResult._sum.amount))
+    pendingAmount: pendingResult[0]?.value !== null && pendingResult[0]?.value !== undefined
+      ? parseFloat(String(pendingResult[0].value))
       : 0,
     pendingCount,
-    todayRecharge: todayResult._sum?.amount !== null && todayResult._sum?.amount !== undefined
-      ? parseFloat(String(todayResult._sum.amount))
+    todayRecharge: todayResult[0]?.value !== null && todayResult[0]?.value !== undefined
+      ? parseFloat(String(todayResult[0].value))
       : 0,
     todayCount
   }

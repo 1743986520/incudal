@@ -973,11 +973,10 @@ const api = {
       http.post(`/ws/instances/${id}/terminal-ticket`, {}),
     updateOrder: (id: number, action: 'top' | 'up' | 'down' | 'bottom'): Promise<{ message: string; updated: number }> =>
       http.patch(`/instances/${id}/order`, { action }),
-    delete: (id: number, reason?: string, force = false): Promise<{ message: string; refundAmount?: number }> =>
+    delete: (id: number, reason?: string): Promise<{ message: string; refundAmount?: number }> =>
       http.delete(`/instances/${id}`, {
         data: {
-          ...(reason ? { reason } : {}),
-          ...(force ? { force: true } : {})
+          ...(reason ? { reason } : {})
         },
         timeout: TIMEOUT.LONG
       }),
@@ -3213,7 +3212,7 @@ const api = {
     }> => http.get(`/instances/${instanceId}/destroy-info`),
 
     // 执行销毁
-    destroyInstance: (instanceId: number, options?: { feeWaiver?: string; force?: boolean }): Promise<{
+    destroyInstance: (instanceId: number, options?: { feeWaiver?: string }): Promise<{
       success: boolean
       message: string
       refundAmount: number
@@ -3223,7 +3222,6 @@ const api = {
     }> => {
       const params = new URLSearchParams()
       if (options?.feeWaiver) params.set('feeWaiver', options.feeWaiver)
-      if (options?.force) params.set('force', 'true')
       const query = params.toString()
       return http.post(`/instances/${instanceId}/destroy${query ? `?${query}` : ''}`)
     },

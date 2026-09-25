@@ -467,7 +467,7 @@ export async function createAffBinding(
 /**
  * 获取实例绑定的优惠码
  */
-export async function getInstanceAffBinding(instanceId: number, tx?: Prisma.TransactionClient): Promise<{
+export async function getInstanceAffBinding(instanceId: number, tx?: Prisma.TransactionClient | typeof prisma): Promise<{
   affCode: AffCode
   userId: number // 优惠码创建者
   supersedesOfficialCoupon: boolean // 是否为用户明确设置的覆盖（AFF 优先于官方优惠券）
@@ -601,6 +601,98 @@ export async function processAffCommission(
   })
 }
 
+/**
+ * Reverse commissions for a purchase that was fully rolled back because the
+ * instance never finished provisioning. A negative AFF balance is intentional
+ * here: if the referrer already converted or withdrew the commission, future
+ * earnings must first repay that clawback instead of letting the platform
+ * silently absorb it.
+ */
+export async function reverseAffCommissionForInstance(
+  instanceId: number,
+  tx: Prisma.TransactionClient
+): Promise<number> {
+  const commissions = await tx.affLog.findMany({
+    where: {
+      instanceId,
+      type: 'new_purchase',
+      amount: { gt: 0 }
+    },
+    select: {
+      id: true,
+      userId: true,
+      affCodeId: true,
+      amount: true,
+      originalAmount: true
+    },
+    orderBy: { id: 'asc' }
+  })
+
+  let reversed = 0
+  for (const commissionLog of commissions) {
+    const reversalRemark = `开通失败撤销返利 #${commissionLog.id}`
+    const existingReversal = await tx.affLog.findFirst({
+      where: {
+        instanceId,
+        type: 'refund',
+        remark: reversalRemark
+      },
+      select: { id: true }
+    })
+    if (existingReversal) continue
+
+    const amount = Number(commissionLog.amount)
+    if (!Number.isFinite(amount) || amount <= 0) continue
+
+    const user = await tx.user.findUnique({
+      where: { id: commissionLog.userId },
+      select: { affBalance: true }
+    })
+    if (!user) throw new Error(`AFF 用户 ${commissionLog.userId} 不存在`)
+
+    const balanceBefore = user.affBalance
+    const balanceAfter = balanceBefore.minus(amount)
+    await tx.user.update({
+      where: { id: commissionLog.userId },
+      data: { affBalance: { decrement: amount } }
+    })
+
+    await tx.affLog.create({
+      data: {
+        userId: commissionLog.userId,
+        type: 'refund',
+        amount: -amount,
+        affCodeId: commissionLog.affCodeId,
+        instanceId,
+        originalAmount: commissionLog.originalAmount,
+        balanceBefore,
+        balanceAfter,
+        remark: reversalRemark
+      }
+    })
+
+    if (commissionLog.affCodeId) {
+      const affCode = await tx.affCode.findUnique({
+        where: { id: commissionLog.affCodeId },
+        select: { usedCount: true }
+      })
+      if (affCode) {
+        await tx.affCode.update({
+          where: { id: commissionLog.affCodeId },
+          data: {
+            totalEarnings: { decrement: amount },
+            usedCount: affCode.usedCount > 0 ? { decrement: 1 } : undefined
+          }
+        })
+      }
+    }
+
+    reversed += 1
+  }
+
+  return reversed
+}
+
 // ==================== AFF 日志查询 ====================
 
 // AFF 日志带关联信息的类型
@@ -669,7 +761,7 @@ export async function getAffStats(userId: number): Promise<{
       _sum: { usedCount: true, totalEarnings: true }
     }),
     prisma.affLog.aggregate({
-      where: { userId, amount: { gt: 0 } },
+      where: { userId, type: { in: ['new_purchase', 'renew', 'refund'] } },
       _sum: { amount: true }
     }),
     prisma.affLog.aggregate({

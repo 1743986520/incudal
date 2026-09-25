@@ -223,7 +223,7 @@ function openEditModal(coupon: OfficialCoupon) {
   showEditModal.value = true
 }
 
-/** 切换到 limited 模式时给折价次数一个默认值，方便直接修改 */
+/** 切换到 limited 模式时给折价月数一个默认值，方便直接修改 */
 function onRenewalModeChange() {
   if (form.value.renewalMode === 'limited' && form.value.discountedChargeLimit === null) {
     form.value.discountedChargeLimit = 3

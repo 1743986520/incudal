@@ -13,7 +13,7 @@ import {
   getInstanceState,
   getInstance,
   stopInstance,
-  deleteInstance,
+  ensureInstanceDeleted,
   updateInstance,
   addDevice,
   removeDevice,
@@ -57,6 +57,10 @@ import { createInstanceTask, InstanceTaskConflictError, getInstanceTaskById, get
 import { canRecoverInstanceTask } from '../workers/instance-task-lease.js'
 import { closeInstanceSessions } from '../lib/terminal-proxy.js'
 import { calculateDiscountAmount, getCycleDays } from '../lib/billing-calc.js'
+import {
+  calculateDiscountAmountForMonths,
+  getDiscountedMonthsForPurchase
+} from '../lib/official-coupon-rules.js'
 import { validateCommandsOwnership, mergeCommandContents, getImageDistroFromAlias } from '../db/custom-init-commands.js'
 import { getPlanById, isPaidPackage } from '../db/package-plans.js'
 import { calculateCreateBilling } from '../db/billing-operations.js'
@@ -980,6 +984,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     let billing: ReturnType<typeof calculateCreateBilling> | null = null
     let validatedAffCode: { id: number; userId: number; discountRate: number } | null = null
     let validatedOfficialCoupon: { id: number; code: string; name: string; discountRate: number } | null = null
+    let officialCouponDiscountedMonths = 0
     let discountAmount = 0
     let finalPrice = 0
     let actualPrice = 0
@@ -1004,7 +1009,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             name: couponValidation.name,
             discountRate: couponValidation.discountRate
           }
-          discountAmount = calculateDiscountAmount(billing.price, validatedOfficialCoupon.discountRate)
+          officialCouponDiscountedMonths = getDiscountedMonthsForPurchase({
+            renewalMode: couponValidation.coupon.renewalMode,
+            discountedChargeLimit: couponValidation.coupon.discountedChargeLimit,
+            purchaseMonths: billing.billingCycle
+          })
+          discountAmount = calculateDiscountAmountForMonths(
+            billing.totalPrice,
+            billing.billingCycle,
+            officialCouponDiscountedMonths,
+            validatedOfficialCoupon.discountRate
+          )
         } else if (couponValidation.errorCode === ErrorCode.COUPON_NOT_FOUND) {
           // 不是官方券时才按 AFF 优惠码校验；官方券自身的失效原因直接返回
           const validation = await db.validateAffCode(promoCode.trim(), selectedPlan.id, user.id)
@@ -1338,19 +1353,26 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             throw new Error('USER_NOT_FOUND: 用户不存在')
           }
 
-          const balanceBefore = Number(userRecord.balance)
-          const balanceAfter = Number((balanceBefore - actualPrice).toFixed(2))
-
-          // 再次检查余额（事务内双重检查）
-          if (balanceAfter < 0) {
+          if (Number(userRecord.balance) < actualPrice) {
             throw new Error('BALANCE_INSUFFICIENT: 余额不足')
           }
 
-          // 扣除余额
-          await tx.user.update({
-            where: { id: user.id },
-            data: { balance: balanceAfter }
+          // 使用带余额条件的原子扣款，避免同一用户并发购买时用旧余额覆盖彼此的扣款。
+          const walletUpdate = await tx.user.updateMany({
+            where: { id: user.id, balance: { gte: actualPrice } },
+            data: { balance: { decrement: actualPrice } }
           })
+          if (walletUpdate.count !== 1) {
+            throw new Error('BALANCE_INSUFFICIENT: 余额不足或并发冲突')
+          }
+
+          const updatedUser = await tx.user.findUnique({
+            where: { id: user.id },
+            select: { balance: true }
+          })
+          if (!updatedUser) throw new Error('USER_NOT_FOUND: 用户不存在')
+          const balanceAfter = Number(updatedUser.balance)
+          const balanceBefore = Number((balanceAfter + actualPrice).toFixed(2))
 
           // 记录余额日志
           const discountRemark = validatedOfficialCoupon
@@ -1529,6 +1551,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
               instanceId: instance.id,
               originalPrice: billing.totalPrice,
               discountAmount,
+              discountedMonths: officialCouponDiscountedMonths,
               tx
             })
           }
@@ -1870,6 +1893,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     if (instance.status !== 'error') {
       return reply.code(409).send({ error: '只有创建失败的实例可以重试', code: 'INSTANCE_NOT_RETRYABLE' })
     }
+    if (instance.provisioningCleanupPending) {
+      return reply.code(409).send({ error: '实例清理尚未完成，请稍后重试', code: 'INSTANCE_CLEANUP_PENDING' })
+    }
     if (!instance.package) {
       return reply.code(409).send({ error: '原套餐已不存在，无法重试创建', code: 'PACKAGE_NOT_FOUND' })
     }
@@ -1950,31 +1976,128 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
 
       const lastPurchase = await prisma.instanceBillingRecord.findFirst({
-        where: { instanceId, type: 'newPurchase' }, orderBy: { createdAt: 'desc' }
+        where: { instanceId, type: 'newPurchase' },
+        orderBy: { createdAt: 'desc' },
+        select: { amount: true, months: true, remark: true }
       })
-      const retryAmount = lastPurchase ? Math.max(0, Number(lastPurchase.amount)) : 0
-      if (retryAmount > 0) {
+      if (lastPurchase && Number(lastPurchase.amount) > 0) {
         await prisma.$transaction(async tx => {
+          const purchaseMonths = Math.max(1, instance.billingCycle || lastPurchase.months || 1)
+          const originalAmount = Number(instance.billingPrice ?? lastPurchase.amount)
+          if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
+            throw new Error('INVALID_RETRY_PRICE')
+          }
+
+          // Failed provisioning releases the original promotion reservation.
+          // A retry is a new charge, so revalidate and reserve the promotion
+          // again instead of blindly charging the old discounted amount.
+          let retryAmount = Number(originalAmount.toFixed(2))
+          let retryDiscountAmount = 0
+          let retryOfficialCoupon: { code: string; discountedMonths: number } | null = null
+          let retryAffCodeId: number | null = null
+
+          const officialCouponCode = lastPurchase.remark?.match(/官方优惠券\s+(\S+)\s+折扣/)?.[1] ?? null
+          if (officialCouponCode && instance.packageId !== null) {
+            const validation = await db.validateOfficialCoupon({
+              code: officialCouponCode,
+              packageId: instance.packageId,
+              userId: request.user.id,
+              client: tx
+            })
+            if (validation.valid) {
+              const discountedMonths = getDiscountedMonthsForPurchase({
+                renewalMode: validation.coupon.renewalMode,
+                discountedChargeLimit: validation.coupon.discountedChargeLimit,
+                purchaseMonths
+              })
+              if (discountedMonths > 0) {
+                retryDiscountAmount = calculateDiscountAmountForMonths(
+                  originalAmount,
+                  purchaseMonths,
+                  discountedMonths,
+                  validation.discountRate
+                )
+                retryAmount = Number((originalAmount - retryDiscountAmount).toFixed(2))
+                retryOfficialCoupon = { code: validation.code, discountedMonths }
+              }
+            }
+          }
+
+          if (!retryOfficialCoupon && await db.isAffRebateEnabled()) {
+            const affBinding = await db.getInstanceAffBinding(instanceId, tx)
+            const affUsable = !!affBinding
+              && affBinding.affCode.enabled
+              && affBinding.affCode.userId !== request.user.id
+              && (affBinding.affCode.packagePlanId === null || affBinding.affCode.packagePlanId === instance.packagePlanId)
+            if (affUsable) {
+              const discountRate = Number(affBinding!.affCode.discountRate) || 0
+              retryDiscountAmount = calculateDiscountAmount(originalAmount, discountRate)
+              retryAmount = Number((originalAmount - retryDiscountAmount).toFixed(2))
+              retryAffCodeId = affBinding!.affCode.id
+            }
+          }
+
           const user = await tx.user.findUnique({ where: { id: request.user.id }, select: { balance: true } })
           if (!user || Number(user.balance) < retryAmount) throw new Error('BALANCE_INSUFFICIENT')
-          const balanceBefore = Number(user.balance)
           const updated = await tx.user.updateMany({
             where: { id: request.user.id, balance: { gte: retryAmount } },
             data: { balance: { decrement: retryAmount } }
           })
           if (updated.count === 0) throw new Error('BALANCE_INSUFFICIENT')
-          const balanceAfter = Number((balanceBefore - retryAmount).toFixed(2))
+          const updatedUser = await tx.user.findUnique({
+            where: { id: request.user.id },
+            select: { balance: true }
+          })
+          if (!updatedUser) throw new Error('USER_NOT_FOUND')
+          const balanceAfter = Number(updatedUser.balance)
+          const balanceBefore = Number((balanceAfter + retryAmount).toFixed(2))
+          const discountRemark = retryOfficialCoupon
+            ? `，官方优惠券 ${retryOfficialCoupon.code} 折扣 -¥${retryDiscountAmount.toFixed(2)}`
+            : retryAffCodeId !== null
+              ? `，AFF 优惠码折扣 -¥${retryDiscountAmount.toFixed(2)}`
+              : ''
           const balanceLog = await tx.balanceLog.create({
-            data: { userId: request.user.id, type: 'consume', amount: -retryAmount, balanceBefore, balanceAfter, instanceId, remark: `重试创建实例：${instance.name}` }
+            data: { userId: request.user.id, type: 'consume', amount: -retryAmount, balanceBefore, balanceAfter, instanceId, remark: `重试创建实例：${instance.name}${discountRemark}` }
           })
           const now = new Date()
           const periodEnd = new Date(now)
-          periodEnd.setDate(periodEnd.getDate() + getCycleDays(Math.max(1, instance.billingCycle || lastPurchase?.months || 1)))
+          periodEnd.setDate(periodEnd.getDate() + getCycleDays(purchaseMonths))
           await tx.instanceBillingRecord.create({
-            data: { instanceId, userId: request.user.id, type: 'newPurchase', amount: retryAmount, months: instance.billingCycle || lastPurchase?.months || 1, periodStart: now, periodEnd, balanceLogId: balanceLog.id, remark: '创建失败后重新创建' }
+            data: {
+              instanceId,
+              userId: request.user.id,
+              type: 'newPurchase',
+              amount: retryAmount,
+              months: purchaseMonths,
+              periodStart: now,
+              periodEnd,
+              balanceLogId: balanceLog.id,
+              remark: `创建失败后重新创建${discountRemark}`
+            }
           })
+          if (retryOfficialCoupon && instance.packageId !== null) {
+            await db.reserveOfficialCouponUsage({
+              code: retryOfficialCoupon.code,
+              packageId: instance.packageId,
+              userId: request.user.id,
+              instanceId,
+              originalPrice: originalAmount,
+              discountAmount: retryDiscountAmount,
+              discountedMonths: retryOfficialCoupon.discountedMonths,
+              tx
+            })
+          }
+          if (retryAffCodeId !== null) {
+            await db.processAffCommission(retryAffCodeId, instanceId, originalAmount, 'new_purchase', tx)
+          }
           await tx.instance.update({ where: { id: instanceId }, data: { expiresAt: periodEnd } })
-          await db.processHostingIncome(instance.hostId, retryAmount, instanceId, 'purchase', tx)
+          await db.processHostingIncome(
+            instance.hostId,
+            retryOfficialCoupon ? originalAmount : retryAmount,
+            instanceId,
+            'purchase',
+            tx
+          )
         })
       }
     } catch (error) {
@@ -3647,20 +3770,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
   })
 
   // 删除实例
-  fastify.delete<{ Params: { id: string }; Body: { reason?: string; force?: boolean } }>('/:id', {
+  fastify.delete<{ Params: { id: string }; Body: { reason?: string } }>('/:id', {
     onRequest: [fastify.authenticate],
     schema: {
       body: {
         type: 'object',
         properties: {
-          reason: { type: 'string', maxLength: 500 },
-          force: { type: 'boolean' }
+          reason: { type: 'string', maxLength: 500 }
         }
       }
     }
-  }, async (request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string; force?: boolean } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string } }>, reply: FastifyReply) => {
     const { id } = request.params
-    const { reason, force: forcePanelDelete = false } = request.body || {}
+    const { reason } = request.body || {}
     const instanceId = Number(id)
 
     if (isNaN(instanceId)) {
@@ -3724,7 +3846,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         operationType: 'delete_instance'
       })
     }
-    let incusDeleted = forcePanelDelete
+    let incusDeleted = false
     let sourceHostUnavailable = false
     let client: Awaited<ReturnType<typeof getIncusClient>> | null = null
     try {
@@ -3778,7 +3900,22 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const claimed = await claimInstanceForDelete(instanceId, instance.status as InstanceStatus)
+      const needsPrivilegedRefund = isPrivilegedDeleter
+        && instance.user_id !== user.id
+        && !!instance.package_plan_id
+        && instance.billing_mode !== 'hourly'
+      const needsHourlyBillingClosure = instance.billing_mode === 'hourly'
+      let requestedPrivilegedRefund = 0
+
+      const claimed = await claimInstanceForDelete(instanceId, instance.status as InstanceStatus, {
+        deletionBillingPending: needsPrivilegedRefund || needsHourlyBillingClosure,
+        deletionBillingMode: needsPrivilegedRefund
+          ? 'privileged_delete'
+          : needsHourlyBillingClosure
+            ? 'hourly_close'
+            : null,
+        deletionRefundableValue: null
+      })
       if (!claimed) {
         return reply.code(409).send({
           error: '实例正在删除或已删除',
@@ -3786,37 +3923,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // ===== 0.1 先确认 Incus 实例已删除，之后才允许退款和本地清理 =====
-      // 节点完全离线时，允许用户确认后仅清理面板记录；退款仍按正常规则执行。
-      if (forcePanelDelete) {
-        request.log.warn({ instanceId, hostId: instance.host_id }, 'Force deleting instance from panel without contacting source host')
-      } else {
-        if (!host || host.status !== 'online') {
-          sourceHostUnavailable = true
-          throw new Error('Source host is unavailable')
-        }
-
-        try {
-          client = await getIncusClient(host)
-          if (instance.status === 'running') {
-            await stopInstance(client, instance.incus_id, true)
-          }
-          await deleteInstance(client, instance.incus_id)
-          incusDeleted = true
-        } catch (error) {
-          sourceHostUnavailable = true
-          throw error
-        }
-      }
-
-      if (instance.billing_mode === 'hourly') {
-        await closeHourlyBilling(instanceId)
-      }
-
-      // ===== 0.2 处理退款（节点所有者/管理员删除他人的付费实例时）=====
-      let hostOwnerRefundAmount = 0
-      if (isPrivilegedDeleter && instance.user_id !== user.id) {
-        const instanceBilling = await prisma.instance.findUnique({
+      // 认领后重新读取计费字段，避免续费/方案变更与删除并发时使用旧报价。
+      if (needsPrivilegedRefund) {
+        const billingInstance = await prisma.instance.findUnique({
           where: { id: instance.id },
           select: {
             billingPrice: true,
@@ -3825,61 +3934,67 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             packagePlanId: true
           }
         })
-
-        const refundInfo = instanceBilling
-          ? await db.calculateInstanceRefund({
-              id: instance.id,
-              billingPrice: instanceBilling.billingPrice ? Number(instanceBilling.billingPrice) : null,
-              billingCycle: instanceBilling.billingCycle,
-              expiresAt: instanceBilling.expiresAt,
-              packagePlanId: instanceBilling.packagePlanId
-            })
-          : { isPaid: false, refundAmount: 0 }
-
-        if (refundInfo.isPaid && refundInfo.refundAmount > 0) {
-          hostOwnerRefundAmount = refundInfo.refundAmount
-
-          await prisma.$transaction(async (tx) => {
-            const instanceOwner = await tx.user.findUnique({
-              where: { id: instance.user_id },
-              select: { balance: true }
-            })
-            const oldBalance = Number(instanceOwner?.balance || 0)
-            const newBalance = oldBalance + hostOwnerRefundAmount
-
-            await tx.user.update({
-              where: { id: instance.user_id },
-              data: { balance: { increment: hostOwnerRefundAmount } }
-            })
-
-            await tx.balanceLog.create({
-              data: {
-                userId: instance.user_id,
-                type: 'refund',
-                amount: hostOwnerRefundAmount,
-                balanceBefore: oldBalance,
-                balanceAfter: newBalance,
-                instanceId: instance.id,
-                remark: `托管实例被删除退款：${instance.name}`
-              }
-            })
-
-            await db.deductHostingBalance(
-              instance.host_id,
-              hostOwnerRefundAmount,
-              instance.id,
-              `删除托管实例退款扣除：${instance.name}`,
-              tx
-            )
-          })
+        if (!billingInstance) {
+          throw new Error('Instance billing data unavailable')
         }
+        const refundInfo = await db.calculateInstanceRefund({
+          id: instance.id,
+          billingPrice: billingInstance.billingPrice,
+          billingCycle: billingInstance.billingCycle,
+          expiresAt: billingInstance.expiresAt,
+          packagePlanId: billingInstance.packagePlanId
+        })
+        requestedPrivilegedRefund = refundInfo.isPaid ? refundInfo.refundAmount : 0
+        await prisma.instance.update({
+          where: { id: instance.id },
+          data: { deletionRefundableValue: requestedPrivilegedRefund }
+        })
+      }
+
+      // ===== 0.1 先确认 Incus 实例已删除，之后才允许退款和本地清理 =====
+      if (!host || host.status !== 'online') {
+        sourceHostUnavailable = true
+        throw new Error('Source host is unavailable')
+      }
+
+      try {
+        client = await getIncusClient(host)
+        await ensureInstanceDeleted(client, instance.incus_id)
+        incusDeleted = true
+        await prisma.instance.update({
+          where: { id: instanceId },
+          data: { deletionRemoteDeleted: true }
+        })
+      } catch (error) {
+        sourceHostUnavailable = true
+        throw error
+      }
+
+      if (instance.billing_mode === 'hourly') {
+        await closeHourlyBilling(instanceId)
+        await db.completeHourlyDeletionBilling(instanceId)
+      }
+
+      // ===== 0.2 处理退款（节点所有者/管理员删除他人的付费实例时）=====
+      let hostOwnerRefundAmount = 0
+      if (needsPrivilegedRefund) {
+        hostOwnerRefundAmount = await db.settlePrivilegedDeletionBilling({
+          instance: {
+            id: instance.id,
+            userId: instance.user_id,
+            hostId: instance.host_id,
+            name: instance.name
+          },
+          requestedRefundAmount: requestedPrivilegedRefund,
+          remark: `托管实例被删除退款：${instance.name}`
+        })
       }
 
       // ===== 1. 删除反代站点（Caddy 远程 + 数据库）=====
       const proxySites = await getProxySitesByInstanceId(instanceId)
       if (proxySites.length > 0) {
         // 尝试删除 Caddy 远程配置
-        if (!forcePanelDelete && host?.caddy_enabled && host.caddy_username && host.caddy_password) {
+        if (host?.caddy_enabled && host.caddy_username && host.caddy_password) {
           const targetHost = host.nat_public_ip || host.ip_address
           if (targetHost) {
             const caddyClient = createCaddyClient({
@@ -4048,11 +4163,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         data: { natPortsUsedCount: actualPortsUsed }
       })
 
-      // 实例删除成功后释放官方优惠券使用次数及实例关联记录。
-      await prisma.$transaction(async (tx) => {
-        await db.releaseOfficialCouponUsageByInstance(instanceId, tx)
-      })
-
       // ===== 10. 发送通知 =====
       // 判断是否是宿主机所有者删除他人的实例
       if (isPrivilegedDeleter && instance.user_id !== user.id) {
@@ -4108,13 +4218,20 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       if (!incusDeleted) {
         await prisma.instance.updateMany({
           where: { id: instanceId, status: 'deleted' },
-          data: { status: instance.status as InstanceStatus }
+          data: {
+            status: instance.status as InstanceStatus,
+            deletionBillingPending: false,
+            deletionRemoteDeleted: false,
+            deletionBillingMode: null,
+            deletionRefundableValue: null,
+            deletionFeeWaiver: false
+          }
         })
       }
       if (sourceHostUnavailable) {
         request.log.warn({ instanceId, error }, 'Source host unavailable during instance deletion')
         return reply.code(409).send({
-          error: '源节点无法连接，请确认是否强制从面板删除',
+          error: '源节点无法连接，确认节点恢复在线后再重试；在无法确认远端实例已删除前不会退款',
           code: 'SOURCE_HOST_UNAVAILABLE'
         })
       }

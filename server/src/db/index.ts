@@ -155,12 +155,19 @@ export {
   getRemainingDays,
   calculateInstanceRemainingRefundQuote,
   calculateInstanceRefund,
+  getMaxRefundable,
+  getMaxRefundableInTransaction,
+  getHostedRefundAmountInTransaction,
+  settleUserDestroyBilling,
+  settlePrivilegedDeletionBilling,
+  completeHourlyDeletionBilling,
   // 托管余额相关
   isUserHostedNode,
   getHostOwnerId,
   recordHostingIncome,
   processHostingIncome,
   deductHostingBalance,
+  claimCreatingInstanceForCleanup,
   failCreatingInstanceAndRollbackResources,
   failCreatingInstanceAndRefund
 } from './billing-operations.js'

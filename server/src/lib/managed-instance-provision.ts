@@ -1,11 +1,12 @@
 import { prisma } from '../db/prisma.js'
-import { buildInstanceConfig, createInstance, getIncusClient, getInstance, getInstanceState, startInstance } from '../lib/incus/index.js'
+import { buildInstanceConfig, createInstance, getIncusClient, getInstance, getInstanceState, startInstance, ensureInstanceDeleted } from '../lib/incus/index.js'
 import {
   persistResolvedInstanceNetworkAddresses,
   resolveInstanceNetworkAddresses,
   type ResolvedInstanceNetworkAddresses
 } from './instance-network-sync.js'
 import type { Host } from '../types/database.js'
+import { cleanupAndSettleFailedProvision } from '../services/provisioning-cleanup.js'
 
 export interface ManagedInstanceProvisionConfig {
   name: string
@@ -161,20 +162,74 @@ export async function provisionManagedInstanceAsync(
 
     await persistResolvedInstanceNetworkAddresses(storedInstance, resolvedNetwork)
 
-    await prisma.instance.update({
-      where: { id: instanceId },
+    const updateResult = await prisma.instance.updateMany({
+      where: {
+        id: instanceId,
+        status: 'creating',
+        provisioningCleanupPending: false
+      },
       data: {
         status: 'running',
         storagePoolName: config.storagePool || 'default'
       }
     })
+
+    if (updateResult.count === 0) {
+      const current = await prisma.instance.findUnique({
+        where: { id: instanceId },
+        select: { status: true }
+      })
+      console.log(`[Managed Provisioning] instance ${instanceId} is already owned by another flow; skip state promotion`)
+      if (current?.status !== 'running') {
+        try {
+          await ensureInstanceDeleted(client, config.name)
+          console.log(`[Managed Provisioning] race cleanup confirmed ${config.name} is absent`)
+        } catch (cleanupError) {
+          console.error(`[Managed Provisioning] race cleanup could not confirm ${config.name} is absent:`, cleanupError)
+        }
+      }
+      return
+    }
   } catch (error) {
     console.error(`[Managed Provisioning] instance ${instanceId} failed:`, error)
 
-    await prisma.instance.update({
-      where: { id: instanceId },
-      data: { status: 'error' }
-    }).catch(() => {})
+    const cleanup = await cleanupAndSettleFailedProvision({
+      instanceId,
+      instanceName: config.name,
+      host,
+      reason: error instanceof Error ? error.message : String(error),
+      resourceRollback: {
+        hostId: host.id,
+        cpu: config.cpu,
+        memory: config.memory,
+        disk: config.disk,
+        portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(config.networkMode)
+          ? (config.portLimit || 0)
+          : 0
+      }
+    })
+
+    if (!cleanup.claimed) {
+      console.log(`[Managed Provisioning] instance ${instanceId} was already claimed or could not be claimed; no settlement performed`)
+      const current = await prisma.instance.findUnique({
+        where: { id: instanceId },
+        select: { status: true, provisioningCleanupPending: true }
+      }).catch(() => null)
+      if (current?.status === 'error' || (current?.status === 'creating' && current.provisioningCleanupPending)) {
+        try {
+          await ensureInstanceDeleted(await getIncusClient(host), config.name)
+          console.log(`[Managed Provisioning] late failure cleanup confirmed ${config.name} is absent`)
+        } catch (cleanupError) {
+          console.error(`[Managed Provisioning] late failure cleanup could not confirm ${config.name} is absent:`, cleanupError)
+        }
+      }
+    } else if (!cleanup.cleaned) {
+      console.error(`[Managed Provisioning] instance ${instanceId} cleanup is unconfirmed; reservations remain held:`, cleanup.error)
+    } else if (cleanup.settlement?.claimed) {
+      console.log(`[Managed Provisioning] instance ${instanceId} resources released after confirmed cleanup`)
+    } else {
+      console.error(`[Managed Provisioning] instance ${instanceId} cleanup confirmed but database settlement is pending:`, cleanup.error)
+    }
 
     throw error
   }

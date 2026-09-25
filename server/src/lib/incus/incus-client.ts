@@ -13,6 +13,38 @@ import { waitForOperation } from './incus-utils.js'
 import { buildIncusTlsConnectOptions, panelCertificatePaths, resolveIncusTarget, trustFromEnvironment, type IncusTlsConnectOptions } from './incus-tls.js'
 import { getIncusExecutionGuard, throwIfIncusExecutionAborted } from './incus-execution-guard.js'
 
+export class IncusApiError extends Error {
+  readonly statusCode: number
+  readonly method: string
+  readonly path: string
+
+  constructor(message: string, options: {
+    statusCode: number
+    method: string
+    path: string
+  }) {
+    super(message)
+    this.name = 'IncusApiError'
+    this.statusCode = options.statusCode
+    this.method = options.method
+    this.path = options.path
+  }
+}
+
+/**
+ * A missing instance is the only safe negative result for cleanup. Network
+ * failures and other API errors must remain unknown and must not be treated as
+ * proof that the resource was removed.
+ */
+export function isIncusNotFoundError(error: unknown): boolean {
+  if (error instanceof IncusApiError) return error.statusCode === 404
+
+  const message = error instanceof Error ? error.message : String(error)
+  return /\b404\b/i.test(message)
+    || /(?:instance|container|virtual machine).*(?:not found|does not exist|no such)/i.test(message)
+    || /(?:not found|does not exist|no such).*(?:instance|container|virtual machine)/i.test(message)
+}
+
 export class IncusClient {
   baseUrl: string
   certPath: string | null
@@ -172,7 +204,11 @@ export class IncusClient {
         error: text || `HTTP ${response.statusCode}`
       })
       // Incus returns plain text for some errors (like mTLS failures)
-      throw new Error(text || `HTTP ${response.statusCode}`)
+      throw new IncusApiError(text || `HTTP ${response.statusCode}`, {
+        statusCode: response.statusCode,
+        method,
+        path
+      })
     }
 
     // Incus API 返回格式: { type: "sync/async", status: "Success", metadata: {...} }
@@ -183,7 +219,11 @@ export class IncusClient {
         url,
         error: data.error || 'Incus API 错误'
       })
-      throw new Error(data.error || 'Incus API 错误')
+      throw new IncusApiError(data.error || data.err || 'Incus API 错误', {
+        statusCode: data.status_code || response.statusCode,
+        method,
+        path
+      })
     }
 
     // 异步操作需要等待完成

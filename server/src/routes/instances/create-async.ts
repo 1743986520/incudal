@@ -10,12 +10,11 @@ import {
   buildInstanceConfig,
   createInstance,
   startInstance,
-  stopInstance,
-  deleteInstance,
-  getInstanceState
+  getInstanceState,
+  ensureInstanceDeleted
 } from '../../lib/incus/index.js'
 import type { Host } from '../../types/database.js'
-import { failCreatingInstanceAndRefund } from '../../db/billing-operations.js'
+import { cleanupAndSettleFailedProvision } from '../../services/provisioning-cleanup.js'
 
 /**
  * 异步创建实例
@@ -148,7 +147,8 @@ export async function createInstanceAsync(
     const updateResult = await prisma.instance.updateMany({
       where: {
         id: instanceId,
-        status: 'creating'
+        status: 'creating',
+        provisioningCleanupPending: false
       },
       data: {
         status: 'running',
@@ -159,13 +159,30 @@ export async function createInstanceAsync(
     })
 
     if (updateResult.count === 0) {
-      console.log(`[Provisioning] 实例 ${instanceId} 已被超时清理任务处理，清理已创建的 Incus 实例`)
-      try {
-        await stopInstance(client, config.name, true)
-        await deleteInstance(client, config.name)
-        console.log(`[Provisioning] Incus 实例 ${config.name} 已清理（因超时）`)
-      } catch (cleanupErr) {
-        console.error(`[Provisioning] 清理超时实例失败:`, cleanupErr)
+      // A cleanup worker owns the external deletion once this flag is set.
+      // Never delete here based only on an update count: another provisioner
+      // may already have legitimately moved the row to running.
+      const current = await prisma.instance.findUnique({
+        where: { id: instanceId },
+        select: { status: true, provisioningCleanupPending: true }
+      })
+      if (current?.status === 'creating' && current.provisioningCleanupPending) {
+        console.log(`[Provisioning] 实例 ${instanceId} 正由清理流程处理，跳过状态复活`)
+      } else {
+        console.log(`[Provisioning] 实例 ${instanceId} 状态已由其他流程处理，跳过状态复活`)
+      }
+
+      // If timeout settlement won before the external create completed, the
+      // Incus resource may have appeared after the first cleanup check. Only
+      // remove it when the DB row is not running; a legitimately running row
+      // belongs to another successful provisioner and must be left alone.
+      if (current?.status !== 'running') {
+        try {
+          await ensureInstanceDeleted(client, config.name)
+          console.log(`[Provisioning] 竞态收尾：确认残留实例 ${config.name} 已清理`)
+        } catch (cleanupError) {
+          console.error(`[Provisioning] 竞态收尾无法确认残留实例 ${config.name} 已清理:`, cleanupError)
+        }
       }
       return
     }
@@ -239,33 +256,54 @@ export async function createInstanceAsync(
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.error(`[Provisioning] ✘ 实例 ${instanceId} 创建失败:`, errorMessage)
 
-    const settlement = await failCreatingInstanceAndRefund(instanceId, errorMessage, resources ? {
-      hostId: host.id,
-      cpu: resources.cpu,
-      memory: resources.memory,
-      disk: resources.disk,
-      portCount: resources.portCount ?? (['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(config.networkMode)
-        ? (config.portLimit || 0)
-        : 0)
-    } : undefined)
+    const cleanup = await cleanupAndSettleFailedProvision({
+      instanceId,
+      instanceName: config.name,
+      host,
+      reason: errorMessage,
+      resourceRollback: resources ? {
+        hostId: host.id,
+        cpu: resources.cpu,
+        memory: resources.memory,
+        disk: resources.disk,
+        portCount: resources.portCount ?? (['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(config.networkMode)
+          ? (config.portLimit || 0)
+          : 0)
+      } : undefined
+    })
 
-    if (settlement.claimed && userId && resources) {
+    if (!cleanup.claimed) {
+      if (cleanup.error) {
+        console.error(`[Provisioning] 实例 ${instanceId} 无法取得清理认领，暂不退款:`, cleanup.error)
+      } else {
+        console.log(`[Provisioning] 实例 ${instanceId} 已被其他清理流程处理，跳过退款与资源回滚`)
+      }
+
+      // The timeout worker may have already settled the row while this worker
+      // was still waiting on Incus. A late failure must still remove any
+      // resource created by this worker, but never touch a running row.
+      const current = await prisma.instance.findUnique({
+        where: { id: instanceId },
+        select: { status: true, provisioningCleanupPending: true }
+      }).catch(() => null)
+      if (current?.status === 'error' || (current?.status === 'creating' && current.provisioningCleanupPending)) {
+        try {
+          await ensureInstanceDeleted(await getIncusClient(host), config.name)
+          console.log(`[Provisioning] 延迟失败收尾：确认残留实例 ${config.name} 已清理`)
+        } catch (cleanupError) {
+          console.error(`[Provisioning] 延迟失败收尾无法确认残留实例 ${config.name} 已清理:`, cleanupError)
+        }
+      }
+    } else if (!cleanup.cleaned) {
+      console.error(`[Provisioning] 实例 ${instanceId} 清理状态未确认，保留扣款与资源预占:`, cleanup.error)
+    } else if (cleanup.settlement?.claimed && userId && resources) {
       console.log(`[Provisioning] 用户 ${userId} 资源已回滚 (CPU=${resources.cpu}, Mem=${resources.memory}MB, Disk=${resources.disk}MB)`)
-    } else if (!settlement.claimed) {
-      console.log(`[Provisioning] 实例 ${instanceId} 已被超时清理任务处理，跳过资源回滚`)
+    } else if (!cleanup.settlement?.claimed) {
+      console.log(`[Provisioning] 实例 ${instanceId} 清理已完成但结算认领已被其他流程处理`)
     }
 
-    if (settlement.refundAmount > 0) {
-      console.log(`[Provisioning] 实例 ${instanceId} 已自动退款 ¥${settlement.refundAmount.toFixed(2)}`)
-    }
-
-    try {
-      const client = await getIncusClient(host)
-      await deleteInstance(client, config.name)
-      console.log(`[Provisioning] 残留容器 ${config.name} 已清理`)
-    } catch (cleanupErr) {
-      const errorMessage = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
-      console.log(`[Provisioning] 清理残留容器失败 (可能不存在):`, errorMessage)
+    if (cleanup.settlement && cleanup.settlement.refundAmount > 0) {
+      console.log(`[Provisioning] 实例 ${instanceId} 已自动退款 ¥${cleanup.settlement.refundAmount.toFixed(2)}`)
     }
 
     const instance = await db.getInstanceById(instanceId)

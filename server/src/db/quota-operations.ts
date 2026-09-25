@@ -299,7 +299,8 @@ export async function claimInstanceAndReserveResources(options: {
       where: {
         id: options.instanceId,
         userId: options.userId,
-        status: 'error'
+        status: 'error',
+        provisioningCleanupPending: false
       },
       data: {
         status: 'creating',

@@ -36,13 +36,13 @@ import {
   isValidSystemImage
 } from '../db/images.js'
 import { sendAdminInstanceCreatedEmail, sendInstanceDestroyRefundEmail } from '../lib/mailer.js'
+import { closeHourlyBilling } from '../services/hourly-billing-scheduler.js'
 import { validateCommandsOwnership, mergeCommandContents, getImageDistroFromAlias } from '../db/custom-init-commands.js'
 import { customAlphabet } from 'nanoid'
-import { buildInstanceConfig, getIncusClient, createInstance, startInstance, deleteInstance, getInstanceState } from '../lib/incus/index.js'
+import { buildInstanceConfig, getIncusClient, createInstance, startInstance, getInstanceState, ensureInstanceDeleted } from '../lib/incus/index.js'
 import {
   calculateCreateBilling,
-  getMaxRefundable,
-  failCreatingInstanceAndRefund
+  getMaxRefundable
 } from '../db/billing-operations.js'
 import { shouldSyncInstanceSwapSizeWithPlan } from '../lib/instance-swap.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
@@ -52,11 +52,20 @@ import type { Host } from '../types/database.js'
 import { getInstanceBillingLineageIds } from '../db/billing-records.js'
 import { INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
+import { cleanupAndSettleFailedProvision } from '../services/provisioning-cleanup.js'
 
 // 自定义 nanoid，只使用小写字母和数字
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8)
 
-async function claimInstanceForAdminDelete(instanceId: number, currentStatus: InstanceStatus): Promise<boolean> {
+async function claimInstanceForAdminDelete(
+  instanceId: number,
+  currentStatus: InstanceStatus,
+  options: {
+    deletionBillingPending?: boolean
+    deletionBillingMode?: 'privileged_delete' | 'hourly_close' | null
+    deletionRefundableValue?: number | null
+  } = {}
+): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const locked = await tryAdvisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     if (!locked) return false
@@ -82,7 +91,15 @@ async function claimInstanceForAdminDelete(instanceId: number, currentStatus: In
         id: instanceId,
         status: currentStatus
       },
-      data: { status: 'deleted', version: { increment: 1 } }
+      data: {
+        status: 'deleted',
+        version: { increment: 1 },
+        deletionBillingPending: options.deletionBillingPending === true,
+        deletionRemoteDeleted: false,
+        deletionBillingMode: options.deletionBillingMode ?? null,
+        deletionRefundableValue: options.deletionRefundableValue ?? null,
+        deletionFeeWaiver: false
+      }
     })
 
     return result.count === 1
@@ -628,6 +645,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         thisMonthRecharge,
         todayRecharge,
         affStats,
+        affOrderCount,
         thisMonthAff,
         affConverted,
         affPendingConvert
@@ -731,35 +749,35 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             status: { notIn: ['deleted', 'suspended'] }
           }
         }),
-        prisma.rechargeRecord.aggregate({
-          where: { status: 'completed' },
-          _sum: { amount: true },
-          _count: { id: true }
+        prisma.$queryRaw<Array<{ value: unknown; count: number }>>(Prisma.sql`
+          SELECT COALESCE(SUM(COALESCE("actual_amount", "amount")), 0)::numeric AS value,
+                 COUNT(*)::int AS count
+          FROM "recharge_records"
+          WHERE "status" = 'completed'
+        `),
+        prisma.$queryRaw<Array<{ value: unknown; count: number }>>(Prisma.sql`
+          SELECT COALESCE(SUM(COALESCE("actual_amount", "amount")), 0)::numeric AS value,
+                 COUNT(*)::int AS count
+          FROM "recharge_records"
+          WHERE "status" = 'completed' AND "created_at" >= ${thisMonthStart}
+        `),
+        prisma.$queryRaw<Array<{ value: unknown; count: number }>>(Prisma.sql`
+          SELECT COALESCE(SUM(COALESCE("actual_amount", "amount")), 0)::numeric AS value,
+                 COUNT(*)::int AS count
+          FROM "recharge_records"
+          WHERE "status" = 'completed'
+            AND "created_at" >= ${today} AND "created_at" < ${tomorrow}
+        `),
+        prisma.affLog.aggregate({
+          where: { type: { in: ['new_purchase', 'renew', 'refund'] } },
+          _sum: { amount: true }
         }),
-        prisma.rechargeRecord.aggregate({
-          where: {
-            status: 'completed',
-            createdAt: { gte: thisMonthStart }
-          },
-          _sum: { amount: true },
-          _count: { id: true }
-        }),
-        prisma.rechargeRecord.aggregate({
-          where: {
-            status: 'completed',
-            createdAt: { gte: today, lt: tomorrow }
-          },
-          _sum: { amount: true },
-          _count: { id: true }
+        prisma.affLog.count({
+          where: { type: { in: ['new_purchase', 'renew'] } }
         }),
         prisma.affLog.aggregate({
-          where: { type: { in: ['new_purchase', 'renew'] } },
-          _sum: { amount: true },
-          _count: { id: true }
-        }),
-        prisma.affLog.aggregate({
           where: {
-            type: { in: ['new_purchase', 'renew'] },
+            type: { in: ['new_purchase', 'renew', 'refund'] },
             createdAt: { gte: thisMonthStart }
           },
           _sum: { amount: true }
@@ -805,17 +823,17 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           },
           // 充值统计
           recharge: {
-            totalAmount: toNumber(rechargeStats._sum?.amount),
-            totalCount: rechargeStats._count?.id || 0,
-            thisMonthAmount: toNumber(thisMonthRecharge._sum?.amount),
-            thisMonthCount: thisMonthRecharge._count?.id || 0,
-            todayAmount: toNumber(todayRecharge._sum?.amount),
-            todayCount: todayRecharge._count?.id || 0
+            totalAmount: toNumber(rechargeStats[0]?.value),
+            totalCount: rechargeStats[0]?.count || 0,
+            thisMonthAmount: toNumber(thisMonthRecharge[0]?.value),
+            thisMonthCount: thisMonthRecharge[0]?.count || 0,
+            todayAmount: toNumber(todayRecharge[0]?.value),
+            todayCount: todayRecharge[0]?.count || 0
           },
           // AFF 返利统计
           aff: {
             totalCommission: toNumber(affStats._sum?.amount),
-            totalOrders: affStats._count?.id || 0,
+            totalOrders: affOrderCount,
             thisMonthCommission: toNumber(thisMonthAff._sum?.amount),
             totalConverted: toNumber(affConverted._sum?.amount),
             pendingConvertCount: affPendingConvert
@@ -915,7 +933,6 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       if (!instance) {
         return reply.status(404).send({ error: '实例不存在' })
       }
-
       if (instance.status === 'deleted') {
         return reply.status(400).send({ error: '实例已删除' })
       }
@@ -1255,6 +1272,10 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(404).send({ error: '实例不存在' })
       }
 
+      if (instance.status === 'deleted') {
+        return reply.status(400).send({ error: '实例已删除，不能通过普通退款接口再次退款' })
+      }
+
       // 退款上限必须在同一事务内重新计算。实例级 advisory lock 让同一实例的
       // 并发退款串行化，避免两个请求同时通过旧的可退余额检查。
       const refundResult = await prisma.$transaction(async (tx) => {
@@ -1267,20 +1288,23 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         if (!currentInstance || !currentInstance.user) {
           throw new Error('INSTANCE_NOT_FOUND')
         }
+        if (currentInstance.status === 'deleted' || currentInstance.deletionBillingPending) {
+          throw new Error('INSTANCE_NOT_REFUNDABLE_AFTER_DELETION')
+        }
 
         const maxRefundable = await getMaxRefundableInTransaction(tx, instanceId)
         if (refundAmount > maxRefundable) {
           throw new RefundLimitExceededError(maxRefundable)
         }
 
-        const oldBalance = Number(currentInstance.user.balance)
-        const newBalance = roundMoney(oldBalance + refundAmount)
-
         // 增加用户余额
-        await tx.user.update({
+        const updatedUser = await tx.user.update({
           where: { id: currentInstance.userId },
-          data: { balance: { increment: refundAmount } }
+          data: { balance: { increment: refundAmount } },
+          select: { balance: true }
         })
+        const newBalance = Number(updatedUser.balance)
+        const oldBalance = roundMoney(newBalance - refundAmount)
 
         // 记录余额变动
         const balanceLog = await tx.balanceLog.create({
@@ -1295,7 +1319,26 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           }
         })
 
-        // 记录退款记录（负数表示退款）
+        // 托管收入与用户退款必须同步回收。官方优惠券的托管收入按原价
+        // 入账，getHostedRefundAmountInTransaction 会按历史退款及优惠券
+        // 原价换算，避免平台退款后托管主仍保留未赚收入。
+        const hostedRefundAmount = await db.getHostedRefundAmountInTransaction(
+          tx,
+          instanceId,
+          refundAmount
+        )
+        if (hostedRefundAmount > 0) {
+          await db.deductHostingBalance(
+            currentInstance.hostId,
+            hostedRefundAmount,
+            instanceId,
+            `管理员退款扣除托管收入：${currentInstance.name}`,
+            tx
+          )
+        }
+
+        // 记录退款记录（负数表示退款）；放在托管金额计算之后，避免本次
+        // 新建的 refund 记录被当成“历史已退款”再次冲销。
         await tx.instanceBillingRecord.create({
           data: {
             instanceId,
@@ -1309,6 +1352,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             remark: `管理员退款：${reason}（操作者: ${admin.username}）`
           }
         })
+
         return { maxRefundable, instance: currentInstance }
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable
@@ -1347,6 +1391,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       }
       if (error instanceof Error && error.message === 'INSTANCE_NOT_FOUND') {
         return reply.status(404).send({ error: '实例不存在' })
+      }
+      if (error instanceof Error && error.message === 'INSTANCE_NOT_REFUNDABLE_AFTER_DELETION') {
+        return reply.status(400).send({ error: '实例已删除或正在结算，不能通过普通退款接口再次退款' })
       }
       return reply.status(500).send({ error: '退款失败' })
     }
@@ -1398,28 +1445,62 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: '实例已删除' })
       }
 
-      // 3. 计算可退款金额（仅用于全额退款模式）
-      const { maxRefundable } = await getMaxRefundable(instanceId)
-
-      // 4. 计算退款金额
-      let refundAmount = 0
-      if (refundType === 'full') {
-        // 全额退款：退还所有已消费金额（受消费记录限制）
-        refundAmount = maxRefundable
-      } else {
-        const refundQuote = await db.calculateInstanceRemainingRefundQuote({
-          id: instanceId,
-          billingPrice: instance.billingPrice,
-          billingCycle: instance.billingCycle,
-          expiresAt: instance.expiresAt,
-          packagePlanId: instance.packagePlanId
+      // 仅数据库删除无法确认宿主机上的付费实例已经不存在，禁止在该
+      // 模式下自动退款，避免“面板删除成功、远端资源继续运行”。
+      if (databaseOnly && (instance.packagePlanId !== null || instance.billingMode === 'hourly')) {
+        return reply.status(409).send({
+          error: '付费实例必须先确认宿主机上的 Incus 实例已删除，不能仅删除数据库并退款',
+          code: 'REMOTE_DELETION_REQUIRED_FOR_REFUND'
         })
-        refundAmount = refundQuote.refundableValue
       }
 
-      const claimed = await claimInstanceForAdminDelete(instanceId, instance.status)
+      const needsPrivilegedRefund = instance.packagePlanId !== null && instance.billingMode !== 'hourly'
+      const needsHourlyBillingClosure = !databaseOnly && instance.billingMode === 'hourly'
+      const claimed = await claimInstanceForAdminDelete(instanceId, instance.status, {
+        deletionBillingPending: needsPrivilegedRefund || needsHourlyBillingClosure,
+        deletionBillingMode: needsPrivilegedRefund
+          ? 'privileged_delete'
+          : needsHourlyBillingClosure
+            ? 'hourly_close'
+            : null,
+        deletionRefundableValue: null
+      })
       if (!claimed) {
         return reply.status(409).send({ error: '实例正在删除或已删除' })
+      }
+
+      // 认领后重新读取计费字段，避免续费/方案变更与删除并发时使用旧报价。
+      let refundAmount = 0
+      if (needsPrivilegedRefund) {
+        const currentBilling = await prisma.instance.findUnique({
+          where: { id: instanceId },
+          select: {
+            billingPrice: true,
+            billingCycle: true,
+            expiresAt: true,
+            packagePlanId: true
+          }
+        })
+        if (!currentBilling) throw new Error('Instance billing data unavailable')
+
+        if (refundType === 'full') {
+          const { maxRefundable } = await getMaxRefundable(instanceId)
+          refundAmount = maxRefundable
+        } else {
+          const refundQuote = await db.calculateInstanceRemainingRefundQuote({
+            id: instanceId,
+            billingPrice: currentBilling.billingPrice,
+            billingCycle: currentBilling.billingCycle,
+            expiresAt: currentBilling.expiresAt,
+            packagePlanId: currentBilling.packagePlanId
+          })
+          refundAmount = refundQuote.refundableValue
+        }
+
+        await prisma.instance.update({
+          where: { id: instanceId },
+          data: { deletionRefundableValue: refundAmount }
+        })
       }
 
       let incusDeleted = false
@@ -1428,23 +1509,40 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         if (!host) {
           await prisma.instance.updateMany({
             where: { id: instanceId, status: 'deleted' },
-            data: { status: instance.status, version: { increment: 1 } }
+            data: {
+              status: instance.status,
+              version: { increment: 1 },
+              deletionBillingPending: false,
+              deletionRemoteDeleted: false,
+              deletionBillingMode: null,
+              deletionRefundableValue: null,
+              deletionFeeWaiver: false
+            }
           })
           throw new Error('Host not found')
         }
 
         try {
-          const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
+          const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
           const client = await getIncusClient(host)
-          if (instance.status === 'running') {
-            await stopInstance(client, instance.incusId, true)
-          }
-          await deleteInstance(client, instance.incusId)
+          await ensureInstanceDeleted(client, instance.incusId)
           incusDeleted = true
+          await prisma.instance.update({
+            where: { id: instanceId },
+            data: { deletionRemoteDeleted: true }
+          })
         } catch (incusError) {
           await prisma.instance.updateMany({
             where: { id: instanceId, status: 'deleted' },
-            data: { status: instance.status, version: { increment: 1 } }
+            data: {
+              status: instance.status,
+              version: { increment: 1 },
+              deletionBillingPending: false,
+              deletionRemoteDeleted: false,
+              deletionBillingMode: null,
+              deletionRefundableValue: null,
+              deletionFeeWaiver: false
+            }
           })
           request.log.error(incusError, 'Incus 删除实例失败')
           throw incusError
@@ -1452,65 +1550,56 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       }
 
       // 远端删除确认后再完成账务结算。
-      if (refundAmount > 0) {
+      if (needsHourlyBillingClosure) {
         try {
-          const requestedRefundAmount = refundAmount
-          refundAmount = await prisma.$transaction(async (tx) => {
-            // 删除并退款也必须和普通退款共用实例锁，并在锁内重新计算上限。
-            // 否则普通退款可能在认领删除后、结算前插入退款记录，导致重复退款。
-            await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
-
-            const currentMaxRefundable = await getMaxRefundableInTransaction(tx, instanceId)
-            const settledRefundAmount = roundMoney(Math.min(requestedRefundAmount, currentMaxRefundable))
-            if (settledRefundAmount <= 0) {
-              return 0
-            }
-
-            const currentUser = await tx.user.findUnique({
-              where: { id: instance.userId },
-              select: { balance: true }
-            })
-            const oldBalance = Number(currentUser?.balance || 0)
-            const newBalance = roundMoney(oldBalance + settledRefundAmount)
-
-            await tx.user.update({
-              where: { id: instance.userId },
-              data: { balance: { increment: settledRefundAmount } }
-            })
-
-            const balanceLog = await tx.balanceLog.create({
+          await closeHourlyBilling(instanceId)
+          await db.completeHourlyDeletionBilling(instanceId)
+        } catch (hourlyError) {
+          // 远端已经删除时保留待结算标记，交给恢复任务重试，避免冻结预付款遗失。
+          if (!incusDeleted) {
+            await prisma.instance.updateMany({
+              where: { id: instanceId, status: 'deleted' },
               data: {
-                userId: instance.userId,
-                type: 'refund',
-                amount: settledRefundAmount,
-                balanceBefore: oldBalance,
-                balanceAfter: newBalance,
-                instanceId,
-                remark: `管理员删除并退款（${refundType === 'full' ? '全额' : '按剩余价值'}）：${reason}`
+                status: instance.status,
+                version: { increment: 1 },
+                deletionBillingPending: false,
+                deletionRemoteDeleted: false,
+                deletionBillingMode: null,
+                deletionRefundableValue: null,
+                deletionFeeWaiver: false
               }
             })
+          }
+          throw hourlyError
+        }
+      }
 
-            await tx.instanceBillingRecord.create({
-              data: {
-                instanceId,
-                userId: instance.userId,
-                type: 'refund',
-                amount: -settledRefundAmount,
-                months: 0,
-                periodStart: new Date(),
-                periodEnd: new Date(),
-                balanceLogId: balanceLog.id,
-                remark: `管理员删除并退款（${refundType === 'full' ? '全额' : '按剩余价值'}）：${reason}（操作者: ${admin.username}）`
-              }
-            })
-            return settledRefundAmount
+      if (needsPrivilegedRefund) {
+        try {
+          refundAmount = await db.settlePrivilegedDeletionBilling({
+            instance: {
+              id: instance.id,
+              userId: instance.userId,
+              hostId: instance.hostId,
+              name: instance.name
+            },
+            requestedRefundAmount: refundAmount,
+            remark: `管理员删除并退款（${refundType === 'full' ? '全额' : '按剩余价值'}）：${reason}（操作者: ${admin.username}）`
           })
         } catch (refundError) {
           // 远端已经删除时必须保留 deleted，避免数据库恢复成可操作状态。
           if (!incusDeleted) {
             await prisma.instance.updateMany({
               where: { id: instanceId, status: 'deleted' },
-              data: { status: instance.status, version: { increment: 1 } }
+              data: {
+                status: instance.status,
+                version: { increment: 1 },
+                deletionBillingPending: false,
+                deletionRemoteDeleted: false,
+                deletionBillingMode: null,
+                deletionRefundableValue: null,
+                deletionFeeWaiver: false
+              }
             })
           }
           throw refundError
@@ -1918,6 +2007,12 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             }
           })
 
+          // 降价退款也必须按历史托管收入同步回收。否则管理员只退用户
+          // 余额，用户托管节点仍会保留原先的收入，造成平台/托管方账务不平。
+          const hostedRefundAmount = priceDiff < 0
+            ? await db.getHostedRefundAmountInTransaction(tx, currentInstance.id, Math.abs(priceDiff))
+            : 0
+
           // 记录计费变动
           await tx.instanceBillingRecord.create({
             data: {
@@ -1932,6 +2027,26 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
               remark: `价格调整: ¥${oldPrice.toFixed(2)} → ¥${roundedNewPrice.toFixed(2)}`
             }
           })
+
+          if (priceDiff > 0) {
+            await db.processHostingIncome(
+              currentInstance.hostId,
+              priceDiff,
+              currentInstance.id,
+              'upgrade',
+              tx
+            )
+          }
+
+          if (hostedRefundAmount > 0) {
+            await db.deductHostingBalance(
+              currentInstance.hostId,
+              hostedRefundAmount,
+              currentInstance.id,
+              `管理员降价退款扣除托管收入：${currentInstance.name}`,
+              tx
+            )
+          }
         }
       })
 
@@ -2104,10 +2219,11 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         const periodEnds = changedIds.length > 0
           ? await tx.instance.findMany({
               where: { id: { in: changedIds } },
-              select: { id: true, expiresAt: true }
+              select: { id: true, expiresAt: true, hostId: true }
             })
           : []
         const periodEndMap = new Map(periodEnds.map(item => [item.id, item.expiresAt]))
+        const hostIdMap = new Map(periodEnds.map(item => [item.id, item.hostId]))
 
         for (const item of changedItems) {
           const updateResult = await tx.instance.updateMany({
@@ -2187,6 +2303,10 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
               }
             })
 
+            const hostedRefundAmount = item.priceDiff < 0
+              ? await db.getHostedRefundAmountInTransaction(tx, item.id, Math.abs(item.priceDiff))
+              : 0
+
             await tx.instanceBillingRecord.create({
               data: {
                 instanceId: item.id,
@@ -2200,6 +2320,29 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
                 remark: `批量价格调整: ¥${(item.oldPrice || 0).toFixed(2)} → ¥${item.newPrice.toFixed(2)}`
               }
             })
+
+            const hostId = hostIdMap.get(item.id)
+            if (item.priceDiff > 0) {
+              if (hostId === undefined) throw new Error(`实例 #${item.id} 宿主机不存在`)
+              await db.processHostingIncome(
+                hostId,
+                item.priceDiff,
+                item.id,
+                'upgrade',
+                tx
+              )
+            }
+
+            if (hostedRefundAmount > 0) {
+              if (hostId === undefined) throw new Error(`实例 #${item.id} 宿主机不存在`)
+              await db.deductHostingBalance(
+                hostId,
+                hostedRefundAmount,
+                item.id,
+                `管理员批量降价退款扣除托管收入：${item.name || `#${item.id}`}`,
+                tx
+              )
+            }
           }
         }
 
@@ -3136,18 +3279,26 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             throw new Error('USER_NOT_FOUND: 用户不存在')
           }
 
-          const balanceBefore = Number(userRecord.balance)
-          const balanceAfter = balanceBefore - billing.totalPrice
-
-          if (balanceAfter < 0) {
+          if (Number(userRecord.balance) < billing.totalPrice) {
             throw new Error('BALANCE_INSUFFICIENT: 余额不足')
           }
 
-          // 扣除余额
-          await tx.user.update({
-            where: { id: targetUser.id },
-            data: { balance: balanceAfter }
+          // 使用条件扣款，避免管理员并发开通时以旧余额覆盖其他扣款。
+          const walletUpdate = await tx.user.updateMany({
+            where: { id: targetUser.id, balance: { gte: billing.totalPrice } },
+            data: { balance: { decrement: billing.totalPrice } }
           })
+          if (walletUpdate.count !== 1) {
+            throw new Error('BALANCE_INSUFFICIENT: 余额不足或并发冲突')
+          }
+
+          const updatedUser = await tx.user.findUnique({
+            where: { id: targetUser.id },
+            select: { balance: true }
+          })
+          if (!updatedUser) throw new Error('USER_NOT_FOUND: 用户不存在')
+          const balanceAfter = Number(updatedUser.balance)
+          const balanceBefore = Number((balanceAfter + billing.totalPrice).toFixed(2))
 
           // 记录余额日志
           const balanceLog = await tx.balanceLog.create({
@@ -3226,6 +3377,18 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
                 : `管理员赠送首月（未扣费）`
             }
           })
+
+          // 管理员代用户开通且实际扣款时，用户托管节点也应获得对应收入。
+          // 免费赠送首月不产生托管收入。
+          if (chargeFirstMonth && billing.totalPrice > 0) {
+            await db.processHostingIncome(
+              lockedHost.id,
+              billing.totalPrice,
+              instance.id,
+              'purchase',
+              tx
+            )
+          }
         }
 
         let generatedSshKeyId: number | null = null
@@ -3871,6 +4034,14 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             remark: `方案升级：${currentPlan.name} → ${newPlan.name}（操作者: ${admin.username}）`
           }
         })
+
+        await db.processHostingIncome(
+          instance.hostId,
+          priceDifference,
+          instanceId,
+          'upgrade',
+          tx
+        )
       })
 
       try {
@@ -4093,7 +4264,7 @@ async function createInstanceAsync(
     // 只有仍处于 creating 的实例才能被异步流程置为 running；超时任务
     // 可能已经认领并清理了该实例，避免这里无条件复活已失败的实例。
     const updateResult = await prisma.instance.updateMany({
-      where: { id: instanceId, status: 'creating' },
+      where: { id: instanceId, status: 'creating', provisioningCleanupPending: false },
       data: {
         status: 'running',
         ipv4,
@@ -4103,11 +4274,18 @@ async function createInstanceAsync(
     })
 
     if (updateResult.count === 0) {
-      console.log(`[Admin Provisioning] 实例 ${instanceId} 已被超时清理，清理已创建的 Incus 实例`)
-      try {
-        await deleteInstance(client, config.name)
-      } catch (cleanupError) {
-        console.error(`[Admin Provisioning] 清理超时实例失败:`, cleanupError)
+      const current = await prisma.instance.findUnique({
+        where: { id: instanceId },
+        select: { status: true, provisioningCleanupPending: true }
+      })
+      console.log(`[Admin Provisioning] 实例 ${instanceId} 状态已由其他流程处理，跳过状态复活`)
+      if (current?.status !== 'running') {
+        try {
+          await ensureInstanceDeleted(client, config.name)
+          console.log(`[Admin Provisioning] 竞态收尾：确认残留实例 ${config.name} 已清理`)
+        } catch (cleanupError) {
+          console.error(`[Admin Provisioning] 竞态收尾无法确认残留实例 ${config.name} 已清理:`, cleanupError)
+        }
       }
       return
     }
@@ -4118,27 +4296,48 @@ async function createInstanceAsync(
     console.error(`[Admin Provisioning] 实例 ${instanceId} 创建失败:`, error)
 
     const errorMessage = error instanceof Error ? error.message : String(error)
-    const settlement = await failCreatingInstanceAndRefund(instanceId, errorMessage, {
-      hostId: host.id,
-      cpu: _resources.cpu,
-      memory: _resources.memory,
-      disk: _resources.disk,
-      portCount: _resources.portCount || 0
+    const cleanup = await cleanupAndSettleFailedProvision({
+      instanceId,
+      instanceName: config.name,
+      host,
+      reason: errorMessage,
+      resourceRollback: {
+        hostId: host.id,
+        cpu: _resources.cpu,
+        memory: _resources.memory,
+        disk: _resources.disk,
+        portCount: _resources.portCount || 0
+      }
     })
 
-    if (settlement.claimed) {
+    if (!cleanup.claimed) {
+      if (cleanup.error) {
+        console.error(`[Admin Provisioning] 实例 ${instanceId} 无法取得清理认领，暂不退款:`, cleanup.error)
+      } else {
+        console.log(`[Admin Provisioning] 实例 ${instanceId} 已被其他清理流程处理，跳过退款与资源回滚`)
+      }
+      const current = await prisma.instance.findUnique({
+        where: { id: instanceId },
+        select: { status: true, provisioningCleanupPending: true }
+      }).catch(() => null)
+      if (current?.status === 'error' || (current?.status === 'creating' && current.provisioningCleanupPending)) {
+        try {
+          await ensureInstanceDeleted(await getIncusClient(host), config.name)
+          console.log(`[Admin Provisioning] 延迟失败收尾：确认残留实例 ${config.name} 已清理`)
+        } catch (cleanupError) {
+          console.error(`[Admin Provisioning] 延迟失败收尾无法确认残留实例 ${config.name} 已清理:`, cleanupError)
+        }
+      }
+    } else if (!cleanup.cleaned) {
+      console.error(`[Admin Provisioning] 实例 ${instanceId} 清理状态未确认，保留扣款与资源预占:`, cleanup.error)
+    } else if (cleanup.settlement?.claimed) {
       console.log(`[Admin Provisioning] 实例 ${instanceId} 资源已回滚`)
     } else {
-      console.log(`[Admin Provisioning] 实例 ${instanceId} 已被其他流程处理，跳过重复回滚`)
-    }
-    if (settlement.refundAmount > 0) {
-      console.log(`[Admin Provisioning] 实例 ${instanceId} 已自动退款 ¥${settlement.refundAmount.toFixed(2)}`)
+      console.error(`[Admin Provisioning] 实例 ${instanceId} 已确认清理，但数据库结算尚未完成:`, cleanup.error)
     }
 
-    try {
-      await deleteInstance(await getIncusClient(host), config.name)
-    } catch (cleanupError) {
-      console.error(`[Admin Provisioning] 清理残留实例失败:`, cleanupError)
+    if (cleanup.settlement && cleanup.settlement.refundAmount > 0) {
+      console.log(`[Admin Provisioning] 实例 ${instanceId} 已自动退款 ¥${cleanup.settlement.refundAmount.toFixed(2)}`)
     }
 
     throw error

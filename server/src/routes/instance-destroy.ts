@@ -16,8 +16,6 @@ import { collectTrafficForRunningInstance } from '../services/instance-traffic-c
 import { closeHourlyBilling } from '../services/hourly-billing-scheduler.js'
 import {
   INSTANCE_OPERATION_LOCK_NAMESPACE,
-  USER_DESTROY_BILLING_LOCK_NAMESPACE,
-  advisoryTransactionLock,
   tryAdvisoryTransactionLock
 } from '../db/advisory-locks.js'
 
@@ -178,7 +176,9 @@ function roundMoney(value: number): number {
 async function claimInstanceForUserDestroy(
   instanceId: number,
   userId: number,
-  currentStatus: InstanceStatus
+  currentStatus: InstanceStatus,
+  deletionBillingMode: 'user_destroy' | 'hourly_close' | null,
+  feeWaiver: boolean
 ): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const locked = await tryAdvisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
@@ -193,7 +193,15 @@ async function claimInstanceForUserDestroy(
         userId,
         status: currentStatus
       },
-      data: { status: 'deleted', version: { increment: 1 } }
+      data: {
+        status: 'deleted',
+        version: { increment: 1 },
+        deletionBillingPending: deletionBillingMode !== null,
+        deletionRemoteDeleted: false,
+        deletionBillingMode,
+        deletionRefundableValue: null,
+        deletionFeeWaiver: deletionBillingMode !== null ? feeWaiver : false
+      }
     })
 
     return result.count === 1
@@ -211,98 +219,15 @@ async function restoreClaimedInstanceStatus(
       userId,
       status: 'deleted'
     },
-    data: { status: originalStatus, version: { increment: 1 } }
-  })
-}
-
-async function settleUserDestroyBilling(params: {
-  requestUserId: number
-  instance: {
-    id: number
-    userId: number
-    hostId: number
-    name: string
-  }
-  refundableValue: number
-  feeWaiver: boolean
-}): Promise<{ refundAmount: number; feeAmount: number; isFirstTime: boolean }> {
-  const { requestUserId, instance, refundableValue, feeWaiver } = params
-  const instanceId = instance.id
-
-  return await prisma.$transaction(async (tx) => {
-    await advisoryTransactionLock(tx, USER_DESTROY_BILLING_LOCK_NAMESPACE, requestUserId)
-
-    const destroyCount = await tx.userDestroyRecord.count({
-      where: { userId: requestUserId }
-    })
-    const isFirstTime = destroyCount === 0
-    let feeAmount = 0
-    if (!feeWaiver && !isFirstTime) {
-      feeAmount = roundMoney(refundableValue * calculateFeeRate(destroyCount))
+    data: {
+      status: originalStatus,
+      version: { increment: 1 },
+      deletionBillingPending: false,
+      deletionRemoteDeleted: false,
+      deletionBillingMode: null,
+      deletionRefundableValue: null,
+      deletionFeeWaiver: false
     }
-    const refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
-
-    if (refundAmount > 0) {
-      const currentUser = await tx.user.findUnique({
-        where: { id: instance.userId },
-        select: { balance: true }
-      })
-      const oldBalance = Number(currentUser?.balance || 0)
-      const newBalance = roundMoney(oldBalance + refundAmount)
-
-      await tx.user.update({
-        where: { id: instance.userId },
-        data: { balance: { increment: refundAmount } }
-      })
-
-      const balanceLog = await tx.balanceLog.create({
-        data: {
-          userId: instance.userId,
-          type: 'refund',
-          amount: refundAmount,
-          balanceBefore: oldBalance,
-          balanceAfter: newBalance,
-          instanceId,
-          remark: `用户销毁实例退款：${instance.name}${feeWaiver ? '（异常实例免手续费）' : feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : '（首次销毁免手续费）'}`
-        }
-      })
-
-      await tx.instanceBillingRecord.create({
-        data: {
-          instanceId,
-          userId: instance.userId,
-          type: 'refund',
-          amount: -refundAmount,
-          months: 0,
-          periodStart: new Date(),
-          periodEnd: new Date(),
-          balanceLogId: balanceLog.id,
-          remark: `用户销毁实例退款${feeWaiver ? '（异常实例免手续费）' : feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : '（首次销毁免手续费）'}`
-        }
-      })
-
-      await db.deductHostingBalance(
-        instance.hostId,
-        refundAmount,
-        instanceId,
-        `用户销毁托管实例退款扣除：${instance.name}`,
-        tx
-      )
-    }
-
-    await tx.userDestroyRecord.create({
-      data: {
-        userId: requestUserId,
-        hostId: instance.hostId,
-        instanceId,
-        instanceName: instance.name,
-        refundAmount,
-        feeAmount,
-        isFirstTime
-      }
-    })
-
-    return { refundAmount, feeAmount, isFirstTime }
   })
 }
 
@@ -607,51 +532,77 @@ async function executeDestroyForUser(
   let refundAmount = 0
   let refundableValue = 0
 
-  if (!isFreeInstance && instance.expiresAt && instance.billingPrice && instance.billingCycle) {
-    const refundQuote = await db.calculateInstanceRemainingRefundQuote({
-      id: instanceId,
-      billingPrice: instance.billingPrice,
-      billingCycle: instance.billingCycle,
-      expiresAt: instance.expiresAt,
-      packagePlanId: instance.packagePlanId
-    })
-
-    if (refundQuote.isPaid) {
-      refundableValue = refundQuote.refundableValue
-      if (!feeWaiver) {
-        const currentFeeRate = calculateFeeRate(destroyRecords.length)
-        if (!isFirstTime) {
-          feeAmount = roundMoney(refundableValue * currentFeeRate)
-        }
-      }
-      refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
-    }
-  }
-
-  const claimed = await claimInstanceForUserDestroy(instanceId, user.id, instance.status)
+  const deletionBillingMode = db.isHourlyInstance(instance)
+    ? 'hourly_close'
+    : !isFreeInstance
+      ? 'user_destroy'
+      : null
+  const claimed = await claimInstanceForUserDestroy(
+    instanceId,
+    user.id,
+    instance.status,
+    deletionBillingMode,
+    feeWaiver
+  )
   if (!claimed) {
     return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例正在销毁或已删除' }
   }
 
   let incusDeleted = false
   try {
+    // 认领删除后再读取计费字段，避免续费/方案变更刚好提交时使用旧退款报价。
+    const currentBillingInstance = await prisma.instance.findUnique({
+      where: { id: instanceId },
+      select: {
+        billingPrice: true,
+        billingCycle: true,
+        expiresAt: true,
+        packagePlanId: true
+      }
+    })
+    if (!isFreeInstance && currentBillingInstance?.expiresAt && currentBillingInstance.billingPrice && currentBillingInstance.billingCycle) {
+      const refundQuote = await db.calculateInstanceRemainingRefundQuote({
+        id: instanceId,
+        billingPrice: currentBillingInstance.billingPrice,
+        billingCycle: currentBillingInstance.billingCycle,
+        expiresAt: currentBillingInstance.expiresAt,
+        packagePlanId: currentBillingInstance.packagePlanId
+      })
+      if (refundQuote.isPaid) refundableValue = refundQuote.refundableValue
+    }
+
+    if (deletionBillingMode) {
+      await prisma.instance.update({
+        where: { id: instanceId },
+        data: { deletionRefundableValue: refundableValue }
+      })
+    }
+
+    if (!feeWaiver) {
+      const currentFeeRate = calculateFeeRate(destroyRecords.length)
+      if (!isFirstTime) feeAmount = roundMoney(refundableValue * currentFeeRate)
+    }
+    refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
+
     const host = await db.getHostById(instance.hostId)
     if (!host) {
       throw new Error('Host not found')
     }
 
-    const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
+    const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
     const client = await getIncusClient(host)
-    if (instance.status === 'running') {
-      await stopInstance(client, instance.incusId, true)
-    }
-    await deleteInstance(client, instance.incusId)
+    await ensureInstanceDeleted(client, instance.incusId)
     incusDeleted = true
+    await prisma.instance.update({
+      where: { id: instanceId },
+      data: { deletionRemoteDeleted: true }
+    })
 
     if (db.isHourlyInstance(instance)) {
       await closeHourlyBilling(instanceId)
+      await db.completeHourlyDeletionBilling(instanceId)
     } else if (!isFreeInstance) {
-      const billingResult = await settleUserDestroyBilling({
+      const billingResult = await db.settleUserDestroyBilling({
         requestUserId: user.id,
         instance,
         refundableValue,
@@ -706,12 +657,6 @@ async function executeDestroyForUser(
       await prisma.host.update({
         where: { id: instance.hostId },
         data: { natPortsUsedCount: actualPortsUsed }
-      })
-
-      // 实例删除成功后释放该实例占用的官方优惠券次数，
-      // 包括新购及此前续费产生的使用记录。
-      await prisma.$transaction(async (tx) => {
-        await db.releaseOfficialCouponUsageByInstance(instanceId, tx)
       })
 
       await createLog(
@@ -1023,10 +968,10 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
 
   // ==================== 执行销毁 ====================
   // POST /api/instances/:id/destroy
-  fastify.post<{ Params: { id: string }; Querystring: { feeWaiver?: string; force?: string } }>('/:id/destroy', {
+  fastify.post<{ Params: { id: string }; Querystring: { feeWaiver?: string } }>('/:id/destroy', {
     onRequest: [fastify.authenticate],
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } }
-  }, async (request: FastifyRequest<{ Params: { id: string }; Querystring: { feeWaiver?: string; force?: string } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Params: { id: string }; Querystring: { feeWaiver?: string } }>, reply: FastifyReply) => {
     const { user } = request
     const instanceId = Number(request.params.id)
 
@@ -1093,8 +1038,6 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     // 异常实例免手续费
     const isErrorState = instance.status === 'error'
     const feeWaiver = request.query.feeWaiver === 'error' && isErrorState
-    const forcePanelDelete = request.query.force === 'true'
-
     let currentMonthlyTrafficUsed = instance.monthlyTrafficUsed
 
     if (!isFreeInstance && instance.status === 'running') {
@@ -1117,36 +1060,23 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       ))
     }
 
-    // 计算退款金额
+    // 先认领实例并标记待结算状态；远端删除成功后才允许清除该状态。
     let feeAmount = 0
     let refundAmount = 0
     let refundableValue = 0
+  const deletionBillingMode = db.isHourlyInstance(instance)
+    ? 'hourly_close'
+    : !isFreeInstance
+      ? 'user_destroy'
+      : null
 
-    if (!isFreeInstance && instance.expiresAt && instance.billingPrice && instance.billingCycle) {
-      const refundQuote = await db.calculateInstanceRemainingRefundQuote({
-        id: instanceId,
-        billingPrice: instance.billingPrice,
-        billingCycle: instance.billingCycle,
-        expiresAt: instance.expiresAt,
-        packagePlanId: instance.packagePlanId
-      })
-
-      if (refundQuote.isPaid) {
-        refundableValue = refundQuote.refundableValue
-
-        // 异常实例免手续费，否则按正常规则计算
-        if (!feeWaiver) {
-          const currentFeeRate = calculateFeeRate(destroyRecords.length)
-          if (!isFirstTime) {
-            feeAmount = roundMoney(refundableValue * currentFeeRate)
-          }
-        }
-
-        refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
-      }
-    }
-
-    const claimed = await claimInstanceForUserDestroy(instanceId, user.id, instance.status)
+    const claimed = await claimInstanceForUserDestroy(
+      instanceId,
+      user.id,
+      instance.status,
+      deletionBillingMode,
+      feeWaiver
+    )
     if (!claimed) {
       return reply.code(409).send({
         error: '实例正在销毁或已删除',
@@ -1154,36 +1084,67 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       })
     }
 
-    let incusDeleted = forcePanelDelete
+    let incusDeleted = false
     let sourceHostUnavailable = false
     try {
-      const host = await db.getHostById(instance.hostId)
-      if (forcePanelDelete) {
-        request.log.warn({ instanceId, hostId: instance.hostId }, 'Force destroying instance from panel without contacting source host')
-      } else {
-        if (!host || host.status !== 'online') {
-          sourceHostUnavailable = true
-          throw new Error('Source host is unavailable')
+      const currentBillingInstance = await prisma.instance.findUnique({
+        where: { id: instanceId },
+        select: {
+          billingPrice: true,
+          billingCycle: true,
+          expiresAt: true,
+          packagePlanId: true
         }
+      })
+      if (!isFreeInstance && currentBillingInstance?.expiresAt && currentBillingInstance.billingPrice && currentBillingInstance.billingCycle) {
+        const refundQuote = await db.calculateInstanceRemainingRefundQuote({
+          id: instanceId,
+          billingPrice: currentBillingInstance.billingPrice,
+          billingCycle: currentBillingInstance.billingCycle,
+          expiresAt: currentBillingInstance.expiresAt,
+          packagePlanId: currentBillingInstance.packagePlanId
+        })
+        if (refundQuote.isPaid) refundableValue = refundQuote.refundableValue
+      }
 
-        try {
-          const { getIncusClient, stopInstance, deleteInstance } = await import('../lib/incus/index.js')
-          const client = await getIncusClient(host)
-          if (instance.status === 'running') {
-            await stopInstance(client, instance.incusId, true)
-          }
-          await deleteInstance(client, instance.incusId)
-          incusDeleted = true
-        } catch (error) {
-          sourceHostUnavailable = true
-          throw error
-        }
+      if (deletionBillingMode) {
+        await prisma.instance.update({
+          where: { id: instanceId },
+          data: { deletionRefundableValue: refundableValue }
+        })
+      }
+
+      if (!feeWaiver) {
+        const currentFeeRate = calculateFeeRate(destroyRecords.length)
+        if (!isFirstTime) feeAmount = roundMoney(refundableValue * currentFeeRate)
+      }
+      refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
+
+      const host = await db.getHostById(instance.hostId)
+      if (!host || host.status !== 'online') {
+        sourceHostUnavailable = true
+        throw new Error('Source host is unavailable')
+      }
+
+      try {
+        const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
+        const client = await getIncusClient(host)
+        await ensureInstanceDeleted(client, instance.incusId)
+        incusDeleted = true
+        await prisma.instance.update({
+          where: { id: instanceId },
+          data: { deletionRemoteDeleted: true }
+        })
+      } catch (error) {
+        sourceHostUnavailable = true
+        throw error
       }
 
       if (db.isHourlyInstance(instance)) {
         await closeHourlyBilling(instanceId)
+        await db.completeHourlyDeletionBilling(instanceId)
       } else if (!isFreeInstance) {
-        const billingResult = await settleUserDestroyBilling({
+        const billingResult = await db.settleUserDestroyBilling({
           requestUserId: user.id,
           instance,
           refundableValue,
@@ -1318,7 +1279,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       if (sourceHostUnavailable) {
         request.log.warn({ instanceId, error }, 'Source host unavailable during instance destroy')
         return reply.code(409).send({
-          error: '源节点无法连接，请确认是否强制从面板删除并退款',
+          error: '源节点无法连接，确认节点恢复在线后再重试；在无法确认远端实例已删除前不会退款',
           code: 'SOURCE_HOST_UNAVAILABLE'
         })
       }

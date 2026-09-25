@@ -1990,7 +1990,7 @@ export interface OfficialCoupon {
   expiresAt: string | null
   /** 续期折扣模式 */
   renewalMode: OfficialCouponRenewalMode
-  /** limited 模式下含首次购买的总折价次数 */
+  /** limited 模式下含首次购买的总折价月数（字段名沿用旧 API） */
   discountedChargeLimit: number | null
   createdById: number | null
   createdAt: string

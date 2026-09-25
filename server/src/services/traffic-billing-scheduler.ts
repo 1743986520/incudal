@@ -187,9 +187,6 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
       return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: false }
     }
 
-    const user = await tx.user.findUnique({ where: { id: instance.userId }, select: { balance: true } })
-    if (!user) throw new Error(`Traffic billing user ${instance.userId} not found`)
-    const balanceBefore = new Prisma.Decimal(user.balance)
     const trafficPeriodStart = getTrafficPeriod(instance.host.trafficResetDay ?? 1, now).periodStart
     const previousPaidRecord = await tx.trafficBillingRecord.findFirst({
       where: { instanceId: instance.id, status: 'paid' },
@@ -199,7 +196,7 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
     const periodStart = previousPaidRecord?.periodEnd && previousPaidRecord.periodEnd > trafficPeriodStart
       ? previousPaidRecord.periodEnd
       : trafficPeriodStart
-    if (balanceBefore.lt(amountDecimal)) {
+    const suspendForInsufficientBalance = async (): Promise<SettlementResult> => {
       if (pendingRecord) {
         // Keep the original debt and its period snapshot unchanged.
       } else {
@@ -231,8 +228,22 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
       return { instanceId: instance.id, incusId: instance.incusId, host: instance.host, suspended: true }
     }
 
-    const balanceAfter = balanceBefore.sub(amountDecimal)
-    await tx.user.update({ where: { id: instance.userId }, data: { balance: { decrement: amountDecimal } } })
+    // The earlier balance read is only a snapshot. The conditional update is
+    // the actual debit guard so a concurrent wallet operation cannot create a
+    // negative balance or make this path charge against stale state.
+    const walletUpdate = await tx.user.updateMany({
+      where: { id: instance.userId, balance: { gte: amountDecimal } },
+      data: { balance: { decrement: amountDecimal } }
+    })
+    if (walletUpdate.count !== 1) return suspendForInsufficientBalance()
+
+    const updatedUser = await tx.user.findUnique({
+      where: { id: instance.userId },
+      select: { balance: true }
+    })
+    if (!updatedUser) throw new Error(`Traffic billing user ${instance.userId} not found`)
+    const balanceAfter = new Prisma.Decimal(updatedUser.balance)
+    const balanceBefore = balanceAfter.add(amountDecimal)
     const balanceLog = await tx.balanceLog.create({
       data: {
         userId: instance.userId,
@@ -323,13 +334,19 @@ export async function payPendingTrafficBillAndUnsuspend(instanceId: number, user
     if (!user) throw new Error('USER_NOT_FOUND')
     const balanceBefore = new Prisma.Decimal(user.balance)
     if (balanceBefore.lt(amount)) throw new Error('BALANCE_INSUFFICIENT')
-    const balanceAfter = balanceBefore.sub(amount)
-
     const walletUpdate = await tx.user.updateMany({
       where: { id: userId, balance: { gte: amount } },
       data: { balance: { decrement: amount } }
     })
     if (walletUpdate.count !== 1) throw new Error('BALANCE_INSUFFICIENT')
+
+    const updatedUser = await tx.user.findUnique({
+      where: { id: userId },
+      select: { balance: true }
+    })
+    if (!updatedUser) throw new Error('USER_NOT_FOUND')
+    const balanceAfter = new Prisma.Decimal(updatedUser.balance)
+    const actualBalanceBefore = balanceAfter.add(amount)
 
     const balanceLog = await tx.balanceLog.create({
       data: {
@@ -337,7 +354,7 @@ export async function payPendingTrafficBillAndUnsuspend(instanceId: number, user
         instanceId,
         type: 'consume',
         amount: amount.neg(),
-        balanceBefore,
+        balanceBefore: actualBalanceBefore,
         balanceAfter,
         remark: `实例 ${instance.name} 补缴按量流量费（${pending.trafficBytes.toString()} bytes）`
       }

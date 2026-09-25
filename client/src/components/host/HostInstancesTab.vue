@@ -411,28 +411,12 @@ async function confirmBatchDelete(databaseOnly: boolean = false) {
   isDeleting.value = true
   deletingMode.value = databaseOnly ? 'database' : 'full'
   try {
-    let result = await api.hosts.batchDeleteInstances(
+    const result = await api.hosts.batchDeleteInstances(
       props.hostId,
       effectiveDeleteSelection.value,
       deleteReason.value.trim() || undefined,
       databaseOnly
     )
-
-    // 普通删除发现宿主机完全无法连接时，询问是否改为只更新面板记录。
-    // 仅在一个实例都没有删除成功时重试，避免把正常的部分失败静默改成强制删除。
-    const sourceHostUnavailable = !databaseOnly
-      && result.successCount === 0
-      && result.failedCount > 0
-      && result.results.some(item => item.error === 'Incus client unavailable')
-    if (sourceHostUnavailable && window.confirm(t('admin.hosts.forcePanelDeleteConfirm', { count: effectiveDeleteCount.value }))) {
-      deletingMode.value = 'database'
-      result = await api.hosts.batchDeleteInstances(
-        props.hostId,
-        effectiveDeleteSelection.value,
-        deleteReason.value.trim() || undefined,
-        true
-      )
-    }
     
     const refundAmount = Number(result.totalRefundAmount || 0)
     const refundMessageKey = refundAmount > 0

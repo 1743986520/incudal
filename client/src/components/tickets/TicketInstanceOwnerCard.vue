@@ -535,14 +535,7 @@ async function deleteInstanceWithRefund(): Promise<void> {
   actionLoading.value = 'delete'
   try {
     let result
-    try {
-      result = await api.instances.delete(instance.value.id, reason || undefined)
-    } catch (error: any) {
-      if (error?.code !== 'SOURCE_HOST_UNAVAILABLE' || !window.confirm(t('instance.forcePanelDeleteConfirm'))) {
-        throw error
-      }
-      result = await api.instances.delete(instance.value.id, reason || undefined, true)
-    }
+    result = await api.instances.delete(instance.value.id, reason || undefined)
     optimisticStatus.value = 'deleted'
     toast.success(result.refundAmount && result.refundAmount > 0 ? t('admin.billing.deleteRefundSuccess') : t('common.deleteSuccess'))
     await loadInstanceContext(true)

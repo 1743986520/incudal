@@ -8,7 +8,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import * as db from '../db/index.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
-import { calculateDiscountAmount } from '../lib/billing-calc.js'
+import { calculateDiscountAmountForMonths, getDiscountedMonthsForPurchase } from '../lib/official-coupon-rules.js'
 
 export default async function officialCouponRoutes(fastify: FastifyInstance) {
   // 校验官方优惠券（实例开通页调用）
@@ -50,12 +50,23 @@ export default async function officialCouponRoutes(fastify: FastifyInstance) {
     let planPrice: number | null = null
     let discountAmount: number | null = null
     let finalPrice: number | null = null
+    let discountedMonths: number | null = null
 
     if (planId && typeof planId === 'number') {
       const plan = await db.getPlanById(planId)
-      if (plan && plan.packageId === packageId && plan.isActive) {
+      if (plan && plan.packageId === packageId && plan.isActive && plan.billingMode !== 'hourly') {
         planPrice = Number(plan.price) / 100
-        discountAmount = calculateDiscountAmount(planPrice, validation.discountRate)
+        discountedMonths = getDiscountedMonthsForPurchase({
+          renewalMode: validation.coupon.renewalMode,
+          discountedChargeLimit: validation.coupon.discountedChargeLimit,
+          purchaseMonths: plan.billingCycle
+        })
+        discountAmount = calculateDiscountAmountForMonths(
+          planPrice,
+          plan.billingCycle,
+          discountedMonths,
+          validation.discountRate
+        )
         finalPrice = Number((planPrice - discountAmount).toFixed(2))
       }
     }
@@ -69,7 +80,8 @@ export default async function officialCouponRoutes(fastify: FastifyInstance) {
       remainingUses: validation.remainingUses,
       planPrice,
       discountAmount,
-      finalPrice
+      finalPrice,
+      discountedMonths
     }
   })
 }

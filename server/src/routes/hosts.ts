@@ -74,7 +74,7 @@ import crypto from 'crypto'
 import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { checkInstanceOwnerOrAdminPermission } from '../lib/permission.js'
-import { ensureInstanceNotSuspended, ensureHostStoragePoolOrReply } from './instances/helpers.js'
+import { claimInstanceForDelete, ensureInstanceNotSuspended, ensureHostStoragePoolOrReply } from './instances/helpers.js'
 import { assertAllowedHostUrl, buildIncusTlsConnectOptions, captureIncusServerCertificate, panelCertificatePaths, resolveIncusTarget } from '../lib/incus/incus-tls.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -2925,6 +2925,17 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '没有找到可删除的实例' })
     }
 
+    if (databaseOnly) {
+      const paidInstances = instances.filter(instance => instance.packagePlanId !== null || instance.billingMode === 'hourly')
+      if (paidInstances.length > 0) {
+        return reply.code(409).send({
+          error: '仅数据库删除不能处理付费实例；必须先确认宿主机上的 Incus 实例已删除',
+          code: 'REMOTE_DELETION_REQUIRED_FOR_REFUND',
+          instanceIds: paidInstances.map(instance => instance.id)
+        })
+      }
+    }
+
     const results: { id: number; name: string; success: boolean; error?: string; refundAmount?: number }[] = []
     let totalRefundAmount = 0
     let client: IncusClient | null = null
@@ -2952,6 +2963,10 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       : await import('../lib/incus/incus-backups.js')
 
     for (const instance of instances) {
+      let deletionClaimed = false
+      let remoteDeletionConfirmed = false
+      let requestedRefundAmount = 0
+      let refundAmount = 0
       try {
         // ===== 0. 检查转移锁定、恢复任务和上传任务 =====
         // 注意：批量删除接口只允许宿主机拥有者调用，所以不需要检查套餐限制
@@ -2977,14 +2992,85 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           continue
         }
 
+        // 先认领会产生退款的删除，阻止并发删除/普通退款重复结算。
+        // 认领后只有确认 Incus 返回 404 才允许进入退款结算；若远端失败，
+        // 保留待结算状态交给恢复任务重试，避免“远端已删但退款丢失”。
+        const needsPrivilegedRefund = !databaseOnly
+          && instance.userId !== host.user_id
+          && instance.packagePlanId !== null
+          && instance.billingMode !== 'hourly'
+        const needsHourlyBillingClosure = !databaseOnly && instance.billingMode === 'hourly'
+        const needsDeletionBilling = needsPrivilegedRefund || needsHourlyBillingClosure
+        if (needsDeletionBilling) {
+          const claimed = await claimInstanceForDelete(instance.id, instance.status, {
+            deletionBillingPending: true,
+            deletionBillingMode: needsPrivilegedRefund ? 'privileged_delete' : 'hourly_close'
+          })
+          if (!claimed) {
+            results.push({ id: instance.id, name: instance.name, success: false, error: '实例正在删除或已删除' })
+            continue
+          }
+          deletionClaimed = true
+
+          if (needsPrivilegedRefund) {
+            const billingInstance = await prisma.instance.findUnique({
+              where: { id: instance.id },
+              select: {
+                billingPrice: true,
+                billingCycle: true,
+                expiresAt: true,
+                packagePlanId: true
+              }
+            })
+            if (!billingInstance) throw new Error('Instance billing data unavailable')
+
+            const refundInfo = await db.calculateInstanceRefund({
+              id: instance.id,
+              billingPrice: billingInstance.billingPrice,
+              billingCycle: billingInstance.billingCycle,
+              expiresAt: billingInstance.expiresAt,
+              packagePlanId: billingInstance.packagePlanId
+            })
+            requestedRefundAmount = refundInfo.isPaid ? refundInfo.refundAmount : 0
+            await prisma.instance.update({
+              where: { id: instance.id },
+              data: { deletionRefundableValue: requestedRefundAmount }
+            })
+          }
+        }
+
         if (!databaseOnly) {
           if (!client || !incusInstanceOperations) {
             throw new Error('Incus client unavailable')
           }
-          if (instance.status === 'running') {
-            await incusInstanceOperations.stopInstance(client, instance.incusId, true)
+          await incusInstanceOperations.ensureInstanceDeleted(client, instance.incusId)
+          remoteDeletionConfirmed = true
+          if (deletionClaimed) {
+            await prisma.instance.update({
+              where: { id: instance.id },
+              data: { deletionRemoteDeleted: true }
+            })
           }
-          await incusInstanceOperations.deleteInstance(client, instance.incusId)
+        }
+
+        // 遠端實例已確認不存在後立即結算，避免後續清理資料失敗導致退款遺失。
+        if (needsHourlyBillingClosure) {
+          await closeHourlyBilling(instance.id)
+          await db.completeHourlyDeletionBilling(instance.id)
+        }
+
+        if (needsPrivilegedRefund) {
+          refundAmount = await db.settlePrivilegedDeletionBilling({
+            instance: {
+              id: instance.id,
+              userId: instance.userId,
+              hostId: instance.hostId,
+              name: instance.name
+            },
+            requestedRefundAmount,
+            remark: `托管实例被批量删除退款：${instance.name}`
+          })
+          totalRefundAmount += refundAmount
         }
 
         // ===== 1. 删除反代站点（完整删除清 Caddy，DB-only 只清数据库）=====
@@ -3114,89 +3200,6 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           // 忽略转移请求取消错误
         }
 
-        // ===== 7. 处理退款（节点所有者删除他人的付费实例时）=====
-        // 退款先于标记 deleted，确保退款事务失败时不会出现“实例已强制删除但没有退款”的状态。
-        let refundAmount = 0
-        if (instance.userId !== host.user_id) {
-          // 删除的是他人的实例，检查是否需要退款
-          const refundInfo = await db.calculateInstanceRefund({
-            id: instance.id,
-            billingPrice: instance.billingPrice,
-            billingCycle: instance.billingCycle,
-            expiresAt: instance.expiresAt,
-            packagePlanId: instance.packagePlanId
-          })
-          
-          if (refundInfo.isPaid && refundInfo.refundAmount > 0) {
-            refundAmount = refundInfo.refundAmount
-            
-            // 用户退款和节点托管收入扣除必须在同一个事务中完成，
-            // 避免只给用户加钱却没有留下节点侧扣款记录。
-            await prisma.$transaction(async (tx) => {
-              // 获取用户当前余额
-              const instanceOwner = await tx.user.findUnique({
-                where: { id: instance.userId },
-                select: { balance: true }
-              })
-              const oldBalance = Number(instanceOwner?.balance || 0)
-              const newBalance = oldBalance + refundAmount
-              
-              // 退款给实例所有者
-              await tx.user.update({
-                where: { id: instance.userId },
-                data: { balance: { increment: refundAmount } }
-              })
-              
-              // 记录余额日志
-              const balanceLog = await tx.balanceLog.create({
-                data: {
-                  userId: instance.userId,
-                  type: 'refund',
-                  amount: refundAmount,
-                  balanceBefore: oldBalance,
-                  balanceAfter: newBalance,
-                  instanceId: instance.id,
-                  remark: `${databaseOnly ? '节点离线时强制从面板删除退款' : '托管实例被删除退款'}：${instance.name}`
-                }
-              })
-
-              // 同步写入实例计费退款记录，确保账单/面板历史中可追溯，
-              // 而不是只增加余额后直接删除实例。
-              const refundAt = new Date()
-              await tx.instanceBillingRecord.create({
-                data: {
-                  instanceId: instance.id,
-                  userId: instance.userId,
-                  type: 'refund',
-                  amount: -refundAmount,
-                  months: 0,
-                  periodStart: refundAt,
-                  periodEnd: refundAt,
-                  balanceLogId: balanceLog.id,
-                  remark: `${databaseOnly ? '节点离线时强制从面板删除退款' : '托管实例被删除退款'}`
-                }
-              })
-
-              // 从节点所有者托管余额扣除，并在同一事务中写入扣款审计记录。
-              await db.deductHostingBalance(
-                hostId,
-                refundAmount,
-                instance.id,
-                `${databaseOnly ? '强制从面板删除' : '删除'}托管实例退款扣除：${instance.name}`,
-                tx
-              )
-            })
-            
-            totalRefundAmount += refundAmount
-          }
-        }
-
-        // 小时计费实例由宿主机删除时也必须完成实际费用结算并释放剩余预付款。
-        // 不能走固定周期实例的退款分支，否则会留下冻结余额。
-        if (instance.billingMode === 'hourly') {
-          await closeHourlyBilling(instance.id)
-        }
-
         // ===== 8. 更新实例状态为 deleted =====
         await db.updateInstanceStatus(instance.id, 'deleted')
 
@@ -3248,6 +3251,28 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         )
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err)
+        if (deletionClaimed && !remoteDeletionConfirmed) {
+          try {
+            await prisma.instance.updateMany({
+              where: {
+                id: instance.id,
+                status: 'deleted',
+                deletionBillingPending: true
+              },
+              data: {
+                status: instance.status,
+                version: { increment: 1 },
+                deletionBillingPending: false,
+                deletionRemoteDeleted: false,
+                deletionBillingMode: null,
+                deletionRefundableValue: null,
+                deletionFeeWaiver: false
+              }
+            })
+          } catch (restoreError) {
+            fastify.log.error(restoreError, `恢复批量删除认领状态失败 (${instance.name})`)
+          }
+        }
         results.push({ id: instance.id, name: instance.name, success: false, error: errorMessage })
         fastify.log.error(`批量删除实例失败 (${instance.name}): ${errorMessage}`)
       }

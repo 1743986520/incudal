@@ -2,7 +2,7 @@
  * Incus 实例管理
  */
 
-import type { IncusClient } from './incus-client.js'
+import { isIncusNotFoundError, type IncusClient } from './incus-client.js'
 import type { IncusInstance, IncusOperation } from '../../types/incus.js'
 import { allowanceToCores } from '../cpu-allowance.js'
 import type { BuildInstanceConfigOptions, IPv6Config } from '../../types/incus.js'
@@ -14,6 +14,8 @@ const INSTANCE_BUSY_WAIT_TIMEOUT_MS = 300000
 const INSTANCE_BUSY_POLL_INTERVAL_MS = 2000
 const INSTANCE_BUSY_CANCEL_CHECK_INTERVAL_MS = 30000
 const INSTANCE_BUSY_CANCEL_STALE_UPDATE_MS = 45000
+const INSTANCE_DELETE_CONFIRM_TIMEOUT_MS = 30000
+const INSTANCE_DELETE_CONFIRM_POLL_INTERVAL_MS = 1000
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -263,6 +265,49 @@ export async function createInstance(client: IncusClient, config: unknown): Prom
  */
 export async function deleteInstance(client: IncusClient, name: string): Promise<unknown> {
   return client.request('DELETE', `/1.0/instances/${name}`)
+}
+
+/**
+ * Stop, delete, and positively confirm that an Incus instance is gone.
+ *
+ * A successful DELETE operation alone is not enough for billing settlement:
+ * Incus can still expose the instance briefly while the operation is being
+ * applied. Any result other than a confirmed 404 is treated as unknown and
+ * must keep the provisioning charge/reservation intact.
+ */
+export async function ensureInstanceDeleted(client: IncusClient, name: string): Promise<void> {
+  try {
+    await getInstance(client, name)
+  } catch (error) {
+    if (isIncusNotFoundError(error)) return
+    throw error
+  }
+
+  try {
+    await stopInstance(client, name, true, { allowCancelBusyUpdate: true })
+  } catch (error) {
+    if (!isIncusNotFoundError(error)) throw error
+  }
+
+  try {
+    await deleteInstance(client, name)
+  } catch (error) {
+    if (!isIncusNotFoundError(error)) throw error
+  }
+
+  const deadline = Date.now() + INSTANCE_DELETE_CONFIRM_TIMEOUT_MS
+  while (Date.now() <= deadline) {
+    try {
+      await getInstance(client, name)
+    } catch (error) {
+      if (isIncusNotFoundError(error)) return
+      throw error
+    }
+
+    await sleep(INSTANCE_DELETE_CONFIRM_POLL_INTERVAL_MS)
+  }
+
+  throw new Error(`Incus instance "${name}" still exists after deletion was requested`)
 }
 
 /**
@@ -979,4 +1024,3 @@ export async function ensureBridgeIpv6(
     console.warn(`[ensureBridgeIpv6] 网桥 IPv6 校验失败（${bridgeName}）:`, err)
   }
 }
-

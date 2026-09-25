@@ -317,6 +317,7 @@ enum BillingRecordType {
 enum AffLogType {
   new_purchase  // 新购返利
   renew         // 续费返利
+  refund        // 订单回滚时撤销返利
   convert       // 转化为主余额
 }
 
@@ -337,7 +338,7 @@ enum OfficialCouponScope {
 // 官方优惠券续期折扣模式
 enum OfficialCouponRenewalMode {
   purchase_only // 仅首购折价，续费按原价
-  limited       // 限定折价次数（含首次购买）
+  limited       // 限定折价月数（含首次购买）
   recurring     // 永久循环：续费一律按折扣价
 }
 
@@ -1036,6 +1037,14 @@ model Instance {
   storagePoolName  String?        @map("storage_pool_name")
   image            String
   status           InstanceStatus @default(creating)
+  // 创建失败清理保护：只有确认 Incus 实例不存在后才能结算退款。
+  provisioningCleanupPending Boolean @default(false) @map("provisioning_cleanup_pending")
+  // 删除结算保护：远端删除完成后，退款/托管扣款失败时由后台重试。
+  deletionBillingPending   Boolean  @default(false) @map("deletion_billing_pending")
+  deletionRemoteDeleted    Boolean  @default(false) @map("deletion_remote_deleted")
+  deletionBillingMode      String?  @map("deletion_billing_mode")
+  deletionRefundableValue  Decimal? @map("deletion_refundable_value") @db.Decimal(10, 2)
+  deletionFeeWaiver        Boolean  @default(false) @map("deletion_fee_waiver")
   cpu              Int
   memory           Int
   disk             Int
@@ -2759,7 +2768,7 @@ model OfficialCoupon {
   startsAt        DateTime?           @map("starts_at")                      // 生效时间
   expiresAt       DateTime?           @map("expires_at")                     // 失效时间
   renewalMode     OfficialCouponRenewalMode @default(purchase_only) @map("renewal_mode") // 续期折扣模式
-  discountedChargeLimit Int?          @map("discounted_charge_limit")        // limited 模式下含首次购买的总折价次数
+  discountedChargeLimit Int?          @map("discounted_charge_limit")        // limited 模式下含首次购买的总折价月数（保留字段名兼容）
   createdById     Int?                @map("created_by_id")                  // 创建管理员ID
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
@@ -2773,7 +2782,7 @@ model OfficialCoupon {
   @@map("official_coupons")
 }
 
-// 官方优惠券使用记录：每次成功使用写入一条，用于次数控制、审计与后台统计
+// 官方优惠券使用记录：每次成功使用写入一条，用于次数控制、折价月数统计、审计与后台统计
 model OfficialCouponUsage {
   id             Int      @id @default(autoincrement())
   couponId       Int      @map("coupon_id")
@@ -2782,6 +2791,7 @@ model OfficialCouponUsage {
   type           OfficialCouponUsageType @default(purchase)                // 新购 / 续费
   originalPrice  Decimal  @map("original_price") @db.Decimal(10, 2)  // 订单原价
   discountAmount Decimal  @map("discount_amount") @db.Decimal(10, 2) // 平台承担的折扣金额
+  discountedMonths Int      @default(1) @map("discounted_months") // 本次实际享受折价的月数
   createdAt      DateTime @default(now()) @map("created_at")
 
   coupon   OfficialCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
