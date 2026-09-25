@@ -95,6 +95,17 @@ async function processAutoRenew(instance: any): Promise<void> {
     const renewMonths = instance.billingCycle || 1
     const renewInfo = calculateRenewBilling(instance, renewMonths)
 
+    // 自动续费的余额预检查必须使用与实际扣款相同的优惠解析结果。
+    // 否则循环官方券会在余额介于折后价与原价之间时被错误判定为余额不足，
+    // 看起来就像自动续费仍按原价处理；performRenewal 仍会在事务内重新解析并校验。
+    const renewalDiscount = await db.resolveInstanceRenewalDiscount({
+      id: instance.id,
+      packageId: instance.packageId,
+      packagePlanId: instance.packagePlanId,
+      userId: instance.userId
+    }, renewInfo.amount, undefined, renewMonths)
+    const requiredAmount = renewalDiscount.finalAmount
+
     // 获取用户信息（包括邮箱）
     const user = await prisma.user.findUnique({
       where: { id: instance.userId },
@@ -110,15 +121,15 @@ async function processAutoRenew(instance: any): Promise<void> {
     const balance = Number(user.balance)
 
     // 余额不足
-    if (balance < renewInfo.amount) {
-      console.log(`[Billing] Insufficient balance for instance ${instance.id}: need ${renewInfo.amount}, have ${balance}`)
+    if (balance < requiredAmount) {
+      console.log(`[Billing] Insufficient balance for instance ${instance.id}: need ${requiredAmount}, have ${balance}`)
       await updateAutoRenewAttempt(instance.id, attempts)
 
       // 发送自动续费失败站内通知
       await sendNotification(instance.userId, 'auto_renew_failed', {
         instanceName: instance.name,
-        failReason: `余额不足（需要 ¥${renewInfo.amount.toFixed(2)}，当前 ¥${balance.toFixed(2)}）`,
-        renewAmount: renewInfo.amount  // 元（calculateRenewBilling 返回的是元）
+        failReason: `余额不足（需要 ¥${requiredAmount.toFixed(2)}，当前 ¥${balance.toFixed(2)}）`,
+        renewAmount: requiredAmount  // 元（已包含自动续费折扣）
       })
 
       // 发送自动续费失败邮件
@@ -127,7 +138,7 @@ async function processAutoRenew(instance: any): Promise<void> {
           await sendAutoRenewFailedEmail(user.email, {
             username: user.username,
             instanceName: instance.name,
-            failReason: `余额不足（需要 ¥${renewInfo.amount.toFixed(2)}，当前 ¥${balance.toFixed(2)}）`,
+            failReason: `余额不足（需要 ¥${requiredAmount.toFixed(2)}，当前 ¥${balance.toFixed(2)}）`,
             currentAttempt: attempts,
             maxAttempts: AUTO_RENEW_MAX_ATTEMPTS,
             expiresAt: instance.expiresAt

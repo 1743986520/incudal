@@ -1409,8 +1409,9 @@ export async function resolveInstanceRenewalDiscount(
           packageId: instance.packageId,
           userId: instance.userId,
           client: tx,
-          // 每用户次数只约束新购，不阻断实例的续费折扣
-          checkUserLimit: false
+          // 每用户/全站次数只约束首购，不阻断已取得资格的实例续费折扣
+          checkUserLimit: false,
+          checkTotalUsageLimit: false
         })
         if (validation.valid) {
           officialUsable = true

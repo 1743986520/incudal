@@ -5,7 +5,8 @@
  * - 折扣金额由平台承担：用户支付「原价 - 折扣金额」，托管主仍按原价结算
  * - 官方券不建立 AFF 绑定，也不产生 AFF 返利
  * - 适用范围按套餐归属判定：管理员创建的套餐为官方直营，普通用户创建的套餐为托管
- * - 次数控制在使用事务内通过 advisory lock + 条件更新完成，避免并发超发
+ * - 首购名额控制在使用事务内通过 advisory lock + 条件更新完成，避免并发超发
+ * - 续费使用记录用于折价月数与审计，但不消耗新的首购名额
  * - limited 模式按实际折价月数累计，不按续费交易次数累计
  */
 
@@ -85,10 +86,14 @@ export type OfficialCouponValidationResult = OfficialCouponValidationSuccess | O
 /**
  * 校验官方优惠券（不写入任何数据）
  *
- * 校验项：是否存在、是否启用、是否在有效期内、是否适用于当前套餐、用户次数、全站总次数
+ * 校验项：是否存在、是否启用、是否在有效期内、是否适用于当前套餐、用户次数、全站总次数。
+ * 续费场景可跳过用户/全站使用次数限制：这些限制约束的是优惠券的首购发放，
+ * 不应让已经获得 recurring 优惠资格的实例在后续续费时恢复原价。
  *
  * @param checkUserLimit 是否检查「每用户使用次数」上限。续费场景传入 false，
  *                       因为每用户次数只约束新购次数，不应阻断实例的后续续费折扣。
+ * @param checkTotalUsageLimit 是否检查「全站总使用次数」上限。续费场景传入 false，
+ *                             因为续费不应消耗新的首购名额。
  */
 export async function validateOfficialCoupon(params: {
   code: string
@@ -96,9 +101,11 @@ export async function validateOfficialCoupon(params: {
   userId: number
   client?: DbClient
   checkUserLimit?: boolean
+  checkTotalUsageLimit?: boolean
 }): Promise<OfficialCouponValidationResult> {
   const client = params.client || prisma
   const checkUserLimit = params.checkUserLimit !== false
+  const checkTotalUsageLimit = params.checkTotalUsageLimit !== false
   const code = normalizeOfficialCouponCode(params.code)
 
   if (!code) {
@@ -158,7 +165,7 @@ export async function validateOfficialCoupon(params: {
     }
   }
 
-  if (coupon.totalUsageLimit !== null && coupon.usedCount >= coupon.totalUsageLimit) {
+  if (checkTotalUsageLimit && coupon.totalUsageLimit !== null && coupon.usedCount >= coupon.totalUsageLimit) {
     return {
       valid: false,
       errorCode: ErrorCode.COUPON_EXHAUSTED,
@@ -215,7 +222,7 @@ export async function reserveOfficialCouponUsage(params: {
   discountAmount: number
   /** 本次实际享受折价的月数；用于 limited 模式的月数上限累计。 */
   discountedMonths: number
-  /** purchase=新购占次；renewal=续费占次（跳过每用户新购次数检查） */
+  /** purchase=新购占次；renewal=续费记录（不占用首购名额） */
   mode?: 'purchase' | 'renewal'
   tx: Prisma.TransactionClient
 }): Promise<{ couponId: number; usageId: number }> {
@@ -240,30 +247,36 @@ export async function reserveOfficialCouponUsage(params: {
     throw busyError
   }
 
-  // 事务内重新校验，避免验证与扣款之间券状态被修改
+  const isRenewal = params.mode === 'renewal'
+
+  // 事务内重新校验，避免验证与扣款之间券状态被修改。
+  // 续费沿用实例首购时已经取得的资格，不再消耗全站首购名额。
   const validation = await validateOfficialCoupon({
     code,
     packageId: params.packageId,
     userId: params.userId,
     client: tx,
-    checkUserLimit: params.mode !== 'renewal'
+    checkUserLimit: !isRenewal,
+    checkTotalUsageLimit: !isRenewal
   })
   if (!validation.valid) {
     throw new Error(`${validation.errorCode}: ${validation.error}`)
   }
 
-  // 条件更新保证总次数上限不被突破
-  const updated = await tx.$executeRaw`
-    UPDATE "official_coupons"
-    SET "used_count" = "used_count" + 1,
-        "updated_at" = NOW()
-    WHERE "id" = ${coupon.id}
-      AND "enabled" = true
-      AND ("total_usage_limit" IS NULL OR "used_count" < "total_usage_limit")
-  `
+  if (!isRenewal) {
+    // 条件更新保证首购总次数上限不被并发突破。
+    const updated = await tx.$executeRaw`
+      UPDATE "official_coupons"
+      SET "used_count" = "used_count" + 1,
+          "updated_at" = NOW()
+      WHERE "id" = ${coupon.id}
+        AND "enabled" = true
+        AND ("total_usage_limit" IS NULL OR "used_count" < "total_usage_limit")
+    `
 
-  if (updated === 0) {
-    throw new Error(`${ErrorCode.COUPON_EXHAUSTED}: This official coupon has reached its total usage limit`)
+    if (updated === 0) {
+      throw new Error(`${ErrorCode.COUPON_EXHAUSTED}: This official coupon has reached its total usage limit`)
+    }
   }
 
   const usage = await tx.officialCouponUsage.create({
@@ -348,6 +361,8 @@ export async function releaseOfficialCouponUsageByInstance(
   // 否则 reusable=false 的券会被同一用户重复使用。
   const usageCountByCoupon = new Map<number, number>()
   for (const usage of usages) {
+    // renewal 使用记录不占用首购名额，因此释放失败首购时只回退 purchase。
+    if (usage.type !== 'purchase') continue
     usageCountByCoupon.set(usage.couponId, (usageCountByCoupon.get(usage.couponId) || 0) + 1)
   }
 
