@@ -744,6 +744,41 @@ export async function claimCreatingInstanceForCleanup(
 }
 
 /**
+ * Reconcile a timed-out provision that did in fact finish on Incus. This
+ * clears the cleanup claim without touching the charge, coupon usage, or
+ * host reservations. The same instance lock as the failure path prevents a
+ * timeout worker and the success path from settling the row in opposite ways.
+ */
+export async function markCreatingInstanceProvisioned(
+  instanceId: number,
+  status: 'running' | 'stopped'
+): Promise<boolean> {
+  return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+
+    const instance = await tx.instance.findUnique({
+      where: { id: instanceId },
+      select: { status: true }
+    })
+
+    if (!instance) return false
+    if (instance.status === 'running' || instance.status === 'stopped') return true
+    if (instance.status !== 'creating') return false
+
+    await tx.instance.update({
+      where: { id: instanceId },
+      data: {
+        status,
+        provisioningCleanupPending: false,
+        version: { increment: 1 }
+      }
+    })
+
+    return true
+  })
+}
+
+/**
  * Atomically marks a retrying provision as failed and releases its reservation.
  *
  * Retry failures do not create a new charge, so they must not reuse the refund

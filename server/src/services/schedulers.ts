@@ -115,6 +115,11 @@ export async function startSchedulers(): Promise<void> {
           reclaimPendingBefore: new Date(Date.now() - CREATE_TIMEOUT_MS)
         })
 
+        if (cleanup.recovered) {
+          console.log(`[CreateTimeout] 实例 ${instance.name} 已在 Incus 完成创建，保留扣款与资源预占`)
+          continue
+        }
+
         if (!cleanup.claimed) {
           if (cleanup.error) {
             console.error(`[CreateTimeout] 实例 ${instance.name} 无法认领清理，暂不退款:`, cleanup.error)

@@ -1,10 +1,15 @@
 import {
   claimCreatingInstanceForCleanup,
   failCreatingInstanceAndRefund,
+  markCreatingInstanceProvisioned,
   type FailedProvisionResourceRollback,
   type FailedProvisionSettlementResult
 } from '../db/billing-operations.js'
-import { ensureInstanceDeleted, getIncusClient } from '../lib/incus/index.js'
+import {
+  ensureInstanceDeleted,
+  getIncusClient,
+  waitForProvisioningInstanceResolution
+} from '../lib/incus/index.js'
 import type { Host } from '../types/database.js'
 
 export interface FailedProvisionCleanupParams {
@@ -22,6 +27,8 @@ export interface FailedProvisionCleanupResult {
   claimed: boolean
   /** Whether Incus was positively confirmed to be free of the instance. */
   cleaned: boolean
+  /** Whether Incus proved that the provision actually succeeded. */
+  recovered?: boolean
   settlement?: FailedProvisionSettlementResult
   error?: unknown
 }
@@ -37,6 +44,22 @@ export interface FailedProvisionCleanupResult {
 export async function cleanupAndSettleFailedProvision(
   params: FailedProvisionCleanupParams
 ): Promise<FailedProvisionCleanupResult> {
+  let client: Awaited<ReturnType<typeof getIncusClient>>
+
+  // Resolve the external operation before claiming failure. A normal
+  // Running/Stopped instance means the timeout was a false negative: keep
+  // the charge and reservations, and make the database reflect reality.
+  try {
+    client = await getIncusClient(params.host)
+    const resolution = await waitForProvisioningInstanceResolution(client, params.instanceName)
+    if (resolution.kind === 'present') {
+      const recovered = await markCreatingInstanceProvisioned(params.instanceId, resolution.status)
+      if (recovered) return { claimed: false, cleaned: false, recovered: true }
+    }
+  } catch (error) {
+    return { claimed: false, cleaned: false, error }
+  }
+
   let claimed: boolean
   try {
     claimed = await claimCreatingInstanceForCleanup(params.instanceId, {
@@ -51,7 +74,15 @@ export async function cleanupAndSettleFailedProvision(
   }
 
   try {
-    const client = await getIncusClient(params.host)
+    // Re-check after the database claim. The create worker may have finished
+    // between the first external check and the claim transaction.
+    const resolution = await waitForProvisioningInstanceResolution(client, params.instanceName)
+    if (resolution.kind === 'present') {
+      const recovered = await markCreatingInstanceProvisioned(params.instanceId, resolution.status)
+      if (recovered) return { claimed: true, cleaned: false, recovered: true }
+      throw new Error(`Instance ${params.instanceId} changed state while reconciling provisioning`)
+    }
+
     await ensureInstanceDeleted(client, params.instanceName)
   } catch (error) {
     // Keep the cleanup-pending claim and all billing/resource reservations.

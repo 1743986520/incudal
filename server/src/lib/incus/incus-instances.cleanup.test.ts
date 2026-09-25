@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IncusApiError, type IncusClient } from './incus-client.js'
-import { ensureInstanceDeleted } from './incus-instances.js'
+import { ensureInstanceDeleted, waitForProvisioningInstanceResolution } from './incus-instances.js'
 
 function fakeClient(handler: (method: string, path: string) => Promise<unknown>): IncusClient {
   return { request: handler } as unknown as IncusClient
@@ -47,5 +47,40 @@ test('ensureInstanceDeleted keeps unknown Incus errors as failures', async () =>
   await assert.rejects(
     () => ensureInstanceDeleted(client, 'demo'),
     /connect ETIMEDOUT/
+  )
+})
+
+test('waitForProvisioningInstanceResolution treats a running instance as a successful provision', async () => {
+  const client = fakeClient(async (method, path) => {
+    assert.equal(method, 'GET')
+    assert.equal(path, '/1.0/instances/demo')
+    return { name: 'demo', status: 'Running' }
+  })
+
+  await assert.deepEqual(
+    await waitForProvisioningInstanceResolution(client, 'demo'),
+    { kind: 'present', status: 'running' }
+  )
+})
+
+test('waitForProvisioningInstanceResolution only accepts absence after active operations are gone', async () => {
+  let operationActive = true
+  const client = fakeClient(async (method, path) => {
+    if (path === '/1.0/instances/demo') {
+      throw new IncusApiError('Instance not found', { statusCode: 404, method, path })
+    }
+    if (path === '/1.0/operations?recursion=1') {
+      const operations = operationActive
+        ? [{ id: '/1.0/operations/1', status: 'Running', status_code: 103, resources: { instances: ['/1.0/instances/demo'] } }]
+        : []
+      operationActive = false
+      return operations
+    }
+    throw new Error(`Unexpected request: ${method} ${path}`)
+  })
+
+  await assert.deepEqual(
+    await waitForProvisioningInstanceResolution(client, 'demo'),
+    { kind: 'absent' }
   )
 })

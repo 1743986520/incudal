@@ -272,6 +272,11 @@ export async function createInstanceAsync(
       } : undefined
     })
 
+    if (cleanup.recovered) {
+      console.log(`[Provisioning] 实例 ${instanceId} 已在 Incus 完成创建，修正超时误判；保留扣款与资源预占`)
+      return
+    }
+
     if (!cleanup.claimed) {
       if (cleanup.error) {
         console.error(`[Provisioning] 实例 ${instanceId} 无法取得清理认领，暂不退款:`, cleanup.error)

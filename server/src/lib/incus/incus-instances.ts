@@ -16,6 +16,8 @@ const INSTANCE_BUSY_CANCEL_CHECK_INTERVAL_MS = 30000
 const INSTANCE_BUSY_CANCEL_STALE_UPDATE_MS = 45000
 const INSTANCE_DELETE_CONFIRM_TIMEOUT_MS = 30000
 const INSTANCE_DELETE_CONFIRM_POLL_INTERVAL_MS = 1000
+const INSTANCE_PROVISIONING_SETTLE_TIMEOUT_MS = 30000
+const INSTANCE_PROVISIONING_POLL_INTERVAL_MS = 1000
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -253,6 +255,57 @@ export async function getInstanceState(client: IncusClient, name: string): Promi
   return client.request('GET', `/1.0/instances/${name}/state`)
 }
 
+export type ProvisioningInstanceResolution =
+  | { kind: 'absent' }
+  | { kind: 'present'; status: 'running' | 'stopped' }
+  | { kind: 'failed' }
+
+/**
+ * Resolve the external result of a provisioning attempt before billing it as
+ * failed. A timed-out Incus operation can finish after the caller's wait
+ * expires, so a single 404 is not enough evidence that creation failed.
+ */
+export async function waitForProvisioningInstanceResolution(
+  client: IncusClient,
+  name: string,
+  timeoutMs: number = INSTANCE_PROVISIONING_SETTLE_TIMEOUT_MS
+): Promise<ProvisioningInstanceResolution> {
+  const deadline = Date.now() + timeoutMs
+
+  while (true) {
+    let instance: IncusInstance | null = null
+
+    try {
+      instance = await getInstance(client, name)
+    } catch (error) {
+      if (!isIncusNotFoundError(error)) throw error
+    }
+
+    if (instance) {
+      if (instance.status === 'Running') return { kind: 'present', status: 'running' }
+      if (instance.status === 'Stopped' || instance.status === 'Frozen') {
+        return { kind: 'present', status: 'stopped' }
+      }
+
+      // A terminal Incus error is a real failed provision and can be cleaned
+      // up. Transitional states must be given time to settle instead.
+      if (instance.status === 'Error' || !instance.status) {
+        return { kind: 'failed' }
+      }
+    } else {
+      const activeOperations = await listActiveInstanceOperations(client, name)
+      if (activeOperations.length === 0) return { kind: 'absent' }
+    }
+
+    if (Date.now() >= deadline) {
+      const state = instance?.status || 'absent with an active operation'
+      throw new Error(`Incus provisioning for "${name}" did not settle (state: ${state})`)
+    }
+
+    await sleep(Math.min(INSTANCE_PROVISIONING_POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())))
+  }
+}
+
 /**
  * 创建实例
  */
@@ -276,12 +329,8 @@ export async function deleteInstance(client: IncusClient, name: string): Promise
  * must keep the provisioning charge/reservation intact.
  */
 export async function ensureInstanceDeleted(client: IncusClient, name: string): Promise<void> {
-  try {
-    await getInstance(client, name)
-  } catch (error) {
-    if (isIncusNotFoundError(error)) return
-    throw error
-  }
+  const resolution = await waitForProvisioningInstanceResolution(client, name)
+  if (resolution.kind === 'absent') return
 
   try {
     await stopInstance(client, name, true, { allowCancelBusyUpdate: true })
