@@ -18,11 +18,12 @@ storage_set_defaults() {
     STORAGE_SOURCE="${STORAGE_SOURCE:-}"
     STORAGE_SIZE="${STORAGE_SIZE:-60GiB}"
     if [[ "$STORAGE_DRIVER" == "dir" && -z "$STORAGE_SOURCE" ]]; then
-        STORAGE_SOURCE="/var/lib/incus/storage-pools/default"
+        STORAGE_SOURCE="/var/lib/incus/storage-pools/${STORAGE_POOL_NAME}"
     fi
 }
 
 prompt_storage_pool() {
+    local specified_source="${STORAGE_SOURCE:-}"
     storage_set_defaults
     [[ -t 0 ]] || return 0
 
@@ -62,9 +63,10 @@ prompt_storage_pool() {
     done
 
     if [[ "$STORAGE_DRIVER" == dir ]]; then
-        echo -ne "  ${BOLD}目录路径 [默认 /var/lib/incus/storage-pools/default]: ${NC}"
+        STORAGE_SOURCE="$specified_source"
+        echo -ne "  ${BOLD}目录路径 [默认 /var/lib/incus/storage-pools/${STORAGE_POOL_NAME}]: ${NC}"
         read -r STORAGE_SOURCE
-        STORAGE_SOURCE="${STORAGE_SOURCE:-/var/lib/incus/storage-pools/default}"
+        STORAGE_SOURCE="${STORAGE_SOURCE:-/var/lib/incus/storage-pools/${STORAGE_POOL_NAME}}"
         while ! storage_is_valid_value "$STORAGE_SOURCE" || [[ "$STORAGE_SOURCE" != /* ]]; do
             warn "请输入以 / 开头且不含空格的绝对路径。"
             echo -ne "  ${BOLD}目录路径: ${NC}"

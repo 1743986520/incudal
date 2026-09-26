@@ -91,6 +91,12 @@ main() {
 
     # ---- 交互式流程 ----
 
+    # 先合并面板注入值，非交互安装才能使用下载脚本内的 Token。
+    TOKEN="${INJECT_TOKEN:-${TOKEN:-}}"
+    MODE="${INJECT_MODE:-${MODE:-}}"
+    IPV6_SUBNET="${INJECT_IPV6_SUBNET:-${IPV6_SUBNET:-}}"
+    IPV6_IFACE="${INJECT_IPV6_IFACE:-${IPV6_IFACE:-}}"
+
     # 如果 stdin 不是终端且缺少参数，给出提示
     if [[ ! -t 0 ]]; then
         if [[ -z "$MODE" || -z "$TOKEN" ]]; then
@@ -99,12 +105,6 @@ main() {
             exit 1
         fi
     fi
-
-    # 合并注入变量与 CLI 参数
-    TOKEN="${INJECT_TOKEN:-${TOKEN:-}}"
-    MODE="${INJECT_MODE:-${MODE:-}}"
-    IPV6_SUBNET="${INJECT_IPV6_SUBNET:-${IPV6_SUBNET:-}}"
-    IPV6_IFACE="${INJECT_IPV6_IFACE:-${IPV6_IFACE:-}}"
 
     # 模式选择（未通过 CLI 或面板注入指定时进入菜单）
     if [[ -z "$MODE" ]]; then
@@ -185,14 +185,18 @@ main() {
 
     # 端口修改逻辑
     if [[ -z "${LISTEN_PORT:-}" ]]; then
-        echo -e "\n${CYAN}==> (可选) 自定义通信端口${NC}"
-        echo -e "  ${DIM}默认 8443，若被防火墙屏蔽可改为 10000+ 端口${NC}"
-        echo -ne "  ${BOLD}通信端口 [默认 8443]: ${NC}"
-        read -r USER_PORT
-        if [[ -n "$USER_PORT" && "$USER_PORT" =~ ^[0-9]+$ ]]; then
-            LISTEN_PORT="$USER_PORT"
-        else
+        if [[ ! -t 0 ]]; then
             LISTEN_PORT="8443"
+        else
+            echo -e "\n${CYAN}==> (可选) 自定义通信端口${NC}"
+            echo -e "  ${DIM}默认 8443，若被防火墙屏蔽可改为 10000+ 端口${NC}"
+            echo -ne "  ${BOLD}通信端口 [默认 8443]: ${NC}"
+            read -r USER_PORT
+            if [[ -n "$USER_PORT" && "$USER_PORT" =~ ^[0-9]+$ ]]; then
+                LISTEN_PORT="$USER_PORT"
+            else
+                LISTEN_PORT="8443"
+            fi
         fi
     fi
 
@@ -273,10 +277,12 @@ main() {
 
     # 2/5 系统依赖（用户可能拒绝 DKMS 编译并返回主菜单）
     if ! install_deps; then
-        warn "安装已中断，返回主菜单..."
-        echo ""
-        exec "$0"  # 重新启动脚本回到主菜单
-        exit 0
+        if [[ -t 0 && -f "$0" ]]; then
+            warn "安装已中断，返回主菜单..."
+            exec bash "$0"
+        fi
+        error "系统依赖安装失败，请检查上方错误后重试"
+        exit 1
     fi
 
     install_incus     # 3/5 安装 Incus

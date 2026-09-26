@@ -696,6 +696,10 @@ confirm_install() {
 
     divider
     echo ""
+    if [[ ! -t 0 ]]; then
+        info "非交互模式已使用明确提供的模式与 Token，开始安装"
+        return 0
+    fi
     echo -ne "  ${YELLOW}确认开始安装？${NC}[y/N]: "
     read -r confirm
     if [[ ! "$confirm" =~ ^[yY]$ ]]; then
