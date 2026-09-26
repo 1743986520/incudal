@@ -20,7 +20,6 @@ const ACCOUNT_OPERATIONS: OperationType[] = [
 ]
 
 const RESOURCE_OPERATIONS: OperationType[] = [
-    'delete_instance',
     'reinstall_instance',
     'recreate_instance',
     'transfer_instance',
