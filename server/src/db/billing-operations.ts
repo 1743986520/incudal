@@ -19,6 +19,7 @@ import {
   getDiscountedMonthsForRenewal
 } from '../lib/official-coupon-rules.js'
 import { getInstanceBillingLineageIds } from './billing-records.js'
+import { matchCouponUsagesToBillingRecords } from '../lib/billing-coupon-match.js'
 import {
   calculateDiscountAmount,
   calculateDiscountedPrice,
@@ -317,32 +318,33 @@ async function getBillingValueBreakdownForClient(
         id: true,
         type: true,
         originalPrice: true,
+        discountAmount: true,
         createdAt: true
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
     })
   ])
 
-  // 账单记录没有直接关联 coupon usage，按购买/续费类型及时间顺序配对。
-  // 这是兼容现有数据模型的稳定匹配方式；升级记录不会消耗优惠券记录。
-  const couponUsageQueues = new Map<string, Array<{ originalPrice: number }>>([
-    ['purchase', []],
-    ['renewal', []]
-  ])
-  for (const usage of couponUsages) {
-    const queue = couponUsageQueues.get(usage.type)
-    if (queue) queue.push({ originalPrice: Number(usage.originalPrice) })
-  }
+  // 续费可在券停用期间按原价支付；仅按顺序配对会把之后的优惠误配给原价账单。
+  const usageMatches = matchCouponUsagesToBillingRecords(
+    billingRecords.map(record => ({
+      type: record.type,
+      amount: Number(record.amount),
+      createdAt: record.createdAt
+    })),
+    couponUsages.map(usage => ({
+      type: usage.type,
+      originalPrice: Number(usage.originalPrice),
+      discountAmount: Number(usage.discountAmount),
+      createdAt: usage.createdAt
+    }))
+  )
 
-  const values = billingRecords.map(record => {
+  const values = billingRecords.map((record, recordIndex) => {
     const rawUserAmount = Number(record.amount)
     const userAmount = Number.isFinite(rawUserAmount) ? Math.max(0, rawUserAmount) : 0
-    const usageType = record.type === 'newPurchase'
-      ? 'purchase'
-      : record.type === 'renew'
-        ? 'renewal'
-        : null
-    const couponUsage = usageType ? couponUsageQueues.get(usageType)?.shift() : undefined
+    const usageIndex = usageMatches.get(recordIndex)
+    const couponUsage = usageIndex === undefined ? undefined : couponUsages[usageIndex]
     const originalPrice = couponUsage ? Number(couponUsage.originalPrice) : userAmount
     const hostedAmount = Number.isFinite(originalPrice) && originalPrice > 0 ? originalPrice : userAmount
 
