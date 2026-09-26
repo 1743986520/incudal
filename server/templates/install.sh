@@ -29,6 +29,7 @@ EOF
 
 if [[ "$EUID" -ne 0 ]]; then
   command -v sudo >/dev/null 2>&1 || fail "请以 root 权限运行此脚本"
+  [[ -f "$0" ]] || fail "管道运行时请使用 curl ... | sudo bash -s -- --mode nat --token TOKEN"
   exec sudo -E bash "$0" "$@"
 fi
 
