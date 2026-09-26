@@ -4438,6 +4438,7 @@ const api = {
       planPrice: number | null
       discountAmount: number | null
       finalPrice: number | null
+      discountedMonths: number | null
     }> => http.post('/official-coupons/validate', { code, packageId, planId })
   },
 
