@@ -127,6 +127,9 @@ export default async function redeemCodesRoutes(fastify: FastifyInstance) {
     }
 
     const expiresAtDate = expiresAt ? new Date(expiresAt) : null
+    if (expiresAtDate && Number.isNaN(expiresAtDate.getTime())) {
+      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'Invalid expiration date'))
+    }
 
     try {
       if (batchCount && batchCount > 1) {
@@ -243,17 +246,25 @@ export default async function redeemCodesRoutes(fastify: FastifyInstance) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
+    const expiresAtDate = expiresAt ? new Date(expiresAt) : null
+    if (expiresAtDate && Number.isNaN(expiresAtDate.getTime())) {
+      return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'Invalid expiration date'))
+    }
+
     try {
-      await db.updateRedeemCode(codeId, {
+      await db.updateRedeemCode(codeId, hostId, {
         enabled,
         remark,
         maxUses,
-        expiresAt: expiresAt !== undefined ? (expiresAt ? new Date(expiresAt) : null) : undefined
+        expiresAt: expiresAt !== undefined ? expiresAtDate : undefined
       })
 
       return { message: 'Updated successfully' }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
+      if ((error as { code?: string }).code === 'P2025') {
+        return reply.code(404).send(apiError(ErrorCode.NOT_FOUND))
+      }
       return reply.code(500).send(apiError(ErrorCode.INTERNAL_ERROR, errorMessage))
     }
   })
@@ -288,10 +299,13 @@ export default async function redeemCodesRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      await db.deleteRedeemCode(codeId)
+      await db.deleteRedeemCode(codeId, hostId)
       return { message: 'Deleted successfully' }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
+      if ((error as { code?: string }).code === 'P2025') {
+        return reply.code(404).send(apiError(ErrorCode.NOT_FOUND))
+      }
       return reply.code(500).send(apiError(ErrorCode.INTERNAL_ERROR, errorMessage))
     }
   })
@@ -333,8 +347,8 @@ export default async function redeemCodesRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      await db.deleteRedeemCodeBatch(ids)
-      return { message: 'Batch deleted successfully', count: ids.length }
+      const result = await db.deleteRedeemCodeBatch(ids, hostId)
+      return { message: 'Batch deleted successfully', count: result.count }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       return reply.code(500).send(apiError(ErrorCode.INTERNAL_ERROR, errorMessage))
@@ -379,7 +393,7 @@ export default async function redeemCodesRoutes(fastify: FastifyInstance) {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
-    const result = await db.getRedeemCodeUsages(codeId, { limit, offset })
+    const result = await db.getRedeemCodeUsages(codeId, hostId, { limit, offset })
     return result
   })
 
