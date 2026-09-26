@@ -35,6 +35,7 @@ interface BatchDestroyPreviewItem {
   isFreeInstance: boolean
   isFirstTime: boolean
   feeWaiverEligible: boolean
+  countsTowardsDestroyFee?: boolean
   refund: {
     remainingDays: number
     remainingValue: number
@@ -400,6 +401,14 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
     cannotDestroyReason = DESTROY_DISABLED_REASON
   }
 
+  if (canDestroy) {
+    const blockingTask = await getDestroyBlockingTask(instanceId)
+    if (blockingTask) {
+      canDestroy = false
+      cannotDestroyReason = blockingTask.reason
+    }
+  }
+
   if (!isFreeInstance && instance.expiresAt && instance.billingPrice && instance.billingCycle) {
     const refundQuote = await db.calculateInstanceRemainingRefundQuote({
       id: instance.id,
@@ -439,8 +448,9 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
     canDestroy,
     cannotDestroyReason,
     isFreeInstance,
-    isFirstTime,
+    isFirstTime: !db.isHourlyInstance(instance) && isFirstTime,
     feeWaiverEligible: isErrorState,
+    countsTowardsDestroyFee: !isFreeInstance && !db.isHourlyInstance(instance),
     refund: {
       remainingDays,
       remainingValue,
@@ -763,6 +773,22 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     }
 
     const items = await Promise.all(uniqueIds.map(id => buildBatchDestroyPreviewItem(request.user.id, id)))
+    // Execute uses the submitted order. Only monthly paid instances create a
+    // destroy record, so only the first eligible one can use the free deletion.
+    let priorDestroyCount = items.find(item => item.countsTowardsDestroyFee)?.refund.destroyCount ?? 0
+    for (const item of items) {
+      if (!item.canDestroy || !item.countsTowardsDestroyFee) continue
+      const isFirstTime = priorDestroyCount === 0
+      const refundableValue = item.refund.refundAmount + item.refund.feeAmount
+      const feeRate = item.feeWaiverEligible || isFirstTime ? 0 : DESTROY_RULES.FEE_RATE
+      const feeAmount = roundMoney(refundableValue * feeRate)
+      item.isFirstTime = isFirstTime
+      item.refund.feeRate = feeRate
+      item.refund.feeAmount = feeAmount
+      item.refund.refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
+      item.refund.destroyCount = priorDestroyCount
+      priorDestroyCount++
+    }
     return { items }
   })
 
@@ -922,6 +948,14 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     // 判断是否可以销毁（已移除冷却期限制，付费实例随时可销毁）
     let canDestroy = isInstanceDeletionAllowed(instance)
     let cannotDestroyReason = canDestroy ? '' : DESTROY_DISABLED_REASON
+
+    if (canDestroy) {
+      const blockingTask = await getDestroyBlockingTask(instanceId)
+      if (blockingTask) {
+        canDestroy = false
+        cannotDestroyReason = blockingTask.reason
+      }
+    }
 
     if (
       canDestroy
