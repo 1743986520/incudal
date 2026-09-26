@@ -481,7 +481,7 @@ function resolveHostInstallStage(query: HostInstallQuery): 'bootstrap' | 'platfo
 function buildHostInstallCommand(panelUrl: string, installToken: string): string {
   const scriptUrl = `${panelUrl}/api/hosts/install.sh/${installToken}`
   const quotedScriptUrl = `'${scriptUrl.replace(/'/g, `'"'"'`)}'`
-  return `if command -v apk >/dev/null 2>&1; then if [ "$(id -u)" = 0 ]; then apk add --no-cache bash curl; else sudo apk add --no-cache bash curl; fi; fi && curl --fail --show-error --location ${quotedScriptUrl} -o incudal.sh && if command -v sudo >/dev/null 2>&1; then sudo bash incudal.sh; else bash incudal.sh; fi`
+  return `incudal_as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }; if ! command -v curl >/dev/null 2>&1 || ! command -v bash >/dev/null 2>&1; then if command -v apk >/dev/null 2>&1; then incudal_as_root apk add --no-cache bash curl ca-certificates; elif command -v apt-get >/dev/null 2>&1; then incudal_as_root apt-get update && incudal_as_root apt-get install -y bash curl ca-certificates; elif command -v dnf >/dev/null 2>&1; then incudal_as_root dnf install -y bash curl ca-certificates; else echo 'Unsupported package manager' >&2; exit 1; fi; fi && curl --fail --show-error --location ${quotedScriptUrl} -o incudal.sh && incudal_as_root bash incudal.sh`
 }
 
 export default async function hostRoutes(fastify: FastifyInstance) {
