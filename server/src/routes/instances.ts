@@ -1885,11 +1885,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const instanceId = Number(request.params.id)
     if (!Number.isInteger(instanceId)) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
 
-    const instance = await prisma.instance.findFirst({
-      where: { id: instanceId, userId: request.user.id },
+    const instance = await prisma.instance.findUnique({
+      where: { id: instanceId },
       include: { host: true, package: true, packagePlan: true }
     })
     if (!instance) return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+    // Admins can retry an instance from the all-users list. The instance owner
+    // remains the purchaser; a host owner may view it but cannot bill its user.
+    if (instance.userId !== request.user.id && request.user.role !== 'admin') {
+      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+    }
+    const ownerId = instance.userId
     if (instance.status !== 'error') {
       return reply.code(409).send({ error: '只有创建失败的实例可以重试', code: 'INSTANCE_NOT_RETRYABLE' })
     }
@@ -1905,7 +1911,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     // 存储池前置校验：节点没有可用的系统盘存储池时直接拒绝重试创建
     if (!(await ensureHostStoragePoolOrReply(reply, {
-      userId: request.user.id,
+      userId: ownerId,
       hostId: instance.hostId,
       source: 'retry-provision',
       instanceId: instance.id
@@ -1977,7 +1983,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // 崩溃，超时清理会把从未预占的资源再次回滚。
       resourcesReserved = await db.claimInstanceAndReserveResources({
         instanceId,
-        userId: request.user.id,
+        userId: ownerId,
         hostId: instance.hostId, cpu: instance.cpu, memory: instance.memory,
         disk: instance.disk, portCount
       })
@@ -2011,7 +2017,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             const validation = await db.validateOfficialCoupon({
               code: officialCouponCode,
               packageId: instance.packageId,
-              userId: request.user.id,
+              userId: ownerId,
               client: tx
             })
             if (validation.valid) {
@@ -2037,7 +2043,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             const affBinding = await db.getInstanceAffBinding(instanceId, tx)
             const affUsable = !!affBinding
               && affBinding.affCode.enabled
-              && affBinding.affCode.userId !== request.user.id
+              && affBinding.affCode.userId !== ownerId
               && (affBinding.affCode.packagePlanId === null || affBinding.affCode.packagePlanId === instance.packagePlanId)
             if (affUsable) {
               const discountRate = Number(affBinding!.affCode.discountRate) || 0
@@ -2047,15 +2053,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             }
           }
 
-          const user = await tx.user.findUnique({ where: { id: request.user.id }, select: { balance: true } })
+          const user = await tx.user.findUnique({ where: { id: ownerId }, select: { balance: true } })
           if (!user || Number(user.balance) < retryAmount) throw new Error('BALANCE_INSUFFICIENT')
           const updated = await tx.user.updateMany({
-            where: { id: request.user.id, balance: { gte: retryAmount } },
+            where: { id: ownerId, balance: { gte: retryAmount } },
             data: { balance: { decrement: retryAmount } }
           })
           if (updated.count === 0) throw new Error('BALANCE_INSUFFICIENT')
           const updatedUser = await tx.user.findUnique({
-            where: { id: request.user.id },
+            where: { id: ownerId },
             select: { balance: true }
           })
           if (!updatedUser) throw new Error('USER_NOT_FOUND')
@@ -2067,7 +2073,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
               ? `，AFF 优惠码折扣 -¥${retryDiscountAmount.toFixed(2)}`
               : ''
           const balanceLog = await tx.balanceLog.create({
-            data: { userId: request.user.id, type: 'consume', amount: -retryAmount, balanceBefore, balanceAfter, instanceId, remark: `重试创建实例：${instance.name}${discountRemark}` }
+            data: { userId: ownerId, type: 'consume', amount: -retryAmount, balanceBefore, balanceAfter, instanceId, remark: `重试创建实例：${instance.name}${discountRemark}` }
           })
           const now = new Date()
           const periodEnd = new Date(now)
@@ -2075,7 +2081,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           await tx.instanceBillingRecord.create({
             data: {
               instanceId,
-              userId: request.user.id,
+              userId: ownerId,
               type: 'newPurchase',
               amount: retryAmount,
               months: purchaseMonths,
@@ -2089,7 +2095,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             await db.reserveOfficialCouponUsage({
               code: retryOfficialCoupon.code,
               packageId: instance.packageId,
-              userId: request.user.id,
+              userId: ownerId,
               instanceId,
               originalPrice: originalAmount,
               discountAmount: retryDiscountAmount,
@@ -2164,7 +2170,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       bootAutostartPriority: instance.bootAutostartPriority,
       bootAutostartDelay: instance.bootAutostartDelay,
       bootHostShutdownTimeout: instance.bootHostShutdownTimeout
-    }, request.user.id, {
+    }, ownerId, {
       cpu: instance.cpu,
       memory: instance.memory,
       disk: instance.disk,

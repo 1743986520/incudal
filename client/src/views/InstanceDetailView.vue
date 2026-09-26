@@ -2843,6 +2843,7 @@ function formatHourlyDate(value: string | null | undefined): string {
         </div>
         <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
         <button
+          v-if="instance.isInstanceOwner || authStore.isAdmin"
           class="flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors w-full sm:w-auto text-center bg-blue-600 hover:bg-blue-700 text-white"
           :disabled="errorRetryLoading || errorDestroyLoading"
           @click="handleErrorRetry"

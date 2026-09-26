@@ -412,6 +412,7 @@ export interface Instance {
   id: number
   incus_id: string
   name: string
+  userId?: number  // Included when listing other users' instances
   user_id?: number  // Only for admin
   host_id?: number  // Only for admin
   package_id: number | null

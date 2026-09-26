@@ -717,6 +717,11 @@ function getInstanceExpiryInfo(instance: Instance): InstanceExpiryInfo {
 }
 
 type InstanceAction = 'start' | 'stop' | 'restart' | 'retry' | 'delete'
+
+function canRetryProvision(instance: Instance): boolean {
+  return instance.status?.toLowerCase() === 'error'
+    && (isAdmin.value || instance.userId === undefined || instance.userId === authStore.user?.id)
+}
 type BatchSimpleAction = 'start' | 'stop' | 'restart' | 'sync'
 type InstanceOrderAction = 'top' | 'up' | 'down' | 'bottom'
 const SIMPLE_BATCH_CONCURRENCY = 5
@@ -1729,7 +1734,7 @@ async function confirmBatchDestroy(): Promise<void> {
                     </svg>
                   </button>
                   <button
-                    v-if="instance.status?.toLowerCase() === 'error'"
+                    v-if="canRetryProvision(instance)"
                     :disabled="!!actionLoading[instance.id]"
                     class="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-500 transition-colors disabled:opacity-50"
                     :title="$t('instance.actions.retry')"
@@ -1939,7 +1944,7 @@ async function confirmBatchDestroy(): Promise<void> {
                 <span class="text-xs">{{ actionLoading[instance.id] === 'start' ? '...' : $t('instance.actions.start') }}</span>
               </button>
               <button
-                v-if="instance.status?.toLowerCase() === 'error'"
+                v-if="canRetryProvision(instance)"
                 :disabled="!!actionLoading[instance.id]"
                 class="btn-ghost btn-sm flex-1 text-blue-500"
                 @click.stop="handleAction(instance, 'retry')"
@@ -2222,7 +2227,7 @@ async function confirmBatchDestroy(): Promise<void> {
                     </button>
 
                     <button
-                      v-if="instance.status?.toLowerCase() === 'error'"
+                      v-if="canRetryProvision(instance)"
                       :disabled="!!actionLoading[instance.id]"
                       class="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
                       :class="getCardActionButtonClass()"
