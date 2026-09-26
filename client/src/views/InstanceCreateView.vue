@@ -177,8 +177,10 @@ const promoCodeValid = ref<boolean | null>(null)
 const promoCodeType = ref<'aff' | 'official' | null>(null)  // 命中的优惠码类型
 const promoCodeName = ref('')                               // 官方优惠券名称
 const promoCodeDiscount = ref<number>(0)
+const officialCouponDiscountAmount = ref<number | null>(null)
 const promoCodeCommissionRate = ref<number>(0)  // 返利率
 const promoCodeError = ref('')
+let promoCodeRequestSeq = 0
 
 // 托管者信息弹窗
 const showHostOwnerModal = ref(false)
@@ -291,14 +293,16 @@ const planPriceInfo = computed(() => {
   const planPriceYuan = plan.price / 100
   const originalPrice = planPriceYuan
   const discount = promoCodeValid.value ? promoCodeDiscount.value : 0
-  const discountAmount = Number((planPriceYuan * discount).toFixed(2))
+  const discountAmount = promoCodeValid.value && promoCodeType.value === 'official' && officialCouponDiscountAmount.value !== null
+    ? officialCouponDiscountAmount.value
+    : Number((planPriceYuan * discount).toFixed(2))
   const finalPrice = Number((originalPrice - discountAmount).toFixed(2))
   return {
     originalPrice,
     planPrice: planPriceYuan,
     discountAmount,
     finalPrice,
-    discountRate: discount
+    discountRate: originalPrice > 0 ? discountAmount / originalPrice : 0
   }
 })
 
@@ -823,11 +827,13 @@ function formatHourlyPlanPrice(value: string | null | undefined): string {
  * 重置优惠码状态
  */
 function resetPromoCode(): void {
+  promoCodeRequestSeq++
   form.value.promoCode = ''
   promoCodeValid.value = null
   promoCodeType.value = null
   promoCodeName.value = ''
   promoCodeDiscount.value = 0
+  officialCouponDiscountAmount.value = null
   promoCodeCommissionRate.value = 0
   promoCodeError.value = ''
 }
@@ -844,6 +850,7 @@ async function verifyPromoCode(): Promise<void> {
   }
 
   const code = form.value.promoCode.trim()
+  const requestSeq = ++promoCodeRequestSeq
   let isOfficialCoupon = false
 
   promoCodeVerifying.value = true
@@ -854,20 +861,27 @@ async function verifyPromoCode(): Promise<void> {
 
   try {
     const officialRes = await api.officialCoupons.validate(code, form.value.packageId, form.value.planId)
+    if (requestSeq !== promoCodeRequestSeq) return
+    if (officialRes.discountAmount === null || officialRes.planPrice === null) {
+      throw new Error(t('aff.promoCodeInvalid'))
+    }
     isOfficialCoupon = true
     promoCodeValid.value = true
     promoCodeType.value = 'official'
     promoCodeName.value = officialRes.name || ''
     promoCodeDiscount.value = Number(officialRes.discountRate) || 0
+    officialCouponDiscountAmount.value = officialRes.discountAmount
   } catch (officialErr: any) {
+    if (requestSeq !== promoCodeRequestSeq) return
     // 代码不是官方券时才继续尝试 AFF 优惠码；官方券自身的失败原因直接展示
     if (officialErr?.code !== 'COUPON_NOT_FOUND') {
       promoCodeValid.value = false
       promoCodeDiscount.value = 0
+      officialCouponDiscountAmount.value = null
       promoCodeError.value = translateError(officialErr)
     }
   } finally {
-    promoCodeVerifying.value = false
+    if (requestSeq === promoCodeRequestSeq) promoCodeVerifying.value = false
   }
 
   if (isOfficialCoupon) return
@@ -884,6 +898,7 @@ async function verifyPromoCode(): Promise<void> {
   promoCodeVerifying.value = true
   try {
     const res = await api.aff.validateCode(code, form.value.planId)
+    if (requestSeq !== promoCodeRequestSeq) return
     if ((res as any).valid) {
       promoCodeValid.value = true
       promoCodeType.value = 'aff'
@@ -896,12 +911,23 @@ async function verifyPromoCode(): Promise<void> {
       promoCodeError.value = (res as any).error || t('aff.promoCodeInvalid')
     }
   } catch (err: any) {
+    if (requestSeq !== promoCodeRequestSeq) return
     promoCodeValid.value = false
     promoCodeError.value = err.message || t('aff.promoCodeInvalid')
   } finally {
-    promoCodeVerifying.value = false
+    if (requestSeq === promoCodeRequestSeq) promoCodeVerifying.value = false
   }
 }
+
+watch(() => form.value.promoCode, () => {
+  promoCodeRequestSeq++
+  promoCodeValid.value = null
+  promoCodeType.value = null
+  promoCodeDiscount.value = 0
+  officialCouponDiscountAmount.value = null
+  promoCodeError.value = ''
+  promoCodeVerifying.value = false
+}, { flush: 'sync' })
 
 /**
  * 加载托管者信息（点击 UID 标签时触发）
