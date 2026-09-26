@@ -3834,18 +3834,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // 检查转移锁定
     if (await checkTransferLock(instanceId, reply)) return
 
-    const claimedVerification = await claimOperationVerificationIfRequired(
-      user.id,
-      'delete_instance',
-      instanceId
-    )
-    if (!claimedVerification) {
-      return reply.code(403).send({
-        error: 'Sensitive operation requires verification',
-        code: 'VERIFICATION_REQUIRED',
-        operationType: 'delete_instance'
-      })
-    }
     let incusDeleted = false
     let sourceHostUnavailable = false
     let client: Awaited<ReturnType<typeof getIncusClient>> | null = null

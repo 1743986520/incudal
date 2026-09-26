@@ -20,7 +20,6 @@ const VALID_OPERATION_TYPES: OperationType[] = [
     'disable_2fa',
     'change_email',
     'delete_account',
-    'delete_instance',
     'reinstall_instance',
     'recreate_instance',
     'transfer_instance',
