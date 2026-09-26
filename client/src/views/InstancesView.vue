@@ -865,12 +865,7 @@ async function handleAction(instance: Instance, action: InstanceAction): Promise
       toast.success(t('instance.deletedInstance', { name: instance.name }))
     }
   } catch (error: any) {
-    // 检查是否需要二次验证
-    if (error?.code === 'VERIFICATION_REQUIRED' || error?.message?.includes('Sensitive operation requires verification')) {
-      toast.error(t('instance.verificationRequiredHint'), 6000)
-    } else {
-      toast.error(`${t('instance.actionFailed')}: ${translateError(error)}`)
-    }
+    toast.error(`${t('instance.actionFailed')}: ${translateError(error)}`)
     // 操作失败时重新加载以恢复正确状态
     await loadInstances(true)
   } finally {
