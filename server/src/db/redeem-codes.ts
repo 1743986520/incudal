@@ -332,6 +332,7 @@ export async function releaseSystemRedeemCode(
  */
 export async function updateRedeemCode(
   id: number,
+  hostId: number,
   data: {
     enabled?: boolean
     remark?: string
@@ -340,7 +341,7 @@ export async function updateRedeemCode(
   }
 ) {
   return prisma.redeemCode.update({
-    where: { id },
+    where: { id, hostId },
     data
   })
 }
@@ -348,18 +349,18 @@ export async function updateRedeemCode(
 /**
  * 删除兑换码
  */
-export async function deleteRedeemCode(id: number) {
+export async function deleteRedeemCode(id: number, hostId: number) {
   return prisma.redeemCode.delete({
-    where: { id }
+    where: { id, hostId }
   })
 }
 
 /**
  * 批量删除兑换码
  */
-export async function deleteRedeemCodeBatch(ids: number[]) {
+export async function deleteRedeemCodeBatch(ids: number[], hostId: number) {
   return prisma.redeemCode.deleteMany({
-    where: { id: { in: ids } }
+    where: { id: { in: ids }, hostId }
   })
 }
 
@@ -368,13 +369,15 @@ export async function deleteRedeemCodeBatch(ids: number[]) {
  */
 export async function getRedeemCodeUsages(
   redeemCodeId: number,
+  hostId: number,
   options: { limit?: number; offset?: number } = {}
 ) {
   const { limit = 20, offset = 0 } = options
+  const where = { redeemCodeId, redeemCode: { hostId } }
 
   const [usages, total] = await Promise.all([
     prisma.redeemCodeUsage.findMany({
-      where: { redeemCodeId },
+      where,
       orderBy: { usedAt: 'desc' },
       take: limit,
       skip: offset,
@@ -387,7 +390,7 @@ export async function getRedeemCodeUsages(
         }
       }
     }),
-    prisma.redeemCodeUsage.count({ where: { redeemCodeId } })
+    prisma.redeemCodeUsage.count({ where })
   ])
 
   return {
