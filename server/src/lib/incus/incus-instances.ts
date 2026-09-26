@@ -18,6 +18,8 @@ const INSTANCE_DELETE_CONFIRM_TIMEOUT_MS = 30000
 const INSTANCE_DELETE_CONFIRM_POLL_INTERVAL_MS = 1000
 const INSTANCE_PROVISIONING_SETTLE_TIMEOUT_MS = 30000
 const INSTANCE_PROVISIONING_POLL_INTERVAL_MS = 1000
+const INSTANCE_CREATE_TIMEOUT_MS = 15 * 60 * 1000
+const INSTANCE_APPEAR_TIMEOUT_MS = 30 * 1000
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -310,7 +312,34 @@ export async function waitForProvisioningInstanceResolution(
  * 创建实例
  */
 export async function createInstance(client: IncusClient, config: unknown): Promise<unknown> {
-  return client.request('POST', '/1.0/instances', config)
+  // Pulling a remote image and creating a VM can take longer than the client
+  // default of two minutes. The operation must finish before we try to start
+  // the instance or settle a failed purchase.
+  return client.request('POST', '/1.0/instances', config, INSTANCE_CREATE_TIMEOUT_MS)
+}
+
+/** Wait until a completed create is visible before issuing the start action. */
+export async function waitForCreatedInstance(
+  client: IncusClient,
+  name: string,
+  timeoutMs: number = INSTANCE_APPEAR_TIMEOUT_MS,
+  pollIntervalMs: number = INSTANCE_PROVISIONING_POLL_INTERVAL_MS
+): Promise<'Running' | 'Stopped'> {
+  const deadline = Date.now() + timeoutMs
+  while (true) {
+    try {
+      const instance = await getInstance(client, name)
+      if (instance.status === 'Error') {
+        throw new Error(`Incus instance "${name}" entered Error state after creation`)
+      }
+      if (instance.status === 'Running' || instance.status === 'Stopped') return instance.status
+    } catch (error) {
+      if (!isIncusNotFoundError(error)) throw error
+      if (Date.now() >= deadline) throw new Error(`Incus instance "${name}" was not found after creation`, { cause: error })
+    }
+    if (Date.now() >= deadline) throw new Error(`Incus instance "${name}" did not become ready after creation`)
+    await sleep(Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())))
+  }
 }
 
 /**

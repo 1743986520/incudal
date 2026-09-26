@@ -1919,6 +1919,16 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const rootPassword = (instance.rootPassword ? decryptSensitiveData(instance.rootPassword) : null) || generateRandomPassword(16)
     const hostRecord = await db.getHostById(instance.hostId)
     if (!hostRecord) return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+    // A failed provision may have recorded a pool that was later removed.
+    // Retry is a new create, so select an available system disk pool instead
+    // of repeating the same Incus "storage pool not found" failure.
+    const systemDiskPools = await db.getSystemDiskPoolsByHostId(instance.hostId)
+    const retryStoragePool = systemDiskPools.some(pool => pool.name === instance.storagePoolName)
+      ? instance.storagePoolName!
+      : await db.resolveStoragePoolForNewInstance(instance.hostId, { packageId: instance.packageId })
+    if (!retryStoragePool) {
+      return reply.code(400).send(apiError(ErrorCode.STORAGE_POOL_NOT_CONFIGURED))
+    }
     const hostIpv6 = instance.host as any
     const retryAddresses = await db.reserveInstanceIpAddresses({
       instanceId,
@@ -2137,7 +2147,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       portLimit: instance.portLimit || 0,
       instanceType,
       sshPort: instance.sshPort,
-      storagePool: instance.storagePoolName || 'default',
+      storagePool: retryStoragePool,
       ipv4Address,
       ipv6Address,
       ipv6Gateway: hostIpv6.ipv6Gateway || null,

@@ -11,6 +11,7 @@ import {
   createInstance,
   startInstance,
   getInstanceState,
+  waitForCreatedInstance,
   ensureInstanceDeleted
 } from '../../lib/incus/index.js'
 import type { Host } from '../../types/database.js'
@@ -109,11 +110,14 @@ export async function createInstanceAsync(
     console.log(`[Provisioning] Incus 配置已生成，敏感字段已跳过日志输出`)
 
     await createInstance(client, incusConfig)
+    const createdStatus = await waitForCreatedInstance(client, config.name)
     const instanceTypeLabel = config.instanceType === 'vm' ? '虚拟机' : '容器'
     console.log(`[Provisioning] 实例 ${config.name} ${instanceTypeLabel}创建完成`)
 
-    await startInstance(client, config.name)
-    console.log(`[Provisioning] 实例 ${config.name} 启动命令已发送`)
+    if (createdStatus !== 'Running') {
+      await startInstance(client, config.name)
+      console.log(`[Provisioning] 实例 ${config.name} 启动命令已发送`)
+    }
 
     // KVM 虚拟机需要等待 QEMU 真正完成启动
     if (config.instanceType === 'vm') {

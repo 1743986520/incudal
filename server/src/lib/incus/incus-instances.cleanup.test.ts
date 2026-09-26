@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IncusApiError, type IncusClient } from './incus-client.js'
-import { ensureInstanceDeleted, waitForProvisioningInstanceResolution } from './incus-instances.js'
+import { createInstance, ensureInstanceDeleted, waitForCreatedInstance, waitForProvisioningInstanceResolution } from './incus-instances.js'
 
 function fakeClient(handler: (method: string, path: string) => Promise<unknown>): IncusClient {
   return { request: handler } as unknown as IncusClient
@@ -83,4 +83,50 @@ test('waitForProvisioningInstanceResolution only accepts absence after active op
     await waitForProvisioningInstanceResolution(client, 'demo'),
     { kind: 'absent' }
   )
+})
+
+test('create waits long enough for remote image pulls and VM creation', async () => {
+  const client = { request: async (method: string, path: string, body: unknown, timeout: number) => {
+    assert.equal(method, 'POST')
+    assert.equal(path, '/1.0/instances')
+    assert.deepEqual(body, { name: 'demo' })
+    assert.equal(timeout, 15 * 60 * 1000)
+    return {}
+  } } as unknown as IncusClient
+  await createInstance(client, { name: 'demo' })
+})
+
+test('create retry waits for the new instance to appear before start', async () => {
+  let checks = 0
+  const client = fakeClient(async (method, path) => {
+    assert.equal(method, 'GET')
+    assert.equal(path, '/1.0/instances/demo')
+    if (++checks < 3) throw new IncusApiError('Instance not found', { statusCode: 404, method, path })
+    return { name: 'demo', status: 'Stopped' }
+  })
+  assert.equal(await waitForCreatedInstance(client, 'demo', 100, 1), 'Stopped')
+  assert.equal(checks, 3)
+})
+
+test('create retry waits through a transitional instance state', async () => {
+  let checks = 0
+  const client = fakeClient(async () => ({ name: 'demo', status: ++checks === 1 ? 'Creating' : 'Running' }))
+  assert.equal(await waitForCreatedInstance(client, 'demo', 100, 1), 'Running')
+  assert.equal(checks, 2)
+})
+
+test('create retry reports a still missing instance and does not start it', async () => {
+  const client = fakeClient(async (method, path) => {
+    throw new IncusApiError('Instance not found', { statusCode: 404, method, path })
+  })
+  await assert.rejects(() => waitForCreatedInstance(client, 'demo', 0), /was not found after creation/)
+})
+
+test('create retry does not treat an Incus error as a missing instance', async () => {
+  const client = fakeClient(async () => {
+    throw new IncusApiError('Storage pool is unavailable', {
+      statusCode: 503, method: 'GET', path: '/1.0/instances/demo'
+    })
+  })
+  await assert.rejects(() => waitForCreatedInstance(client, 'demo', 100, 1), /Storage pool is unavailable/)
 })
