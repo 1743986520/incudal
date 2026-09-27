@@ -1,29 +1,18 @@
 /**
  * 认证装饰器插件
- * 包含认证查询缓存、Token 验证和管理员权限检查
+ * 包含实时账户状态查询、Token 验证和管理员权限检查
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '../db/prisma.js'
 import { isAccessTokenInvalidated } from '../lib/security.js'
-import { sharedDel, sharedDelPrefix, sharedGet, sharedSet } from '../lib/shared-state.js'
+import { sharedDel, sharedDelPrefix } from '../lib/shared-state.js'
 
-// ==================== 认证查询短时缓存 ====================
-// 为认证查询添加 30 秒 TTL 缓存，减少每次请求的数据库查询。
-// 缓存走共享状态层（审查项 P2-09）：配置 REDIS_URL 的多副本部署中，
-// 用户封禁/角色变更通过 clearAuthCache 清除共享缓存，各副本即时生效；
-// 未配置 Redis 时退化为进程内存，行为与历史版本一致。
-
-const AUTH_CACHE_TTL_MS = 30_000 // 30 秒
-
+// Authorization must use current database state. A request that started before
+// cache eviction can otherwise repopulate stale roles or token validity after
+// a ban/demotion. Keep eviction for compatibility with old replicas/callers.
 const AUTH_USER_CACHE_PREFIX = 'auth-cache:user:'
 const AUTH_TOKEN_INVALIDATION_PREFIX = 'auth-cache:tinv:'
-
-interface AuthUserInfo {
-  username: string
-  role: string
-  status: string
-}
 
 /**
  * 清除指定用户的认证缓存（用户状态变更时调用），多副本部署下作用于共享存储。
@@ -50,39 +39,11 @@ async function ensureActiveAccessToken(
     return false
   }
 
-  // 使用缓存的 token 失效检查结果
-  const invalidationKey = `${AUTH_TOKEN_INVALIDATION_PREFIX}${user.id}:${user.iat}:${user.sid ?? ''}`
-  const cachedInvalidated = await sharedGet(invalidationKey)
-  let invalidated: boolean
-  if (cachedInvalidated !== null) {
-    invalidated = cachedInvalidated === '1'
-  } else {
-    invalidated = await isAccessTokenInvalidated(user.id, user.iat, user.sid)
-    await sharedSet(invalidationKey, invalidated ? '1' : '0', AUTH_CACHE_TTL_MS)
-  }
+  const invalidated = await isAccessTokenInvalidated(user.id, user.iat, user.sid)
 
   if (invalidated) {
     reply.code(401).send({ error: 'Session expired', code: 'SESSION_INVALIDATED' })
     return false
-  }
-
-  // 使用缓存的用户信息
-  const userKey = `${AUTH_USER_CACHE_PREFIX}${user.id}`
-  const cachedUserInfoRaw = await sharedGet(userKey)
-  if (cachedUserInfoRaw) {
-    try {
-      const cachedUserInfo = JSON.parse(cachedUserInfoRaw) as AuthUserInfo
-      if (cachedUserInfo.status !== 'active') {
-        reply.code(401).send({ error: 'Account banned', code: 'ACCOUNT_BANNED' })
-        return false
-      }
-      user.username = cachedUserInfo.username
-      user.role = cachedUserInfo.role
-      user.status = cachedUserInfo.status
-      return true
-    } catch {
-      // 缓存数据损坏时按 miss 处理，回源数据库
-    }
   }
 
   const currentUser = await prisma.user.findUnique({
@@ -98,9 +59,6 @@ async function ensureActiveAccessToken(
     reply.code(401).send({ error: 'Unauthorized', code: 'UNAUTHORIZED' })
     return false
   }
-
-  // 缓存用户信息
-  await sharedSet(userKey, JSON.stringify(currentUser), AUTH_CACHE_TTL_MS)
 
   if (currentUser.status !== 'active') {
     reply.code(401).send({ error: 'Account banned', code: 'ACCOUNT_BANNED' })

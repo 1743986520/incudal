@@ -928,6 +928,14 @@ export default async function userRoutes(fastify: FastifyInstance) {
           throw new Error('USER_ADMIN_ROLE_LOCK_BUSY')
         }
 
+        const actor = await tx.user.findUnique({
+          where: { id: request.user.id },
+          select: { role: true, status: true }
+        })
+        if (actor?.role !== 'admin' || actor.status !== 'active') {
+          throw new Error('ADMIN_PERMISSION_REVOKED')
+        }
+
         const targetUser = await tx.user.findUnique({
           where: { id: userId },
           select: {
@@ -1004,6 +1012,10 @@ export default async function userRoutes(fastify: FastifyInstance) {
       })
     } catch (error) {
       if (error instanceof Error) {
+        if (error.message === 'ADMIN_PERMISSION_REVOKED') {
+          return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+        }
+
         if (error.message === 'USER_NOT_FOUND') {
           return reply.code(404).send(apiError(ErrorCode.USER_NOT_FOUND))
         }
@@ -1236,25 +1248,59 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.CANNOT_MODIFY_SELF))
     }
 
-    const user = await db.findUserById(userId)
-    if (!user) {
-      return reply.code(404).send(apiError(ErrorCode.USER_NOT_FOUND))
+    let user: { username: string; email: string | null }
+    try {
+      user = await prisma.$transaction(async (tx) => {
+        // Serialize status changes with promotion/demotion. Otherwise a user
+        // can be promoted after the ban route's old non-admin check.
+        const locked = await tryAdvisoryTransactionLock(tx, USER_ADMIN_ROLE_LOCK_NAMESPACE, 1)
+        if (!locked) throw new Error('USER_ADMIN_ROLE_LOCK_BUSY')
+        const actor = await tx.user.findUnique({
+          where: { id: request.user.id },
+          select: { role: true, status: true }
+        })
+        if (actor?.role !== 'admin' || actor.status !== 'active') {
+          throw new Error('ADMIN_PERMISSION_REVOKED')
+        }
+        const target = await tx.user.findUnique({ where: { id: userId } })
+        if (!target) throw new Error('USER_NOT_FOUND')
+        if (target.role === 'admin' && status === 'banned') throw new Error('CANNOT_BAN_ADMIN')
+
+        await tx.user.update({
+          where: { id: userId },
+          data: { status, banReason: status === 'banned' ? (reason || null) : null }
+        })
+        if (status === 'banned') {
+          await tx.refreshToken.deleteMany({ where: { userId } })
+          const sessionId = '__USER_LEVEL__'
+          const invalidatedAt = Math.floor(Date.now() / 1000)
+          await tx.tokenInvalidation.upsert({
+            where: { userId_sessionId: { userId, sessionId } },
+            create: { userId, sessionId, invalidatedAt },
+            update: { invalidatedAt }
+          })
+        }
+        return target
+      })
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'ADMIN_PERMISSION_REVOKED') {
+          return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+        }
+        if (error.message === 'USER_NOT_FOUND') {
+          return reply.code(404).send(apiError(ErrorCode.USER_NOT_FOUND))
+        }
+        if (error.message === 'CANNOT_BAN_ADMIN') {
+          return reply.code(400).send(apiError(ErrorCode.CANNOT_BAN_ADMIN))
+        }
+        if (error.message === 'USER_ADMIN_ROLE_LOCK_BUSY') {
+          return reply.code(409).send(apiError(ErrorCode.INVALID_PARAMS, 'Another user permission update is in progress, please retry'))
+        }
+      }
+      throw error
     }
 
-    // 不能封禁管理员
-    if (user.role === 'admin' && status === 'banned') {
-      return reply.code(400).send(apiError(ErrorCode.CANNOT_BAN_ADMIN))
-    }
-
-    await db.updateUserStatus(userId, status, reason)
-
-    // 如果是封禁用户，先撤销令牌，再清除认证缓存：
-    // 清理必须发生在令牌失效标记提交之后，否则其他副本可能在清理与提交之间
-    // 把"有效"结果重新写入缓存，封禁后最长一个缓存 TTL 内旧令牌仍可用
-    if (status === 'banned') {
-      await revokeAllUserRefreshTokens(userId)
-      await invalidateUserAccessTokens(userId)
-    }
+    // Evict legacy caches only after account state and revocation commit.
     await clearAuthCache(userId)
 
     if (status === 'banned') {
