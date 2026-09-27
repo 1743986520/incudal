@@ -242,6 +242,8 @@ init_incus() {
     # 幂等性：网桥已存在时仍补齐用户选择的存储池。
     if incus network show "$BRIDGE_NAME" &>/dev/null; then
         info "网桥 ${BRIDGE_NAME} 已存在，跳过网络初始化"
+        # Existing bridge does not imply the HTTPS API is listening (or on the requested port).
+        incus config set core.https_address "[::]:${LISTEN_PORT}" || return 1
         ensure_selected_storage_pool || return 1
         ensure_default_profile || return 1
         return 0
@@ -357,13 +359,11 @@ YAML
 
     info "正在执行 Incus preseed 初始化（文件: ${PRESEED_FILE}）..."
 
-    # Incus 7.x also accepts the preseed path directly.  Passing the file as
-    # an argument avoids a nested stdin/pipe when this installer itself is
-    # launched through `curl | bash`; otherwise a failed preseed can make the
-    # parent shell return to its prompt without showing the actual Incus error.
+    # stdin works on both LTS and newer Incus versions. Redirect the file
+    # directly so curl | bash does not consume the installer's own input.
     local init_rc
     INCUS_PRESEED_ACTIVE="true"
-    if incus admin init --preseed "$PRESEED_FILE" </dev/null; then
+    if incus admin init --preseed < "$PRESEED_FILE"; then
         INCUS_PRESEED_ACTIVE="false"
         log "Incus preseed 初始化命令已返回成功"
     else

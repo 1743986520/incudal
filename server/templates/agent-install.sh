@@ -364,9 +364,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-fetch_agent_install_config
-need_env INCUDAL_AGENT_ID
-need_env INCUDAL_AGENT_SECRET
+# Validate direct credentials now, but consume a one-time token only after
+# the binary has downloaded and passed its checksum verification.
+if [ -z "${INCUDAL_AGENT_INSTALL_TOKEN:-}" ]; then
+  need_env INCUDAL_AGENT_ID
+  need_env INCUDAL_AGENT_SECRET
+fi
+if [ "${DRY_RUN}" != "1" ]; then
+  install -d -m 0755 "$(dirname "${STAGED_BIN}")"
+fi
 
 if [ -z "${INCUDAL_AGENT_BINARY_URL:-}" ]; then
   # Cloudflare 等边缘缓存可能缓存旧二进制；默认面板下载强制按安装批次换 URL。
@@ -399,18 +405,17 @@ fi
 
 echo "Installing Incudal Agent"
 echo "  panel: ${INCUDAL_PANEL_URL}"
-echo "  agent: ${INCUDAL_AGENT_ID}"
 echo "  binary: ${BINARY_URL}"
 if [ -n "${BINARY_EXPECTED_SHA256}" ]; then
   echo "  sha256: ${BINARY_EXPECTED_SHA256}"
 fi
 
-if [ "${DRY_RUN}" != "1" ]; then
-  install -d -m 0755 "$(dirname "${STAGED_BIN}")"
-fi
-
 # 先下载到临时路径，再原子替换，避免覆盖正在运行的二进制时报 Text file busy。
 download_binary "${BINARY_URL}" "${STAGED_BIN}" "${BINARY_FALLBACK_URL}" "${BINARY_EXPECTED_SHA256}"
+fetch_agent_install_config
+need_env INCUDAL_AGENT_ID
+need_env INCUDAL_AGENT_SECRET
+echo "  agent: ${INCUDAL_AGENT_ID}"
 install_binary_atomically "${STAGED_BIN}" "${BIN_PATH}"
 
 write_file "${CONFIG_FILE}" 0600 root:root <<EOF_CONFIG

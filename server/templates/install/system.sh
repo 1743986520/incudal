@@ -4,6 +4,8 @@
 setup_kernel() {
     step "步骤 [1/5]  配置内核参数..."
 
+    mkdir -p /etc/modules-load.d /etc/sysctl.d
+
     # 加载网桥过滤模块
     echo "br_netfilter" > /etc/modules-load.d/br_netfilter.conf
     modprobe br_netfilter || true
@@ -156,7 +158,7 @@ install_deps() {
     fi
 
     # 安装基础依赖
-    apt-get install -y -qq curl gpg dnsmasq >/dev/null 2>&1 || {
+    apt-get install -y -qq curl ca-certificates openssl gpg python3 iproute2 dnsmasq >/dev/null 2>&1 || {
         error "Debian/Ubuntu 基础依赖安装失败"
         return 1
     }

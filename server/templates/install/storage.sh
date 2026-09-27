@@ -5,6 +5,7 @@ storage_is_valid_value() { [[ "${1:-}" =~ ^[A-Za-z0-9_./:+=@%~-]+$ ]]; }
 
 normalize_storage_size() {
     local value="${1:-}"
+    [[ "$value" =~ ^0+([KMGTP]i?B?)?$ ]] && return 1
     if [[ "$value" =~ ^[0-9]+$ ]]; then
         printf '%sGiB\n' "$value"
         return 0
@@ -25,7 +26,7 @@ storage_set_defaults() {
 prompt_storage_pool() {
     local specified_source="${STORAGE_SOURCE:-}"
     storage_set_defaults
-    [[ -t 0 ]] || return 0
+    [[ -t 0 && "${STORAGE_OPTION_EXPLICIT:-false}" != "true" ]] || return 0
 
     echo -e "\n${CYAN}==> 存储池配置${NC}"
     echo -e "  ${DIM}不会默认安装 ZFS；请选择要创建的 Incus 存储池，也可以跳过后在面板创建。${NC}"
@@ -163,6 +164,12 @@ ensure_selected_storage_pool() {
     }
     validate_storage_selection || return 1
     if incus storage show "$STORAGE_POOL_NAME" >/dev/null 2>&1; then
+        local existing_driver
+        existing_driver=$(incus storage show "$STORAGE_POOL_NAME" | awk '$1 == "driver:" {print $2; exit}')
+        if [[ "$existing_driver" != "$STORAGE_DRIVER" ]]; then
+            error "存储池 ${STORAGE_POOL_NAME} 已使用 ${existing_driver:-未知} 驱动，与所选 ${STORAGE_DRIVER} 不符；保留现有存储池，请选择正确驱动"
+            return 1
+        fi
         info "存储池 ${STORAGE_POOL_NAME} 已存在，跳过创建"
         return 0
     fi

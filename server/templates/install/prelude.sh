@@ -78,6 +78,7 @@ PPS_OPTION_EXPLICIT="false"
 INCUS_PRESEED_ACTIVE="false"
 # Storage is deliberately opt-in. The storage module prompts in TTY mode and
 # defaults non-interactive installs to a dependency-free DIR pool.
+STORAGE_OPTION_EXPLICIT="false"
 STORAGE_DRIVER="${INJECT_STORAGE_DRIVER:-}"
 STORAGE_POOL_NAME="${INJECT_STORAGE_POOL_NAME:-}"
 STORAGE_SOURCE="${INJECT_STORAGE_SOURCE:-}"
@@ -100,6 +101,14 @@ warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 # by another interface/network. Pick the first RFC1918 /22 that does not
 # overlap any existing IPv4 address or route on the host.
 select_bridge_subnet() {
+    # A rerun must retain the existing bridge subnet, not treat its own route
+    # as a conflict and advertise a different (unused) subnet.
+    local configured_subnet
+    configured_subnet=$(incus network get "$BRIDGE_NAME" ipv4.address 2>/dev/null || true)
+    if [[ "$configured_subnet" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+        BRIDGE_SUBNET="$configured_subnet"
+        return 0
+    fi
     local candidates=(
         "10.10.0.1/22" "10.20.0.1/22" "10.30.0.1/22" "10.40.0.1/22"
         "10.64.0.1/22" "10.80.0.1/22" "10.96.0.1/22" "10.112.0.1/22"

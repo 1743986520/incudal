@@ -37,23 +37,41 @@ report_server_certificate() {
 import_cert() {
     step "步骤 [5/5]  导入面板信任证书..."
 
-    # 幂等性：证书已存在则跳过
-    if incus config trust list --format csv 2>/dev/null | grep -q "panel"; then
-        info "面板证书已存在，跳过导入"
+    local cert_file fingerprint trusted
+    cert_file=$(mktemp) || return 1
+    if ! curl -sSf --connect-timeout 15 --max-time 60 \
+        "${PANEL_URL}/api/hosts/cert/${TOKEN}" -o "$cert_file"; then
+        rm -f "$cert_file"
+        error "面板证书下载失败，请检查安装 Token 和网络连接"
+        return 1
+    fi
+    fingerprint=$(openssl x509 -in "$cert_file" -noout -fingerprint -sha256 2>/dev/null | \
+        sed 's/.*=//' | tr -d ':' | tr '[:upper:]' '[:lower:]') || {
+        rm -f "$cert_file"
+        error "面板返回的证书无效"
+        return 1
+    }
+    if [[ ! "$fingerprint" =~ ^[0-9a-f]{64}$ ]]; then
+        rm -f "$cert_file"
+        error "无法读取面板证书指纹"
+        return 1
+    fi
+    trusted=$(incus config trust list --format csv -c F) || {
+        rm -f "$cert_file"
+        return 1
+    }
+    # Names are not identities: another/old panel may also be named "panel".
+    if grep -qxF "$fingerprint" <<< "$trusted"; then
+        rm -f "$cert_file"
+        info "当前面板证书已受信任，跳过导入"
         return 0
     fi
-
-    local cert_url="${PANEL_URL}/api/hosts/cert/${TOKEN}"
-
-    if ! curl -sSf "$cert_url" \
-        | incus config trust add-certificate - --name panel >/dev/null 2>&1; then
-        error "证书导入失败！请检查："
-        error "  1. Token 是否正确"
-        error "  2. 面板 ${PANEL_URL} 是否可达"
-        error "  3. 网络连接是否正常"
-        exit 1
+    if ! incus config trust add-certificate "$cert_file" --name "incudal-panel-${fingerprint:0:12}"; then
+        rm -f "$cert_file"
+        error "面板证书导入失败"
+        return 1
     fi
-
+    rm -f "$cert_file"
     log "面板证书导入成功"
 }
 

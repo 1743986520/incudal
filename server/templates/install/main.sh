@@ -39,16 +39,16 @@ main() {
                 PPS_PROTECTION_ENABLED="false"; PPS_OPTION_EXPLICIT="true"; shift ;;
             --storage-driver|--storage)
                 [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
-                STORAGE_DRIVER="$2"; shift 2 ;;
+                STORAGE_DRIVER="$2"; STORAGE_OPTION_EXPLICIT="true"; shift 2 ;;
             --storage-pool|--storage-pool-name)
                 [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
-                STORAGE_POOL_NAME="$2"; shift 2 ;;
+                STORAGE_POOL_NAME="$2"; STORAGE_OPTION_EXPLICIT="true"; shift 2 ;;
             --storage-source)
                 [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
-                STORAGE_SOURCE="$2"; shift 2 ;;
+                STORAGE_SOURCE="$2"; STORAGE_OPTION_EXPLICIT="true"; shift 2 ;;
             --storage-size)
                 [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
-                STORAGE_SIZE="$2"; shift 2 ;;
+                STORAGE_SIZE="$2"; STORAGE_OPTION_EXPLICIT="true"; shift 2 ;;
             --uninstall)
                 ACTION="uninstall"; shift ;;
             --agent|--agent-menu)
@@ -205,6 +205,12 @@ main() {
             fi
         fi
     fi
+
+    if [[ ! "$LISTEN_PORT" =~ ^[0-9]{1,5}$ ]] || (( 10#$LISTEN_PORT < 1 || 10#$LISTEN_PORT > 65535 )); then
+        error "--port 必须为 1-65535 的整数"
+        exit 1
+    fi
+    LISTEN_PORT=$((10#$LISTEN_PORT))
 
     configure_agent_heartbeat_interval
 
