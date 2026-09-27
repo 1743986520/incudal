@@ -289,7 +289,14 @@ EOF
     log "站点更新执行器已配置: ${helper_path}"
 }
 
+# systemd refuses to start if a non-optional ReadWritePaths directory is absent.
+ensure_service_directories() {
+    install -d -o root -g root -m 0700 /var/lib/incudal/web-updates
+    mkdir -p "${INSTALL_DIR}/server/certs"
+}
+
 configure_web_update_service() {
+    ensure_service_directories
     local dropin_dir="/etc/systemd/system/${SERVICE_NAME}.service.d"
     local dropin_path="${dropin_dir}/web-update.conf"
 
@@ -994,6 +1001,7 @@ run_migrations() {
 
 # ========================== 创建 systemd 服务 ==========================
 create_service() {
+    ensure_service_directories
     step "创建 systemd 服务..."
 
     cat > "$SERVICE_FILE" << EOF

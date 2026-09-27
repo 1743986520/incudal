@@ -98,4 +98,5 @@ curl -fL --retry 3 --connect-timeout 10 --max-time 300 \
 
 head -n 1 "$payload_file" | grep -Eq '^#!.*bash' || fail "服务器返回的安装脚本格式无效"
 chmod 700 "$payload_file"
-exec bash "$payload_file" "${args[@]}"
+# Keep the parent shell alive so its EXIT trap removes the credential-bearing payload.
+bash "$payload_file" "${args[@]}"

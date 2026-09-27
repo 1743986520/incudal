@@ -18,16 +18,22 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --mode)
+                [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
                 MODE="$2"; shift 2 ;;
             --token)
+                [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
                 TOKEN="$2"; shift 2 ;;
             --ipv6-subnet)
+                [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
                 IPV6_SUBNET="$2"; shift 2 ;;
             --ipv6-iface)
+                [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
                 IPV6_IFACE="$2"; shift 2 ;;
             --port|-p)
+                [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
                 LISTEN_PORT="$2"; shift 2 ;;
             --pps-limit)
+                [[ $# -ge 2 ]] || { error "$1 缺少参数"; exit 1; }
                 PPS_LIMIT="$2"; PPS_PROTECTION_ENABLED="true"; PPS_OPTION_EXPLICIT="true"; shift 2 ;;
             --disable-pps-protection)
                 PPS_PROTECTION_ENABLED="false"; PPS_OPTION_EXPLICIT="true"; shift ;;
