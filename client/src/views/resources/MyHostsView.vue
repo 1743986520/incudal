@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onActivated, watch } from 'vue'
+import { ref, computed, onActivated, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import api from '@/api'
@@ -100,9 +100,6 @@ function handlePageSizeChange() {
   page.value = 1
   loadHosts()
 }
-
-// 记录是否已经首次加载
-let hasInitialLoad = false
 
 // 加载宿主机列表
 async function loadHosts() {
@@ -379,18 +376,9 @@ function getStatusClass(status) {
   return map[status] || 'bg-gray-600'
 }
 
-onMounted(() => {
-  loadHosts()
-  hasInitialLoad = true
-})
-
-// 当组件从 KeepAlive 缓存中激活时，重新加载数据
-// 解决从创建页面返回后需要手动刷新的问题
+// 组件初次进入 KeepAlive 与从其他页面返回时都会触发该钩子。
 onActivated(() => {
-  // 避免与 onMounted 重复加载
-  if (hasInitialLoad) {
-    loadHosts()
-  }
+  loadHosts()
 })
 </script>
 
