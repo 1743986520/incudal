@@ -23,6 +23,15 @@ export async function suspendInstanceByExpiry(
     await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
 
     const now = new Date()
+    const current = await tx.instance.findUnique({ where: { id: instanceId } })
+    // 修复旧版本留下的“面板已封停但远端未关机”。保留最初封停时间，
+    // 不延后删除期限，也不重复发送封停通知；续费/删除仍由同一实例锁保护。
+    if (current?.status === 'suspended' && current.suspendReason === 'expired' &&
+        current.billingMode === 'package' && current.packagePlanId !== null &&
+        current.expiresAt && current.expiresAt < now) {
+      if (onSuspended) await onSuspended()
+      return false
+    }
     const result = await tx.instance.updateMany({
       where: {
         id: instanceId,
@@ -226,8 +235,11 @@ export async function getExpiredUnsuspendedInstances(): Promise<Instance[]> {
         lt: new Date()
       },
       // 只有已经完成开通的实例才允许进入到期封停流程。
-      // creating/error 实例可能没有完整的 Incus 资源，不能被误标记为已封停。
-      status: { in: ['running', 'stopped'] }
+      // 同时重试已到期封停的实例，修复远端关机失败；排除手动封停。
+      OR: [
+        { status: { in: ['running', 'stopped'] } },
+        { status: 'suspended', suspendReason: 'expired' }
+      ]
     }
   })
 }

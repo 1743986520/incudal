@@ -302,7 +302,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
       } else if (codeType === 't') {
         const trafficBytes = BigInt(codeValue) * BigInt(1024 * 1024 * 1024)
         const currentLimit = instance.monthly_traffic_limit ? BigInt(instance.monthly_traffic_limit) : BigInt(0)
-        const newLimit = currentLimit + trafficBytes
+        const newLimit = instance.monthly_traffic_limit === null ? null : currentLimit + trafficBytes
         await db.updateInstanceResources(instanceId, { monthlyTrafficLimit: newLimit })
         databaseApplied = true
       } else if (codeType === 'p') {
@@ -371,7 +371,7 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
           }
         } else if (codeType === 't' && databaseApplied) {
           await db.updateInstanceResources(instanceId, {
-            monthlyTrafficLimit: instance.monthly_traffic_limit ? BigInt(instance.monthly_traffic_limit) : 0n
+            monthlyTrafficLimit: instance.monthly_traffic_limit === null ? null : BigInt(instance.monthly_traffic_limit)
           })
         } else if (codeType === 'p' && databaseApplied) {
           await db.addPoints(user.id, -codeValue, 'checkin', undefined, '兑换码发放失败回滚')

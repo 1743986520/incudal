@@ -88,14 +88,22 @@ async function getInstancesToSync(batchSize: number) {
     const now = Date.now()
 
     // 获取需要同步的实例，按优先级排序：
-    // 1. running 状态的实例优先
-    // 2. 最近未同步的实例优先
+    // 1. 只选择达到各自同步间隔的实例
+    // 2. 最久未同步的实例优先
     // 注意：不同步 creating 状态的实例，避免与超时清理和 createInstanceAsync 竞争
-    const instances = await prisma.instance.findMany({
+    return prisma.instance.findMany({
         where: {
-            status: {
-                in: ['running', 'stopped']  // 不包含 creating，避免竞争
-            },
+            OR: (['running', 'stopped'] as const).map(status => {
+                const cutoff = new Date(now - (status === 'running'
+                    ? SYNC_INTERVAL_RUNNING_MS : SYNC_INTERVAL_STOPPED_MS))
+                return {
+                    status,
+                    OR: [
+                        { lastSyncedAt: { lt: cutoff } },
+                        { lastSyncedAt: null, updatedAt: { lt: cutoff } }
+                    ]
+                }
+            }),
             host: {
                 status: 'online'
             }
@@ -117,29 +125,14 @@ async function getInstancesToSync(batchSize: number) {
                 }
             }
         },
+        // 先在数据库筛选到期候选，再取最久未同步的一批，避免最近更新的实例霸占队列。
         orderBy: [
-            // running 状态优先
-            { status: 'asc' },
-            // 最近更新的优先（可能有状态变化）
-            { updatedAt: 'desc' }
+            { lastSyncedAt: { sort: 'asc', nulls: 'first' } },
+            { updatedAt: 'asc' },
+            { id: 'asc' }
         ],
-        take: batchSize * 3  // 多取一些，后面会过滤
+        take: batchSize
     })
-
-    // 根据上次同步时间过滤
-    const needSync = instances.filter(instance => {
-        // 优先使用 lastSyncedAt，回退到 updatedAt
-        const lastSync = (instance.lastSyncedAt ?? instance.updatedAt).getTime()
-        const interval = instance.status === 'running'
-            ? SYNC_INTERVAL_RUNNING_MS
-            : SYNC_INTERVAL_STOPPED_MS
-
-        // 如果距离上次同步超过同步间隔，需要同步
-        return now - lastSync > interval
-    })
-
-    // 返回指定数量
-    return needSync.slice(0, batchSize)
 }
 
 /**
@@ -151,6 +144,7 @@ async function syncInstanceStatus(
         incusId: string
         name: string
         status: string
+        version: number
         billingMode: 'package' | 'hourly'
         host: {
             id: number
@@ -198,25 +192,26 @@ async function syncInstanceStatus(
 
         // 状态不一致，需要更新
         if (instance.status !== incusStatus) {
-          if (instance.billingMode === 'hourly' && instance.status === 'running' && incusStatus === 'stopped') {
-            await pauseHourlyBilling(instance.id)
-          }
-          await db.updateInstanceStatus(
-            instance.id,
-            incusStatus as 'creating' | 'running' | 'stopped' | 'error'
-          )
-          if (instance.billingMode === 'hourly' && incusStatus === 'running') {
-            await activateHourlyBilling(instance.id)
-          }
-            
-            // 同时更新 lastSyncedAt
-            await prisma.instance.updateMany({
+            const updated = await prisma.instance.updateMany({
                 where: {
                     id: instance.id,
-                    status: { not: 'deleted' }
+                    status: instance.status as 'running' | 'stopped',
+                    version: instance.version
                 },
-                data: { lastSyncedAt: new Date() }
+                data: {
+                    status: incusStatus as 'creating' | 'running' | 'stopped' | 'error',
+                    lastSyncedAt: new Date(),
+                    version: { increment: 1 }
+                }
             })
+            if (updated.count !== 1) return { changed: false }
+
+            if (instance.billingMode === 'hourly' && instance.status === 'running' && incusStatus === 'stopped') {
+                await pauseHourlyBilling(instance.id)
+            }
+            if (instance.billingMode === 'hourly' && incusStatus === 'running') {
+                await activateHourlyBilling(instance.id)
+            }
 
             // 如果是从 running 变为 stopped，发送意外停机通知
             if (instance.status === 'running' && incusStatus === 'stopped') {
@@ -241,7 +236,8 @@ async function syncInstanceStatus(
         await prisma.instance.updateMany({
             where: {
                 id: instance.id,
-                status: { not: 'deleted' }
+                status: instance.status as 'running' | 'stopped',
+                version: instance.version
             },
             data: { lastSyncedAt: new Date() }
         })
@@ -255,10 +251,18 @@ async function syncInstanceStatus(
         // 如果实例不存在于 Incus，标记为已删除
         if (errorMessage.includes('not found') || errorMessage.includes('Instance not found')) {
             console.log(`[StatusSync] Instance ${instance.id} not found in Incus, marking as deleted`)
+            const updated = await prisma.instance.updateMany({
+                where: {
+                    id: instance.id,
+                    status: instance.status as 'running' | 'stopped',
+                    version: instance.version
+                },
+                data: { status: 'deleted', lastSyncedAt: new Date(), version: { increment: 1 } }
+            })
+            if (updated.count !== 1) return { changed: false }
             if (instance.billingMode === 'hourly') {
                 await closeHourlyBilling(instance.id)
             }
-            await db.updateInstanceStatus(instance.id, 'deleted')
             return {
                 changed: true,
                 from: instance.status,

@@ -60,7 +60,7 @@ export async function getInstancesByUserId(userId: number): Promise<Array<Instan
     site_limit: inst.siteLimit,
     swap_enabled: inst.swapEnabled,
     swap_size: inst.swapSize,
-    monthly_traffic_limit: inst.monthlyTrafficLimit ? inst.monthlyTrafficLimit.toString() : null,
+    monthly_traffic_limit: inst.monthlyTrafficLimit === null ? null : inst.monthlyTrafficLimit.toString(),
     // 配置字段
     limits_read: inst.limitsRead,
     limits_write: inst.limitsWrite,
@@ -144,7 +144,7 @@ export async function getAllInstances(): Promise<Array<Instance & {
     site_limit: inst.siteLimit,
     swap_enabled: inst.swapEnabled,
     swap_size: inst.swapSize,
-    monthly_traffic_limit: inst.monthlyTrafficLimit ? inst.monthlyTrafficLimit.toString() : null,
+    monthly_traffic_limit: inst.monthlyTrafficLimit === null ? null : inst.monthlyTrafficLimit.toString(),
     // 配置字段
     limits_read: inst.limitsRead,
     limits_write: inst.limitsWrite,
@@ -236,7 +236,7 @@ export async function getInstanceById(id: number): Promise<(Instance & {
     site_limit: inst.siteLimit,
     swap_enabled: inst.swapEnabled,
     swap_size: inst.swapSize,
-    monthly_traffic_limit: inst.monthlyTrafficLimit ? inst.monthlyTrafficLimit.toString() : null,
+    monthly_traffic_limit: inst.monthlyTrafficLimit === null ? null : inst.monthlyTrafficLimit.toString(),
     // 配置字段
     limits_read: inst.limitsRead,
     limits_write: inst.limitsWrite,

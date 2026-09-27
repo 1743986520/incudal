@@ -297,17 +297,12 @@ async function processExpirySuspend(instance: any): Promise<void> {
     // 封停实例
     const suspended = await suspendInstanceByExpiry(instance.id, async () => {
       // 在实例锁仍持有时停止外部实例，避免续费解封后又被旧任务停止。
-      try {
-        const host = await db.getHostById(instance.hostId)
-        if (host) {
-          const client = await getIncusClient(host)
-          const { stopInstance } = await import('../lib/incus/index.js')
-          await stopInstance(client, instance.incusId, true) // force stop
-        }
-      } catch (stopError) {
-        // 停止失败不影响数据库封停逻辑
-        console.log(`[Billing] Failed to stop Incus instance ${instance.incusId}:`, stopError)
-      }
+      const host = await db.getHostById(instance.hostId)
+      if (!host) throw new Error(`Host ${instance.hostId} not found`)
+      const client = await getIncusClient(host)
+      const { stopInstance } = await import('../lib/incus/index.js')
+      // 失败必须向外传播，让事务回滚，下一轮继续尝试关机。
+      await stopInstance(client, instance.incusId, true)
     })
     if (!suspended) {
       console.log(`[Billing] Skipped expiry suspension for instance ${instance.id}: status changed or not provisioned`)
