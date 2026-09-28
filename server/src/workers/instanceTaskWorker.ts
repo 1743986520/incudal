@@ -14,6 +14,7 @@ import { InstanceTaskType } from '@prisma/client'
 import { getIncusClient, getInstance, updateInstance, deleteInstance, createInstance } from '../lib/incus/index.js'
 import {
   startInstance,
+  startInstanceWithNvramRepair,
   stopInstance,
   restartInstance,
   rebuildInstance,
@@ -653,7 +654,10 @@ async function executeStartTask(
   await updateProgress('starting')
 
   try {
-    await startInstance(client, instance.incus_id)
+    const { repairedNvram } = await startInstanceWithNvramRepair(client, instance.incus_id)
+    if (repairedNvram) {
+      console.warn(`[Start] 实例 ${instance.incus_id} 缺少 NVRAM，已自动重建并重试启动成功`)
+    }
   } catch (err) {
     if (err instanceof Error && err.message.includes('file exists')) {
       const startDevices = (await getInstance(client, instance.incus_id) as any).devices

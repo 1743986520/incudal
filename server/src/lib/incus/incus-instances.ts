@@ -20,6 +20,8 @@ const INSTANCE_PROVISIONING_SETTLE_TIMEOUT_MS = 30000
 const INSTANCE_PROVISIONING_POLL_INTERVAL_MS = 1000
 const INSTANCE_CREATE_TIMEOUT_MS = 15 * 60 * 1000
 const INSTANCE_APPEAR_TIMEOUT_MS = 30 * 1000
+const INSTANCE_NVRAM_REPAIR_TIMEOUT_MS = 2 * 60 * 1000
+const MISSING_VM_NVRAM_ERROR = /failed (?:copying|opening) nvram file:\s*open .+\/qemu\.nvram:\s*no such file or directory/i
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -396,6 +398,42 @@ export async function startInstance(client: IncusClient, name: string): Promise<
     action: 'start',
     timeout: 60  // 60秒
   })
+}
+
+export function isMissingVmNvramError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return MISSING_VM_NVRAM_ERROR.test(message)
+}
+
+/**
+ * Incus may leave a stopped VM without its UEFI variable store after an
+ * interrupted reset or storage remount. Repair only that exact failure and
+ * retry once; all other start errors remain unchanged.
+ */
+export async function startInstanceWithNvramRepair(
+  client: IncusClient,
+  name: string
+): Promise<{ result: unknown; repairedNvram: boolean }> {
+  try {
+    return {
+      result: await startInstance(client, name),
+      repairedNvram: false
+    }
+  } catch (error) {
+    if (!isMissingVmNvramError(error)) throw error
+
+    await client.request(
+      'POST',
+      `/1.0/instances/${encodeURIComponent(name)}/debug/repair`,
+      { action: 'rebuild-nvram' },
+      INSTANCE_NVRAM_REPAIR_TIMEOUT_MS
+    )
+
+    return {
+      result: await startInstance(client, name),
+      repairedNvram: true
+    }
+  }
 }
 
 /**
