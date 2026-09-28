@@ -102,7 +102,7 @@ function handlePageSizeChange() {
 }
 
 // 加载宿主机列表
-async function loadHosts() {
+async function loadHosts(attempt = 0) {
   loading.value = true
   try {
     let res
@@ -142,7 +142,15 @@ async function loadHosts() {
     total.value = res.total || 0
     totalPages.value = res.totalPages || 1
   } catch (err) {
-    toast.error(err.message)
+    const transientStatus = !err?.status || [502, 503, 504].includes(err.status)
+    if (transientStatus && attempt < 3) {
+      // 容器切换或上游短暂重启时不要立即把可恢复的 502 显示给用户。
+      await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** attempt)))
+      return loadHosts(attempt + 1)
+    }
+
+    const statusSuffix = err?.status ? ` (HTTP ${err.status})` : ''
+    toast.error(`${err?.message || 'Request failed'}${statusSuffix}`)
   } finally {
     loading.value = false
   }

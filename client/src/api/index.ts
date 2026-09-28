@@ -724,6 +724,7 @@ http.interceptors.response.use(
       message: responseData?.error || responseData?.message || 'Request failed',
       code: responseData?.code || null,
       details: responseData?.details || null,
+      status: error.response?.status || null,
       ...responseData  // 保留原始响应中的所有字段
     }
 
