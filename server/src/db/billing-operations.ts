@@ -1413,7 +1413,9 @@ export async function resolveInstanceRenewalDiscount(
           client: tx,
           // 每用户/全站次数只约束首购，不阻断已取得资格的实例续费折扣
           checkUserLimit: false,
-          checkTotalUsageLimit: false
+          checkTotalUsageLimit: false,
+          // 到期时间限制新用户兑换，不撤销实例首购时已取得的续费资格。
+          allowExpired: true
         })
         if (validation.valid) {
           officialUsable = true

@@ -102,6 +102,8 @@ export async function validateOfficialCoupon(params: {
   client?: DbClient
   checkUserLimit?: boolean
   checkTotalUsageLimit?: boolean
+  /** Existing recurring entitlements remain valid after the coupon's redemption deadline. */
+  allowExpired?: boolean
 }): Promise<OfficialCouponValidationResult> {
   const client = params.client || prisma
   const checkUserLimit = params.checkUserLimit !== false
@@ -141,7 +143,7 @@ export async function validateOfficialCoupon(params: {
       error: 'This official coupon is not active yet'
     }
   }
-  if (coupon.expiresAt && coupon.expiresAt <= now) {
+  if (!params.allowExpired && coupon.expiresAt && coupon.expiresAt <= now) {
     return {
       valid: false,
       errorCode: ErrorCode.COUPON_EXPIRED,
@@ -257,7 +259,8 @@ export async function reserveOfficialCouponUsage(params: {
     userId: params.userId,
     client: tx,
     checkUserLimit: !isRenewal,
-    checkTotalUsageLimit: !isRenewal
+    checkTotalUsageLimit: !isRenewal,
+    allowExpired: isRenewal
   })
   if (!validation.valid) {
     throw new Error(`${validation.errorCode}: ${validation.error}`)
