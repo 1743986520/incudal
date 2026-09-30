@@ -93,7 +93,9 @@ type HourlyPlanPricingInput = {
 function decimalString(value: unknown, field: string): string {
   try {
     const decimal = new Prisma.Decimal(String(value ?? '0'))
-    if (!decimal.isFinite() || decimal.lt(0)) throw new Error()
+    // Do not silently round an admin's input into a different (or even zero)
+    // rate, and reject values that cannot fit DECIMAL(20, 8) in the database.
+    if (!decimal.isFinite() || decimal.lt(0) || decimal.decimalPlaces() > 8 || decimal.gte('1000000000000')) throw new Error()
     return decimal.toDecimalPlaces(8).toFixed(8)
   } catch {
     throw new Error(`${field} 必须是有效的非负数字`)
@@ -147,8 +149,16 @@ function normalizeHourlyPlanPricing(
   if (new Prisma.Decimal(result.hourlyReserveQuantum).lte(0)) {
     throw new Error('预付款额度必须大于 0')
   }
-
   return result
+}
+
+function validateMaximumHourlyPrice(pricing: Required<HourlyPlanPricingInput>): void {
+  const maximumHourlyPrice = new Prisma.Decimal(10000).div(pricing.hourlyCpuUnitPercent).mul(pricing.hourlyCpuPricePerUnit)
+    .add(new Prisma.Decimal(524288).div(pricing.hourlyMemoryUnitMb).mul(pricing.hourlyMemoryPricePerUnit))
+    .add(new Prisma.Decimal(104857600).div(pricing.hourlyDiskUnitMb).mul(pricing.hourlyDiskPricePerUnit))
+  if (maximumHourlyPrice.gte('1000000000000')) {
+    throw new Error('最高配置的每小时价格超出系统金额范围')
+  }
 }
 
 type PackagePlanSummary = {
@@ -2489,8 +2499,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     if (cpu < 15 || cpu > 10000) {
       return reply.code(400).send({ error: 'CPU 必须在 15-10000 之间' })
     }
-    if (memory < 128 || memory > 62144) {
-      return reply.code(400).send({ error: '内存必须在 128-62144 MB 之间' })
+    const maxPlanMemory = normalizedBillingMode === 'hourly' ? 524288 : 62144
+    if (memory < 128 || memory > maxPlanMemory) {
+      return reply.code(400).send({ error: `内存必须在 128-${maxPlanMemory} MB 之间` })
     }
     if (disk < 512 || disk > 104857600) {
       return reply.code(400).send({ error: '磁盘必须在 512 MB - 100 TB 之间' })
@@ -2511,6 +2522,13 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       }, normalizedBillingMode === 'hourly' ? { cpu, memory, disk } : { cpu: 15, memory: 128, disk: 512 })
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : '按小时计费配置无效' })
+    }
+    if (normalizedBillingMode === 'hourly') {
+      try {
+        validateMaximumHourlyPrice(hourlyPricing)
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : '按小时计费配置无效' })
+      }
     }
     if (normalizedSwapSize < 0 || normalizedSwapSize > 1048576) {
       return reply.code(400).send({ error: 'SWAP 必须在 0-1048576 MB 之间' })
@@ -2706,8 +2724,9 @@ export default async function packageRoutes(fastify: FastifyInstance) {
     if (cpu !== undefined && (cpu < 15 || cpu > 10000)) {
       return reply.code(400).send({ error: 'CPU 必须在 15-10000 之间' })
     }
-    if (memory !== undefined && (memory < 128 || memory > 62144)) {
-      return reply.code(400).send({ error: '内存必须在 128-62144 MB 之间' })
+    const maxPlanMemory = nextBillingMode === 'hourly' ? 524288 : 62144
+    if (memory !== undefined && (memory < 128 || memory > maxPlanMemory)) {
+      return reply.code(400).send({ error: `内存必须在 128-${maxPlanMemory} MB 之间` })
     }
     if (disk !== undefined && (disk < 512 || disk > 104857600)) {
       return reply.code(400).send({ error: '磁盘必须在 512 MB - 100 TB 之间' })
@@ -2742,6 +2761,13 @@ export default async function packageRoutes(fastify: FastifyInstance) {
       })
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : '按小时计费配置无效' })
+    }
+    if (nextBillingMode === 'hourly') {
+      try {
+        validateMaximumHourlyPrice(hourlyPricing)
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : '按小时计费配置无效' })
+      }
     }
     if (normalizedSwapSize !== undefined && (normalizedSwapSize < 0 || normalizedSwapSize > 1048576)) {
       return reply.code(400).send({ error: 'SWAP 必须在 0-1048576 MB 之间' })

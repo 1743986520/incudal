@@ -2585,9 +2585,12 @@ model HourlyPricingVersion {
 model HourlyBillingAccount {
   id              Int      @id @default(autoincrement())
   instanceId      Int      @unique @map("instance_id")
-  // 新实例直接读取所属方案的按小时价格；pricingVersionId 仅兼容旧的独立按小时实例。
+  // Keep the source plan for display/reporting; billing uses the immutable snapshot below.
+  // pricingVersionId only remains for compatibility with old standalone instances.
   packagePlanId   Int?     @map("package_plan_id")
   pricingVersionId Int?    @map("pricing_version_id")
+  // Immutable billing terms captured at creation; plan edits affect new instances only.
+  pricingSnapshot Json     @map("pricing_snapshot") @db.JsonB
   lastSettledAt   DateTime @map("last_settled_at")
   nextSettlementAt DateTime? @map("next_settlement_at")
   prepaidBalance  Decimal  @default(0) @map("prepaid_balance") @db.Decimal(20, 8)

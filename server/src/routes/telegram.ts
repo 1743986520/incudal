@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import * as db from '../db/index.js'
 import { prisma } from '../db/prisma.js'
 import { createLog } from '../db/logs.js'
+import { isTelegramBindingRequired } from '../lib/telegram-binding-policy.js'
 
 interface TelegramWebhookUser {
   id: number
@@ -820,6 +821,7 @@ export default async function telegramRoutes(fastify: FastifyInstance) {
     })
 
     return {
+      required: isTelegramBindingRequired(),
       enabled: config.enabled,
       configured: config.configured,
       botUsername: config.botUsername,

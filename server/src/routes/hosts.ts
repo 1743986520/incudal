@@ -33,7 +33,7 @@ import { generateIncusConfig } from '../lib/incus-config-generator.js'
 import { sendAdminInstanceCreatedEmail, sendRenewalPriceUpdatedEmail } from '../lib/mailer.js'
 import { generateRandomIPv4, generateRandomIPv6 } from '../lib/ip-calculator.js'
 import { calculateCreateBilling } from '../db/billing-operations.js'
-import { closeHourlyBilling } from '../services/hourly-billing-scheduler.js'
+import { closeHourlyBilling, pauseHourlyBilling } from '../services/hourly-billing-scheduler.js'
 import { getDnsRecordType } from '../lib/network-address.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { issueHostAgentInstallToken } from '../lib/host-agent-credentials.js'
@@ -4845,7 +4845,19 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           } catch (stopErr) {
             const stopErrMsg = stopErr instanceof Error ? stopErr.message : String(stopErr)
             fastify.log.error(`[BatchSuspend] Failed to stop instance ${instance.id}: ${stopErrMsg}`)
+            if (instance.billingMode === 'hourly') {
+              throw new Error('HOURLY_STOP_FAILED: 无法确认按小时计费实例已停止，未封停')
+            }
             // 继续封停流程，即使关机失败
+          }
+        } else if (instance.status === 'running' && instance.billingMode === 'hourly') {
+          throw new Error('HOURLY_STOP_FAILED: 宿主机连接不可用，未封停按小时计费实例')
+        }
+
+        if (instance.billingMode === 'hourly') {
+          const billingPause = await pauseHourlyBilling(instance.id)
+          if (billingPause.suspended) {
+            throw new Error('HOURLY_BALANCE_INSUFFICIENT: 按小时计费实例已有欠费，不能覆盖欠费封停状态')
           }
         }
 
@@ -4950,6 +4962,11 @@ export default async function hostRoutes(fastify: FastifyInstance) {
 
     for (const instance of instances) {
       try {
+        if (instance.billingMode === 'hourly' && instance.suspendReason === 'hourly_billing_insufficient_balance') {
+          results.push({ id: instance.id, name: instance.name, success: false, error: '按小时计费欠款必须先由实例所有者结清' })
+          continue
+        }
+
         // 执行解封
         await db.unsuspendInstance(instance.id)
 

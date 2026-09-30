@@ -348,8 +348,36 @@ func generateVmNicMac(seed string, nicLabel string) string {
 func firstRoutableAddresses(network map[string]incusNetworkDevice) (string, string) {
 	var ipv4 string
 	var ipv6 string
+	interfaceNames := make([]string, 0, len(network))
+	for ifName := range network {
+		if isLikelyExternalGuestInterface(ifName) {
+			interfaceNames = append(interfaceNames, ifName)
+		}
+	}
+	sort.Slice(interfaceNames, func(i, j int) bool {
+		priority := func(name string) int {
+			switch name {
+			case "eth0":
+				return 0
+			case "eth1":
+				return 1
+			default:
+				return 2
+			}
+		}
+		left, right := priority(interfaceNames[i]), priority(interfaceNames[j])
+		if left != right {
+			return left < right
+		}
+		return interfaceNames[i] < interfaceNames[j]
+	})
 
-	for _, ifData := range network {
+	// Incus can expose guest-created docker0, br-*, and veth interfaces in the
+	// state. Their RFC1918 addresses are not the instance's assigned NAT IP.
+	// Read only addresses from an external NIC; private IPv4 remains valid on
+	// eth0/eth1 because Incudal assigns NAT addresses from private subnets.
+	for _, ifName := range interfaceNames {
+		ifData := network[ifName]
 		for _, address := range ifData.Addresses {
 			if address.Address == "" {
 				continue

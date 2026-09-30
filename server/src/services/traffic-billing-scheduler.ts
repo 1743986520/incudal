@@ -2,9 +2,10 @@ import { Prisma } from '@prisma/client'
 import { schedule } from 'node-cron'
 import { prisma } from '../db/prisma.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
-import { stopInstance } from '../lib/incus/incus-instances.js'
+import { getInstanceState, stopInstance } from '../lib/incus/incus-instances.js'
 import { sendTrafficBillingLowBalanceEmail } from '../lib/mailer.js'
 import { getTrafficPeriod } from './traffic-utils.js'
+import { pauseHourlyBilling } from './hourly-billing-scheduler.js'
 
 const GIB = 1024 * 1024 * 1024
 const HALF_GIB = GIB / 2
@@ -395,11 +396,35 @@ async function runSettlementCandidates(candidateIds: number[], now: Date, trigge
     try {
       const result = await settleInstance(instanceId, now, trigger)
       if (!result?.suspended) continue
+      let stopped = false
       try {
         const client = await getIncusClient(result.host)
         await stopInstance(client, result.incusId, true)
+        stopped = true
       } catch (error) {
-        console.error(`[TrafficBilling] Instance ${result.instanceId} was suspended but Incus stop failed:`, error)
+        // A stop request can race an already-stopped guest. Confirm its real
+        // state before deciding whether hourly billing can be paused.
+        try {
+          const client = await getIncusClient(result.host)
+          const state = await getInstanceState(client, result.incusId) as { status?: string }
+          stopped = state.status === 'Stopped'
+        } catch {
+          // Leave hourly billing active if remote stop cannot be confirmed.
+        }
+        if (!stopped) console.error(`[TrafficBilling] Instance ${result.instanceId} was suspended but Incus stop failed:`, error)
+      }
+      if (stopped) {
+        const hourlyAccount = await prisma.hourlyBillingAccount.findUnique({
+          where: { instanceId: result.instanceId },
+          select: { id: true }
+        })
+        if (hourlyAccount) {
+          try {
+            await pauseHourlyBilling(result.instanceId)
+          } catch (error) {
+            console.error(`[TrafficBilling] Failed to pause hourly billing for stopped instance ${result.instanceId}:`, error)
+          }
+        }
       }
     } catch (error) {
       console.error(`[TrafficBilling] Failed to settle instance ${instanceId}:`, error)

@@ -203,6 +203,31 @@ func TestFirstRoutableAddressesRejectsIPv6ULA(t *testing.T) {
 	}
 }
 
+func TestFirstRoutableAddressesIgnoresGuestDockerBridges(t *testing.T) {
+	state := map[string]incusNetworkDevice{
+		"docker0": {
+			Addresses: []incusNetworkAddress{{Family: "inet", Address: "172.20.0.1"}},
+		},
+		"br-123456789abc": {
+			Addresses: []incusNetworkAddress{{Family: "inet", Address: "172.20.0.2"}},
+		},
+		"vethabcd": {
+			Addresses: []incusNetworkAddress{{Family: "inet", Address: "172.20.0.3"}},
+		},
+		"eth1": {
+			Addresses: []incusNetworkAddress{{Family: "inet", Address: "10.10.2.188"}},
+		},
+		"eth0": {
+			Addresses: []incusNetworkAddress{{Family: "inet", Address: "10.10.2.177"}},
+		},
+	}
+
+	ipv4, _ := firstRoutableAddresses(state)
+	if ipv4 != "10.10.2.177" {
+		t.Fatalf("external NAT IPv4 mismatch: got=%q", ipv4)
+	}
+}
+
 func containsCapability(capabilities []any, expected string) bool {
 	for _, capability := range capabilities {
 		if capability == expected {

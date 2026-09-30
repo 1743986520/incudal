@@ -649,11 +649,15 @@ async function syncRechargeRecord(record: any) {
 }
 
 async function approveManualRecharge(record: any) {
-  if (reviewingRechargeId.value || !confirm(`確認通過人工充值 ${record.orderNo}，並為 ${record.user?.username || record.userId} 入帳 ${formatMoney(record.actualAmount ?? record.amount)}？`)) return
+  if (reviewingRechargeId.value || !confirm(t('admin.billing.manualApproveConfirm', {
+    orderNo: record.orderNo,
+    user: record.user?.username || record.userId,
+    amount: formatMoney(record.actualAmount ?? record.amount)
+  }))) return
   reviewingRechargeId.value = record.id
   try {
     await api.admin.completeRechargeOrder(record.orderNo, `MANUAL-${record.orderNo}`)
-    toast.success('人工充值已通過並完成入帳')
+    toast.success(t('admin.billing.manualApproveSuccess'))
     await Promise.all([loadRechargeRecords(), loadOverview()])
   } catch (err: any) {
     toast.error(err.message)
@@ -664,12 +668,12 @@ async function approveManualRecharge(record: any) {
 
 async function rejectManualRecharge(record: any) {
   if (reviewingRechargeId.value) return
-  const reason = prompt('請輸入拒絕原因')?.trim()
+  const reason = prompt(t('admin.billing.manualRejectReason'))?.trim()
   if (!reason) return
   reviewingRechargeId.value = record.id
   try {
     await api.admin.failRechargeOrder(record.orderNo, reason)
-    toast.success('人工充值申請已拒絕')
+    toast.success(t('admin.billing.manualRejectSuccess'))
     await loadRechargeRecords()
   } catch (err: any) {
     toast.error(err.message)
@@ -1994,8 +1998,8 @@ function copyToClipboard(text: string) {
 
             <div class="flex justify-end">
               <template v-if="rec.provider?.type === 'manual' && rec.status === 'pending'">
-                <button class="btn btn-sm btn-primary" :disabled="reviewingRechargeId === rec.id" @click="approveManualRecharge(rec)">通過</button>
-                <button class="btn btn-sm btn-danger ml-2" :disabled="reviewingRechargeId === rec.id" @click="rejectManualRecharge(rec)">拒絕</button>
+                <button class="btn btn-sm btn-primary" :disabled="reviewingRechargeId === rec.id" @click="approveManualRecharge(rec)">{{ $t('admin.billing.manualApprove') }}</button>
+                <button class="btn btn-sm btn-danger ml-2" :disabled="reviewingRechargeId === rec.id" @click="rejectManualRecharge(rec)">{{ $t('admin.billing.manualReject') }}</button>
               </template>
               <button
                 v-else-if="rec.status === 'pending'"
@@ -2064,8 +2068,8 @@ function copyToClipboard(text: string) {
                 <td class="p-3 text-themed-muted whitespace-nowrap">{{ formatDate(rec.createdAt) }}</td>
                 <td class="p-3 whitespace-nowrap">
                   <template v-if="rec.provider?.type === 'manual' && rec.status === 'pending'">
-                    <button class="btn btn-sm btn-primary" :disabled="reviewingRechargeId === rec.id" @click="approveManualRecharge(rec)">通過</button>
-                    <button class="btn btn-sm btn-danger ml-2" :disabled="reviewingRechargeId === rec.id" @click="rejectManualRecharge(rec)">拒絕</button>
+                    <button class="btn btn-sm btn-primary" :disabled="reviewingRechargeId === rec.id" @click="approveManualRecharge(rec)">{{ $t('admin.billing.manualApprove') }}</button>
+                    <button class="btn btn-sm btn-danger ml-2" :disabled="reviewingRechargeId === rec.id" @click="rejectManualRecharge(rec)">{{ $t('admin.billing.manualReject') }}</button>
                   </template>
                   <button
                     v-else-if="rec.status === 'pending'"

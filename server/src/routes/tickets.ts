@@ -446,7 +446,9 @@ export default async function ticketsRoutes(fastify: FastifyInstance) {
         return reply.code(502).send(apiError(ErrorCode.INTERNAL_ERROR, 'Remote attachment is not a valid image'))
       }
 
-      reply.header('Cache-Control', 'private, max-age=300')
+      // Attachments can be up to 20 MB each and are access-controlled.
+      // Persisting them in the browser cache can quickly exhaust site storage.
+      reply.header('Cache-Control', 'private, no-store')
       reply.header('Content-Type', attachment.mimeType)
       reply.header('X-Content-Type-Options', 'nosniff')
       return reply.send(imageBuffer)

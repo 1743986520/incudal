@@ -32,6 +32,18 @@ export interface PackagePlanHourlyPricingSource {
   hourlyReserveQuantum: Prisma.Decimal | string | number
 }
 
+/**
+ * Immutable price terms captured when an hourly instance is created.
+ * Decimal values are stored as strings so a JSON round-trip never passes
+ * monetary values through JavaScript's binary floating-point representation.
+ */
+export interface HourlyPricingSnapshot extends HourlyPricingLike {
+  cpuPricePerUnit: string
+  memoryPricePerUnit: string
+  diskPricePerUnit: string
+  reserveQuantum: string
+}
+
 export function hourlyPricingFromPackagePlan(plan: PackagePlanHourlyPricingSource): HourlyPricingLike {
   return {
     cpuUnitPercent: plan.hourlyCpuUnitPercent,
@@ -44,6 +56,60 @@ export function hourlyPricingFromPackagePlan(plan: PackagePlanHourlyPricingSourc
     memoryPricePerUnit: plan.hourlyMemoryPricePerUnit,
     diskPricePerUnit: plan.hourlyDiskPricePerUnit,
     reserveQuantum: plan.hourlyReserveQuantum
+  }
+}
+
+export function snapshotHourlyPricing(pricing: HourlyPricingLike): HourlyPricingSnapshot {
+  return {
+    cpuUnitPercent: pricing.cpuUnitPercent,
+    memoryUnitMb: pricing.memoryUnitMb,
+    diskUnitMb: pricing.diskUnitMb,
+    minCpu: pricing.minCpu,
+    minMemoryMb: pricing.minMemoryMb,
+    minDiskMb: pricing.minDiskMb,
+    cpuPricePerUnit: new Prisma.Decimal(pricing.cpuPricePerUnit).toFixed(8),
+    memoryPricePerUnit: new Prisma.Decimal(pricing.memoryPricePerUnit).toFixed(8),
+    diskPricePerUnit: new Prisma.Decimal(pricing.diskPricePerUnit).toFixed(8),
+    reserveQuantum: new Prisma.Decimal(pricing.reserveQuantum).toFixed(8)
+  }
+}
+
+/** Parse a JSON snapshot from Prisma without trusting its runtime shape. */
+export function hourlyPricingFromSnapshot(value: unknown): HourlyPricingSnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const snapshot = value as Record<string, unknown>
+  const integerFields = [
+    snapshot.cpuUnitPercent,
+    snapshot.memoryUnitMb,
+    snapshot.diskUnitMb,
+    snapshot.minCpu,
+    snapshot.minMemoryMb,
+    snapshot.minDiskMb
+  ]
+  if (integerFields.some(field => typeof field !== 'number' || !Number.isInteger(field) || field <= 0)) return null
+
+  try {
+    const cpuPricePerUnit = new Prisma.Decimal(String(snapshot.cpuPricePerUnit))
+    const memoryPricePerUnit = new Prisma.Decimal(String(snapshot.memoryPricePerUnit))
+    const diskPricePerUnit = new Prisma.Decimal(String(snapshot.diskPricePerUnit))
+    const reserveQuantum = new Prisma.Decimal(String(snapshot.reserveQuantum))
+    if (![cpuPricePerUnit, memoryPricePerUnit, diskPricePerUnit, reserveQuantum].every(value => value.isFinite() && value.gte(0))) return null
+    if (reserveQuantum.lte(0)) return null
+
+    return {
+      cpuUnitPercent: snapshot.cpuUnitPercent as number,
+      memoryUnitMb: snapshot.memoryUnitMb as number,
+      diskUnitMb: snapshot.diskUnitMb as number,
+      minCpu: snapshot.minCpu as number,
+      minMemoryMb: snapshot.minMemoryMb as number,
+      minDiskMb: snapshot.minDiskMb as number,
+      cpuPricePerUnit: cpuPricePerUnit.toFixed(8),
+      memoryPricePerUnit: memoryPricePerUnit.toFixed(8),
+      diskPricePerUnit: diskPricePerUnit.toFixed(8),
+      reserveQuantum: reserveQuantum.toFixed(8)
+    }
+  } catch {
+    return null
   }
 }
 

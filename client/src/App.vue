@@ -8,6 +8,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import PopupAnnouncementModal from '@/components/PopupAnnouncementModal.vue'
 import { setAccessToken } from '@/api'
+import { reloadOnceForChunkError } from '@/utils/chunkReload'
 
 const route = useRoute()
 const router = useRouter()
@@ -105,9 +106,7 @@ onErrorCaptured((err, _instance, info) => {
         errorMessage.includes('Loading chunk') ||
         errorMessage.includes('ChunkLoadError')) {
       console.warn('检测到代码块加载失败，尝试重新加载页面')
-      setTimeout(() => {
-        window.location.reload()
-      }, 1000)
+      setTimeout(reloadOnceForChunkError, 1000)
       return false // 阻止错误继续传播
     }
   }

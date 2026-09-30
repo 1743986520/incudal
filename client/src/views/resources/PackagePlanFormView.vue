@@ -33,6 +33,28 @@ const packageId = computed(() => Number(route.params.id))
 const planId = computed(() => route.params.planId ? Number(route.params.planId) : null)
 const isEditMode = computed(() => Number.isInteger(planId.value) && Number(planId.value) > 0)
 
+const hourlyMinimumRate = computed(() => {
+  const form = planForm.value
+  const hourlyPriceInputs = [form.hourlyCpuPricePerUnit, form.hourlyMemoryPricePerUnit, form.hourlyDiskPricePerUnit]
+  if (hourlyPriceInputs.some(value => !/^(?:0|[0-9]+)(?:\.[0-9]{1,8})?$/.test(value.trim()))) return null
+  const values = [
+    form.hourlyMinCpu,
+    form.hourlyMinMemoryMb,
+    form.hourlyMinDiskMb,
+    form.hourlyCpuUnitPercent,
+    form.hourlyMemoryUnitMb,
+    form.hourlyDiskUnitMb,
+    Number(form.hourlyCpuPricePerUnit),
+    Number(form.hourlyMemoryPricePerUnit),
+    Number(form.hourlyDiskPricePerUnit)
+  ]
+  if (values.some(value => !Number.isFinite(value)) ||
+      [form.hourlyMinCpu, form.hourlyMinMemoryMb, form.hourlyMinDiskMb].some(value => value <= 0) ||
+      [form.hourlyCpuUnitPercent, form.hourlyMemoryUnitMb, form.hourlyDiskUnitMb].some(value => value <= 0)) return null
+  const [cpu, memory, disk, cpuStep, memoryStep, diskStep, cpuPrice, memoryPrice, diskPrice] = values
+  return (cpu / cpuStep * cpuPrice + memory / memoryStep * memoryPrice + disk / diskStep * diskPrice).toFixed(8)
+})
+
 const planForm = ref({
   name: '',
   description: '',
@@ -480,6 +502,9 @@ async function savePlan(): Promise<void> {
           <section v-if="planForm.billingMode === 'hourly'" class="card p-5">
             <h2 class="text-base font-medium text-themed">{{ t('resources.plans.hourlyPricingConfig') }}</h2>
             <p class="mt-1 text-xs text-themed-muted">{{ t('resources.plans.hourlyPricingConfigHint') }}</p>
+            <p v-if="hourlyMinimumRate !== null" class="mt-2 text-sm font-medium text-themed">
+              {{ t('resources.plans.hourlyMinimumRate') }}: ¥{{ hourlyMinimumRate }} / {{ t('hourlyBilling.hour') }}
+            </p>
             <div class="mt-4 grid gap-4 sm:grid-cols-3">
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMinCpu') }} (%)</label>
@@ -495,7 +520,7 @@ async function savePlan(): Promise<void> {
               </div>
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMinMemory') }} (MB)</label>
-                <input v-model.number="planForm.hourlyMinMemoryMb" type="number" min="128" step="1" class="input" />
+                <input v-model.number="planForm.hourlyMinMemoryMb" type="number" min="128" max="524288" step="1" class="input" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-themed-muted mb-1.5">{{ t('resources.plans.hourlyMemoryUnit') }} (MB)</label>

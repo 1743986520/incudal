@@ -33,6 +33,9 @@ import {
 import { registerAuthDecorators } from './plugins/auth-decorators.js'
 import { registerStaticServer } from './plugins/static-server.js'
 import { buildRateLimitErrorResponse } from './lib/rate-limit-error.js'
+import { apiError, ErrorCode } from './lib/errors.js'
+import { isTelegramBindingRequired } from './lib/telegram-binding-policy.js'
+import { prisma } from './db/prisma.js'
 import { applyVerifiedClientIp, trustedProxyRanges } from './lib/client-ip.js'
 import { getRedis } from './lib/redis.js'
 
@@ -397,6 +400,32 @@ await fastify.register(rateLimit, {
 
 // 注册认证装饰器
 await registerAuthDecorators(fastify)
+
+// Beta-only policy: when enabled, authenticated non-admin users must bind
+// Telegram before using panel APIs. Keep it opt-in so production stays unchanged.
+if (isTelegramBindingRequired()) {
+  fastify.addHook('preHandler', async (request, reply) => {
+    const user = request.user
+    if (!request.url.startsWith('/api/') || !user?.id || user.role === 'admin') return
+
+    const path = request.url.split('?')[0]
+    if (
+      path.startsWith('/api/auth/') ||
+      path === '/api/telegram/binding' ||
+      path === '/api/telegram/bind-token'
+    ) {
+      return
+    }
+
+    const binding = await prisma.userTelegramBinding.findUnique({
+      where: { userId: user.id },
+      select: { id: true }
+    })
+    if (!binding) {
+      return reply.code(403).send(apiError(ErrorCode.TELEGRAM_BINDING_REQUIRED))
+    }
+  })
+}
 
 // 健康检查
 fastify.get('/api/health', async () => {

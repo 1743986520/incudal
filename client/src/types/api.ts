@@ -213,6 +213,7 @@ export interface SendCreateUserEmailCodeResponse {
 }
 
 export interface TelegramBindingStatus {
+  required: boolean
   enabled: boolean
   configured: boolean
   botUsername: string | null

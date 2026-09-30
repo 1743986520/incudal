@@ -5,6 +5,7 @@ import { useInstanceStore } from '@/stores/instance'
 import { useInstanceResourcesStore } from '@/stores/instanceResources'
 import type { RouteLocationNormalized, NavigationGuardNext, RouteRecordRaw } from 'vue-router'
 import api, { cancelAllPendingRequests, setAccessToken } from '@/api'
+import { reloadOnceForChunkError } from '@/utils/chunkReload'
 
 // OAuth 登录码处理状态
 let oauthProcessing = false
@@ -156,6 +157,12 @@ const routes: RouteRecordRaw[] = [
     name: 'profile',
     component: () => import('@/views/ProfileView.vue'),
     meta: { requiresAuth: true, titleKey: 'auth.profile', title: '个人设置' }
+  },
+  {
+    path: '/telegram/bind-required',
+    name: 'telegram-bind-required',
+    component: () => import('@/views/TelegramBindingRequiredView.vue'),
+    meta: { requiresAuth: true, titleKey: 'auth.telegramBindingRequired.title', title: '绑定 Telegram' }
   },
   {
     path: '/wallet',
@@ -484,9 +491,7 @@ router.onError((error) => {
     error.name === 'ChunkLoadError') {
     console.warn('检测到代码块加载失败，尝试重新加载页面')
     // 延迟一下，避免快速重载循环
-    setTimeout(() => {
-      window.location.reload()
-    }, 1000)
+    setTimeout(reloadOnceForChunkError, 1000)
   }
 })
 
@@ -551,6 +556,27 @@ router.beforeEach(async (to: RouteLocationNormalized, _from: RouteLocationNormal
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'login', query: { redirect: to.fullPath } })
     return
+  }
+
+  // Beta test sites can require Telegram binding before ordinary users access
+  // any other panel page. The API is authoritative and also enforces this rule.
+  if (
+    authStore.isAuthenticated &&
+    authStore.user?.role === 'user' &&
+    to.name !== 'telegram-bind-required'
+  ) {
+    try {
+      const bindingStatus = await api.telegram.getBinding()
+      if (bindingStatus.required && !bindingStatus.binding) {
+        next({
+          name: 'telegram-bind-required',
+          query: { redirect: to.fullPath }
+        })
+        return
+      }
+    } catch {
+      // The route guard is UX; the API policy remains authoritative.
+    }
   }
 
   // Pages requiring admin permission

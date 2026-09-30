@@ -11,7 +11,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
 
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmmirror.com
 
 # esbuild 依赖安装脚本不能被跳过，否则 Vite 在构建阶段无法启动二进制
 RUN pnpm rebuild esbuild
@@ -30,6 +30,7 @@ RUN pnpm --filter client build
 
 # Stage 3: 构建后端
 FROM node:22-alpine AS builder-server
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 

@@ -41,6 +41,8 @@ services:
       # Mount source certificates separately. The root entrypoint copies them
       # into the container-owned directory before dropping privileges.
       - ./server/certs:/run/incudal-certs:ro
+      # Keep locally built agent upgrade artifacts available to the panel.
+      - ./agent/dist:/app/agent/dist:ro
     depends_on:
       db:
         condition: service_healthy

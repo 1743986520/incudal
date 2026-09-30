@@ -10,12 +10,14 @@ import {
   buildInstanceConfig,
   createInstance,
   startInstance,
+  stopInstance,
   getInstanceState,
   waitForCreatedInstance,
   ensureInstanceDeleted
 } from '../../lib/incus/index.js'
 import type { Host } from '../../types/database.js'
 import { cleanupAndSettleFailedProvision } from '../../services/provisioning-cleanup.js'
+import { activateHourlyBilling, pauseHourlyBilling } from '../../services/hourly-billing-scheduler.js'
 
 /**
  * 异步创建实例
@@ -191,6 +193,47 @@ export async function createInstanceAsync(
       return
     }
 
+    const hourlyAccount = await prisma.hourlyBillingAccount.findUnique({
+      where: { instanceId },
+      select: { id: true }
+    })
+    if (hourlyAccount) {
+      try {
+        await activateHourlyBilling(instanceId)
+      } catch (activationError) {
+        // Do not leave a successfully provisioned guest running for free if
+        // billing initialization failed. Retry once, then stop and pause it;
+        // the user can start it again after the billing service recovers.
+        console.error(`[Provisioning] Hourly billing activation failed for instance ${instanceId}; retrying:`, activationError)
+        try {
+          await activateHourlyBilling(instanceId)
+        } catch (retryError) {
+          console.error(`[Provisioning] Hourly billing retry failed for instance ${instanceId}:`, retryError)
+          let stopped = false
+          try {
+            await stopInstance(client, config.name, true)
+            stopped = true
+          } catch {
+            try {
+              const state = await getInstanceState(client, config.name) as { status?: string }
+              stopped = state.status === 'Stopped'
+            } catch {
+              // If Incus is unreachable, retain the reserve and report for manual reconciliation.
+            }
+          }
+          if (stopped) {
+            await prisma.instance.updateMany({
+              where: { id: instanceId, status: 'running' },
+              data: { status: 'stopped', version: { increment: 1 } }
+            })
+            await pauseHourlyBilling(instanceId).catch(pauseError => {
+              console.error(`[Provisioning] Failed to release stopped hourly instance reserve ${instanceId}:`, pauseError)
+            })
+          }
+        }
+      }
+    }
+
     console.log(`[Provisioning] ✔ 实例 ${instanceId} (${config.name}) 创建成功!`)
 
     const instance = await db.getInstanceById(instanceId)
@@ -198,7 +241,7 @@ export async function createInstanceAsync(
       const { sendNotification } = await import('../../lib/notifier.js')
       await sendNotification(userId, 'instance_created', {
         instanceName: instance.name,
-        status: 'running',
+        status: instance.status,
         hostName: host.name,
         hostLocation: host.location || undefined,
         image: config.image,

@@ -2,11 +2,12 @@ import { Prisma } from '@prisma/client'
 import { schedule } from 'node-cron'
 import { prisma } from '../db/prisma.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
-import { stopInstance } from '../lib/incus/incus-instances.js'
+import { getInstanceState, stopInstance } from '../lib/incus/incus-instances.js'
 import {
   calculateHourlyBreakdown,
   calculateHourlyCost,
   ceilToQuantum,
+  hourlyPricingFromSnapshot,
   hourlyPricingFromPackagePlan,
   serializeHourlyDecimal,
   type HourlyResources
@@ -34,6 +35,7 @@ type SettlementResult = {
 }
 
 type HourlyPricingSource = {
+  pricingSnapshot?: unknown
   packagePlan?: Parameters<typeof hourlyPricingFromPackagePlan>[0] | null
   pricingVersion?: HourlyPricingSourceVersion | null
 }
@@ -52,6 +54,8 @@ type HourlyPricingSourceVersion = {
 }
 
 function getAccountPricing(account: HourlyPricingSource) {
+  const snapshot = hourlyPricingFromSnapshot(account.pricingSnapshot)
+  if (snapshot) return snapshot
   if (account.packagePlan) return hourlyPricingFromPackagePlan(account.packagePlan)
   if (account.pricingVersion) return account.pricingVersion
   throw new Error('HOURLY_PRICING_MISSING')
@@ -87,6 +91,50 @@ async function runSerializableTransaction<T>(operation: HourlyTransactionOperati
   }
 
   throw new Error('Hourly billing transaction retries exhausted')
+}
+
+async function stopInstanceForHourlyDebt(result: SettlementResult): Promise<void> {
+  if (!result.suspended || !result.host) return
+  try {
+    const account = await prisma.hourlyBillingAccount.findUnique({
+      where: { instanceId: result.instanceId },
+      select: { status: true }
+    })
+    const instance = await prisma.instance.findUnique({
+      where: { id: result.instanceId },
+      select: { incusId: true, status: true, suspendReason: true }
+    })
+    if (account?.status === 'suspended' && instance?.status === 'suspended' && instance.suspendReason === HOURLY_SUSPEND_REASON) {
+      const client = await getIncusClient(result.host)
+      let state: { status?: string } | null = null
+      try {
+        state = await getInstanceState(client, instance.incusId) as { status?: string }
+      } catch (error) {
+        // Still attempt to stop the guest below, but do not release or forget
+        // its debt when the host cannot confirm its state.
+        console.warn(`[HourlyBilling] failed to inspect suspended instance ${result.instanceId}:`, error)
+      }
+
+      if (state?.status === 'Running' || state?.status === 'Frozen') {
+        // A failed remote stop must not turn into free runtime. Accrue any
+        // additional seconds against the remaining reserve / outstanding debt
+        // before retrying the stop; the account remains suspended throughout.
+        try {
+          await runSerializableTransaction(tx => settleInTransaction(tx, result.instanceId, new Date(), {
+            force: true,
+            accrueSuspendedDebt: true
+          }))
+        } catch (error) {
+          console.error(`[HourlyBilling] failed to accrue suspended runtime for instance ${result.instanceId}:`, error)
+        }
+      }
+
+      if (state?.status === 'Stopped') return
+      await stopInstance(client, instance.incusId, true)
+    }
+  } catch (error) {
+    console.error(`[HourlyBilling] failed to stop suspended instance ${result.instanceId}:`, error)
+  }
 }
 
 async function createHourlyHostingIncome(tx: HourlyTx, instanceId: number, amount: Prisma.Decimal): Promise<void> {
@@ -184,7 +232,7 @@ async function settleInTransaction(
   tx: HourlyTx,
   instanceId: number,
   now: Date,
-  options: { force?: boolean } = {}
+  options: { force?: boolean; accrueSuspendedDebt?: boolean } = {}
 ): Promise<SettlementResult> {
   const initialAccount = await tx.hourlyBillingAccount.findUnique({
     where: { instanceId },
@@ -244,7 +292,12 @@ async function settleInTransaction(
   })
 
   if (!account) return { instanceId, suspended: false, host: null }
-  if (account.status !== 'active') return { instanceId, suspended: account.status === 'suspended', host: account.instance.host }
+  const accruingSuspendedDebt = options.accrueSuspendedDebt === true &&
+    account.status === 'suspended' &&
+    account.instance.suspendReason === HOURLY_SUSPEND_REASON
+  if (account.status !== 'active' && !accruingSuspendedDebt) {
+    return { instanceId, suspended: account.status === 'suspended', host: account.instance.host }
+  }
   if (!options.force && account.instance.status !== 'running') {
     await tx.hourlyBillingAccount.update({
       where: { id: account.id },
@@ -270,7 +323,7 @@ async function settleInTransaction(
   const diskAmount = calculateHourlyCost(breakdown.diskAmount, activeSeconds)
   const actualAmount = cpuAmount.add(memoryAmount).add(diskAmount)
   const existingPrepaid = new Prisma.Decimal(account.prepaidBalance)
-  const requiredAdditional = actualAmount.gt(existingPrepaid)
+  const requiredAdditional = !accruingSuspendedDebt && actualAmount.gt(existingPrepaid)
     ? ceilToQuantum(actualAmount.sub(existingPrepaid), new Prisma.Decimal(pricing.reserveQuantum))
     : zero()
 
@@ -342,7 +395,7 @@ async function settleInTransaction(
 
   await createHourlyHostingIncome(tx, instanceId, paidAmount)
 
-  const suspended = unpaidAmount.gt(0)
+  const suspended = accruingSuspendedDebt || unpaidAmount.gt(0)
   await tx.hourlyBillingAccount.update({
     where: { id: account.id },
     data: {
@@ -359,7 +412,7 @@ async function settleInTransaction(
 
   if (suspended) {
     await tx.instance.updateMany({
-      where: { id: instanceId, status: 'running' },
+      where: { id: instanceId, status: { in: ['running', 'stopped'] } },
       data: {
         status: 'suspended',
         suspendedAt: now,
@@ -374,7 +427,7 @@ async function settleInTransaction(
 }
 
 export async function activateHourlyBilling(instanceId: number): Promise<boolean> {
-  return runSerializableTransaction(async tx => {
+  const activated = await runSerializableTransaction(async tx => {
     const account = await tx.hourlyBillingAccount.findUnique({
       where: { instanceId },
       include: { packagePlan: true, pricingVersion: true, instance: true }
@@ -473,6 +526,29 @@ export async function activateHourlyBilling(instanceId: number): Promise<boolean
     })
     return true
   })
+  if (!activated) {
+    const instance = await prisma.instance.findUnique({
+      where: { id: instanceId },
+      select: {
+        suspendReason: true,
+        host: {
+          select: {
+            id: true,
+            url: true,
+            certPath: true,
+            keyPath: true,
+            serverCertificate: true,
+            serverFingerprint: true,
+            allowPrivateNetwork: true
+          }
+        }
+      }
+    })
+    if (instance?.suspendReason === HOURLY_SUSPEND_REASON) {
+      await stopInstanceForHourlyDebt({ instanceId, suspended: true, host: instance.host })
+    }
+  }
+  return activated
 }
 
 export async function resumeHourlyBilling(instanceId: number, userId: number): Promise<void> {
@@ -497,7 +573,9 @@ export async function resumeHourlyBilling(instanceId: number, userId: number): P
 
     const outstanding = new Prisma.Decimal(lockedAccount.outstandingAmount)
     const quantum = new Prisma.Decimal(getAccountPricing(lockedAccount).reserveQuantum)
-    const reserveAmount = ceilToQuantum(outstanding.add(quantum), quantum)
+    const existingPrepaid = new Prisma.Decimal(lockedAccount.prepaidBalance)
+    const targetReserve = ceilToQuantum(outstanding.add(quantum), quantum)
+    const reserveAmount = Prisma.Decimal.max(targetReserve.sub(existingPrepaid), zero())
     const user = await tx.user.findUnique({ where: { id: userId }, select: { balance: true } })
     if (!user) throw new Error('USER_NOT_FOUND')
     const balanceBefore = new Prisma.Decimal(user.balance)
@@ -533,7 +611,7 @@ export async function resumeHourlyBilling(instanceId: number, userId: number): P
       data: {
         status: 'paused',
         outstandingAmount: 0,
-        prepaidBalance: reserveAmount.sub(outstanding),
+        prepaidBalance: existingPrepaid.add(reserveAmount).sub(outstanding),
         totalReserved: { increment: reserveAmount },
         lastSettledAt: new Date(),
         nextSettlementAt: null,
@@ -543,15 +621,119 @@ export async function resumeHourlyBilling(instanceId: number, userId: number): P
   })
 }
 
+/** Collect any final hourly debt after an instance was deleted while insolvent. */
+export async function payClosedHourlyDebt(instanceId: number, userId: number): Promise<Prisma.Decimal> {
+  return runSerializableTransaction(async tx => {
+    const account = await tx.hourlyBillingAccount.findUnique({
+      where: { instanceId },
+      include: { instance: true }
+    })
+    if (!account || account.instance.userId !== userId) throw new Error('HOURLY_ACCOUNT_NOT_FOUND')
+    await tx.$queryRaw(Prisma.sql`
+      SELECT id
+      FROM "hourly_billing_accounts"
+      WHERE id = ${account.id}
+      FOR UPDATE
+    `)
+    const lockedAccount = await tx.hourlyBillingAccount.findUnique({
+      where: { id: account.id },
+      include: { instance: true }
+    })
+    if (!lockedAccount || lockedAccount.instance.userId !== userId) throw new Error('HOURLY_ACCOUNT_NOT_FOUND')
+    if (lockedAccount.status !== 'closed') throw new Error('HOURLY_ACCOUNT_NOT_CLOSED')
+
+    const outstanding = new Prisma.Decimal(lockedAccount.outstandingAmount)
+    if (outstanding.lte(0)) return zero()
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { balance: true } })
+    if (!user) throw new Error('USER_NOT_FOUND')
+    const balanceBefore = new Prisma.Decimal(user.balance)
+    const balanceAfter = balanceBefore.sub(outstanding)
+    const updated = await tx.user.updateMany({
+      where: { id: userId, balance: { gte: outstanding } },
+      data: { balance: { decrement: outstanding } }
+    })
+    if (updated.count !== 1) throw new Error('BALANCE_INSUFFICIENT')
+
+    const balanceLog = await tx.balanceLog.create({
+      data: {
+        userId,
+        instanceId,
+        type: 'hourly_consume',
+        amount: outstanding,
+        balanceBefore,
+        balanceAfter,
+        remark: `结清已销毁按小时计费实例欠款：${serializeHourlyDecimal(outstanding)}`
+      }
+    })
+    await createHourlyHostingIncome(tx, instanceId, outstanding)
+    await tx.hourlyBillingRecord.updateMany({
+      where: { instanceId, status: 'pending' },
+      data: { status: 'paid', balanceLogId: balanceLog.id }
+    })
+    await tx.hourlyBillingAccount.update({
+      where: { id: lockedAccount.id },
+      data: { outstandingAmount: 0, version: { increment: 1 } }
+    })
+    return outstanding
+  })
+}
+
 export async function settleHourlyInstance(instanceId: number, now = new Date(), options: { force?: boolean } = {}): Promise<SettlementResult> {
-  return runSerializableTransaction(tx => settleInTransaction(tx, instanceId, now, options))
+  const result = await runSerializableTransaction(tx => settleInTransaction(tx, instanceId, now, options))
+  await stopInstanceForHourlyDebt(result)
+  return result
+}
+
+/**
+ * Account for the final runtime of an hourly-debt instance before deletion.
+ * The ordinary deletion close happens after the remote guest is gone, so only
+ * this pre-delete host check can establish whether suspended runtime continued.
+ */
+export async function settleSuspendedHourlyRuntime(instanceId: number, now = new Date()): Promise<void> {
+  const account = await prisma.hourlyBillingAccount.findUnique({
+    where: { instanceId },
+    select: {
+      status: true,
+      instance: {
+        select: {
+          suspendReason: true,
+          incusId: true,
+          host: {
+            select: {
+              id: true,
+              url: true,
+              certPath: true,
+              keyPath: true,
+              serverCertificate: true,
+              serverFingerprint: true,
+              allowPrivateNetwork: true
+            }
+          }
+        }
+      }
+    }
+  })
+  if (!account || account.status !== 'suspended' || account.instance.suspendReason !== HOURLY_SUSPEND_REASON) return
+
+  const client = await getIncusClient(account.instance.host)
+  const state = await getInstanceState(client, account.instance.incusId) as { status?: string }
+  if (state.status === 'Running' || state.status === 'Frozen') {
+    await runSerializableTransaction(tx => settleInTransaction(tx, instanceId, now, {
+      force: true,
+      accrueSuspendedDebt: true
+    }))
+  }
 }
 
 export async function pauseHourlyBilling(instanceId: number, now = new Date()): Promise<SettlementResult> {
-  return runSerializableTransaction(async tx => {
+  const result = await runSerializableTransaction(async tx => {
     const result = await settleInTransaction(tx, instanceId, now, { force: true })
     const account = await tx.hourlyBillingAccount.findUnique({ where: { instanceId }, include: { instance: true } })
     if (!account || account.status === 'closed') return result
+    // A failed settlement has created an outstanding debt and changed the
+    // account to suspended. Do not overwrite that state with `paused`: resume
+    // must require the debt-payment path, not ordinary instance unsuspend.
+    if (result.suspended || account.status === 'suspended') return result
 
     const prepaid = new Prisma.Decimal(account.prepaidBalance)
     if (prepaid.gt(0)) {
@@ -582,6 +764,8 @@ export async function pauseHourlyBilling(instanceId: number, now = new Date()): 
     })
     return result
   })
+  await stopInstanceForHourlyDebt(result)
+  return result
 }
 
 export async function closeHourlyBilling(instanceId: number, now = new Date()): Promise<SettlementResult> {
@@ -633,7 +817,6 @@ export async function runHourlyBillingJob(): Promise<void> {
       instanceId: true,
       instance: {
         select: {
-          incusId: true,
           host: {
             select: {
               id: true,
@@ -650,20 +833,54 @@ export async function runHourlyBillingJob(): Promise<void> {
     }
   })
   for (const account of suspendedAccounts) {
-    try {
-      const client = await getIncusClient(account.instance.host)
-      await stopInstance(client, account.instance.incusId, true)
-    } catch (error) {
-      console.error(`[HourlyBilling] failed to retry physical stop for instance ${account.instanceId}:`, error)
-    }
+    await stopInstanceForHourlyDebt({
+      instanceId: account.instanceId,
+      suspended: true,
+      host: account.instance.host
+    })
   }
 
   const staleAccounts = await prisma.hourlyBillingAccount.findMany({
     where: { status: 'active', instance: { status: { not: 'running' } } },
-    select: { instanceId: true }
+    select: {
+      instanceId: true,
+      instance: {
+        select: {
+          incusId: true,
+          status: true,
+          suspendReason: true,
+          host: {
+            select: {
+              id: true,
+              url: true,
+              certPath: true,
+              keyPath: true,
+              serverCertificate: true,
+              serverFingerprint: true,
+              allowPrivateNetwork: true
+            }
+          }
+        }
+      }
+    }
   })
   for (const account of staleAccounts) {
     try {
+      // Usage-based traffic billing can suspend the database row before its
+      // remote stop completes. Keep hourly charges running while Incus still
+      // reports the guest as running; only release its reserve after confirming
+      // it is stopped. This also reconciles a crash between remote stop and
+      // the hourly-account pause.
+      if (account.instance.status === 'suspended' && account.instance.suspendReason === 'traffic_billing_insufficient_balance') {
+        const client = await getIncusClient(account.instance.host)
+        const state = await getInstanceState(client, account.instance.incusId) as { status?: string }
+        if (state.status === 'Running') {
+          await settleHourlyInstance(account.instanceId, now, { force: true })
+        } else if (state.status === 'Stopped') {
+          await pauseHourlyBilling(account.instanceId, now)
+        }
+        continue
+      }
       await pauseHourlyBilling(account.instanceId, now)
     } catch (error) {
       console.error(`[HourlyBilling] failed to close stale runtime for instance ${account.instanceId}:`, error)
@@ -681,16 +898,7 @@ export async function runHourlyBillingJob(): Promise<void> {
 
   for (const account of accounts) {
     try {
-      const result = await settleHourlyInstance(account.instanceId, now)
-      if (result.suspended && result.host) {
-        try {
-          const client = await getIncusClient(result.host)
-          const instance = await prisma.instance.findUnique({ where: { id: account.instanceId }, select: { incusId: true } })
-          if (instance) await stopInstance(client, instance.incusId, true)
-        } catch (error) {
-          console.error(`[HourlyBilling] failed to stop suspended instance ${account.instanceId}:`, error)
-        }
-      }
+      await settleHourlyInstance(account.instanceId, now)
     } catch (error) {
       console.error(`[HourlyBilling] failed to settle instance ${account.instanceId}:`, error)
     }

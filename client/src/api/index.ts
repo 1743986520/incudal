@@ -496,7 +496,11 @@ export async function proactiveRefreshToken(redirectOnInvalid: boolean = true): 
     processQueue(refreshError, null)
     // 如果是 refreshToken 失效，需要清除并跳转登录
     if (refreshError?.message === 'REFRESH_TOKEN_INVALID') {
-      setAccessToken(null)
+      try {
+        useAuthStore().clearLocalAuth()
+      } catch {
+        setAccessToken(null)
+      }
       if (redirectOnInvalid && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
         window.location.href = '/login'
       }
@@ -612,6 +616,7 @@ http.interceptors.response.use(
 
       // 如果正在刷新，将请求加入队列
       if (isRefreshing) {
+        if (originalRequest) originalRequest._retry = true
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
         }).then(token => {
@@ -624,12 +629,14 @@ http.interceptors.response.use(
         })
       }
 
-      // 检查刷新频率，避免过于频繁
+      // A recent refresh may already have produced a newer token. Replay at
+      // most once with that token; never loop on the same 401 response.
       const now = Date.now()
       if (now - lastRefreshAttempt < MIN_REFRESH_INTERVAL && lastRefreshAttempt > 0) {
-        // 最近刚刷新过，可能是网络问题，等待一下再重试原请求
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        if (originalRequest) {
+        const latestToken = getAccessToken()
+        if (originalRequest && latestToken && originalRequest.headers?.Authorization !== `Bearer ${latestToken}`) {
+          originalRequest._retry = true
+          originalRequest.headers.Authorization = `Bearer ${latestToken}`
           return http(originalRequest)
         }
         return Promise.reject(error)
@@ -960,6 +967,7 @@ const api = {
       http.post('/instances/hourly/quote', data),
     getHourlyBilling: (id: number): Promise<HourlyBillingInfo> => http.get(`/instances/${id}/hourly-billing`),
     getHourlyBillingRecords: (id: number, limit = 50): Promise<{ records: HourlyBillingRecord[] }> => http.get(`/instances/${id}/hourly-billing/records`, { params: { limit } }),
+    payClosedHourlyDebt: (id: number): Promise<{ instanceId: number; chargedAmount: string }> => http.post(`/instances/${id}/hourly-billing/pay-debt`, {}),
     hourlyResizePreview: (id: number, data: { cpu: number; memory: number; disk: number }): Promise<{ resources: { cpu: number; memory: number; disk: number }; pricing: HourlyPricing; breakdown: HourlyQuote }> =>
       http.post(`/instances/${id}/hourly/resize-preview`, data),
     retryProvision: (id: number): Promise<{ message: string; status: string }> =>

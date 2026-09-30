@@ -11,6 +11,7 @@ export const ErrorCode = {
     FORBIDDEN: 'FORBIDDEN',
     ADMIN_REQUIRED: 'ADMIN_REQUIRED',
     FEATURE_DISABLED: 'FEATURE_DISABLED',
+    TELEGRAM_BINDING_REQUIRED: 'TELEGRAM_BINDING_REQUIRED',
 
     // User errors
     USER_NOT_FOUND: 'USER_NOT_FOUND',
@@ -363,6 +364,7 @@ export const ErrorMessages: Record<ErrorCodeType, string> = {
     [ErrorCode.FORBIDDEN]: 'Access denied',
     [ErrorCode.ADMIN_REQUIRED]: 'Admin privileges required',
     [ErrorCode.FEATURE_DISABLED]: 'This feature has been disabled',
+    [ErrorCode.TELEGRAM_BINDING_REQUIRED]: 'Bind a Telegram account before using the panel',
 
     // User errors
     [ErrorCode.USER_NOT_FOUND]: 'User not found',

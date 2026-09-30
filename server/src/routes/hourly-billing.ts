@@ -5,6 +5,7 @@ import { canUserAccessPackage } from '../db/package-shares.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import {
   calculateHourlyBreakdown,
+  hourlyPricingFromSnapshot,
   hourlyPricingFromPackagePlan,
   serializeHourlyDecimal,
   validateHourlyResources,
@@ -12,6 +13,7 @@ import {
   type HourlyResources
 } from '../lib/hourly-billing.js'
 import {
+  payClosedHourlyDebt,
   runHourlyBillingJob
 } from '../services/hourly-billing-scheduler.js'
 
@@ -21,6 +23,16 @@ function parseResources(input: Partial<HourlyResources>): HourlyResources {
     memory: Number(input.memory),
     disk: Number(input.disk)
   }
+}
+
+function parsePositiveInteger(value: string | number | undefined): number | null {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+function parseLimit(value: string | undefined, fallback: number, maximum: number): number {
+  const parsed = value === undefined ? fallback : Number(value)
+  return Number.isSafeInteger(parsed) ? Math.min(Math.max(parsed, 1), maximum) : fallback
 }
 
 type PricingResponseSource = HourlyPricingLike & {
@@ -170,7 +182,8 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
   })
 
   fastify.get<{ Params: { id: string } }>('/instances/:id/hourly-billing', { onRequest: [fastify.authenticate] }, async (request, reply) => {
-    const id = Number(request.params.id)
+    const id = parsePositiveInteger(request.params.id)
+    if (id === null) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     const instance = await prisma.instance.findUnique({
       where: { id },
       include: { host: { select: { userId: true } }, hourlyBillingAccount: { include: { packagePlan: true, pricingVersion: true } } }
@@ -178,9 +191,8 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
     if (!instance || instance.billingMode !== 'hourly' || !instance.hourlyBillingAccount) return reply.code(404).send({ error: 'Hourly billing account not found' })
     if (!canAccessInstance(request.user, instance)) return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     const account = instance.hourlyBillingAccount
-    const pricing = account.packagePlan
-      ? hourlyPricingFromPackagePlan(account.packagePlan)
-      : account.pricingVersion
+    const pricing = hourlyPricingFromSnapshot(account.pricingSnapshot)
+      ?? (account.packagePlan ? hourlyPricingFromPackagePlan(account.packagePlan) : account.pricingVersion)
     if (!pricing) return reply.code(409).send({ error: 'Hourly billing pricing is missing', code: 'HOURLY_PRICING_MISSING' })
     const breakdown = calculateHourlyBreakdown({ cpu: instance.cpu, memory: instance.memory, disk: instance.disk }, pricing)
     return {
@@ -201,11 +213,12 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
   })
 
   fastify.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/instances/:id/hourly-billing/records', { onRequest: [fastify.authenticate] }, async (request, reply) => {
-    const id = Number(request.params.id)
+    const id = parsePositiveInteger(request.params.id)
+    if (id === null) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     const instance = await prisma.instance.findUnique({ where: { id }, include: { host: { select: { userId: true } } } })
     if (!instance || instance.billingMode !== 'hourly') return reply.code(404).send({ error: 'Hourly billing account not found' })
     if (!canAccessInstance(request.user, instance)) return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    const limit = Math.min(Math.max(Number(request.query.limit || 50), 1), 200)
+    const limit = parseLimit(request.query.limit, 50, 200)
     const records = await prisma.hourlyBillingRecord.findMany({ where: { instanceId: id }, orderBy: { periodEnd: 'desc' }, take: limit })
     return {
       records: records.map(record => ({
@@ -227,16 +240,36 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
     }
   })
 
-  fastify.post<{ Params: { id: string }; Body: HourlyResources }>('/instances/:id/hourly/resize-preview', { onRequest: [fastify.authenticateUser] }, async (request, reply) => {
+  fastify.post<{ Params: { id: string } }>('/instances/:id/hourly-billing/pay-debt', {
+    onRequest: [fastify.authenticateUser],
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
+  }, async (request, reply) => {
     const id = Number(request.params.id)
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
+    try {
+      const amount = await payClosedHourlyDebt(id, request.user.id)
+      return { instanceId: id, chargedAmount: serializeHourlyDecimal(amount) }
+    } catch (error) {
+      const message = errorMessage(error)
+      if (message === 'HOURLY_ACCOUNT_NOT_FOUND') return reply.code(404).send({ error: 'Hourly billing account not found', code: message })
+      if (message === 'HOURLY_ACCOUNT_NOT_CLOSED') return reply.code(409).send({ error: 'This hourly account is not closed', code: message })
+      if (message === 'BALANCE_INSUFFICIENT') return reply.code(400).send(apiError(ErrorCode.INSUFFICIENT_BALANCE))
+      return reply.code(400).send({ error: 'Unable to settle closed hourly debt', code: 'HOURLY_DEBT_SETTLEMENT_FAILED' })
+    }
+  })
+
+  fastify.post<{ Params: { id: string }; Body: HourlyResources }>('/instances/:id/hourly/resize-preview', { onRequest: [fastify.authenticateUser] }, async (request, reply) => {
+    const id = parsePositiveInteger(request.params.id)
+    if (id === null) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     const instance = await prisma.instance.findUnique({ where: { id }, include: { hourlyBillingAccount: { include: { packagePlan: true, pricingVersion: true } } } })
     if (!instance || instance.billingMode !== 'hourly' || !instance.hourlyBillingAccount) return reply.code(404).send({ error: 'Hourly instance not found' })
     if (instance.userId !== request.user.id && request.user.role !== 'admin') return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     try {
       const resources = parseResources(request.body)
-      const pricing = instance.hourlyBillingAccount.packagePlan
-        ? hourlyPricingFromPackagePlan(instance.hourlyBillingAccount.packagePlan)
-        : instance.hourlyBillingAccount.pricingVersion
+      const pricing = hourlyPricingFromSnapshot(instance.hourlyBillingAccount.pricingSnapshot)
+        ?? (instance.hourlyBillingAccount.packagePlan
+          ? hourlyPricingFromPackagePlan(instance.hourlyBillingAccount.packagePlan)
+          : instance.hourlyBillingAccount.pricingVersion)
       if (!pricing) throw new Error('Hourly billing pricing is missing')
       const breakdown = calculateHourlyBreakdown(resources, pricing)
       return { resources, pricing: serializePricing(pricing), breakdown: serializeBreakdown(breakdown) }
@@ -294,9 +327,10 @@ export default async function hourlyBillingRoutes(fastify: FastifyInstance) {
     }
   })
 
-  fastify.get<{ Querystring: { instanceId?: string; limit?: string } }>('/admin/hourly-billing/records', { onRequest: [fastify.authenticateAdmin] }, async request => {
-    const limit = Math.min(Math.max(Number(request.query.limit || 100), 1), 500)
-    const instanceId = request.query.instanceId ? Number(request.query.instanceId) : undefined
+  fastify.get<{ Querystring: { instanceId?: string; limit?: string } }>('/admin/hourly-billing/records', { onRequest: [fastify.authenticateAdmin] }, async (request, reply) => {
+    const limit = parseLimit(request.query.limit, 100, 500)
+    const instanceId = request.query.instanceId === undefined ? undefined : parsePositiveInteger(request.query.instanceId)
+    if (request.query.instanceId !== undefined && instanceId === null) return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     const records = await prisma.hourlyBillingRecord.findMany({ where: instanceId ? { instanceId } : undefined, orderBy: { periodEnd: 'desc' }, take: limit })
     return { records: records.map(record => ({ ...record, traffic: undefined, actualAmount: serializeHourlyDecimal(record.actualAmount), cpuAmount: serializeHourlyDecimal(record.cpuAmount), memoryAmount: serializeHourlyDecimal(record.memoryAmount), diskAmount: serializeHourlyDecimal(record.diskAmount), reserveAmount: serializeHourlyDecimal(record.reserveAmount), releaseAmount: serializeHourlyDecimal(record.releaseAmount) })) }
   })

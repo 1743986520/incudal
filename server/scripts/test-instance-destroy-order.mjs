@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 async function section(file, startToken, endToken) {
-  const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8')
+  const source = (await readFile(new URL(`../${file}`, import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
   const start = source.indexOf(startToken)
   assert.notEqual(start, -1, `${file}: missing section start`)
   const end = source.indexOf(endToken, start)
@@ -17,9 +17,18 @@ function position(source, token, label) {
 }
 
 function assertRemoteFirst(source, label) {
-  const remoteDelete = position(source, 'await deleteInstance(', label)
+  // Routes now use the stronger helper that confirms Incus returns 404 before
+  // settling billing. Keep the legacy direct-delete token for older paths.
+  const remoteDelete = ['await ensureInstanceDeleted(', 'await deleteInstance(']
+    .map(token => source.indexOf(token))
+    .filter(index => index !== -1)
+    .sort((a, b) => a - b)[0]
+  assert.notEqual(remoteDelete, undefined, `${label}: missing confirmed Incus deletion`)
   for (const [token, action] of [
     ['balance: { increment:', 'refund'],
+    ['await db.settleUserDestroyBilling(', 'user destroy billing settlement'],
+    ['await db.settlePrivilegedDeletionBilling(', 'privileged deletion billing settlement'],
+    ['await closeHourlyBilling(', 'hourly billing closure'],
     ['prisma.snapshot.deleteMany', 'related data cleanup'],
     ['db.rollbackResources(', 'quota/resource release']
   ]) {
@@ -45,7 +54,7 @@ const userSingle = await section(
   '\n  })\n}'
 )
 assertRemoteFirst(userSingle, 'single user destroy')
-assert.match(userSingle, /if \(!host\) \{\s*throw new Error\('Host not found'\)/)
+assert.match(userSingle, /if \(!host \|\| host\.status !== 'online'\) \{[\s\S]*?throw new Error\('Source host is unavailable'\)/)
 assert.match(userSingle, /catch \(error\) \{[\s\S]*?restoreClaimedInstanceStatus/)
 
 const genericDelete = await section(
@@ -70,10 +79,10 @@ const hostBatchDelete = await section(
   'const results: { id: number; name: string; success: boolean; error?: string; refundAmount?: number }[] = []',
   '// 删除宿主机（管理员或节点所有者）'
 )
-const hostRemoteDelete = position(hostBatchDelete, 'await incusInstanceOperations.deleteInstance(', 'host batch delete')
+const hostRemoteDelete = position(hostBatchDelete, 'await incusInstanceOperations.ensureInstanceDeleted(', 'host batch delete')
 assert.ok(hostRemoteDelete < position(hostBatchDelete, 'await deleteProxySite(', 'host batch delete'), 'host batch delete: related data cleanup must happen after Incus deletion')
 assert.ok(hostRemoteDelete < position(hostBatchDelete, 'await db.rollbackResources(', 'host batch delete'), 'host batch delete: quota/resource release must happen after Incus deletion')
-assert.ok(hostRemoteDelete < position(hostBatchDelete, 'balance: { increment:', 'host batch delete'), 'host batch delete: refund must happen after Incus deletion')
+assert.ok(hostRemoteDelete < position(hostBatchDelete, 'await db.settlePrivilegedDeletionBilling(', 'host batch delete'), 'host batch delete: refund must happen after Incus deletion')
 assert.match(hostBatchDelete, /if \(!databaseOnly\) \{\s*if \(!client \|\| !incusInstanceOperations\) \{[\s\S]*?throw new Error/)
 
 console.log('instance destroy ordering regression test passed')

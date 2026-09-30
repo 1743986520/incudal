@@ -36,7 +36,7 @@ import {
   isValidSystemImage
 } from '../db/images.js'
 import { sendAdminInstanceCreatedEmail, sendInstanceDestroyRefundEmail } from '../lib/mailer.js'
-import { closeHourlyBilling } from '../services/hourly-billing-scheduler.js'
+import { closeHourlyBilling, pauseHourlyBilling } from '../services/hourly-billing-scheduler.js'
 import { validateCommandsOwnership, mergeCommandContents, getImageDistroFromAlias } from '../db/custom-init-commands.js'
 import { customAlphabet } from 'nanoid'
 import { buildInstanceConfig, getIncusClient, createInstance, startInstance, getInstanceState, ensureInstanceDeleted } from '../lib/incus/index.js'
@@ -50,7 +50,7 @@ import { calculateInstanceTrafficStatus, calculatePlanChangeSettledBytes } from 
 import { normalizePlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js'
 import type { Host } from '../types/database.js'
 import { getInstanceBillingLineageIds } from '../db/billing-records.js'
-import { INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
+import { AdvisoryLockBusyError, INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { cleanupAndSettleFailedProvision } from '../services/provisioning-cleanup.js'
 
@@ -945,6 +945,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       if (instance.status === 'running') {
         try {
           const host = await db.getHostById(instance.hostId)
+          if (!host && instance.billingMode === 'hourly') {
+            return reply.status(503).send({ error: '按小时计费实例宿主机不可用，未封停', code: 'HOURLY_HOST_UNAVAILABLE' })
+          }
           if (host) {
             const { getIncusClient, stopInstance } = await import('../lib/incus/index.js')
             const client = await getIncusClient(host)
@@ -952,6 +955,22 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           }
         } catch (err) {
           request.log.warn(err, '停止实例失败')
+          if (instance.billingMode === 'hourly') {
+            return reply.status(502).send({
+              error: '无法确认按小时计费实例已停止，计费保持运行',
+              code: 'HOURLY_STOP_FAILED'
+            })
+          }
+        }
+      }
+
+      if (instance.billingMode === 'hourly') {
+        const billingPause = await pauseHourlyBilling(instanceId)
+        if (billingPause.suspended) {
+          return reply.status(409).send({
+            error: '按小时计费余额不足，实例已因欠费封停；请先结清欠费',
+            code: 'HOURLY_BALANCE_INSUFFICIENT'
+          })
         }
       }
 
@@ -1005,6 +1024,13 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       if (instance.status !== 'suspended') {
         return reply.status(400).send({ error: '实例未被封停' })
+      }
+
+      if (instance.billingMode === 'hourly' && instance.suspendReason === 'hourly_billing_insufficient_balance') {
+        return reply.status(409).send({
+          error: '按小时计费实例有未结清欠款；请由实例所有者结清后再解封',
+          code: 'HOURLY_DEBT_PAYMENT_REQUIRED'
+        })
       }
 
       // 解除封停
@@ -1278,7 +1304,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       // 退款上限必须在同一事务内重新计算。实例级 advisory lock 让同一实例的
       // 并发退款串行化，避免两个请求同时通过旧的可退余额检查。
-      const refundResult = await prisma.$transaction(async (tx) => {
+      const runRefundTransaction = () => prisma.$transaction(async (tx) => {
         await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
 
         const currentInstance = await tx.instance.findUnique({
@@ -1358,23 +1384,50 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable
       })
 
+      // Concurrent refunds may fail to acquire the nonblocking advisory lock
+      // or encounter a SERIALIZABLE conflict. Retry the entire transaction so
+      // the next attempt observes the newly reduced refundable amount.
+      let refundResult: Awaited<ReturnType<typeof runRefundTransaction>>
+      for (let attempt = 0; ; attempt++) {
+        try {
+          refundResult = await runRefundTransaction()
+          break
+        } catch (error) {
+          const retryable = error instanceof AdvisoryLockBusyError
+            || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034')
+          if (attempt >= 5 || !retryable) {
+            throw error
+          }
+          await new Promise(resolve => setTimeout(resolve, 20 * (attempt + 1)))
+        }
+      }
+
       const maxRefundable = refundResult.maxRefundable
 
-      await createLog(
-        admin.id,
-        'admin',
-        'instance.admin_refund',
-        `Admin refunded ${refundAmount} for instance "${refundResult.instance.name}" (User: ${refundResult.instance.user?.username}): ${reason}`,
-        'success',
-        { instanceId }
-      )
+      // The financial transaction has committed. A failed audit notification
+      // must not turn a completed refund into an HTTP 500 that invites a retry.
+      try {
+        await createLog(
+          admin.id,
+          'admin',
+          'instance.admin_refund',
+          `Admin refunded ${refundAmount} for instance "${refundResult.instance.name}" (User: ${refundResult.instance.user?.username}): ${reason}`,
+          'success',
+          { instanceId }
+        )
+      } catch (error) {
+        request.log.error(error, '退款已入账，但管理员操作日志写入失败')
+      }
 
-      // 通知用户
-      await sendNotification(refundResult.instance.userId, 'refund_completed', {
-        instanceName: refundResult.instance.name,
-        amount: refundAmount,
-        reason
-      })
+      try {
+        await sendNotification(refundResult.instance.userId, 'refund_completed', {
+          instanceName: refundResult.instance.name,
+          amount: refundAmount,
+          reason
+        })
+      } catch (error) {
+        request.log.error(error, '退款已入账，但用户通知发送失败')
+      }
 
       return {
         success: true,
@@ -1394,6 +1447,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       }
       if (error instanceof Error && error.message === 'INSTANCE_NOT_REFUNDABLE_AFTER_DELETION') {
         return reply.status(400).send({ error: '实例已删除或正在结算，不能通过普通退款接口再次退款' })
+      }
+      if (error instanceof AdvisoryLockBusyError) {
+        return reply.status(409).send({ error: '该实例正在处理其他账务操作，请稍后重试' })
       }
       return reply.status(500).send({ error: '退款失败' })
     }

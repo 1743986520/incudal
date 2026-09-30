@@ -8,6 +8,9 @@ import type { TelegramBindingStatus } from '@/types/api'
 
 const { locale, t } = useI18n()
 const toast = useToast()
+const emit = defineEmits<{
+  'binding-updated': [bound: boolean]
+}>()
 
 const loading = ref(false)
 const generating = ref(false)
@@ -15,6 +18,7 @@ const unlinking = ref(false)
 const bindUrl = ref('')
 const expiresAt = ref('')
 const status = ref<TelegramBindingStatus>({
+  required: false,
   enabled: false,
   configured: false,
   botUsername: null,
@@ -52,8 +56,10 @@ async function loadBinding(): Promise<void> {
   loading.value = true
   try {
     status.value = await api.telegram.getBinding()
+    emit('binding-updated', Boolean(status.value.binding))
   } catch (error) {
     console.error('Failed to load Telegram binding:', error)
+    emit('binding-updated', false)
   } finally {
     loading.value = false
   }

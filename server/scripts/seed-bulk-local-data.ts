@@ -1347,6 +1347,7 @@ async function syncInstanceChildren(
       data: [
         {
           instanceId,
+          hostId,
           address: spec.ipv6,
           type: 'inet6',
           isPrimary: true,
@@ -1357,6 +1358,7 @@ async function syncInstanceChildren(
           ? [
               {
                 instanceId,
+                hostId,
                 address: `${spec.ipv6.split('::')[0]}::${400 + index}`,
                 type: 'inet6',
                 isPrimary: false,

@@ -2084,14 +2084,18 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
         callbackData: { manual: true, operator: request.user!.username }
       })
 
-      // 记录管理员操作日志
-      await createLog(
-        request.user!.id,
-        'admin',
-        'recharge.manual_complete',
-        `Admin manually completed recharge order ${orderNo} for user ${record.userId}, amount: ${Number(record.amount)}`,
-        'success'
-      )
+      // 入账已提交；审计日志失败不能让已完成的订单返回 500，诱发重试。
+      try {
+        await createLog(
+          request.user!.id,
+          'admin',
+          'recharge.manual_complete',
+          `Admin manually completed recharge order ${orderNo} for user ${record.userId}, amount: ${Number(record.amount)}`,
+          'success'
+        )
+      } catch (error) {
+        request.log.error(error, '订单已完成，但管理员操作日志写入失败')
+      }
 
       return { success: true, message: '订单已手动完成' }
     } catch (error) {

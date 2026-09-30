@@ -5,7 +5,37 @@ import i18n, { getLocale, initLocale } from './locales'
 import App from './App.vue'
 import './styles/main.css'
 import { applySeoTracking } from './utils/seoTracking'
+import { reloadOnceForChunkError } from './utils/chunkReload'
 // flag-icons CSS 改为懒加载，在 FlagIcon.vue 组件首次使用时动态导入，避免全量加载到首屏
+
+// The old Service Worker duplicated static assets in CacheStorage and could
+// keep serving stale chunks after a deploy. Retire only our root worker and
+// remove only caches owned by Incudal; do not touch other site storage.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  void (async () => {
+    const registration = await navigator.serviceWorker.getRegistration('/')
+    const workers = [registration?.active, registration?.waiting, registration?.installing]
+    const hasLegacyWorker = workers.some(worker => worker && new URL(worker.scriptURL).pathname === '/sw.js')
+    if (registration && hasLegacyWorker) await registration.unregister()
+
+    if ('caches' in window) {
+      const names = await caches.keys()
+      await Promise.all(names
+        .filter(name => name.startsWith('incudal-cache-'))
+        .map(name => caches.delete(name)))
+    }
+
+    // Unregistering does not release the controller of the current document.
+    // One bounded reload switches the tab to ordinary network requests.
+    if (hasLegacyWorker && navigator.serviceWorker.controller) {
+      const key = 'incudal.sw-retired-reload'
+      if (sessionStorage.getItem(key) !== '1') {
+        sessionStorage.setItem(key, '1')
+        window.location.reload()
+      }
+    }
+  })().catch(error => console.warn('Legacy Service Worker cleanup failed:', error))
+}
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -24,9 +54,7 @@ app.config.errorHandler = (err, _instance, info) => {
         errorMessage.includes('Loading chunk') ||
         errorMessage.includes('ChunkLoadError')) {
       console.warn('检测到代码块加载失败，尝试重新加载页面')
-      setTimeout(() => {
-        window.location.reload()
-      }, 1000)
+      setTimeout(reloadOnceForChunkError, 1000)
       return
     }
   }
@@ -62,28 +90,4 @@ initLocale().finally(() => {
   document.documentElement.lang = getLocale()
   app.mount('#app')
 
-  // 注册 Service Worker（仅生产环境）
-  if ('serviceWorker' in navigator && import.meta.env.PROD) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then(registration => {
-          console.log('Service Worker 注册成功:', registration.scope)
-
-          // 检测更新
-          registration.addEventListener('updatefound', () => {
-            const newWorker = registration.installing
-            if (newWorker) {
-              newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  console.log('有新版本可用，刷新页面后生效')
-                }
-              })
-            }
-          })
-        })
-        .catch(error => {
-          console.warn('Service Worker 注册失败:', error)
-        })
-    })
-  }
 })

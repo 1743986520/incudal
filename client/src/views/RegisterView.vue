@@ -324,10 +324,10 @@ async function handleRegister(): Promise<void> {
     success.value = true
     // Clean up countdown timer
     clearCountdownTimer()
-    // 注册成功后自动登录并跳转到后台
-    // 管理员跳转到用户管理页面，普通用户跳转到 dashboard
+    // 注册成功后引导普通用户先完成 Telegram 绑定
+    // 管理员跳转到用户管理页面
     // 优化：减少延迟时间从 1.5 秒到 0.5 秒
-    const targetRoute = authStore.isAdmin ? '/admin/users' : '/'
+    const targetRoute = authStore.isAdmin ? '/admin/users' : '/telegram/bind-required'
     setTimeout(() => router.push(targetRoute), 500)
   } catch (err: any) {
     error.value = translateError(err)

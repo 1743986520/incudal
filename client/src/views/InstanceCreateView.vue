@@ -123,6 +123,7 @@ const regionsLoading = ref<boolean>(false)
 const packages = ref<Package[]>([])
 const userQuota = ref<UserQuota | null>(null)
 const availableHosts = ref<AvailableHost[]>([])
+let availableHostsRequestSeq = 0
 const availableImages = ref<ImageOption[]>([])
 // System images cache: key = `${hostId}:${instanceType}:${memory <= 128 ? 'low' : 'high'}`, TTL 120s
 const systemImageCache = new Map<string, { images: ImageOption[]; ts: number }>()
@@ -131,6 +132,7 @@ const packagePlans = ref<PackagePlan[]>([])
 const hourlyQuote = ref<{ hourlyPrice: string } | null>(null)
 const hourlyQuoteLoading = ref(false)
 let hourlyQuoteRequestSeq = 0
+let hourlyQuoteTimer: ReturnType<typeof setTimeout> | null = null
 const imagesLoading = ref<boolean>(false)
 const hostsLoading = ref<boolean>(false)
 const plansLoading = ref<boolean>(false)
@@ -656,7 +658,10 @@ function selectRegion(regionCode: string | null): void {
 
 async function selectPackage(pkg: Package, preferredPlanId?: number | null): Promise<void> {
   isSwitchingPackage.value = true  // 开始切换套餐
+  availableHostsRequestSeq += 1
+  hostsLoading.value = false
   hourlyQuoteRequestSeq += 1
+  if (hourlyQuoteTimer) clearTimeout(hourlyQuoteTimer)
   hourlyQuote.value = null
   
   form.value.packageId = pkg.id
@@ -782,7 +787,7 @@ function selectPlan(plan: PackagePlan): void {
   form.value.cpu = plan.billingMode === 'hourly' ? (plan.hourlyMinCpu ?? plan.cpu) : plan.cpu
   form.value.memory = plan.billingMode === 'hourly' ? (plan.hourlyMinMemoryMb ?? plan.memory) : plan.memory
   form.value.disk = plan.billingMode === 'hourly' ? (plan.hourlyMinDiskMb ?? plan.disk) : plan.disk
-  void loadHourlyPlanQuote(plan)
+  if (plan.billingMode === 'hourly') scheduleHourlyQuote()
   // 重置优惠码状态
   resetPromoCode()
   // 加载可用宿主机
@@ -799,14 +804,11 @@ async function loadHourlyPlanQuote(plan: PackagePlan): Promise<void> {
 
   hourlyQuoteLoading.value = true
   try {
-    const cpu = plan.billingMode === 'hourly' ? (plan.hourlyMinCpu ?? plan.cpu) : plan.cpu
-    const memory = plan.billingMode === 'hourly' ? (plan.hourlyMinMemoryMb ?? plan.memory) : plan.memory
-    const disk = plan.billingMode === 'hourly' ? (plan.hourlyMinDiskMb ?? plan.disk) : plan.disk
     const response = await api.instances.hourlyQuote({
       planId: plan.id,
-      cpu,
-      memory,
-      disk
+      cpu: form.value.cpu,
+      memory: form.value.memory,
+      disk: form.value.disk
     })
     if (requestSeq === hourlyQuoteRequestSeq) {
       hourlyQuote.value = { hourlyPrice: response.breakdown.hourlyPrice }
@@ -820,7 +822,17 @@ async function loadHourlyPlanQuote(plan: PackagePlan): Promise<void> {
 
 function formatHourlyPlanPrice(value: string | null | undefined): string {
   const price = Number(value)
-  return Number.isFinite(price) ? price.toFixed(2) : '-'
+  return Number.isFinite(price) ? price.toFixed(8).replace(/\.?0+$/, '') : '-'
+}
+
+function scheduleHourlyQuote(): void {
+  if (hourlyQuoteTimer) clearTimeout(hourlyQuoteTimer)
+  hourlyQuote.value = null
+  hourlyQuoteLoading.value = true
+  hourlyQuoteTimer = setTimeout(() => {
+    if (selectedPlan.value) void loadHourlyPlanQuote(selectedPlan.value)
+    else hourlyQuoteLoading.value = false
+  }, 250)
 }
 
 /**
@@ -949,6 +961,7 @@ async function loadHostOwnerInfo(packageId: number): Promise<void> {
 }
 
 async function loadAvailableHosts(): Promise<void> {
+  const requestSeq = ++availableHostsRequestSeq
   if (!form.value.packageId) {
     availableHosts.value = []
     form.value.hostId = null
@@ -975,6 +988,7 @@ async function loadAvailableHosts(): Promise<void> {
       memory: form.value.memory,
       disk: form.value.disk
     })
+    if (requestSeq !== availableHostsRequestSeq) return
     availableHosts.value = res.hosts || []
 
     if (availableHosts.value.length === 0) {
@@ -989,6 +1003,7 @@ async function loadAvailableHosts(): Promise<void> {
       form.value.hostId = availableHosts.value[0].id
     }
   } catch (err: any) {
+    if (requestSeq !== availableHostsRequestSeq) return
     availableHosts.value = []
     form.value.hostId = null
     availableImages.value = []
@@ -999,7 +1014,7 @@ async function loadAvailableHosts(): Promise<void> {
       toast.error(t('instance.createPage.packageNoHosts'))
     }
   } finally {
-    hostsLoading.value = false
+    if (requestSeq === availableHostsRequestSeq) hostsLoading.value = false
   }
 }
 
@@ -1020,10 +1035,10 @@ watch(() => form.value.packageId, () => {
 })
 
 watch([() => form.value.cpu, () => form.value.memory, () => form.value.disk], () => {
-  // 付费套餐不需要监听资源变化（配置固定）
-  // 切换套餐时也不触发（避免用旧资源值查询）
-  if (form.value.packageId && !isPaidPackage.value && !isSwitchingPackage.value) {
+  // 按小时方案允许创建时选择资源；普通付费方案的配置仍由方案固定。
+  if (form.value.packageId && (!isPaidPackage.value || isHourlyPlan.value) && !isSwitchingPackage.value) {
     loadAvailableHosts()
+    if (isHourlyPlan.value) scheduleHourlyQuote()
   }
 }, { immediate: false })
 
@@ -1315,15 +1330,38 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
               :custom-plan-hint="getCreatePageText('customPlanHint')"
               @select="selectPlan"
             />
+            <div v-if="isHourlyPlan && selectedPlan && !prerequisiteMissing" class="card p-4 sm:p-5">
+              <div class="mb-4">
+                <h3 class="font-semibold text-themed">{{ $t('hourlyBilling.createResourceTitle') }}</h3>
+                <p class="mt-1 text-xs text-themed-muted">{{ $t('hourlyBilling.createResourceHint') }}</p>
+              </div>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label class="min-w-0">
+                  <span class="label text-xs text-themed-muted">{{ $t('hourlyBilling.cpu') }}</span>
+                  <input v-model.number="form.cpu" type="number" class="input w-full" :min="selectedPlan.hourlyMinCpu" :max="10000" :step="selectedPlan.hourlyCpuUnitPercent" />
+                  <span class="mt-1 block text-[11px] text-themed-muted">{{ $t('hourlyBilling.resourceMinStep', { min: selectedPlan.hourlyMinCpu, step: selectedPlan.hourlyCpuUnitPercent, unit: '%' }) }}</span>
+                </label>
+                <label class="min-w-0">
+                  <span class="label text-xs text-themed-muted">{{ $t('hourlyBilling.memory') }} (MB)</span>
+                  <input v-model.number="form.memory" type="number" class="input w-full" :min="selectedPlan.hourlyMinMemoryMb" :max="524288" :step="selectedPlan.hourlyMemoryUnitMb" />
+                  <span class="mt-1 block text-[11px] text-themed-muted">{{ $t('hourlyBilling.resourceMinStep', { min: selectedPlan.hourlyMinMemoryMb, step: selectedPlan.hourlyMemoryUnitMb, unit: ' MB' }) }}</span>
+                </label>
+                <label class="min-w-0">
+                  <span class="label text-xs text-themed-muted">{{ $t('hourlyBilling.disk') }} (MB)</span>
+                  <input v-model.number="form.disk" type="number" class="input w-full" :min="selectedPlan.hourlyMinDiskMb" :max="104857600" :step="selectedPlan.hourlyDiskUnitMb" />
+                  <span class="mt-1 block text-[11px] text-themed-muted">{{ $t('hourlyBilling.resourceMinStep', { min: selectedPlan.hourlyMinDiskMb, step: selectedPlan.hourlyDiskUnitMb, unit: ' MB' }) }}</span>
+                </label>
+              </div>
+            </div>
             <div
-              v-else-if="prerequisiteMissing"
+              v-if="!isPaidPackage && prerequisiteMissing"
               class="rounded-lg border px-4 py-3 text-sm"
               :class="themeStore.isDark ? 'border-amber-500/30 bg-amber-900/20 text-amber-300' : 'border-amber-200 bg-amber-50 text-amber-700'"
             >
               {{ prerequisiteMessage }}
             </div>
             <ResourceSliders
-              v-else
+              v-if="!isPaidPackage && !prerequisiteMissing"
               :selected-package="selectedPackage || null"
               :user-quota="userQuota"
               :cpu="form.cpu"
@@ -1389,15 +1427,15 @@ async function continueAfterSshKeyGeneration(): Promise<void> {
                     </span>
                   </div>
                   <div class="grid grid-cols-4 gap-3 text-center">
-                    <div><div class="text-lg font-bold" :class="themeStore.isDark ? 'text-white' : 'text-gray-900'">{{ selectedPlan.cpu }}%</div><div class="text-xs text-themed-muted">CPU</div></div>
+                    <div><div class="text-lg font-bold" :class="themeStore.isDark ? 'text-white' : 'text-gray-900'">{{ isHourlyPlan ? form.cpu : selectedPlan.cpu }}%</div><div class="text-xs text-themed-muted">CPU</div></div>
                     <div>
-                      <div class="text-lg font-bold" :class="themeStore.isDark ? 'text-white' : 'text-gray-900'">{{ formatMemory(selectedPlan.memory) }}</div>
+                      <div class="text-lg font-bold" :class="themeStore.isDark ? 'text-white' : 'text-gray-900'">{{ formatMemory(isHourlyPlan ? form.memory : selectedPlan.memory) }}</div>
                       <div class="text-xs text-themed-muted leading-tight">
                         <div>{{ $t('instance.memory') }}</div>
                         <div v-if="selectedPackage?.instance_type !== 'vm' && selectedPlan.swapSize > 0" class="opacity-60">SWAP ✅</div>
                       </div>
                     </div>
-                    <div><div class="text-lg font-bold" :class="themeStore.isDark ? 'text-white' : 'text-gray-900'">{{ formatDisk(selectedPlan.disk) }}</div><div class="text-xs text-themed-muted">{{ $t('instance.disk') }}</div></div>
+                    <div><div class="text-lg font-bold" :class="themeStore.isDark ? 'text-white' : 'text-gray-900'">{{ formatDisk(isHourlyPlan ? form.disk : selectedPlan.disk) }}</div><div class="text-xs text-themed-muted">{{ $t('instance.disk') }}</div></div>
                     <div><div class="text-lg font-bold" :class="themeStore.isDark ? 'text-white' : 'text-gray-900'">{{ formatTraffic(selectedPlan.trafficLimit) }}</div><div class="text-xs text-themed-muted">{{ $t('billing.traffic') }} <span class="opacity-60">({{ $t('billing.trafficBidirectional') }})</span></div></div>
                   </div>
                   <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 pt-3 border-t text-xs" :class="themeStore.isDark ? 'border-blue-500/20' : 'border-blue-200'">

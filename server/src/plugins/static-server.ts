@@ -104,10 +104,18 @@ export async function registerStaticServer(
           res.header('Content-Type', 'text/html; charset=utf-8')
           res.header('Cache-Control', 'no-cache, no-store, must-revalidate')
         }
-        if (pathName.endsWith('theme-init.js')) {
+        const normalizedPath = pathName.replace(/\\/g, '/')
+        const isHashedAsset = /\/assets\/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/.test(normalizedPath)
+        if (pathName.endsWith('sw.js')) {
+          // The worker URL is not fingerprinted. Never pin a stale worker for
+          // a year; the current script retires old registrations and caches.
+          res.header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        } else if (pathName.endsWith('theme-init.js')) {
           res.header('Cache-Control', 'no-cache, must-revalidate')
+        } else if (isHashedAsset) {
+          res.header('Cache-Control', 'public, max-age=604800, immutable')
         } else if (!pathName.endsWith('.html')) {
-          res.header('Cache-Control', 'public, max-age=31536000, immutable')
+          res.header('Cache-Control', 'public, max-age=3600, must-revalidate')
         }
       } catch (error) {
         // 忽略设置响应头时的错误

@@ -20,7 +20,6 @@ interface NormalizedAgentInstanceItem {
   status: InstanceStatus | null
   rxBytes: bigint | null
   txBytes: bigint | null
-  ipv4?: string | null
   ipv6?: string | null
 }
 
@@ -152,7 +151,6 @@ function normalizeAgentInstanceItems(payload: unknown): NormalizedAgentInstanceI
       status: normalizeStatus(rawItem.status),
       rxBytes: parseCounter(traffic.rxBytes),
       txBytes: parseCounter(traffic.txBytes),
-      ipv4: normalizeNetworkAddress(network.ipv4),
       ipv6: normalizeReportedIpv6(network.ipv6)
     })
   }
@@ -198,9 +196,8 @@ function buildStatusUpdateData(item: NormalizedAgentInstanceItem, now: Date): {
     lastSyncedAt: now
   }
 
-  if (item.ipv4 !== undefined) {
-    data.ipv4 = item.ipv4
-  }
+  // IPv4 is assigned by panel workflows. Do not persist the host agent's
+  // observed address here: guest-created bridges can be reported as global.
   if (item.ipv6 !== undefined) {
     data.ipv6 = item.ipv6
   }

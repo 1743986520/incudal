@@ -515,6 +515,13 @@ const isHourlyBillingSuspension = computed<boolean>(() => {
   const inst = instance.value as { suspendReason?: string | null; suspend_reason?: string | null } | null
   return (inst?.suspendReason ?? inst?.suspend_reason) === 'hourly_billing_insufficient_balance'
 })
+const isClosedHourlyDebt = computed<boolean>(() =>
+  hourlyBilling.value?.status === 'closed' && Number(hourlyBilling.value.outstandingAmount) > 0
+)
+const canPayClosedHourlyDebt = computed<boolean>(() => {
+  const inst = instance.value as { isInstanceOwner?: boolean } | null
+  return isClosedHourlyDebt.value && inst?.isInstanceOwner === true
+})
 const canUnsuspend = computed<boolean>(() => {
   const inst = instance.value as { isHostOwner?: boolean; isInstanceOwner?: boolean } | null
   return inst?.isHostOwner === true || (inst?.isInstanceOwner === true && (isTrafficBillingSuspension.value || isHourlyBillingSuspension.value))
@@ -1696,6 +1703,21 @@ async function handleUnsuspend(): Promise<void> {
   }
 }
 
+async function handlePayClosedHourlyDebt(): Promise<void> {
+  if (!instance.value || !canPayClosedHourlyDebt.value || !hourlyBilling.value) return
+  if (!confirm(t('hourlyBilling.confirmClosedDebt', { amount: formatHourlyMoney(hourlyBilling.value.outstandingAmount) }))) return
+  suspendLoading.value = true
+  try {
+    await api.instances.payClosedHourlyDebt(instance.value.id)
+    toast.success(t('hourlyBilling.closedDebtPaidSuccess'))
+    await loadInstance()
+  } catch (err: any) {
+    toast.error(translateError(err))
+  } finally {
+    suspendLoading.value = false
+  }
+}
+
 // 同步实例状态
 async function handleSyncStatus(): Promise<void> {
   if (!instance.value) return
@@ -2428,7 +2450,7 @@ function formatShortDate(dateStr: string | null | undefined): string {
 
 function formatHourlyMoney(value: string | number | null | undefined): string {
   const amount = Number(value)
-  return Number.isFinite(amount) ? amount.toFixed(4) : '-'
+  return Number.isFinite(amount) ? amount.toFixed(8).replace(/\.?0+$/, '') : '-'
 }
 
 function formatHourlyDate(value: string | null | undefined): string {
@@ -3195,9 +3217,12 @@ function formatHourlyDate(value: string | null | undefined): string {
                 </div>
               </div>
 
-              <div v-if="isHourlyBillingSuspension" class="mt-4 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <p class="text-sm text-amber-600 dark:text-amber-300">{{ $t('hourlyBilling.debtHint') }}</p>
-                <button v-if="canUnsuspend && !canSuspend" type="button" class="btn-primary btn-sm shrink-0" :disabled="suspendLoading" @click="handleUnsuspend">
+              <div v-if="isHourlyBillingSuspension || isClosedHourlyDebt" class="mt-4 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <p class="text-sm text-amber-600 dark:text-amber-300">{{ $t(isClosedHourlyDebt ? 'hourlyBilling.closedDebtHint' : 'hourlyBilling.debtHint') }}</p>
+                <button v-if="canPayClosedHourlyDebt" type="button" class="btn-primary btn-sm shrink-0" :disabled="suspendLoading" @click="handlePayClosedHourlyDebt">
+                  {{ suspendLoading ? $t('common.processing') : $t('hourlyBilling.payClosedDebt') }}
+                </button>
+                <button v-if="!isClosedHourlyDebt && canUnsuspend && !canSuspend" type="button" class="btn-primary btn-sm shrink-0" :disabled="suspendLoading" @click="handleUnsuspend">
                   {{ suspendLoading ? $t('common.processing') : $t('hourlyBilling.payDebt') }}
                 </button>
               </div>

@@ -73,6 +73,64 @@ const TIMEOUT_CHECK_INTERVAL = 60000
 // 每宿主机轻量任务并发数
 const LIGHT_TASK_CONCURRENCY = 5
 
+async function ensureHourlyBillingActivation(instanceId: number): Promise<void> {
+  const account = await prisma.hourlyBillingAccount.findUnique({
+    where: { instanceId },
+    select: { id: true }
+  })
+  if (!account) return
+  if (!await activateHourlyBilling(instanceId)) {
+    throw new Error('HOURLY_BILLING_ACTIVATION_FAILED')
+  }
+}
+
+/**
+ * Reconcile hourly billing after a failed power/rebuild operation. These
+ * operations pause billing while the guest is expected to be stopped; if the
+ * external operation fails while Incus leaves it running, the account must be
+ * reactivated instead of silently granting free runtime.
+ */
+async function recoverHourlyBillingAfterTaskFailure(
+  instanceId: number,
+  preferredClient?: Awaited<ReturnType<typeof getIncusClient>> | null
+): Promise<void> {
+  const current = await prisma.instance.findUnique({
+    where: { id: instanceId },
+    select: { billingMode: true, incusId: true, hostId: true, status: true, suspendReason: true }
+  })
+  if (!current || current.billingMode !== 'hourly') return
+
+  const host = await db.getHostById(current.hostId)
+  if (!host) throw new Error('Hourly recovery host not found')
+  const client = preferredClient ?? await getIncusClient(host)
+  const state = await getInstanceState(client, current.incusId) as { status?: string }
+
+  if (state.status === 'Running' && current.status !== 'suspended') {
+    await prisma.instance.updateMany({
+      where: { id: instanceId, status: { in: ['running', 'stopped'] } },
+      data: { status: 'running', lastSyncedAt: new Date(), version: { increment: 1 } }
+    })
+    await ensureHourlyBillingActivation(instanceId)
+    return
+  }
+
+  if (state.status === 'Running' && current.status === 'suspended') {
+    // A suspended guest must not be revived by failure recovery. Stop it first,
+    // then settle/release only after the stop has been confirmed.
+    await stopInstance(client, current.incusId, true)
+  }
+
+  if (state.status === 'Stopped' || current.status === 'suspended') {
+    if (current.status !== 'suspended') {
+      await prisma.instance.updateMany({
+        where: { id: instanceId, status: { in: ['running', 'stopped'] } },
+        data: { status: 'stopped', lastSyncedAt: new Date(), version: { increment: 1 } }
+      })
+    }
+    await pauseHourlyBilling(instanceId)
+  }
+}
+
 // 轻量任务类型（可并行执行）
 const LIGHT_TASK_NAMES = new Set(['start', 'stop', 'restart'])
 
@@ -96,8 +154,18 @@ function isAlpineImageAlias(imageAlias?: string | null): boolean {
  */
 function extractIPv4(state: { network?: Record<string, { addresses?: Array<{ family: string; address: string; scope?: string }> }> }): string | null {
   if (!state.network) return null
+  const eth0 = state.network.eth0
+  if (eth0?.addresses) {
+    for (const addr of eth0.addresses) {
+      if (addr.family === 'inet' && addr.scope === 'global') {
+        return addr.address
+      }
+    }
+  }
+
+  const skippedPrefixes = ['lo', 'docker', 'br-', 'veth', 'warp', 'CloudflareWARP']
   for (const [iface, info] of Object.entries(state.network)) {
-    if (iface === 'lo') continue
+    if (skippedPrefixes.some(prefix => iface === prefix || iface.startsWith(prefix))) continue
     const addrs = info.addresses || []
     for (const addr of addrs) {
       if (addr.family === 'inet' && addr.scope === 'global') {
@@ -483,6 +551,7 @@ async function executeTask(taskId: number): Promise<void> {
 
   console.log(`[InstanceTaskWorker] 开始执行任务 ${taskId} (${task.taskType})`)
 
+  let incusClient: Awaited<ReturnType<typeof getIncusClient>> | null = null
   try {
     const instance = await db.getInstanceById(task.instanceId)
     if (!instance) throw new Error('实例不存在')
@@ -508,7 +577,8 @@ async function executeTask(taskId: number): Promise<void> {
     if (!host) throw new Error('宿主机不存在')
 
     const clientStartTime = Date.now()
-    const client = await getIncusClient(host)
+    incusClient = await getIncusClient(host)
+    const client = incusClient
     const clientDuration = Date.now() - clientStartTime
 
     // 记录连接池响应时间
@@ -575,6 +645,14 @@ async function executeTask(taskId: number): Promise<void> {
       }).catch(() => {})
       console.warn(`[InstanceTaskWorker] Task ${taskId} stopped after losing its execution lease; task remains quarantined`)
       return
+    }
+
+    if (['start', 'stop', 'restart', 'rebuild', 'recreate'].includes(task.taskType)) {
+      try {
+        await recoverHourlyBillingAfterTaskFailure(task.instanceId, incusClient)
+      } catch (recoveryError) {
+        console.error(`[InstanceTaskWorker] Hourly billing recovery failed for instance ${task.instanceId}:`, recoveryError)
+      }
     }
 
     const failed = await finishInstanceTaskExecution(prisma, taskId, executionToken, 'FAILED', {
@@ -683,7 +761,7 @@ async function executeStartTask(
       const ipv4 = extractIPv4(state)
       const ipv6 = extractIPv6(state)
       await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
-      await activateHourlyBilling(task.instanceId)
+      await ensureHourlyBillingActivation(task.instanceId)
       const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
       await reconcileTrafficStateForInstanceIds([task.instanceId])
 
@@ -700,6 +778,11 @@ async function executeStartTask(
     }
     throw err // 其他错误继续抛出
   }
+
+  // Incus waits for the start operation to finish. Start charging now rather
+  // than after the later IP-discovery loop, which can take up to three minutes.
+  await db.updateInstanceStatus(task.instanceId, 'running')
+  await ensureHourlyBillingActivation(task.instanceId)
 
   // 等待网络初始化
   let ipv4: string | null = null
@@ -741,7 +824,7 @@ async function executeStartTask(
   }
 
   await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
-  await activateHourlyBilling(task.instanceId)
+  await ensureHourlyBillingActivation(task.instanceId)
   const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
   await reconcileTrafficStateForInstanceIds([task.instanceId])
 
@@ -788,8 +871,8 @@ async function executeStopTask(
     // 如果 Incus 返回 "已经是停止状态"，自动修正数据库状态
     if (err instanceof Error && isAlreadyInStateError(err, 'stopped')) {
       console.log(`[Stop] 实例 ${instance.incus_id} 已经是停止状态，自动修正数据库`)
-      await pauseHourlyBilling(task.instanceId)
-      await db.updateInstanceStatus(task.instanceId, 'stopped')
+      const billingPause = await pauseHourlyBilling(task.instanceId)
+      if (!billingPause.suspended) await db.updateInstanceStatus(task.instanceId, 'stopped')
 
       // 发送通知（状态已同步）
       await sendNotification(task.userId, 'instance_stopped', {
@@ -802,8 +885,8 @@ async function executeStopTask(
     }
     throw err // 其他错误继续抛出
   }
-  await pauseHourlyBilling(task.instanceId)
-  await db.updateInstanceStatus(task.instanceId, 'stopped')
+  const billingPause = await pauseHourlyBilling(task.instanceId)
+  if (!billingPause.suspended) await db.updateInstanceStatus(task.instanceId, 'stopped')
 
   await sendNotification(task.userId, 'instance_stopped', {
     instanceName: instance.name,
@@ -826,7 +909,8 @@ async function executeRestartTask(
   await updateProgress('restarting')
 
   // 重启期间按停止状态计费：先结算并释放本轮预付款，重新运行后由激活流程重新冻结。
-  await pauseHourlyBilling(task.instanceId)
+  const billingPause = await pauseHourlyBilling(task.instanceId)
+  if (billingPause.suspended) throw new Error('HOURLY_BILLING_BALANCE_INSUFFICIENT')
 
   const collectResult = await collectTrafficForRunningInstance(task.instanceId)
   if (!collectResult.success) {
@@ -882,6 +966,11 @@ async function executeRestartTask(
     }
   }
 
+  // Restart completion means the guest is running; do not leave the account
+  // paused while waiting for DHCP / IPv6 to become visible.
+  await db.updateInstanceStatus(task.instanceId, 'running')
+  await ensureHourlyBillingActivation(task.instanceId)
+
   // 等待网络初始化
   let ipv4: string | null = null
   let ipv6: string | null = null
@@ -922,7 +1011,7 @@ async function executeRestartTask(
   }
 
   await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
-  await activateHourlyBilling(task.instanceId)
+  await ensureHourlyBillingActivation(task.instanceId)
 
   await sendNotification(task.userId, 'instance_restarted', {
     instanceName: instance.name,
@@ -949,7 +1038,8 @@ async function executeRebuildTask(
   const allowCancelBusyUpdate = isAlpineImageAlias(instance.image) || isAlpineImageAlias(imageAlias)
 
   // 重装过程中实例不运行，不应继续累计小时费用。
-  await pauseHourlyBilling(task.instanceId)
+  const billingPause = await pauseHourlyBilling(task.instanceId)
+  if (billingPause.suspended) throw new Error('HOURLY_BILLING_BALANCE_INSUFFICIENT')
 
   // 关闭该实例的所有终端连接
   const closedSessions = closeInstanceSessions(task.instanceId, 'Instance is being rebuilt')
@@ -1228,6 +1318,11 @@ async function executeRebuildTask(
     }
   }
 
+  // The rebuild start operation is complete, so resume billing before waiting
+  // for guest networking. IP discovery must not create free billable runtime.
+  await db.updateInstanceStatus(task.instanceId, 'running')
+  await ensureHourlyBillingActivation(task.instanceId)
+
   // 等待网络初始化
   let ipv4: string | null = null
   let ipv6: string | null = null
@@ -1265,7 +1360,7 @@ async function executeRebuildTask(
   }
 
   await db.updateInstanceStatus(task.instanceId, 'running', { ipv4, ipv6 })
-  await activateHourlyBilling(task.instanceId)
+  await ensureHourlyBillingActivation(task.instanceId)
   const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
   await reconcileTrafficStateForInstanceIds([task.instanceId])
 
@@ -1319,7 +1414,8 @@ async function executeRecreateTask(
   }
 
   // 重建会替换底层实例，旧实例停止到新实例启动前不计小时费用。
-  await pauseHourlyBilling(task.instanceId)
+  const billingPause = await pauseHourlyBilling(task.instanceId)
+  if (billingPause.suspended) throw new Error('HOURLY_BILLING_BALANCE_INSUFFICIENT')
 
   const collectResult = await collectTrafficForRunningInstance(task.instanceId)
   if (!collectResult.success) {
@@ -1604,6 +1700,23 @@ async function executeRecreateTask(
   console.log(`[Recreate] 启动新实例 ${newIncusId}...`)
   await startInstance(client, newIncusId)
 
+  // Point the database at the replacement guest and resume billing as soon as
+  // Incus confirms it is running. Otherwise the old ID remains visible and the
+  // IP polling below can leave several minutes of replacement runtime free.
+  await prisma.instance.update({
+    where: { id: task.instanceId },
+    data: {
+      incusId: newIncusId,
+      image: imageAlias,
+      rootPassword: encryptSensitiveData(newPassword),
+      status: 'running',
+      ipv4: newIPv4,
+      storagePoolName: storagePool,
+      version: { increment: 1 }
+    }
+  })
+  await ensureHourlyBillingActivation(task.instanceId)
+
   // 14. 等待网络初始化
   let actualIpv6: string | null = null
   const needsIPv6 = ['nat_ipv6', 'ipv6_only'].includes(instance.network_mode)
@@ -1670,7 +1783,7 @@ async function executeRecreateTask(
     }
   })
 
-  await activateHourlyBilling(task.instanceId)
+  await ensureHourlyBillingActivation(task.instanceId)
 
   // 同步流量限速状态
   const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')

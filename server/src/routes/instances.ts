@@ -32,8 +32,8 @@ import {
   persistCloudInitStatus
 } from '../lib/cloud-init-status.js'
 import { payPendingTrafficBillAndUnsuspend } from '../services/traffic-billing-scheduler.js'
-import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance } from '../services/hourly-billing-scheduler.js'
-import { hourlyPricingFromPackagePlan, validateHourlyResources } from '../lib/hourly-billing.js'
+import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance, settleSuspendedHourlyRuntime } from '../services/hourly-billing-scheduler.js'
+import { hourlyPricingFromPackagePlan, hourlyPricingFromSnapshot, snapshotHourlyPricing, validateHourlyResources } from '../lib/hourly-billing.js'
 import { customAlphabet } from 'nanoid'
 
 // 自定义 nanoid，只使用小写字母和数字（Incus 不允许下划线）
@@ -1049,17 +1049,28 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // 2. 确定请求的资源
-    // 按小时方案使用其最低配置，普通方案使用固定资源配置
+    // 按小时方案可在最低配置基础上按费率步长自选资源；普通方案使用固定资源配置。
     // 如果是免费套餐，使用用户请求的资源或默认值
     const requestedCpu = selectedPlan
-      ? (selectedPlanIsHourly ? selectedPlan.hourlyMinCpu : selectedPlan.cpu)
+      ? (selectedPlanIsHourly ? (cpu ?? selectedPlan.hourlyMinCpu) : selectedPlan.cpu)
       : (cpu || 15)
     const requestedMemory = selectedPlan
-      ? (selectedPlanIsHourly ? selectedPlan.hourlyMinMemoryMb : selectedPlan.memory)
+      ? (selectedPlanIsHourly ? (memory ?? selectedPlan.hourlyMinMemoryMb) : selectedPlan.memory)
       : (memory || 128)
     const requestedDisk = selectedPlan
-      ? (selectedPlanIsHourly ? selectedPlan.hourlyMinDiskMb : selectedPlan.disk)
+      ? (selectedPlanIsHourly ? (disk ?? selectedPlan.hourlyMinDiskMb) : selectedPlan.disk)
       : (disk || 512)
+
+    if (selectedPlanIsHourly && hourlyPricing) {
+      try {
+        validateHourlyResources({ cpu: requestedCpu, memory: requestedMemory, disk: requestedDisk }, hourlyPricing)
+      } catch (error) {
+        return reply.code(400).send({
+          error: error instanceof Error ? error.message : '按小时计费资源配置无效',
+          code: 'HOURLY_RESOURCE_INVALID'
+        })
+      }
+    }
 
     // 注意：能否开通实例只跟宿主机的资源有关，不检查套餐包资源限制
     // 宿主机资源检查在 selectAvailableHost 中进行
@@ -1327,8 +1338,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             if (txShareInfo.quotaMultiplier !== null) {
               const maxCpu = Math.floor(pkg.cpu_max * txShareInfo.quotaMultiplier)
               const maxMemory = Math.floor(pkg.memory_max * txShareInfo.quotaMultiplier)
-              const requestedCpuCheck = cpu || 15
-              const requestedMemoryCheck = memory || 128
+              // Paid plans (including hourly plans) choose their resources from
+              // the plan, not the optional free-instance request fields.
+              const requestedCpuCheck = requestedCpu
+              const requestedMemoryCheck = requestedMemory
 
               if (txUsage.totalCpu + requestedCpuCheck > maxCpu) {
                 throw new Error(`SHARE_QUOTA_CPU_EXCEEDED: 已使用 ${txUsage.totalCpu}%，限额 ${maxCpu}%`)
@@ -1504,6 +1517,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             data: {
               instanceId: instance.id,
               packagePlanId: selectedPlan!.id,
+              pricingSnapshot: { ...snapshotHourlyPricing(hourlyPricing) },
               lastSettledAt: new Date(),
               nextSettlementAt: null,
               prepaidBalance: reserveAmount,
@@ -1855,10 +1869,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       memory: requestedMemory,
       disk: requestedDisk,
        portCount: reservedNatPortCount
-    }).then(async () => {
-      if (selectedPlanIsHourly) {
-        await activateHourlyBilling(instanceId)
-      }
     }).catch(err => {
       const errorMessage = err instanceof Error ? err.message : String(err)
       fastify.log.error({ err: errorMessage }, `实例 ${instanceId} 创建失败`)
@@ -3002,12 +3012,28 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         await stopInstance(client, instance.incus_id, true)
       } catch (err) {
         console.error(`[Suspend] Failed to stop instance ${instanceId}:`, err)
+        // An hourly account must not be paused while the guest may still be
+        // running; doing so would release its reserve and leave free runtime.
+        if (instance.billing_mode === 'hourly') {
+          return reply.code(502).send({
+            error: 'Unable to confirm the hourly instance was stopped; billing remains active',
+            code: 'HOURLY_STOP_FAILED'
+          })
+        }
         // 继续封停流程，即使关机失败
       }
+    } else if (instance.billing_mode === 'hourly' && instance.status === 'running' && !host) {
+      return reply.code(503).send({ error: 'Hourly instance host is unavailable', code: 'HOURLY_HOST_UNAVAILABLE' })
     }
 
     if (instance.billing_mode === 'hourly') {
-      await pauseHourlyBilling(instanceId)
+      const billingPause = await pauseHourlyBilling(instanceId)
+      if (billingPause.suspended) {
+        return reply.code(409).send({
+          error: 'Hourly billing balance is insufficient; the instance was suspended until the outstanding balance is paid',
+          code: 'HOURLY_BALANCE_INSUFFICIENT'
+        })
+      }
     }
 
     // 执行封停
@@ -3072,6 +3098,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       if (instance.expires_at && new Date(instance.expires_at) <= new Date()) {
         return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
       }
+    }
+
+    if (instance.billing_mode === 'hourly' && instance.suspend_reason === 'hourly_billing_insufficient_balance' && isAdmin) {
+      return reply.code(409).send({
+        error: '按小时计费实例有未结清欠款；请由实例所有者结清后再解封',
+        code: 'HOURLY_DEBT_PAYMENT_REQUIRED'
+      })
     }
 
     if (instance.suspend_reason === 'traffic_billing_insufficient_balance' && !isAdmin) {
@@ -3963,6 +3996,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
       try {
         client = await getIncusClient(host)
+        // If a debt stop previously failed, settle any remaining runtime while
+        // the guest is still inspectable; after deletion there is no reliable
+        // way to tell whether its last interval was powered on.
+        if (instance.billing_mode === 'hourly') {
+          await settleSuspendedHourlyRuntime(instanceId)
+        }
         await ensureInstanceDeleted(client, instance.incus_id)
         incusDeleted = true
         await prisma.instance.update({
@@ -5111,9 +5150,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       })
       if (!hourlyAccount) return reply.code(409).send({ error: 'Hourly billing account is missing', code: 'HOURLY_ACCOUNT_MISSING' })
       try {
-        const pricing = hourlyAccount.packagePlan
-          ? hourlyPricingFromPackagePlan(hourlyAccount.packagePlan)
-          : hourlyAccount.pricingVersion
+        const pricing = hourlyPricingFromSnapshot(hourlyAccount.pricingSnapshot)
+          ?? (hourlyAccount.packagePlan
+            ? hourlyPricingFromPackagePlan(hourlyAccount.packagePlan)
+            : hourlyAccount.pricingVersion)
         if (!pricing) throw new Error('Hourly billing pricing is missing')
         validateHourlyResources({ cpu: newCpu, memory: newMemory, disk: newDisk }, pricing)
       } catch (error) {
