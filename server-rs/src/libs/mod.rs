@@ -9,6 +9,7 @@ pub mod host_caddy;
 pub mod host_network_policy;
 pub mod host_resource_usage;
 pub mod external;
+pub mod hourly_billing;
 pub mod incus;
 pub mod lsky;
 pub mod official_coupons;

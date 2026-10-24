@@ -14,6 +14,7 @@ pub mod custom_init_commands;
 pub mod batch_config;
 pub mod friends;
 pub mod health;
+pub mod hourly_billing;
 pub mod hosts;
 pub mod help;
 pub mod images;
