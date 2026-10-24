@@ -3,6 +3,7 @@
 //! with paths RELATIVE to their mount prefix (see app.rs for the prefix table).
 
 pub mod agent;
+pub mod admin_notification_channels;
 pub mod aff;
 pub mod announcements;
 pub mod auth;

@@ -57,6 +57,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         .nest("/api/entertainment", routes::not_ported_router())
         .nest("/api/telegram", routes::not_ported_router())
         .nest("/api/user-invites", routes::user_invites::router())
+        .nest("/api/admin/notification-channels", routes::admin_notification_channels::router())
         .nest("/api/admin", routes::not_ported_router())
         .nest("/api/recharge", routes::not_ported_router())
         // vip-levels.ts / vip-benefits.ts register FULL paths spanning both
