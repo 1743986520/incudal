@@ -69,6 +69,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         // hourly-billing, site-meta) register scattered /api/* paths; they fall
         // through to the /api fallback until ported.
         .merge(routes::traffic::router())
+        .merge(routes::site_meta::router())
         .fallback(api_fallback)
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -80,7 +81,10 @@ pub fn build_router(state: SharedAppState) -> Router {
         .with_state(state)
 }
 
-async fn api_fallback(uri: axum::http::Uri) -> Response {
+async fn api_fallback(
+    State(state): State<crate::state::SharedAppState>,
+    uri: axum::http::Uri,
+) -> Response {
     if uri.path().starts_with("/api/") {
         (
             StatusCode::NOT_FOUND,
@@ -88,6 +92,13 @@ async fn api_fallback(uri: axum::http::Uri) -> Response {
         )
             .into_response()
     } else {
+        // 配置的 SEO 文件（验证文件/IndexNow key/自定义 sitemap 路径）
+        // 在静态/SPA 之前处理（TS handleSeoMetaRequest）。
+        if let Some(response) =
+            routes::site_meta::handle_seo_meta_request(&state, uri.path()).await
+        {
+            return response;
+        }
         // Non-API paths are served by the frontend static build (TODO in the
         // Rust port); report plainly until static serving lands.
         (
