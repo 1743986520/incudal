@@ -2,17 +2,22 @@
 //! src/routes/. Ported modules export `pub fn router() -> Router<SharedAppState>`
 //! with paths RELATIVE to their mount prefix (see app.rs for the prefix table).
 
+pub mod agent;
 pub mod announcements;
 pub mod auth;
 pub mod balance;
+pub mod batch_config;
 pub mod friends;
 pub mod health;
 pub mod hosts;
 pub mod help;
+pub mod images;
 pub mod inbox;
+pub mod logs;
 pub mod packages;
 pub mod ssh_keys;
 pub mod system_config;
+pub mod system_update;
 pub mod users;
 
 use axum::response::{IntoResponse, Response};

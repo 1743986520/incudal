@@ -148,6 +148,10 @@ pub static RULES: &[RateLimitRule] = &[
     rule!(Some("POST"), ["api", "tickets", "*", "messages"], 20, 60),
     rule!(Some("PATCH"), ["api", "tickets", "*", "status"], 20, 60),
     rule!(Some("POST"), ["api", "tickets", "*", "close"], 20, 60),
+    // Inline config.rateLimit entries from system-update.ts (not in the shared
+    // config table upstream).
+    rule!(Some("POST"), ["api", "system-update", "check"], 20, 60),
+    rule!(Some("POST"), ["api", "system-update", "apply"], 2, 600),
 ];
 
 /// Mirrors config/rate-limit.ts findRateLimitRule matching:
