@@ -26,6 +26,7 @@ pub mod snapshots;
 pub mod ssh_keys;
 pub mod system_config;
 pub mod terminal_saved_commands;
+pub mod traffic;
 pub mod system_update;
 pub mod user_invites;
 pub mod users;

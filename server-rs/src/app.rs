@@ -68,6 +68,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         // No-prefix modules (traffic, ip-addresses, proxy-sites, redeem-codes,
         // hourly-billing, site-meta) register scattered /api/* paths; they fall
         // through to the /api fallback until ported.
+        .merge(routes::traffic::router())
         .fallback(api_fallback)
         .layer(middleware::from_fn_with_state(
             state.clone(),
