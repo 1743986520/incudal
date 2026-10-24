@@ -6,6 +6,7 @@ pub mod agent;
 pub mod announcements;
 pub mod auth;
 pub mod balance;
+pub mod custom_init_commands;
 pub mod batch_config;
 pub mod friends;
 pub mod health;
@@ -19,6 +20,7 @@ pub mod packages;
 pub mod snapshots;
 pub mod ssh_keys;
 pub mod system_config;
+pub mod terminal_saved_commands;
 pub mod system_update;
 pub mod users;
 
