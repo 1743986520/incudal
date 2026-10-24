@@ -1,0 +1,56 @@
+[package]
+name = "incudal-server"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of the Incudal Fastify backend (API-compatible, shares the same PostgreSQL schema)"
+
+[dependencies]
+axum = { version = "0.8", features = ["ws", "multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "limit"] }
+
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "chrono",
+    "rust_decimal",
+    "json",
+    "macros",
+] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rust_decimal = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+jsonwebtoken = "9"
+bcrypt = "0.15"
+rand = "0.8"
+sha2 = "0.10"
+sha1 = "0.10"
+hmac = "0.12"
+subtle = "2"
+base64 = "0.22"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+aes-gcm = "0.10"
+aes = "0.8"
+
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager"] }
+cookie = "0.18"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+anyhow = "1"
+futures = "0.3"
+regex = "1"
+once_cell = "1"
+urlencoding = "2"
+
+[profile.release]
+lto = "thin"
+strip = true
