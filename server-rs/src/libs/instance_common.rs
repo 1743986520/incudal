@@ -32,6 +32,7 @@ pub struct InstanceRow {
     pub snapshot_limit: Option<i32>,
     pub backup_limit: Option<i32>,
     pub port_limit: Option<i32>,
+    pub site_limit: Option<i32>,
     pub cpu: i32,
     pub memory: i32,
     pub disk: i32,

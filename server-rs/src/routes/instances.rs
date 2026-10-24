@@ -9,4 +9,5 @@ pub fn router() -> Router<SharedAppState> {
     crate::routes::not_ported_router()
         .merge(crate::routes::snapshots::router())
         .merge(crate::routes::ip_addresses::router())
+        .merge(crate::routes::proxy_sites::router())
 }

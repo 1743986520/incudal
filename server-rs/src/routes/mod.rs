@@ -18,6 +18,7 @@ pub mod inbox;
 pub mod logs;
 pub mod instances;
 pub mod packages;
+pub mod proxy_sites;
 pub mod snapshots;
 pub mod ssh_keys;
 pub mod system_config;
