@@ -18,6 +18,7 @@ pub mod ip_addresses;
 pub mod inbox;
 pub mod logs;
 pub mod notifications;
+pub mod oauth;
 pub mod instances;
 pub mod packages;
 pub mod proxy_sites;
