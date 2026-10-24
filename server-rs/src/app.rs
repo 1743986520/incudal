@@ -42,7 +42,8 @@ pub fn build_router(state: SharedAppState) -> Router {
         // ---- Not-yet-ported modules return 501 NOT_PORTED on their prefix ----
         .nest("/api/instances", routes::instances::router())
         .nest("/api/transfers", routes::not_ported_router())
-        .nest("/api/verification", routes::not_ported_router())
+        // verification.ts registers relative paths under this prefix.
+        .nest("/api/verification", routes::verification::router())
         .nest("/api/ws/instances", routes::not_ported_router())
         .nest("/api/terminal-saved-commands", routes::terminal_saved_commands::router())
         .nest("/api/tickets", routes::not_ported_router())
@@ -54,11 +55,16 @@ pub fn build_router(state: SharedAppState) -> Router {
         .nest("/api/official-coupons", routes::not_ported_router())
         .nest("/api/entertainment", routes::not_ported_router())
         .nest("/api/telegram", routes::not_ported_router())
-        .nest("/api/user-invites", routes::not_ported_router())
+        .nest("/api/user-invites", routes::user_invites::router())
         .nest("/api/admin", routes::not_ported_router())
         .nest("/api/recharge", routes::not_ported_router())
-        .nest("/api/vip-levels", routes::not_ported_router())
-        .nest("/api/vip-benefits", routes::not_ported_router())
+        // vip-levels.ts / vip-benefits.ts register FULL paths spanning both
+        // /api/vip-* and /api/admin/vip-*; their routers are merged with
+        // absolute paths (the /api/admin nest above keeps answering 501 for
+        // the other admin paths — see the router-conflict tests in the
+        // vip_levels/vip_benefits modules).
+        .merge(routes::vip_levels::router())
+        .merge(routes::vip_benefits::router())
         // No-prefix modules (traffic, ip-addresses, proxy-sites, redeem-codes,
         // hourly-billing, site-meta) register scattered /api/* paths; they fall
         // through to the /api fallback until ported.

@@ -24,7 +24,11 @@ pub mod ssh_keys;
 pub mod system_config;
 pub mod terminal_saved_commands;
 pub mod system_update;
+pub mod user_invites;
 pub mod users;
+pub mod verification;
+pub mod vip_benefits;
+pub mod vip_levels;
 
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;

@@ -12,3 +12,5 @@ pub mod external;
 pub mod incus;
 pub mod security;
 pub mod validators;
+pub mod vip;
+pub mod vip_benefits;
