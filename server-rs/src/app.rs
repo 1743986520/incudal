@@ -72,6 +72,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         // through to the /api fallback until ported.
         .merge(routes::traffic::router())
         .merge(routes::site_meta::router())
+        .merge(routes::admin_statistics::router())
         .fallback(api_fallback)
         .layer(middleware::from_fn_with_state(
             state.clone(),

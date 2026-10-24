@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod admin_notification_channels;
+pub mod admin_statistics;
 pub mod aff;
 pub mod announcements;
 pub mod auth;
