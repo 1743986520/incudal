@@ -7,6 +7,7 @@ pub mod aff;
 pub mod announcements;
 pub mod auth;
 pub mod balance;
+pub mod checkin;
 pub mod custom_init_commands;
 pub mod batch_config;
 pub mod friends;
