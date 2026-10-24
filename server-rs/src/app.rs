@@ -48,7 +48,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         .nest("/api/terminal-saved-commands", routes::terminal_saved_commands::router())
         .nest("/api/tickets", routes::not_ported_router())
         .nest("/api/checkin", routes::checkin::router())
-        .nest("/api/resource-pool", routes::not_ported_router())
+        .nest("/api/resource-pool", routes::resource_pool::router())
         .nest("/api/init-commands", routes::custom_init_commands::router())
         .nest("/api/hosting", routes::not_ported_router())
         .nest("/api/aff", routes::aff::router())

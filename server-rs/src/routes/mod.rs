@@ -23,6 +23,7 @@ pub mod oauth;
 pub mod instances;
 pub mod packages;
 pub mod proxy_sites;
+pub mod resource_pool;
 pub mod snapshots;
 pub mod ssh_keys;
 pub mod system_config;
