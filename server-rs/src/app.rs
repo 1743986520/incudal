@@ -40,7 +40,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         .nest("/api/agent", routes::agent::router())
         .nest("/api/system-update", routes::system_update::router())
         // ---- Not-yet-ported modules return 501 NOT_PORTED on their prefix ----
-        .nest("/api/instances", routes::not_ported_router())
+        .nest("/api/instances", routes::instances::router())
         .nest("/api/transfers", routes::not_ported_router())
         .nest("/api/verification", routes::not_ported_router())
         .nest("/api/ws/instances", routes::not_ported_router())

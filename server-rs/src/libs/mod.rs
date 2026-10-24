@@ -1,6 +1,7 @@
 pub mod agent_auth;
 pub mod crypto;
 pub mod host_agent_credentials;
+pub mod instance_common;
 pub mod host_address_registry;
 pub mod host_audit;
 pub mod host_billing;
