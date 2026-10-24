@@ -51,7 +51,8 @@ async fn run() -> anyhow::Result<()> {
         info!("redis shared state ready");
     }
 
-    let state = Arc::new(state::AppState::new(config.clone(), pool, shared));
+    let incus_pool = Arc::new(crate::libs::incus::IncusClientPool::new());
+    let state = Arc::new(state::AppState::new(config.clone(), pool, shared, incus_pool));
     let router = app::build_router(state.clone());
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;

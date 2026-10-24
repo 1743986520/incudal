@@ -12,6 +12,12 @@ pub struct AppState {
     /// In-memory login lockout state (mirrors lib/security.ts module-level maps;
     /// single-replica by design in the TS server too).
     pub login_locks: std::sync::Mutex<LoginLockMap>,
+    /// Per-host Incus TLS client cache (mirrors the module-global pool in
+    /// lib/incus/incus-pool.ts).
+    pub incus_pool: Arc<crate::libs::incus::IncusClientPool>,
+    /// reqwest client for outbound panel HTTP (geoip, turnstile, payment
+    /// gateways, release downloads) — mirrors Node's global fetch/undici.
+    pub http: reqwest::Client,
 }
 
 pub type LoginLockMap = std::collections::HashMap<String, LoginLockState>;
@@ -23,12 +29,22 @@ pub struct LoginLockState {
 }
 
 impl AppState {
-    pub fn new(config: Arc<Config>, db: PgPool, shared: SharedState) -> Self {
+    pub fn new(
+        config: Arc<Config>,
+        db: PgPool,
+        shared: SharedState,
+        incus_pool: Arc<crate::libs::incus::IncusClientPool>,
+    ) -> Self {
         Self {
             config,
             db,
             shared,
             login_locks: std::sync::Mutex::new(std::collections::HashMap::new()),
+            incus_pool,
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest client must build"),
         }
     }
 }
