@@ -10,6 +10,7 @@ pub mod host_network_policy;
 pub mod host_resource_usage;
 pub mod external;
 pub mod incus;
+pub mod official_coupons;
 pub mod resource_pool;
 pub mod security;
 pub mod validators;

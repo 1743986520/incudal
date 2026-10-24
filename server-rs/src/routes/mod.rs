@@ -19,6 +19,7 @@ pub mod ip_addresses;
 pub mod inbox;
 pub mod logs;
 pub mod notifications;
+pub mod official_coupons;
 pub mod oauth;
 pub mod instances;
 pub mod packages;

@@ -52,7 +52,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         .nest("/api/init-commands", routes::custom_init_commands::router())
         .nest("/api/hosting", routes::not_ported_router())
         .nest("/api/aff", routes::aff::router())
-        .nest("/api/official-coupons", routes::not_ported_router())
+        .nest("/api/official-coupons", routes::official_coupons::router())
         .nest("/api/entertainment", routes::not_ported_router())
         .nest("/api/telegram", routes::not_ported_router())
         .nest("/api/user-invites", routes::user_invites::router())
