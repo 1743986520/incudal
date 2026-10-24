@@ -1,5 +1,12 @@
 pub mod agent_auth;
 pub mod crypto;
+pub mod host_agent_credentials;
+pub mod host_address_registry;
+pub mod host_audit;
+pub mod host_billing;
+pub mod host_caddy;
+pub mod host_network_policy;
+pub mod host_resource_usage;
 pub mod external;
 pub mod incus;
 pub mod security;

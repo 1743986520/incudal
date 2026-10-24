@@ -7,6 +7,7 @@ pub mod auth;
 pub mod balance;
 pub mod friends;
 pub mod health;
+pub mod hosts;
 pub mod help;
 pub mod inbox;
 pub mod packages;

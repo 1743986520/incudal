@@ -86,6 +86,8 @@ pub static RULES: &[RateLimitRule] = &[
     // ========== 主机/节点管理 (管理员) ==========
     rule!(Some("GET"), ["api", "hosts"], 60, 60),
     rule!(Some("POST"), ["api", "hosts"], 5, 60),
+    rule!(Some("GET"), ["api", "hosts", "caddy-script", "*"], 10, 60),
+    rule!(Some("POST"), ["api", "hosts", "*", "instances", "create-for-user"], 10, 60),
     rule!(None, ["api", "node-groups"], 30, 60),
     // ========== 套餐管理 ==========
     rule!(Some("GET"), ["api", "packages"], 60, 60),

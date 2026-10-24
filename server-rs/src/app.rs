@@ -33,6 +33,7 @@ pub fn build_router(state: SharedAppState) -> Router {
         .nest("/api/inbox", routes::inbox::router())
         .nest("/api/help", routes::help::router())
         .nest("/api/packages", routes::packages::router())
+        .nest("/api/hosts", routes::hosts::router())
         .nest("/api/system-config", routes::system_config::router())
         // ---- Not-yet-ported modules return 501 NOT_PORTED on their prefix ----
         .nest("/api/instances", routes::not_ported_router())
