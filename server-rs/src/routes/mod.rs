@@ -13,6 +13,7 @@ pub mod health;
 pub mod hosts;
 pub mod help;
 pub mod images;
+pub mod ip_addresses;
 pub mod inbox;
 pub mod logs;
 pub mod instances;

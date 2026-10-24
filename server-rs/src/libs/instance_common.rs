@@ -27,6 +27,7 @@ pub struct InstanceRow {
     pub name: String,
     pub image: String,
     pub status: String,
+    pub network_mode: String,
     pub suspend_reason: Option<String>,
     pub snapshot_limit: Option<i32>,
     pub backup_limit: Option<i32>,
@@ -52,6 +53,8 @@ pub struct HostForIncus {
     pub server_certificate: Option<String>,
     pub server_fingerprint: Option<String>,
     pub allow_private_network: bool,
+    pub ipv6_subnet: Option<String>,
+    pub ipv6_parent_interface: Option<String>,
 }
 
 const HOST_FOR_INCUS_COLUMNS: &str =

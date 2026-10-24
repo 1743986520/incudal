@@ -6,5 +6,7 @@ use axum::Router;
 use crate::state::SharedAppState;
 
 pub fn router() -> Router<SharedAppState> {
-    crate::routes::not_ported_router().merge(crate::routes::snapshots::router())
+    crate::routes::not_ported_router()
+        .merge(crate::routes::snapshots::router())
+        .merge(crate::routes::ip_addresses::router())
 }
