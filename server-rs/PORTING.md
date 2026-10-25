@@ -26,6 +26,33 @@ wired in `app.rs`; unmounted prefixes return `501 { code: "NOT_PORTED" }`):
 | `routes/ssh_keys.rs` | routes/ssh-keys.ts | 5 | `POST /generate` fails like TS when keygen unavailable (no rsa crate) |
 | `routes/friends.rs` | routes/friends.ts | 11 | external channel fan-out stubbed |
 | `routes/health.rs` | app.ts | 1 | |
+| `routes/hosts.rs` | routes/hosts.ts | 69 | host CRUD + TLS TOFU, install/cert flow, batch instance ops, storage pools, Caddy suite, ops center (discover/audit/network-repair), takeover-official; helpers in libs/host_*.rs |
+| `routes/agent.rs` | routes/agent.ts | 12 | Go agent heartbeat (HMAC), instance reports, install tokens, credential rotation, binary/manifest serving |
+| `routes/system_update.rs` | routes/system-update.ts | 3 | GitHub release check + detached apply |
+| `routes/images.rs` | routes/images.ts | 5 | system images CRUD + host availability |
+| `routes/logs.rs` | routes/logs.ts | 2 | |
+| `routes/batch_config.rs` | routes/batch-config.ts | 1 | merged into /api/hosts router |
+| `routes/snapshots.rs` | routes/snapshots.ts | 6 | |
+| `routes/custom_init_commands.rs` | routes/custom-init-commands.ts | 7 | |
+| `routes/terminal_saved_commands.rs` | routes/terminal-saved-commands.ts | 4 | AES field encryption |
+| `routes/ip_addresses.rs` | routes/ip-addresses.ts | 7 | IPv6 extra IPs + subnets |
+| `routes/proxy_sites.rs` | routes/proxy-sites.ts | 8 | Caddy sites + TLS certificate check (tokio-rustls + x509-parser) |
+| `routes/vip_levels.rs` | routes/vip-levels.ts | 3 | |
+| `routes/vip_benefits.rs` | routes/vip-benefits.ts | 7 | |
+| `routes/user_invites.rs` | routes/user-invites.ts | ~5 | |
+| `routes/verification.rs` | routes/verification.ts | ~5 | operation second-verification |
+| `routes/notifications.rs` | routes/notifications.ts | 10 | channels + real Telegram/Discord/Webhook test send |
+| `routes/aff.rs` | routes/aff.ts | 12 | codes/stats/convert (locked tx)/admin review |
+| `routes/oauth.rs` | routes/oauth.ts | 10 | GitHub/Google login+bind, CSRF-safe state + login-code exchange |
+| `routes/traffic.rs` | routes/traffic.ts | 10 | user/instance/host stats + paid/free resets |
+| `routes/checkin.rs` | routes/checkin.ts | 6 | system-code redeem with distributed lock + compensation |
+| `routes/resource_pool.rs` | routes/resource-pool.ts | 4 | apply with per-step rollback + pool refund |
+| `routes/official_coupons.rs` | routes/official-coupons.ts | 1 | validate + rules lib for Wave F |
+| `routes/site_meta.rs` | routes/site-meta.ts | 2 | robots/sitemap + SEO files from fallback |
+| `routes/tickets.rs` | routes/tickets.ts | 12 | create/reply (Lsky images), proxy, admin list |
+| `routes/admin_notification_channels.rs` | routes/admin-notification-channels.ts | 6 | |
+| `routes/admin_statistics.rs` | routes/admin-statistics.ts | 1 | UTC+8 windows, 60s cache |
+| `routes/hourly_billing.rs` | routes/hourly-billing.ts | 14 | pricing math in libs/hourly_billing.rs; scheduler hooks stubbed |
 
 Framework core (in `server-rs/src/`):
 
@@ -50,27 +77,28 @@ Framework core (in `server-rs/src/`):
 
 ## Not yet ported (roadmap, in rough priority order)
 
-1. **instances/* route family** (instances, snapshots, instance-billing,
-   instance-destroy, hourly-billing, traffic, ip-addresses, proxy-sites) — the
-   core product surface. Depends on the Incus host plumbing: `lib/incus/*`
-   (TLS client certs from PANEL_CRT_PATH/PANEL_KEY_PATH against host Incus
-   APIs), `lib/terminal-proxy.ts` (WebSocket console), and
-   `workers/instanceTaskWorker.ts` (Postgres-backed task queue with leases).
-2. **hosts / admin-hosting / images / system-update / agent routes** — depend
-   on the same Incus client layer plus agent credential rotation.
+1. **instances.ts core** (~6.6k lines: list/get, create-async, port mappings,
+   start/stop/restart task enqueue, config updates, rebuild/clone/recreate,
+   change-host, IPv6 reassign, cloud-init status) + **instance-billing.ts** +
+   **instance-destroy.ts** — the core product surface. The Incus client layer
+   (libs/incus/) is DONE; what remains is route logic.
+2. **transfers.ts** (1,044) — instance transfer state machine.
 3. **recharge / payment webhooks** (Epay MD5/RSA, Heleket, Stripe) +
-   `admin-billing` + billing-operations (90 KB of renewal/refund/destroy
-   settlement logic) + official-coupons + aff + vip + checkin/redeem/resource
-   pool + transfers + entertainment (lottery/badges/points) + mail hosting +
-   telegram bot + oauth + verification + notifications channels.
-4. **Background schedulers** (services/schedulers.ts: traffic, billing,
-   expiry suspend/delete, status sync, host health) — port as tokio tasks on
-   the same cadences.
-5. **Production static/SPA serving** (plugins/static-server.ts) — serve
+   `admin-billing` (4,401) + billing-operations (90 KB of renewal/refund/destroy
+   settlement logic) + admin-official-coupons (392).
+4. **hosting.ts** (787) + **admin-hosting.ts** (547) — hosting zones/balance.
+5. **entertainment.ts** (707) + **admin-entertainment.ts** (1,184) —
+   lottery/badges/points.
+6. **telegram.ts** (979) — bot webhook + bindings.
+7. **Background schedulers** (services/schedulers.ts: traffic, billing,
+   expiry suspend/delete, status sync, host health; instanceTaskWorker with
+   leases) — port as tokio tasks on the same cadences. Route hooks currently
+   warn-log (traffic.rs / hourly_billing.rs reconcile).
+8. **Production static/SPA serving** (plugins/static-server.ts) — serve
    `client/dist` with the same Cache-Control matrix and SPA fallback.
-6. **Terminal WebSocket** (`/api/ws/instances/{id}/terminal`) — one-time
+9. **Terminal WebSocket** (`/api/ws/instances/{id}/terminal`) — one-time
    tickets + Incus console proxy.
-7. Email delivery (SMTP via a Rust smtp/lettre crate) to replace the
+10. Email delivery (SMTP via a Rust smtp/lettre crate) to replace the
    `libs/external.rs` stubs; `rsa`/`ssh-key` crate for `POST /api/ssh-keys/generate`.
 
 ## Wire contracts (do not break these)
