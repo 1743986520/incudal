@@ -51,10 +51,10 @@ use crate::state::SharedAppState;
 
 /// Router returned for modules that are declared but not yet ported.
 pub fn not_ported_router() -> Router<SharedAppState> {
-    Router::new().fallback(not_ported)
+    Router::new().fallback(not_ported_handler)
 }
 
-async fn not_ported() -> Response {
+pub async fn not_ported_handler() -> Response {
     (
         axum::http::StatusCode::NOT_IMPLEMENTED,
         Json(json!({
