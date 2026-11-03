@@ -50,6 +50,8 @@ pub fn router() -> Router<SharedAppState> {
         .route("/{id}/task", get(instance_task))
         .route("/tasks/{taskId}", get(task_detail).delete(cancel_task))
         .route("/tasks/{taskId}/recover", axum::routing::post(recover_task))
+        .route("/{id}/quota", axum::routing::patch(update_quota))
+        .route("/{id}/config", axum::routing::patch(update_config))
         .route("/{id}/ports", axum::routing::post(add_port))
         .route("/{id}/ports/{portId}", axum::routing::delete(delete_port))
         .route("/{id}/ports/batch", axum::routing::post(batch_add_port))
@@ -3767,6 +3769,571 @@ async fn batch_add_port(
                     "code": "PORT_BATCH_ADD_FAILED",
                 })),
             )
+                .into_response()
+        }
+    }
+}
+
+// ===========================================================================
+// PATCH /:id/quota — 设置实例配额（仅管理员）
+// ===========================================================================
+
+#[derive(Deserialize)]
+struct QuotaBody {
+    #[serde(rename = "portLimit")]
+    port_limit: Option<serde_json::Value>,
+    #[serde(rename = "snapshotLimit")]
+    snapshot_limit: Option<serde_json::Value>,
+    #[serde(rename = "backupLimit")]
+    backup_limit: Option<serde_json::Value>,
+    #[serde(rename = "siteLimit")]
+    site_limit: Option<serde_json::Value>,
+}
+
+/// Body limit fields accept int or null; -1/0 semantics per TS.
+fn limit_field(value: Option<&serde_json::Value>) -> Result<Option<Option<i32>>, ApiError> {
+    match value {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(v) => match v.as_i64() {
+            Some(n) if (0..=1000).contains(&n) => Ok(Some(Some(n as i32))),
+            _ => Err(ApiError::validation(
+                "limit must be integer or null within range",
+            )),
+        },
+    }
+}
+
+async fn update_quota(
+    State(state): State<SharedAppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    body: Option<Json<QuotaBody>>,
+) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let Json(body) = match body {
+        Some(v) => v,
+        None => return ApiError::validation("body must be object").into_response(),
+    };
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await
+    {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+
+    // 配额影响租户资源边界：仅管理员（宿主机所有权不可越权）
+    if user.role != "admin" {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+
+    let port_limit_field = match limit_field(body.port_limit.as_ref()) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let snapshot_limit_field = match limit_field(body.snapshot_limit.as_ref()) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let backup_limit_field = match limit_field(body.backup_limit.as_ref()) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let site_limit_field = match limit_field(body.site_limit.as_ref()) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+
+    // new* = provided || current（TS: portLimit || null → 0 变 null；site 特殊 0=无配额）
+    let new_port_limit = port_limit_field
+        .clone()
+        .map(|v| v.filter(|n| *n > 0))
+        .unwrap_or(instance.port_limit);
+    let new_snapshot_limit = snapshot_limit_field
+        .clone()
+        .map(|v| v.filter(|n| *n > 0))
+        .unwrap_or(instance.snapshot_limit);
+    let new_backup_limit = backup_limit_field
+        .clone()
+        .map(|v| v.filter(|n| *n > 0))
+        .unwrap_or(instance.backup_limit);
+    let new_site_limit = site_limit_field.clone().unwrap_or(instance.site_limit);
+
+    let (port_used,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM port_mappings WHERE instance_id = $1",
+    )
+    .bind(instance_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or((0,));
+    let (snapshot_used,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM snapshots WHERE instance_id = $1",
+    )
+    .bind(instance_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or((0,));
+    let (backup_used,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM backups WHERE instance_id = $1 AND status::text != 'deleted'",
+    )
+    .bind(instance_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or((0,));
+
+    if let Some(limit) = new_port_limit {
+        if (limit as i64) < port_used {
+            return ApiError::bad_request(code::QUOTA_PORT_BELOW_USED)
+                .with_details(format!("used: {port_used}, set: {limit}"))
+                .into_response();
+        }
+        if !(1..=1000).contains(&limit) {
+            return ApiError::bad_request(code::CONFIG_INVALID_VALUE)
+                .with_details("Port limit must be between 1 and 1000")
+                .into_response();
+        }
+    }
+    if let Some(limit) = new_snapshot_limit {
+        if (limit as i64) < snapshot_used {
+            return ApiError::bad_request(code::QUOTA_SNAPSHOT_BELOW_USED)
+                .with_details(format!("used: {snapshot_used}, set: {limit}"))
+                .into_response();
+        }
+        if !(1..=1000).contains(&limit) {
+            return ApiError::bad_request(code::CONFIG_INVALID_VALUE)
+                .with_details("Snapshot limit must be between 1 and 1000")
+                .into_response();
+        }
+    }
+    if let Some(limit) = new_backup_limit {
+        if (limit as i64) < backup_used {
+            return ApiError::bad_request(code::QUOTA_BACKUP_BELOW_USED)
+                .with_details(format!("used: {backup_used}, set: {limit}"))
+                .into_response();
+        }
+        if !(1..=1000).contains(&limit) {
+            return ApiError::bad_request(code::CONFIG_INVALID_VALUE)
+                .with_details("Backup limit must be between 1 and 1000")
+                .into_response();
+        }
+    }
+    if let Some(limit) = new_site_limit {
+        if !(0..=1000).contains(&limit) {
+            return ApiError::bad_request(code::CONFIG_INVALID_VALUE)
+                .with_details("Site limit must be between 0 and 1000 (0 = no quota)")
+                .into_response();
+        }
+    }
+
+    let result = sqlx::query(
+        "UPDATE instances SET \
+         port_limit = CASE WHEN $2::boolean THEN $3 ELSE port_limit END, \
+         snapshot_limit = CASE WHEN $4::boolean THEN $5 ELSE snapshot_limit END, \
+         backup_limit = CASE WHEN $6::boolean THEN $7 ELSE backup_limit END, \
+         site_limit = CASE WHEN $8::boolean THEN $9 ELSE site_limit END \
+         WHERE id = $1",
+    )
+    .bind(instance_id)
+    .bind(port_limit_field.is_some())
+    .bind(port_limit_field.clone().flatten())
+    .bind(snapshot_limit_field.is_some())
+    .bind(snapshot_limit_field.clone().flatten())
+    .bind(backup_limit_field.is_some())
+    .bind(backup_limit_field.clone().flatten())
+    .bind(site_limit_field.is_some())
+    .bind(site_limit_field.clone().flatten())
+    .execute(&state.db)
+    .await;
+    if let Err(e) = result {
+        return ApiError::from_sql(e).into_response();
+    }
+
+    let mut quota_changes: Vec<String> = Vec::new();
+    if let Some(v) = body.port_limit.as_ref().and_then(Value::as_i64) {
+        quota_changes.push(format!("port: {v}"));
+    }
+    if let Some(v) = body.snapshot_limit.as_ref().and_then(Value::as_i64) {
+        quota_changes.push(format!("snapshot: {}", if v == 0 { "no quota".to_string() } else { v.to_string() }));
+    }
+    if let Some(v) = body.backup_limit.as_ref().and_then(Value::as_i64) {
+        quota_changes.push(format!("backup: {}", if v == 0 { "no quota".to_string() } else { v.to_string() }));
+    }
+    if let Some(v) = body.site_limit.as_ref().and_then(Value::as_i64) {
+        quota_changes.push(format!(
+            "site: {}",
+            if v == 0 { "no quota".to_string() } else { format!("{}", if v == 0 { "inherit".to_string() } else { v.to_string() }) }
+        ));
+    }
+
+    create_log_with_instance(
+        &state,
+        user.id,
+        "instance",
+        "instance.update_quota",
+        &format!(
+            "Updated instance \"{}\" quota: {}",
+            instance.name,
+            quota_changes.join(", ")
+        ),
+        "success",
+        Some(instance_id),
+    )
+    .await;
+
+    Json(json!({ "message": "Instance quota updated" })).into_response()
+}
+
+// ===========================================================================
+// PATCH /:id/config — 修改实例资源配置
+// 小时计费结算分支依赖 Wave D 核心，回 NOT_PORTED；其余完整移植。
+// ===========================================================================
+
+#[derive(Deserialize)]
+struct ConfigBody {
+    cpu: Option<serde_json::Value>,
+    memory: Option<serde_json::Value>,
+    disk: Option<serde_json::Value>,
+    #[serde(rename = "monthlyTrafficLimit")]
+    monthly_traffic_limit: Option<serde_json::Value>,
+}
+
+async fn update_config(
+    State(state): State<SharedAppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    body: Option<Json<ConfigBody>>,
+) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let Json(body) = match body {
+        Some(v) => v,
+        None => return ApiError::validation("body must be object").into_response(),
+    };
+
+    let cpu = body.cpu.as_ref().and_then(Value::as_i64);
+    let memory = body.memory.as_ref().and_then(Value::as_i64);
+    let disk = body.disk.as_ref().and_then(Value::as_f64);
+    if cpu.is_none()
+        && memory.is_none()
+        && disk.is_none()
+        && body.monthly_traffic_limit.is_none()
+    {
+        return ApiError::bad_request(code::CONFIG_NO_CHANGES).into_response();
+    }
+    if let Some(c) = cpu.filter(|c| !(15..=10000).contains(c)) {
+        return ApiError::validation("cpu must be >= 15 and <= 10000").into_response();
+    }
+    if let Some(m) = memory.filter(|m| !(128..=524288).contains(m)) {
+        return ApiError::validation("memory must be >= 128 and <= 524288").into_response();
+    }
+    if let Some(d) = disk.filter(|d| !(512.0..=10_485_760.0).contains(d)) {
+        return ApiError::validation("disk must be >= 512 and <= 10485760").into_response();
+    }
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await
+    {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+
+    let host_row: Option<(i32, Option<i32>, String, Option<i32>, i32, Option<i32>, i32)> = match sqlx::query_as(
+        "SELECT id, user_id, storage_driver::text AS storage_driver, cpu_allowance_max, cpu_used, \
+                memory_max, memory_used FROM hosts WHERE id = $1",
+    )
+    .bind(instance.host_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let Some((_, host_owner, storage_driver, cpu_allowance_max, host_cpu_used, memory_max, host_memory_used)) =
+        host_row
+    else {
+        return ApiError::not_found(code::HOST_NOT_FOUND).into_response();
+    };
+
+    let is_hourly = instance_billing_mode(&state, instance_id).await.as_deref() == Some("hourly");
+
+    // 按小时实例允许所有者调整；套餐/免费实例保持管理员或宿主机所有者权限。
+    if user.role != "admin"
+        && host_owner != Some(user.id)
+        && !(is_hourly && instance.user_id == user.id)
+    {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+    if let Err(e) = check_transfer_lock(&state, instance_id).await {
+        return e.into_response();
+    }
+    if instance.status != "running" && instance.status != "stopped" {
+        return ApiError::bad_request(code::INSTANCE_STATUS_INVALID)
+            .with_details(format!("current status: {}", instance.status))
+            .into_response();
+    }
+
+    #[derive(Debug, FromRow)]
+    struct OldValuesRow {
+        cpu: i32,
+        memory: i32,
+        disk: i32,
+        monthly_traffic_limit: Option<i64>,
+    }
+    let old_values: Option<OldValuesRow> = sqlx::query_as(
+        "SELECT cpu, memory, disk, monthly_traffic_limit FROM instances WHERE id = $1",
+    )
+    .bind(instance_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let (old_cpu, old_memory, old_disk, old_traffic) = old_values
+        .map(|r| (r.cpu, r.memory, r.disk, r.monthly_traffic_limit))
+        .unwrap_or((instance.cpu, instance.memory, instance.disk, None));
+
+    let new_cpu = cpu.unwrap_or(old_cpu as i64);
+    let new_memory = memory.unwrap_or(old_memory as i64);
+    let new_disk = disk.map(|d| d.round() as i64).unwrap_or(old_disk as i64);
+
+    // 小时实例资源变更：结算核心未移植，明确拒绝（避免漏计费）。
+    if is_hourly && (cpu.is_some() || memory.is_some() || disk.is_some()) {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(json!({
+                "error": "Hourly billing settlement is not yet ported to the Rust server",
+                "code": "NOT_PORTED",
+            })),
+        )
+            .into_response();
+    }
+
+    // 流量限制
+    let new_traffic_limit: Option<Option<i64>> = if body.monthly_traffic_limit.is_some() {
+        match body.monthly_traffic_limit.as_ref() {
+            Some(Value::Null) => Some(None),
+            Some(Value::String(s)) if s.is_empty() => Some(None),
+            Some(Value::String(s)) => match s.parse::<i64>() {
+                Ok(n) if n >= 0 => Some(Some(n)),
+                _ => {
+                    return ApiError::bad_request(code::INVALID_PARAMS)
+                        .with_details("Invalid traffic limit format")
+                        .into_response()
+                }
+            },
+            Some(Value::Number(n)) if n.as_i64().map(|v| v >= 0).unwrap_or(false) => {
+                Some(Some(n.as_i64().unwrap()))
+            }
+            _ => {
+                return ApiError::bad_request(code::INVALID_PARAMS)
+                    .with_details("Invalid traffic limit format")
+                    .into_response()
+            }
+        }
+    } else {
+        None
+    };
+    let effective_traffic = new_traffic_limit.clone().unwrap_or(old_traffic);
+
+    // 磁盘缩小限制：仅 ZFS 允许，且不能小于已用容量
+    if let Some(disk_req) = disk {
+        let disk_req = disk_req.round() as i64;
+        if disk_req < old_disk as i64 {
+            if storage_driver != "zfs" {
+                return ApiError::bad_request(code::CONFIG_DISK_CANNOT_SHRINK)
+                    .with_details(format!("current: {} MB", old_disk))
+                    .into_response();
+            }
+            let mut disk_usage_mb: i64 = 0;
+            if instance.status == "running" {
+                let usage_result: Result<i64, String> = async {
+                    let host = get_host_for_incus(&state, instance.host_id)
+                        .await
+                        .map_err(|e| e.error.clone())?
+                        .ok_or_else(|| "Host not found".to_string())?;
+                    let client = get_incus_client_for_host(&state, &host)
+                        .await
+                        .map_err(|e| e.error.clone())?;
+                    let state_value = get_instance_state(&client, &instance.incus_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(state_value
+                        .get("disk")
+                        .and_then(|d| d.get("root"))
+                        .and_then(|r| r.get("usage"))
+                        .and_then(Value::as_f64)
+                        .map(|v| (v / 1024.0 / 1024.0).ceil() as i64)
+                        .unwrap_or(0))
+                }
+                .await;
+                match usage_result {
+                    Ok(usage) => disk_usage_mb = usage,
+                    Err(_) => {
+                        return ApiError::bad_request(code::CONFIG_DISK_CANNOT_SHRINK)
+                            .with_details("无法获取磁盘使用量，不允许缩小")
+                            .into_response()
+                    }
+                }
+            } else {
+                // 保守策略：未运行时按当前磁盘 90% 计
+                disk_usage_mb = (old_disk as f64 * 0.9).ceil() as i64;
+            }
+            if disk_req < disk_usage_mb {
+                return ApiError::bad_request(code::CONFIG_DISK_CANNOT_SHRINK)
+                    .with_details(format!("不能缩小到小于已用容量 {disk_usage_mb} MB"))
+                    .into_response();
+            }
+        }
+    }
+
+    let cpu_delta = new_cpu - old_cpu as i64;
+    let memory_delta = new_memory - old_memory as i64;
+    let disk_delta = new_disk - old_disk as i64;
+    let traffic_changed = body.monthly_traffic_limit.is_some()
+        && effective_traffic != old_traffic;
+
+    if cpu_delta == 0 && memory_delta == 0 && disk_delta == 0 && !traffic_changed {
+        return Json(json!({
+            "message": "No changes applied",
+            "instance": { "id": instance_id, "cpu": old_cpu, "memory": old_memory, "disk": old_disk },
+        }))
+        .into_response();
+    }
+
+    // 宿主机资源校验（只检查增量）
+    if cpu_delta > 0 {
+        if let Some(max) = cpu_allowance_max.filter(|m| *m > 0) {
+            if host_cpu_used as i64 + cpu_delta > max as i64 {
+                return ApiError::bad_request(code::HOST_RESOURCES_INSUFFICIENT)
+                    .with_details("CPU allowance insufficient")
+                    .into_response();
+            }
+        }
+    }
+    if memory_delta > 0 {
+        if let Some(max) = memory_max.filter(|m| *m > 0) {
+            if host_memory_used as i64 + memory_delta > max as i64 {
+                return ApiError::bad_request(code::HOST_RESOURCES_INSUFFICIENT)
+                    .with_details("Memory insufficient")
+                    .into_response();
+            }
+        }
+    }
+
+    let outcome: Result<Value, String> = async {
+        let host = get_host_for_incus(&state, instance.host_id)
+            .await
+            .map_err(|e| e.error.clone())?
+            .ok_or_else(|| "Host not found".to_string())?;
+        let client = get_incus_client_for_host(&state, &host)
+            .await
+            .map_err(|e| e.error.clone())?;
+
+        crate::libs::incus::incus_instances::patch_instance_resources(
+            &client,
+            &instance.incus_id,
+            crate::libs::incus::incus_instances::InstanceResourcePatch {
+                cpu: cpu.map(|_| new_cpu),
+                memory: memory.map(|_| new_memory),
+                disk: disk.map(|_| new_disk),
+            },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        crate::libs::resource_pool::update_instance_resources(
+            &state,
+            instance_id,
+            cpu.map(|_| new_cpu as i32),
+            memory.map(|_| new_memory as i32),
+            disk.map(|_| new_disk as i32),
+            if body.monthly_traffic_limit.is_some() {
+                Some(effective_traffic)
+            } else {
+                None
+            },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if cpu_delta != 0 || memory_delta != 0 || disk_delta != 0 {
+            crate::libs::resource_pool::adjust_host_resources(
+                &state,
+                instance.host_id,
+                Some(cpu_delta),
+                Some(memory_delta),
+                Some(disk_delta),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+
+        let mut changes: Vec<String> = Vec::new();
+        if let Some(_) = cpu {
+            changes.push(format!("CPU: {old_cpu}% → {new_cpu}%"));
+        }
+        if let Some(_) = memory {
+            changes.push(format!("Memory: {old_memory}MB → {new_memory}MB"));
+        }
+        if let Some(_) = disk {
+            changes.push(format!("Disk: {old_disk}MB → {new_disk}MB"));
+        }
+        if body.monthly_traffic_limit.is_some() {
+            let gib = |v: Option<i64>| {
+                v.map(|b| format!("{:.1}", b as f64 / (1024.0 * 1024.0 * 1024.0)))
+                    .unwrap_or_else(|| "0".into())
+            };
+            changes.push(format!(
+                "Traffic: {}GB → {}GB",
+                gib(old_traffic),
+                gib(effective_traffic)
+            ));
+        }
+
+        create_log_with_instance(
+            &state,
+            user.id,
+            "instance",
+            "instance.update_config",
+            &format!(
+                "Updated instance \"{}\" config: {}",
+                instance.name,
+                changes.join(", ")
+            ),
+            "success",
+            Some(instance_id),
+        )
+        .await;
+
+        Ok(json!({
+            "message": "Instance configuration updated",
+            "instance": { "id": instance_id, "cpu": new_cpu, "memory": new_memory, "disk": new_disk },
+        }))
+    }
+    .await;
+
+    match outcome {
+        Ok(value) => Json(value).into_response(),
+        Err(message) => {
+            create_log_with_instance(
+                &state,
+                user.id,
+                "instance",
+                "instance.update_config",
+                &format!(
+                    "Failed to update instance \"{}\" config: {message}",
+                    instance.name
+                ),
+                "failed",
+                Some(instance_id),
+            )
+            .await;
+            ApiError::bad_request(code::CONFIG_UPDATE_FAILED)
+                .with_details(message)
                 .into_response()
         }
     }
