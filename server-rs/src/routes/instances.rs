@@ -50,6 +50,9 @@ pub fn router() -> Router<SharedAppState> {
         .route("/{id}/task", get(instance_task))
         .route("/tasks/{taskId}", get(task_detail).delete(cancel_task))
         .route("/tasks/{taskId}/recover", axum::routing::post(recover_task))
+        .route("/{id}/ports", axum::routing::post(add_port))
+        .route("/{id}/ports/{portId}", axum::routing::delete(delete_port))
+        .route("/{id}/ports/batch", axum::routing::post(batch_add_port))
         .route("/{id}/suspend", axum::routing::post(suspend_instance))
         .route("/{id}/unsuspend", axum::routing::post(unsuspend_instance))
         .route("/{id}/sync-status", axum::routing::post(sync_status))
@@ -2454,6 +2457,1317 @@ async fn sync_status(State(state): State<SharedAppState>, user: AuthUser, Path(i
                 )
                     .into_response()
             }
+        }
+    }
+}
+
+// ===========================================================================
+// 端口映射（db/port-mappings.ts helpers + ProxyStrategy 工厂）
+// ===========================================================================
+
+const PORT_RESERVATION_LOCK_NAMESPACE: i32 = 746_523;
+
+#[derive(Debug, FromRow)]
+struct PortMappingRow {
+    id: i32,
+    instance_id: i32,
+    host_id: i32,
+    protocol: String,
+    public_port: i32,
+    private_port: i32,
+    remark: Option<String>,
+}
+
+async fn check_port_quota(
+    state: &SharedAppState,
+    instance_id: i32,
+) -> Result<(bool, i64, i64, Option<String>), ApiError> {
+    let row: Option<(Option<i32>, i64)> = sqlx::query_as(
+        "SELECT port_limit, (SELECT COUNT(*) FROM port_mappings WHERE instance_id = $1) \
+         FROM instances WHERE id = $1",
+    )
+    .bind(instance_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((limit_opt, current)) = row else {
+        return Ok((false, 0, 0, Some("Instance not found".into())));
+    };
+    let limit = limit_opt.unwrap_or(0) as i64;
+    if limit == 0 {
+        return Ok((false, current, 0, Some("Port quota not allocated for this instance".into())));
+    }
+    if current >= limit {
+        return Ok((
+            false,
+            current,
+            limit,
+            Some(format!("Instance port quota full ({current}/{limit})")),
+        ));
+    }
+    Ok((true, current, limit, None))
+}
+
+/// db allocatePort: 随机挑选宿主机 NAT 范围内的空闲端口。
+async fn allocate_port(state: &SharedAppState, host_id: i32, protocol: &str) -> Result<Option<i32>, ApiError> {
+    let host_range: Option<(i32, i32)> = sqlx::query_as(
+        "SELECT nat_port_start, nat_port_end FROM hosts WHERE id = $1 \
+         AND nat_port_start IS NOT NULL AND nat_port_end IS NOT NULL",
+    )
+    .bind(host_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((port_start, port_end)) = host_range else {
+        return Ok(None);
+    };
+    let used: Vec<(i32,)> = sqlx::query_as(
+        "SELECT public_port FROM port_mappings WHERE host_id = $1 AND protocol::text = $2",
+    )
+    .bind(host_id)
+    .bind(protocol)
+    .fetch_all(&state.db)
+    .await?;
+    let used: std::collections::HashSet<i32> = used.into_iter().map(|(p,)| p).collect();
+
+    let available: Vec<i32> = (port_start..=port_end).filter(|p| !used.contains(p)).collect();
+    if available.is_empty() {
+        return Ok(None);
+    }
+    use rand::Rng;
+    let idx = rand::thread_rng().gen_range(0..available.len());
+    Ok(Some(available[idx]))
+}
+
+/// db allocatePorts（批量，可选双协议检查）。
+async fn allocate_ports(
+    state: &SharedAppState,
+    host_id: i32,
+    count: i64,
+    protocol: &str,
+    check_both: bool,
+) -> Result<Vec<i32>, ApiError> {
+    let host_range: Option<(i32, i32)> = sqlx::query_as(
+        "SELECT nat_port_start, nat_port_end FROM hosts WHERE id = $1 \
+         AND nat_port_start IS NOT NULL AND nat_port_end IS NOT NULL",
+    )
+    .bind(host_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((port_start, port_end)) = host_range else {
+        return Ok(Vec::new());
+    };
+    let mut used: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    if check_both {
+        for proto in ["tcp", "udp"] {
+            let rows: Vec<(i32,)> = sqlx::query_as(
+                "SELECT public_port FROM port_mappings WHERE host_id = $1 AND protocol::text = $2",
+            )
+            .bind(host_id)
+            .bind(proto)
+            .fetch_all(&state.db)
+            .await?;
+            used.extend(rows.into_iter().map(|(p,)| p));
+        }
+    } else {
+        let rows: Vec<(i32,)> = sqlx::query_as(
+            "SELECT public_port FROM port_mappings WHERE host_id = $1 AND protocol::text = $2",
+        )
+        .bind(host_id)
+        .bind(protocol)
+        .fetch_all(&state.db)
+        .await?;
+        used.extend(rows.into_iter().map(|(p,)| p));
+    }
+    let mut available: Vec<i32> = (port_start..=port_end).filter(|p| !used.contains(p)).collect();
+    available.sort_unstable();
+    available.truncate(count as usize);
+    Ok(available)
+}
+
+async fn check_port_in_use(
+    state: &SharedAppState,
+    host_id: i32,
+    port: i32,
+    protocol: &str,
+) -> Result<Option<PortMappingRow>, ApiError> {
+    Ok(sqlx::query_as::<_, PortMappingRow>(
+        "SELECT id, instance_id, host_id, protocol::text AS protocol, public_port, private_port, \
+                remark FROM port_mappings WHERE host_id = $1 AND public_port = $2 AND protocol::text = $3",
+    )
+    .bind(host_id)
+    .bind(port)
+    .bind(protocol)
+    .fetch_optional(&state.db)
+    .await?)
+}
+
+async fn check_ports_in_use(
+    state: &SharedAppState,
+    host_id: i32,
+    ports: &[i32],
+    protocol: &str,
+) -> Result<Vec<(i32, i32)>, ApiError> {
+    if ports.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(i32, i32)> = sqlx::query_as(
+        "SELECT public_port, instance_id FROM port_mappings \
+         WHERE host_id = $1 AND protocol::text = $2 AND public_port = ANY($3)",
+    )
+    .bind(host_id)
+    .bind(protocol)
+    .bind(ports)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows)
+}
+
+/// db suggestAvailablePorts: 替换被占用端口，可排除已选端口，可双协议检查。
+async fn suggest_available_ports(
+    state: &SharedAppState,
+    host_id: i32,
+    count: i64,
+    protocol: &str,
+    exclude: &[i32],
+    check_both: bool,
+) -> Result<Vec<i32>, ApiError> {
+    let host_range: Option<(i32, i32)> = sqlx::query_as(
+        "SELECT nat_port_start, nat_port_end FROM hosts WHERE id = $1 \
+         AND nat_port_start IS NOT NULL AND nat_port_end IS NOT NULL",
+    )
+    .bind(host_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((port_start, port_end)) = host_range else {
+        return Ok(Vec::new());
+    };
+    let mut used: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let protocols: Vec<&str> = if check_both { vec!["tcp", "udp"] } else { vec![protocol] };
+    for proto in protocols {
+        let rows: Vec<(i32,)> = sqlx::query_as(
+            "SELECT public_port FROM port_mappings WHERE host_id = $1 AND protocol::text = $2",
+        )
+        .bind(host_id)
+        .bind(proto)
+        .fetch_all(&state.db)
+        .await?;
+        used.extend(rows.into_iter().map(|(p,)| p));
+    }
+    let exclude_set: std::collections::HashSet<i32> = exclude.iter().copied().collect();
+    let suggestions: Vec<i32> = (port_start..=port_end)
+        .filter(|p| !used.contains(p) && !exclude_set.contains(p))
+        .take(count as usize)
+        .collect();
+    Ok(suggestions)
+}
+
+/// db reservePortMappings：宿主机粒度 advisory lock + 锁内冲突复查 + 插入。
+/// Err 返回冲突端口列表（PortReservationConflictError）。
+async fn reserve_port_mappings(
+    state: &SharedAppState,
+    items: &[(i32, i32, &str, i32, i32, Option<&str>)], // instance, host, proto, public, private, remark
+) -> Result<Vec<(i32, String, i32, i32)>, Vec<String>> {
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+    let host_id = items[0].1;
+
+    let mut tx = state.db.begin().await.map_err(|e| vec![e.to_string()])?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1::int, $2::int)")
+        .bind(PORT_RESERVATION_LOCK_NAMESPACE)
+        .bind(host_id as i64)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| vec![e.to_string()])?;
+
+    // 锁内复查冲突（TCP/UDP 各自维度）
+    let ports: Vec<i32> = items.iter().map(|i| i.3).collect();
+    let protocols: Vec<String> = {
+        let set: std::collections::HashSet<&str> = items.iter().map(|i| i.2).collect();
+        set.into_iter().map(|s| s.to_string()).collect()
+    };
+    let conflicts: Vec<(i32, String)> = sqlx::query_as(
+        "SELECT public_port, protocol::text FROM port_mappings \
+         WHERE host_id = $1 AND protocol::text = ANY($2) AND public_port = ANY($3)",
+    )
+    .bind(host_id)
+    .bind(&protocols)
+    .bind(&ports)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| vec![e.to_string()])?;
+    if !conflicts.is_empty() {
+        return Err(conflicts
+            .into_iter()
+            .map(|(port, proto)| format!("{port}({})", proto.to_uppercase()))
+            .collect());
+    }
+
+    let mut created = Vec::new();
+    for (instance_id, host, protocol, public_port, private_port, remark) in items {
+        let row: (i32, String, i32, i32) = sqlx::query_as(
+            "INSERT INTO port_mappings (instance_id, host_id, protocol, public_port, private_port, remark) \
+             VALUES ($1, $2, $3::\"Protocol\", $4, $5, $6) \
+             RETURNING id, protocol::text AS protocol, public_port, private_port",
+        )
+        .bind(instance_id)
+        .bind(host)
+        .bind(protocol)
+        .bind(public_port)
+        .bind(private_port)
+        .bind(*remark)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            if e.as_database_error()
+                .and_then(|d| d.code().map(|c| c.into_owned()))
+                .map(|c| c == "23505")
+                .unwrap_or(false)
+            {
+                vec![format!("{}({})", public_port, protocol.to_uppercase())]
+            } else {
+                vec![e.to_string()]
+            }
+        })?;
+        created.push(row);
+    }
+    tx.commit().await.map_err(|e| vec![e.to_string()])?;
+    Ok(created)
+}
+
+async fn release_port_mappings(state: &SharedAppState, ids: &[i32]) -> Result<(), sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query("DELETE FROM port_mappings WHERE id = ANY($1)")
+        .bind(ids)
+        .execute(&state.db)
+        .await?;
+    Ok(())
+}
+
+/// ProxyStrategyFactory.getStrategy（按套餐 instance_type）。
+async fn strategy_for_instance(
+    state: &SharedAppState,
+    instance: &crate::libs::instance_common::InstanceRow,
+) -> Result<crate::libs::instance_proxy::StrategyKind, ApiError> {
+    let Some(package_id) = instance.package_id else {
+        return Ok(crate::libs::instance_proxy::StrategyKind::Container);
+    };
+    let instance_type: Option<String> =
+        sqlx::query_scalar("SELECT instance_type::text FROM packages WHERE id = $1")
+            .bind(package_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+    Ok(if instance_type.as_deref() == Some("vm") {
+        crate::libs::instance_proxy::StrategyKind::VirtualMachine
+    } else {
+        crate::libs::instance_proxy::StrategyKind::Container
+    })
+}
+
+/// 显式 IPv6：nat_bind_ipv6 > nat_public_ipv6 > ipv6_gateway > IPv6 host 地址
+/// > host_address_aliases（kind=ipv6）。
+async fn explicit_host_ipv6(
+    state: &SharedAppState,
+    host_id: i32,
+    nat_bind_ipv6: Option<&str>,
+    nat_public_ipv6: Option<&str>,
+    ipv6_gateway: Option<&str>,
+    ip_address: Option<&str>,
+) -> Option<String> {
+    if let Some(v) = nat_bind_ipv6.filter(|s| !s.is_empty()) {
+        return Some(v.to_string());
+    }
+    if let Some(v) = nat_public_ipv6.filter(|s| !s.is_empty()) {
+        return Some(v.to_string());
+    }
+    if let Some(v) = ipv6_gateway.filter(|s| !s.is_empty()) {
+        return Some(v.to_string());
+    }
+    if let Some(v) = ip_address.filter(|s| s.contains(':')) {
+        return Some(v.to_string());
+    }
+    sqlx::query_scalar(
+        "SELECT address FROM host_address_aliases WHERE host_id = $1 AND kind::text = 'ipv6' LIMIT 1",
+    )
+    .bind(host_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+}
+
+// ===========================================================================
+// POST /:id/ports — 添加端口映射
+// ===========================================================================
+
+#[derive(Deserialize)]
+struct AddPortBody {
+    protocol: Option<String>,
+    #[serde(rename = "publicPort")]
+    public_port: Option<serde_json::Value>,
+    #[serde(rename = "privatePort")]
+    private_port: Option<serde_json::Value>,
+    remark: Option<String>,
+}
+
+async fn add_port(
+    State(state): State<SharedAppState>,
+    user: UserOnlyAuth,
+    Path(id): Path<String>,
+    body: Option<Json<AddPortBody>>,
+) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let Json(body) = match body {
+        Some(v) => v,
+        None => return ApiError::validation("body must be object").into_response(),
+    };
+    let protocol = match body.protocol.as_deref() {
+        Some("tcp") | Some("udp") => body.protocol.unwrap().clone(),
+        _ => {
+            return ApiError::validation(
+                "protocol must be equal to one of the allowed values: tcp, udp",
+            )
+            .into_response()
+        }
+    };
+    let private_port = body
+        .private_port
+        .as_ref()
+        .and_then(Value::as_i64)
+        .filter(|v| (1..=65535).contains(v))
+        .map(|v| v as i32)
+        .filter(|_| body.private_port.is_some());
+    let Some(private_port) = private_port else {
+        return ApiError::validation(
+            "privatePort must be >= 1 and <= 65535",
+        )
+        .into_response();
+    };
+    let public_port = body
+        .public_port
+        .as_ref()
+        .and_then(Value::as_i64)
+        .filter(|v| (1..=65535).contains(v))
+        .map(|v| v as i32);
+    if let Some(remark) = &body.remark {
+        if remark.chars().count() > 100 {
+            return ApiError::validation("remark must NOT have more than 100 characters")
+                .into_response();
+        }
+    }
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+    if instance.user_id != user.0.id {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+    if let Err(e) = ensure_instance_not_suspended(&instance) {
+        return e.into_response();
+    }
+    if !["nat", "nat_ipv6", "nat_ipv6_nat", "ipv6_nat", "ipv6_only"]
+        .contains(&instance.network_mode.as_str())
+    {
+        return ApiError::bad_request(code::PORT_MAPPING_NAT_ONLY).into_response();
+    }
+    if let Err(e) = check_transfer_lock(&state, instance_id).await {
+        return e.into_response();
+    }
+
+    let (allowed, _current, _limit, message) = match check_port_quota(&state, instance_id).await {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    if !allowed {
+        return ApiError::bad_request(code::QUOTA_PORT_EXCEEDED)
+            .with_details(message.unwrap_or_default())
+            .into_response();
+    }
+
+    #[derive(Debug, FromRow)]
+    struct PortHost {
+        name: String,
+        cert_path: Option<String>,
+        key_path: Option<String>,
+        server_certificate: Option<String>,
+        server_fingerprint: Option<String>,
+        allow_private_network: bool,
+        nat_port_start: Option<i32>,
+        nat_port_end: Option<i32>,
+        nat_bind_ip: Option<String>,
+        nat_bind_ipv6: Option<String>,
+        nat_public_ip: Option<String>,
+        nat_public_ipv6: Option<String>,
+        ipv6_gateway: Option<String>,
+        ip_address: Option<String>,
+        url: String,
+    }
+    let host: PortHost = match sqlx::query_as(
+        "SELECT name, cert_path, key_path, server_certificate, server_fingerprint, allow_private_network, \
+                nat_port_start, nat_port_end, nat_bind_ip, nat_bind_ipv6, nat_public_ip, \
+                nat_public_ipv6, ipv6_gateway, ip_address, url FROM hosts WHERE id = $1",
+    )
+    .bind(instance.host_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some(h)) => h,
+        Ok(None) => return ApiError::not_found(code::HOST_NOT_FOUND).into_response(),
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let (nat_port_start, nat_port_end, nat_bind_ip, nat_bind_ipv6, nat_public_ipv6, ipv6_gateway, host_ip) =
+        (host.nat_port_start, host.nat_port_end, host.nat_bind_ip.clone(), host.nat_bind_ipv6.clone(), host.nat_public_ipv6.clone(), host.ipv6_gateway.clone(), host.ip_address.clone());
+
+    // 分配或校验公网端口
+    let allocated_port: i32 = match public_port {
+        None => match allocate_port(&state, instance.host_id, &protocol).await {
+            Ok(Some(port)) => port,
+            Ok(None) => {
+                return ApiError::new(code::PORT_NO_AVAILABLE, StatusCode::SERVICE_UNAVAILABLE)
+                    .into_response()
+            }
+            Err(e) => return e.into_response(),
+        },
+        Some(port) => {
+            if let (Some(start), Some(end)) = (nat_port_start, nat_port_end) {
+                if port < start || port > end {
+                    return ApiError::bad_request(code::PORT_RANGE_INVALID)
+                        .with_details(format!("{start}-{end}"))
+                        .into_response();
+                }
+            }
+            match check_port_in_use(&state, instance.host_id, port, &protocol).await {
+                Ok(None) => {}
+                Ok(_) => return ApiError::bad_request(code::PORT_IN_USE).into_response(),
+                Err(e) => return e.into_response(),
+            }
+            port
+        }
+    };
+
+    // IPv6 Only 实例不需要端口映射
+    if instance.network_mode == "ipv6_only" {
+        return ApiError::bad_request(code::INVALID_PARAMS)
+            .with_details("IPv6 Only instances do not require port mappings")
+            .into_response();
+    }
+
+    // 先在数据库中预留端口（审查项 P2-12），再操作 Incus。
+    let reserved = match reserve_port_mappings(
+        &state,
+        &[(
+            instance_id,
+            instance.host_id,
+            protocol.as_str(),
+            allocated_port as i32,
+            private_port,
+            body.remark.as_deref().map(str::trim),
+        )],
+    )
+    .await
+    {
+        Ok(mut v) => v.pop(),
+        Err(_conflicts) => {
+            return ApiError::bad_request(code::PORT_IN_USE).into_response();
+        }
+    };
+    let Some(reserved) = reserved else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": "端口预留失败，请稍后重试",
+                "code": "PORT_RESERVE_FAILED",
+            })),
+        )
+            .into_response();
+    };
+
+    let result: Result<Value, String> = async {
+        let hf = get_host_for_incus(&state, instance.host_id)
+            .await
+            .map_err(|e| e.error.clone())?
+            .ok_or_else(|| "Host not found".to_string())?;
+        let client = get_incus_client_for_host(&state, &hf)
+            .await
+            .map_err(|e| e.error.clone())?;
+
+        let device_name = format!("proxy-{protocol}-{allocated_port}");
+        let strategy = strategy_for_instance(&state, &instance).await.map_err(|e| e.error)?;
+        let explicit_ipv6 = explicit_host_ipv6(
+            &state,
+            instance.host_id,
+            nat_bind_ipv6.as_deref(),
+            nat_public_ipv6.as_deref(),
+            ipv6_gateway.as_deref(),
+            host_ip.as_deref(),
+        )
+        .await;
+        let bindable_ipv4 = crate::libs::incus::network_address::select_bindable_ipv4_listen_address(
+            nat_bind_ip.as_deref(),
+            host.nat_public_ip.as_deref(),
+            Some(host.url.as_str()),
+            host_ip.as_deref(),
+        );
+                let inst_ipv4_addr: Option<String> = sqlx::query_scalar(
+            "SELECT ipv4 FROM instances WHERE id = $1",
+        )
+        .bind(instance_id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(None);
+        let mut target_ipv4 = crate::libs::incus::network_address::normalize_ipv4_address(inst_ipv4_addr.as_deref());
+        if target_ipv4.is_none() {
+            let incus_instance =
+                crate::libs::incus::incus_instances::get_instance(&client, &instance.incus_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            target_ipv4 = crate::libs::instance_proxy::resolve_instance_target_ipv4_from_incus_device(
+                &incus_instance.devices,
+            );
+        }
+
+        let proxy_result = crate::libs::instance_proxy::create_proxy_device(
+            strategy,
+            Some(bindable_ipv4.as_str()),
+            explicit_ipv6.as_deref(),
+            &instance.network_mode,
+            &protocol,
+            allocated_port as i64,
+            private_port as i64,
+            target_ipv4.as_deref(),
+        );
+        if !proxy_result.success || proxy_result.device_configs.is_empty() {
+            return Err(
+                proxy_result
+                    .error_message
+                    .unwrap_or_else(|| "底层代理生成异常被工厂截断".into()),
+            );
+        }
+
+        for entry in &proxy_result.device_configs {
+            let resolved_name =
+                format!("{device_name}{}", entry.name_suffix.unwrap_or(""));
+            crate::libs::incus::incus_instances::add_device(
+                &client,
+                &instance.incus_id,
+                &resolved_name,
+                &Value::Object(entry.config.clone()),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+
+        Ok(json!({
+            "message": "Port mapping added",
+            "mapping": {
+                "id": reserved.0,
+                "protocol": protocol,
+                "publicPort": allocated_port,
+                "privatePort": private_port,
+                "remark": body.remark.as_deref().map(|r| Value::String(r.trim().to_string())).unwrap_or(Value::Null),
+            }
+        }))
+    }
+    .await;
+
+    match result {
+        Ok(value) => {
+            create_log_with_instance(
+                &state,
+                user.0.id,
+                "instance",
+                "port.add",
+                &format!(
+                    "Added port mapping for instance \"{}\" [host: {}, {} {}:{}{}]",
+                    instance.name,
+                    host.name,
+                    protocol.to_uppercase(),
+                    allocated_port,
+                    private_port,
+                    body.remark
+                        .as_deref()
+                        .map(|r| format!(", remark: {r}"))
+                        .unwrap_or_default()
+                ),
+                "success",
+                Some(instance_id),
+            )
+            .await;
+            Json(value).into_response()
+        }
+        Err(message) => {
+            // 回滚：删除本次请求的设备与预留记录
+            if let Ok(Some(hf)) = get_host_for_incus(&state, instance.host_id).await {
+                if let Ok(client) = get_incus_client_for_host(&state, &hf).await {
+                    let device_name = format!("proxy-{protocol}-{allocated_port}");
+                    let _ = crate::libs::incus::incus_instances::remove_device(
+                        &client,
+                        &instance.incus_id,
+                        &device_name,
+                    )
+                    .await;
+                    let _ = crate::libs::incus::incus_instances::remove_device(
+                        &client,
+                        &instance.incus_id,
+                        &format!("{device_name}-v6"),
+                    )
+                    .await;
+                }
+            }
+            let _ = release_port_mappings(&state, &[reserved.0]).await;
+            create_log_with_instance(
+                &state,
+                user.0.id,
+                "instance",
+                "port.add",
+                &format!("Failed to add port mapping: {message}"),
+                "failed",
+                Some(instance_id),
+            )
+            .await;
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "添加端口映射失败，请稍后重试",
+                    "code": "PORT_ADD_FAILED",
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ===========================================================================
+// DELETE /:id/ports/:portId — 删除端口映射
+// ===========================================================================
+
+async fn delete_port(
+    State(state): State<SharedAppState>,
+    user: UserOnlyAuth,
+    Path((id, port_id)): Path<(String, String)>,
+) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(_) => return ApiError::bad_request(code::PORT_MAPPING_INVALID_ID).into_response(),
+    };
+    let port_mapping_id = match parse_id_str(&port_id) {
+        Ok(v) => v,
+        Err(_) => return ApiError::bad_request(code::PORT_MAPPING_INVALID_ID).into_response(),
+    };
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+    if instance.user_id != user.0.id {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+    if let Err(e) = ensure_instance_not_suspended(&instance) {
+        return e.into_response();
+    }
+
+    let mapping: Option<PortMappingRow> = match sqlx::query_as(
+        "SELECT id, instance_id, host_id, protocol::text AS protocol, public_port, private_port, \
+                remark FROM port_mappings WHERE id = $1",
+    )
+    .bind(port_mapping_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let mapping = match mapping {
+        Some(m) if m.instance_id == instance_id => m,
+        _ => return ApiError::not_found(code::PORT_MAPPING_NOT_FOUND).into_response(),
+    };
+
+    if let Err(e) = check_transfer_lock(&state, instance_id).await {
+        return e.into_response();
+    }
+
+    let outcome: Result<(), String> = async {
+        let host = get_host_for_incus(&state, instance.host_id)
+            .await
+            .map_err(|e| e.error)?
+            .ok_or_else(|| "Host not found".to_string())?;
+        let client = get_incus_client_for_host(&state, &host)
+            .await
+            .map_err(|e| e.error)?;
+
+        let device_name = format!("proxy-{}-{}", mapping.protocol, mapping.public_port);
+        crate::libs::incus::incus_instances::remove_device(&client, &instance.incus_id, &device_name)
+            .await
+            .map_err(|e| e.to_string())?;
+        crate::libs::incus::incus_instances::remove_device(
+            &client,
+            &instance.incus_id,
+            &format!("{device_name}-v6"),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        sqlx::query("DELETE FROM port_mappings WHERE id = $1")
+            .bind(port_mapping_id)
+            .execute(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    .await;
+
+    match outcome {
+        Ok(()) => {
+            create_log_with_instance(
+                &state,
+                user.0.id,
+                "instance",
+                "port.delete",
+                &format!(
+                    "Deleted port mapping for instance \"{}\" [{} {}:{}]",
+                    instance.name,
+                    mapping.protocol.to_uppercase(),
+                    mapping.public_port,
+                    mapping.private_port
+                ),
+                "success",
+                Some(instance_id),
+            )
+            .await;
+            Json(json!({ "message": "Port mapping deleted" })).into_response()
+        }
+        Err(message) => {
+            create_log_with_instance(
+                &state,
+                user.0.id,
+                "instance",
+                "port.delete",
+                &format!("Failed to delete port mapping: {message}"),
+                "failed",
+                Some(instance_id),
+            )
+            .await;
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "删除端口映射失败，请稍后重试",
+                    "code": "PORT_DELETE_FAILED",
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ===========================================================================
+// POST /:id/ports/batch — 批量添加（连续范围 / Both / 冲突重提交）
+// ===========================================================================
+
+#[derive(Deserialize)]
+struct BatchPortBody {
+    protocol: Option<String>,
+    #[serde(rename = "privatePortStart")]
+    private_port_start: Option<serde_json::Value>,
+    #[serde(rename = "privatePortEnd")]
+    private_port_end: Option<serde_json::Value>,
+    #[serde(rename = "publicPortStart")]
+    public_port_start: Option<serde_json::Value>,
+    #[serde(rename = "publicPortEnd")]
+    public_port_end: Option<serde_json::Value>,
+    remark: Option<String>,
+    #[serde(rename = "portMappings")]
+    port_mappings: Option<Vec<Value>>,
+}
+
+async fn port_conflict_response(conflicts: &[(i32, i32)], host_id: i32, protocol: &str, public_ports: &[i32], state: &SharedAppState) -> Response {
+    // 与 TS 相同：给出建议端口
+    let conflict_ports: Vec<i32> = {
+        let mut ports: Vec<i32> = conflicts.iter().map(|(p, _)| *p).collect();
+        ports.sort_unstable();
+        ports.dedup();
+        ports
+    };
+    let kept: Vec<i32> = public_ports
+        .iter()
+        .copied()
+        .filter(|p| !conflict_ports.contains(p))
+        .collect();
+    let suggested = match suggest_available_ports(
+        state,
+        host_id,
+        conflict_ports.len() as i64,
+        if protocol == "both" { "tcp" } else { protocol },
+        &kept,
+        protocol == "both",
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => Vec::new(),
+    };
+    let conflict_items: Vec<Value> = conflict_ports
+        .iter()
+        .enumerate()
+        .map(|(index, port)| {
+            json!({
+                "publicPort": port,
+                "suggestedPort": suggested.get(index).map(|p| Value::String(p.to_string())).unwrap_or(Value::Null),
+            })
+        })
+        .collect();
+    let body = json!({
+        "error": code::PORT_CONFLICT,
+        "message": "部分端口已被占用",
+        "conflicts": conflict_items,
+        "availableCount": suggested.len(),
+    });
+    (StatusCode::CONFLICT, Json(body)).into_response()
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn batch_add_port(
+    State(state): State<SharedAppState>,
+    user: UserOnlyAuth,
+    Path(id): Path<String>,
+    body: Option<Json<BatchPortBody>>,
+) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let Json(body) = match body {
+        Some(v) => v,
+        None => return ApiError::validation("body must be object").into_response(),
+    };
+    let protocol = match body.protocol.as_deref() {
+        Some(p) if ["tcp", "udp", "both"].contains(&p) => p.to_string(),
+        _ => {
+            return ApiError::validation(
+                "protocol must be equal to one of the allowed values: tcp, udp, both",
+            )
+            .into_response()
+        }
+    };
+    let private_port_start = body.private_port_start.as_ref().and_then(Value::as_i64);
+    let private_port_end = body.private_port_end.as_ref().and_then(Value::as_i64);
+    let public_port_start = body.public_port_start.as_ref().and_then(Value::as_i64);
+    let public_port_end = body.public_port_end.as_ref().and_then(Value::as_i64);
+    if let Some(remark) = &body.remark {
+        if remark.chars().count() > 100 {
+            return ApiError::validation("remark must NOT have more than 100 characters")
+                .into_response();
+        }
+    }
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+    if instance.user_id != user.0.id {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+    if let Err(e) = ensure_instance_not_suspended(&instance) {
+        return e.into_response();
+    }
+    if !["nat", "nat_ipv6", "nat_ipv6_nat", "ipv6_nat", "ipv6_only"]
+        .contains(&instance.network_mode.as_str())
+    {
+        return ApiError::bad_request(code::PORT_MAPPING_NAT_ONLY).into_response();
+    }
+    if let Err(e) = check_transfer_lock(&state, instance_id).await {
+        return e.into_response();
+    }
+
+    // 2. 端口数量
+    let private_port_count = private_port_start
+        .zip(private_port_end)
+        .map(|(s, e)| e - s + 1)
+        .unwrap_or(0);
+    if private_port_count <= 0 || private_port_count > 100 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "端口范围无效，最多支持 100 个连续端口" })),
+        )
+            .into_response();
+    }
+    if public_port_start.is_some() != public_port_end.is_some() {
+        return ApiError::bad_request(code::PORT_RANGE_MISMATCH)
+            .with_details("公网端口起始和结束必须同时填写")
+            .into_response();
+    }
+    if let (Some(ps), Some(pe)) = (public_port_start, public_port_end) {
+        if pe - ps + 1 != private_port_count {
+            return ApiError::bad_request(code::PORT_RANGE_MISMATCH)
+                .with_details(format!(
+                    "内网 {private_port_count} 个端口，公网 {} 个端口",
+                    pe - ps + 1
+                ))
+                .into_response();
+        }
+    }
+    let port_mappings_input: Option<Vec<(i64, i64)>> = body.port_mappings.as_ref().map(|items| {
+        items
+            .iter()
+            .filter_map(|m| {
+                let private = m.get("privatePort").and_then(Value::as_i64)?;
+                let public = m.get("publicPort").and_then(Value::as_i64)?;
+                Some((private, public))
+            })
+            .collect()
+    });
+    if let Some(mappings) = &port_mappings_input {
+        if !mappings.is_empty() {
+            let expected: std::collections::HashSet<i64> =
+                (private_port_start.unwrap()..=private_port_end.unwrap()).collect();
+            let actual: std::collections::HashSet<i64> = mappings.iter().map(|m| m.0).collect();
+            if mappings.len() != private_port_count as usize
+                || actual.len() != private_port_count as usize
+                || actual != expected
+            {
+                return ApiError::bad_request(code::PORT_RANGE_MISMATCH)
+                    .with_details("重新提交的映射数量或内部端口范围不一致")
+                    .into_response();
+            }
+        }
+    }
+
+    // 3. 配额（Both 占双份）
+    let quota_needed = if protocol == "both" { private_port_count * 2 } else { private_port_count };
+    let (allowed, current, limit, _message) = match check_port_quota(&state, instance_id).await {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let remaining = limit - current;
+    if allowed && remaining < quota_needed {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": code::QUOTA_PORT_BATCH_EXCEEDED,
+                "message": format!("配额不足，需要 {quota_needed} 个，剩余 {remaining} 个"),
+                "needed": quota_needed,
+                "remaining": remaining,
+            })),
+        )
+            .into_response();
+    }
+
+    let host = match crate::libs::instance_common::get_host_for_incus(&state, instance.host_id).await {
+        Ok(Some(h)) => h,
+        Ok(None) => return ApiError::not_found(code::HOST_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+    let host_details: Option<(Option<i32>, Option<i32>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT nat_port_start, nat_port_end, nat_bind_ip, nat_bind_ipv6, nat_public_ipv6, \
+                ipv6_gateway, ip_address FROM hosts WHERE id = $1",
+    )
+    .bind(instance.host_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None);
+    let (nat_port_start, nat_port_end, nat_bind_ip, nat_bind_ipv6, nat_public_ipv6, ipv6_gateway, host_ip) =
+        host_details.clone().unwrap_or((None, None, None, None, None, None, None));
+
+    // 4. 确定映射关系
+    let mut final_mappings: Vec<(i64, i64)> = Vec::new(); // (private, public)
+    if let Some(mappings) = &port_mappings_input {
+        if !mappings.is_empty() {
+            final_mappings = mappings.clone();
+        }
+    }
+    if final_mappings.is_empty() {
+        if let (Some(ps), Some(pe)) = (public_port_start, public_port_end) {
+            if host_details.is_some() {
+                if let (Some(start), Some(end)) = (nat_port_start, nat_port_end) {
+                    if ps < start as i64 || pe > end as i64 {
+                        return ApiError::bad_request(code::PORT_RANGE_INVALID)
+                            .with_details(format!("允许范围: {start}-{end}"))
+                            .into_response();
+                    }
+                }
+            }
+            for i in 0..private_port_count {
+                final_mappings.push((private_port_start.unwrap() + i, ps + i));
+            }
+        }
+    }
+    if final_mappings.is_empty() {
+        let allocated = match allocate_ports(
+            &state,
+            instance.host_id,
+            private_port_count,
+            if protocol == "both" { "tcp" } else { &protocol },
+            protocol == "both",
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => return e.into_response(),
+        };
+        if allocated.len() < private_port_count as usize {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({
+                    "error": code::PORT_NO_AVAILABLE,
+                    "message": format!("可用端口不足，需要 {private_port_count} 个，只有 {} 个可用", allocated.len()),
+                })),
+            )
+                .into_response();
+        }
+        let mut sorted = allocated;
+        sorted.sort_unstable();
+        for (i, public_port) in sorted.iter().enumerate() {
+            final_mappings.push((private_port_start.unwrap() + i as i64, *public_port as i64));
+        }
+    }
+
+    // 公网端口范围校验（统一执行，审查项 P2-05）
+    if let (Some(start), Some(end)) = (nat_port_start, nat_port_end) {
+        if let Some((_, public)) = final_mappings
+            .iter()
+            .find(|(_, public)| *public < start as i64 || *public > end as i64)
+        {
+            return ApiError::bad_request(code::PORT_RANGE_INVALID)
+                .with_details(format!("允许范围: {start}-{end}"))
+                .into_response();
+        }
+    }
+
+    // 提交列表不允许重复公网端口
+    let mut seen: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    for (_, public) in &final_mappings {
+        if !seen.insert(*public) {
+            return ApiError::bad_request(code::PORT_RANGE_MISMATCH)
+                .with_details(format!("公网端口 {public} 在提交列表中重复"))
+                .into_response();
+        }
+    }
+
+    // 5. 用户指定端口的路径预检查冲突并给建议
+    let public_ports: Vec<i32> = final_mappings.iter().map(|m| m.1 as i32).collect();
+    if port_mappings_input.is_some() || public_port_start.is_some() {
+        let protocols_to_check: Vec<&str> = if protocol == "both" {
+            vec!["tcp", "udp"]
+        } else {
+            vec![&protocol]
+        };
+        let mut all_conflicts: Vec<(i32, i32)> = Vec::new();
+        for proto in &protocols_to_check {
+            match check_ports_in_use(&state, instance.host_id, &public_ports, proto).await {
+                Ok(list) => all_conflicts.extend(list),
+                Err(e) => return e.into_response(),
+            }
+        }
+        if !all_conflicts.is_empty() {
+            return port_conflict_response(&all_conflicts, instance.host_id, &protocol, &public_ports, &state).await;
+        }
+    }
+
+    // 6. 预留 + Incus 设备
+    if instance.network_mode == "ipv6_only" {
+        return ApiError::bad_request(code::INVALID_PARAMS)
+            .with_details("IPv6 Only instances do not require port mappings")
+            .into_response();
+    }
+
+    let reserved_mappings = {
+        let protocols_to_create: Vec<&str> = if protocol == "both" {
+            vec!["tcp", "udp"]
+        } else {
+            vec![protocol.as_str()]
+        };
+        let mut reserve_items: Vec<(i32, i32, &str, i32, i32, Option<&str>)> = Vec::new();
+        for proto in &protocols_to_create {
+            for mapping in &final_mappings {
+                reserve_items.push((
+                    instance_id,
+                    instance.host_id,
+                    proto,
+                    mapping.1 as i32,
+                    mapping.0 as i32,
+                    body.remark.as_deref().map(str::trim),
+                ));
+            }
+        }
+        match reserve_port_mappings(&state, &reserve_items).await {
+            Ok(v) => v,
+            Err(conflicts) => {
+                create_log_with_instance(
+                    &state,
+                    user.0.id,
+                    "instance",
+                    "port.batch_add",
+                    &format!("Batch add port mappings conflicted: {}", conflicts.join(", ")),
+                    "failed",
+                    Some(instance_id),
+                )
+                .await;
+                return ApiError::bad_request(code::PORT_CONFLICT)
+                    .with_details("部分端口已被占用，请刷新后重试")
+                    .into_response();
+            }
+        }
+    };
+
+    let host_url = host.url.clone();
+    let (host_ip_address, nat_public_ip): (Option<String>, Option<String>) = match sqlx::query_as(
+        "SELECT ip_address, nat_public_ip FROM hosts WHERE id = $1",
+    )
+    .bind(instance.host_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some((a, b))) => (a, b),
+        _ => (None, None),
+    };
+    let outcome: Result<Value, String> = async {
+        let client = get_incus_client_for_host(&state, &host)
+            .await
+            .map_err(|e| e.error.clone())?;
+        let inst_ipv4_addr: Option<String> = sqlx::query_scalar(
+            "SELECT ipv4 FROM instances WHERE id = $1",
+        )
+        .bind(instance_id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(None);
+        let mut target_ipv4 =
+            crate::libs::incus::network_address::normalize_ipv4_address(inst_ipv4_addr.as_deref());
+        if target_ipv4.is_none() {
+            let incus_instance =
+                crate::libs::incus::incus_instances::get_instance(&client, &instance.incus_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            target_ipv4 = crate::libs::instance_proxy::resolve_instance_target_ipv4_from_incus_device(
+                &incus_instance.devices,
+            );
+        }
+
+        let strategy = strategy_for_instance(&state, &instance).await.map_err(|e| e.error)?;
+        let explicit_ipv6 = explicit_host_ipv6(
+            &state,
+            instance.host_id,
+            nat_bind_ipv6.as_deref(),
+            nat_public_ipv6.as_deref(),
+            ipv6_gateway.as_deref(),
+            host_ip.as_deref(),
+        )
+        .await;
+        let bindable_ipv4 = crate::libs::incus::network_address::select_bindable_ipv4_listen_address(
+            nat_bind_ip.as_deref(),
+            nat_public_ip.as_deref(),
+            Some(host_url.as_str()),
+            host_ip_address.as_deref(),
+        );
+
+        for mapping in &reserved_mappings {
+            let device_name = format!("proxy-{}-{}", mapping.1, mapping.2);
+            let proxy_result = crate::libs::instance_proxy::create_proxy_device(
+                strategy,
+                Some(bindable_ipv4.as_str()),
+                explicit_ipv6.as_deref(),
+                &instance.network_mode,
+                &mapping.1,
+                mapping.2 as i64,
+                mapping.3 as i64,
+                target_ipv4.as_deref(),
+            );
+            if !proxy_result.success || proxy_result.device_configs.is_empty() {
+                return Err(proxy_result
+                    .error_message
+                    .unwrap_or_else(|| "代理对象工厂拦截异常".into()));
+            }
+            for entry in &proxy_result.device_configs {
+                let resolved_name = format!("{device_name}{}", entry.name_suffix.unwrap_or(""));
+                crate::libs::incus::incus_instances::add_device(
+                    &client,
+                    &instance.incus_id,
+                    &resolved_name,
+                    &Value::Object(entry.config.clone()),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
+
+        Ok(json!({
+            "message": "Batch port mapping added",
+            "mappings": reserved_mappings.iter().map(|m| json!({
+                "id": m.0, "protocol": m.1, "publicPort": m.2, "privatePort": m.3,
+            })).collect::<Vec<_>>(),
+            "count": reserved_mappings.len(),
+        }))
+    }
+    .await;
+
+    match outcome {
+        Ok(value) => {
+            create_log_with_instance(
+                &state,
+                user.0.id,
+                "instance",
+                "port.batch_add",
+                &format!(
+                    "Batch added {} port mappings for instance \"{}\" [host: {}, {}, ports: {}-{}]",
+                    reserved_mappings.len(),
+                    instance.name,
+                    host.name,
+                    protocol.to_uppercase(),
+                    private_port_start.unwrap_or(0),
+                    private_port_end.unwrap_or(0),
+                ),
+                "success",
+                Some(instance_id),
+            )
+            .await;
+            Json(value).into_response()
+        }
+        Err(message) => {
+            // 回滚：删除本次创建的设备与预留记录
+            if let Ok(client) = get_incus_client_for_host(&state, &host).await {
+                for mapping in &reserved_mappings {
+                    let device_name = format!("proxy-{}-{}", mapping.1, mapping.2);
+                    let _ = crate::libs::incus::incus_instances::remove_device(
+                        &client,
+                        &instance.incus_id,
+                        &device_name,
+                    )
+                    .await;
+                    let _ = crate::libs::incus::incus_instances::remove_device(
+                        &client,
+                        &instance.incus_id,
+                        &format!("{device_name}-v6"),
+                    )
+                    .await;
+                }
+            }
+            let ids: Vec<i32> = reserved_mappings.iter().map(|m| m.0).collect();
+            let _ = release_port_mappings(&state, &ids).await;
+            create_log_with_instance(
+                &state,
+                user.0.id,
+                "instance",
+                "port.batch_add",
+                &format!("Failed to batch add port mappings: {message}"),
+                "failed",
+                Some(instance_id),
+            )
+            .await;
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "批量添加端口映射失败，请稍后重试",
+                    "code": "PORT_BATCH_ADD_FAILED",
+                })),
+            )
+                .into_response()
         }
     }
 }
