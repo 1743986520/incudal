@@ -50,6 +50,9 @@ pub fn router() -> Router<SharedAppState> {
         .route("/{id}/task", get(instance_task))
         .route("/tasks/{taskId}", get(task_detail).delete(cancel_task))
         .route("/tasks/{taskId}/recover", axum::routing::post(recover_task))
+        .route("/{id}/suspend", axum::routing::post(suspend_instance))
+        .route("/{id}/unsuspend", axum::routing::post(unsuspend_instance))
+        .route("/{id}/sync-status", axum::routing::post(sync_status))
         .route("/{id}/cloud-init-status", get(cloud_init_status))
         .route(
             "/{id}/cloud-init-status/manual-complete",
@@ -1887,4 +1890,570 @@ async fn cloud_init_manual_complete(
     )
     .await;
     Json(cloud_init_json(&result)).into_response()
+}
+
+/// instances.billing_mode lookup (InstanceRow does not carry it).
+async fn instance_billing_mode(state: &SharedAppState, instance_id: i32) -> Option<String> {
+    sqlx::query_scalar("SELECT billing_mode::text FROM instances WHERE id = $1")
+        .bind(instance_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+}
+
+// ===========================================================================
+// POST /:id/suspend — 封停实例（仅宿主机所有者和管理员）
+// ===========================================================================
+
+#[derive(Deserialize)]
+struct SuspendBody {
+    reason: Option<String>,
+}
+
+async fn suspend_instance(
+    State(state): State<SharedAppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    body: Option<Json<SuspendBody>>,
+) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let reason = body
+        .and_then(|Json(b)| b.reason)
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty());
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await
+    {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+
+    let (host_owner, host_name): (Option<i32>, Option<String>) = match sqlx::query_as(
+        "SELECT user_id, name FROM hosts WHERE id = $1",
+    )
+    .bind(instance.host_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(row) => row.map(|(u, n)| (Some(u), Some(n))).unwrap_or((None, None)),
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let is_host_owner = host_owner == Some(user.id);
+    let is_admin = user.role == "admin";
+
+    // 封停权限：仅管理员和宿主机所有者
+    if !is_admin && !is_host_owner {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+    // 已封停的实例不能重复封停
+    if instance.status == "suspended" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "Instance is already suspended",
+                "code": "INSTANCE_ALREADY_SUSPENDED",
+            })),
+        )
+            .into_response();
+    }
+    // 不能封停已删除的实例
+    if instance.status == "deleted" {
+        return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response();
+    }
+
+    // 小时计费分支依赖 Wave D 的结算核心（settleInTransaction）；在没有它
+    // 的情况下放行会释放预付款而不计已用时长（金钱漏洞），故明确拒绝。
+    if instance_billing_mode(&state, instance_id).await.as_deref() == Some("hourly") {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(json!({
+                "error": "Hourly billing settlement is not yet ported to the Rust server",
+                "code": "NOT_PORTED",
+            })),
+        )
+            .into_response();
+    }
+
+    // 如果实例正在运行，先关机（Incus 调用在事务外）
+    if instance.status == "running" {
+        match get_host_for_incus(&state, instance.host_id).await {
+            Ok(Some(host)) => match get_incus_client_for_host(&state, &host).await {
+                Ok(client) => {
+                    if let Err(err) = crate::libs::incus::incus_instances::stop_instance(
+                        &client,
+                        &instance.incus_id,
+                        true,
+                        crate::libs::incus::incus_instances::BusyRetryOptions {
+                            allow_cancel_busy_update: false,
+                            busy_update_cancel_after_ms: None,
+                        },
+                    )
+                    .await
+                    {
+                        tracing::error!("[Suspend] Failed to stop instance {instance_id}: {err}");
+                        // 继续封停流程，即使关机失败（非小时计费）
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("[Suspend] incus client unavailable: {e:?}");
+                }
+            },
+            Ok(None) => {}
+            Err(e) => return e.into_response(),
+        }
+    }
+
+    // 执行封停（advisory lock 4106 事务由版本递增保护；状态条件更新）
+    let suspend_result = sqlx::query(
+        "UPDATE instances SET status = 'suspended', suspended_at = now(), suspended_by = $2, \
+         suspend_reason = $3, version = version + 1 \
+         WHERE id = $1 AND status::text != 'deleted' AND status::text != 'suspended'",
+    )
+    .bind(instance_id)
+    .bind(user.id)
+    .bind(reason.clone().unwrap_or_default())
+    .execute(&state.db)
+    .await;
+    match suspend_result {
+        Ok(r) if r.rows_affected() == 1 => {}
+        Ok(_) => {
+            return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response();
+        }
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    }
+
+    create_log_with_instance(
+        &state,
+        user.id,
+        "instance",
+        "instance.suspend",
+        &format!(
+            "Suspended instance \"{}\"{}",
+            instance.name,
+            reason
+                .as_ref()
+                .map(|r| format!(" (reason: {r})"))
+                .unwrap_or_default()
+        ),
+        "success",
+        Some(instance_id),
+    )
+    .await;
+
+    // 站内信通知实例所有者
+    if instance.user_id != user.id {
+        crate::routes::users::create_inbox_notification(
+            &state,
+            instance.user_id,
+            "instance_suspended",
+            "⛔ 实例已被封停",
+            &format!(
+                "实例「{}」（节点：{}）已被封停{}",
+                instance.name,
+                host_name.clone().unwrap_or_default(),
+                reason
+                    .as_ref()
+                    .map(|r| format!("，原因：{r}"))
+                    .unwrap_or_default()
+            ),
+            json!({
+                "instanceName": instance.name,
+                "hostName": host_name.clone().unwrap_or_default(),
+                "suspendReason": reason.unwrap_or_default(),
+            }),
+        )
+        .await;
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({ "message": "Instance suspended successfully" })),
+    )
+        .into_response()
+}
+
+// ===========================================================================
+// POST /:id/unsuspend — 解封。管理员/宿主所有者可直接解封；小時/流量欠款
+// 自助路徑依賴 Wave D 結算核心（結算+補繳），回 NOT_PORTED。
+// ===========================================================================
+
+async fn unsuspend_instance(
+    State(state): State<SharedAppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await
+    {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+
+    let host_owner: Option<i32> = match sqlx::query_scalar("SELECT user_id FROM hosts WHERE id = $1")
+        .bind(instance.host_id)
+        .fetch_optional(&state.db)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let is_host_owner = host_owner == Some(user.id);
+    let is_admin = user.role == "admin";
+    let is_instance_owner = instance.user_id == user.id;
+
+    if !is_admin && !is_host_owner && !is_instance_owner {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+    // 只能解封已封停的实例
+    if instance.status != "suspended" {
+        return ApiError::bad_request(code::INSTANCE_NOT_SUSPENDED).into_response();
+    }
+
+    // 到期封停：到期时间仍在过去则不允许解封
+    if instance.suspend_reason.as_deref() == Some("expired") {
+        let expires_at: Option<DateTime<Utc>> =
+            sqlx::query_scalar("SELECT expires_at FROM instances WHERE id = $1")
+                .bind(instance_id)
+                .fetch_optional(&state.db)
+                .await
+                .ok()
+                .flatten();
+        if let Some(expires_at) = expires_at {
+            if expires_at <= Utc::now() {
+                return ApiError::new(code::INSTANCE_SUSPENDED_EXPIRED, StatusCode::FORBIDDEN)
+                    .into_response();
+            }
+        }
+    }
+
+    // 小时/流量欠款自助解封依赖 Wave D 結算核心（結算+補繳），明確拒絕。
+    if instance_billing_mode(&state, instance_id).await.as_deref() == Some("hourly")
+        && instance.suspend_reason.as_deref() == Some("hourly_billing_insufficient_balance")
+    {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(json!({
+                "error": "Hourly billing settlement is not yet ported to the Rust server",
+                "code": "NOT_PORTED",
+            })),
+        )
+            .into_response();
+    }
+    if instance.suspend_reason.as_deref() == Some("traffic_billing_insufficient_balance") {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(json!({
+                "error": "Traffic billing settlement is not yet ported to the Rust server",
+                "code": "NOT_PORTED",
+            })),
+        )
+            .into_response();
+    }
+
+    // 执行解封（解封后设为 stopped，清空封停字段，version+1）
+    let result = sqlx::query(
+        "UPDATE instances SET status = 'stopped', suspended_at = NULL, suspended_by = NULL, \
+         suspend_reason = NULL, version = version + 1 \
+         WHERE id = $1 AND status = 'suspended'",
+    )
+    .bind(instance_id)
+    .execute(&state.db)
+    .await;
+    match result {
+        Ok(r) if r.rows_affected() == 1 => {}
+        Ok(_) => {
+            return ApiError::with_message(
+                "INSTANCE_NOT_SUSPENDED",
+                StatusCode::BAD_REQUEST,
+                "实例未被封停或正在删除",
+            )
+            .into_response()
+        }
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    }
+
+    create_log_with_instance(
+        &state,
+        user.id,
+        "instance",
+        "instance.unsuspend",
+        &format!("Unsuspended instance \"{}\"", instance.name),
+        "success",
+        Some(instance_id),
+    )
+    .await;
+
+    if instance.user_id != user.id {
+        let host_name: Option<String> =
+            sqlx::query_scalar("SELECT name FROM hosts WHERE id = $1")
+                .bind(instance.host_id)
+                .fetch_optional(&state.db)
+                .await
+                .ok()
+                .flatten();
+        crate::routes::users::create_inbox_notification(
+            &state,
+            instance.user_id,
+            "instance_unsuspended",
+            "✅ 实例已解除封停",
+            &format!(
+                "实例「{}」（节点：{}）已解除封停",
+                instance.name,
+                host_name.clone().unwrap_or_default()
+            ),
+            json!({
+                "instanceName": instance.name,
+                "hostName": host_name.unwrap_or_default(),
+            }),
+        )
+        .await;
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({ "message": "Instance unsuspended successfully" })),
+    )
+        .into_response()
+}
+
+// ===========================================================================
+// POST /:id/sync-status — 从 Incus 同步状态与内网 IP
+// ===========================================================================
+
+async fn sync_status(State(state): State<SharedAppState>, user: AuthUser, Path(id): Path<String>) -> Response {
+    let instance_id = match parse_id_str(&id) {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+
+    let instance = match crate::libs::instance_common::get_instance_by_id(&state, instance_id).await
+    {
+        Ok(Some(i)) => i,
+        Ok(None) => return ApiError::not_found(code::INSTANCE_NOT_FOUND).into_response(),
+        Err(e) => return e.into_response(),
+    };
+
+    #[derive(Debug, FromRow)]
+    struct SyncHost {
+        caddy_enabled: bool,
+        nat_public_ip: Option<String>,
+        ip_address: Option<String>,
+        caddy_port: i32,
+        caddy_username: Option<String>,
+        caddy_password: Option<String>,
+    }
+    let host: Option<SyncHost> = match sqlx::query_as(
+        "SELECT caddy_enabled, nat_public_ip, ip_address, caddy_port, caddy_username, caddy_password \
+         FROM hosts WHERE id = $1",
+    )
+    .bind(instance.host_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let host_owner: Option<i32> = match sqlx::query_scalar("SELECT user_id FROM hosts WHERE id = $1")
+        .bind(instance.host_id)
+        .fetch_optional(&state.db)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let is_instance_owner = instance.user_id == user.id;
+    let is_host_owner = host_owner == Some(user.id);
+    let is_admin = user.role == "admin";
+    if !is_instance_owner && !is_host_owner && !is_admin {
+        return ApiError::forbidden(code::FORBIDDEN).into_response();
+    }
+    if host.is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "节点不存在" })),
+        )
+            .into_response();
+    }
+
+    let host_for_client = match get_host_for_incus(&state, instance.host_id).await {
+        Ok(Some(h)) => h,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "节点不存在" })),
+            )
+                .into_response()
+        }
+        Err(e) => return e.into_response(),
+    };
+    let client = match get_incus_client_for_host(&state, &host_for_client).await {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": format!("无法连接到节点: {e:?}") })),
+            )
+                .into_response()
+        }
+    };
+
+    let inst_ips: Option<(Option<String>, Option<String>)> = match sqlx::query_as(
+        "SELECT ipv4, ipv6 FROM instances WHERE id = $1",
+    )
+    .bind(instance_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return ApiError::from_sql(e).into_response(),
+    };
+    let (inst_ipv4, inst_ipv6) = inst_ips.unwrap_or((None, None));
+
+    let outcome: Result<Value, String> = async {
+        let state_value = get_instance_state(&client, &instance.incus_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let incus_instance = crate::libs::incus::incus_instances::get_instance(&client, &instance.incus_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let incus_status_raw = state_value
+            .get("status")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "无法获取实例状态".to_string())?;
+        let incus_status = map_instance_status(incus_status_raw);
+        if incus_status == "unknown" {
+            return Err(format!("未知状态: {incus_status_raw}"));
+        }
+
+        let current_status = instance.status.clone();
+        let status_changed = current_status != incus_status;
+        if status_changed {
+            sqlx::query("UPDATE instances SET status = $2::\"InstanceStatus\" WHERE id = $1")
+                .bind(instance_id)
+                .bind(incus_status)
+                .execute(&state.db)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        // 同步内网 IPv4/IPv6；变更对比在本端计算（persist 不返回差异）
+        let sync_target = crate::libs::incus::managed_instance_provision::InstanceNetworkSyncTarget {
+            id: instance_id as i64,
+            name: Some(instance.name.clone()),
+            host_id: Some(instance.host_id as i64),
+            network_mode: Some(instance.network_mode.clone()),
+            ipv4: inst_ipv4.clone(),
+            ipv6: inst_ipv6.clone(),
+        };
+        let devices_value = Value::Object(incus_instance.devices.clone());
+        let expanded_devices_value = Value::Object(incus_instance.expanded_devices.clone());
+        let resolved =
+            crate::libs::incus::managed_instance_provision::resolve_instance_network_addresses(
+                &sync_target,
+                Some(&devices_value),
+                Some(&expanded_devices_value),
+                Some(&state_value),
+            );
+        let ipv4_changed = resolved.ipv4 != inst_ipv4;
+        let old_ipv4 = inst_ipv4.clone();
+        let new_ipv4 = resolved.ipv4.clone();
+        let ipv6_changed = resolved.ipv6 != inst_ipv6;
+        let old_ipv6 = inst_ipv6.clone();
+        let new_ipv6 = resolved.ipv6.clone();
+        crate::libs::incus::managed_instance_provision::persist_resolved_instance_network_addresses(
+            &state.db,
+            &sync_target,
+            &resolved,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // IPv4 变化 → 更新 Caddy 反代站点
+        let mut proxy_sites_updated: i64 = 0;
+        if ipv4_changed {
+            if let Some(new_ipv4) = &new_ipv4 {
+                if let Some(host) = &host {
+                    if host.caddy_enabled {
+                        if let (Some(target), Some(username), Some(password)) = (
+                            host.nat_public_ip.clone().or(host.ip_address.clone()),
+                            &host.caddy_username,
+                            &host.caddy_password,
+                        ) {
+                            if let Ok(caddy) = crate::libs::host_caddy::CaddyClient::new(
+                                &target,
+                                host.caddy_port as i64,
+                                username,
+                                password,
+                            ) {
+                                let sites: Vec<(String, i32, bool)> = sqlx::query_as(
+                                    "SELECT domain, target_port, https_enabled FROM proxy_sites \
+                                     WHERE instance_id = $1 AND status::text = 'active' AND enabled = true",
+                                )
+                                .bind(instance_id)
+                                .fetch_all(&state.db)
+                                .await
+                                .unwrap_or_default();
+                                for (domain, target_port, https_enabled) in sites {
+                                    if caddy.delete_site(&domain).await.is_ok()
+                                        && caddy
+                                            .add_site(&domain, new_ipv4, target_port as i64, https_enabled)
+                                            .await
+                                            .is_ok()
+                                    {
+                                        proxy_sites_updated += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(json!({
+            "success": true,
+            "statusChanged": status_changed,
+            "from": if status_changed { Some(current_status) } else { None },
+            "to": if status_changed { Some(incus_status.to_string()) } else { None },
+            "currentStatus": incus_status,
+            "ipv4Changed": ipv4_changed,
+            "oldIpv4": if ipv4_changed { old_ipv4 } else { None },
+            "newIpv4": if ipv4_changed { new_ipv4 } else { None },
+            "ipv6Changed": ipv6_changed,
+            "oldIpv6": if ipv6_changed { old_ipv6 } else { None },
+            "newIpv6": if ipv6_changed { new_ipv6 } else { None },
+            "proxySitesUpdated": if ipv4_changed { Some(proxy_sites_updated) } else { None },
+        }))
+    }
+    .await;
+
+    match outcome {
+        Ok(value) => (StatusCode::OK, Json(value)).into_response(),
+        Err(message) => {
+            if message.contains("not found") || message.contains("Instance not found") {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({ "error": "实例在节点上不存在" })),
+                )
+                    .into_response()
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": format!("同步失败: {message}") })),
+                )
+                    .into_response()
+            }
+        }
+    }
 }
