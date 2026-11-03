@@ -1,7 +1,9 @@
-//! 实例核心路由 — port of server/src/routes/instances.ts (read + power + task
-//! surface this pass; create/ports/clone/change-host/config/suspend/delete/
-//! sync-status/retry-provision/reassign-ipv6/available-hosts stay NOT_PORTED —
-//! see PORTING.md roadmap).
+//! 实例核心路由 — port of server/src/routes/instances.ts. Ported: list/detail/
+//! dashboard/order/password/stats/power(suspend/unsuspend/sync)/tasks/ports/
+//! quota/config/cloud-init. Still NOT_PORTED: create, available-hosts,
+//! retry-provision, change-host-options/change-host, clone, delete (destroy),
+//! reassign-ipv6 (see PORTING.md roadmap). Hourly-billing settlement branches
+//! return NOT_PORTED pending the Wave D scheduler core.
 //!
 //! Mounted at /api/instances; merges the snapshots/ip-addresses/proxy-sites
 //! routers that share the prefix upstream (KEEP the three .merge calls).
