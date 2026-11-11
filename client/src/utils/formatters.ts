@@ -144,6 +144,7 @@ export function getStatusInfo(status: string, t?: TranslateFunction): StatusInfo
         stopping: { labelKey: 'instance.status.stopping', class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
         restarting: { labelKey: 'instance.status.restarting', class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
         creating: { labelKey: 'instance.status.creating', class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
+        deleting: { labelKey: 'instance.status.deleting', class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
         error: { labelKey: 'instance.status.error', class: 'badge-error', dot: 'bg-red-500' }
     }
     

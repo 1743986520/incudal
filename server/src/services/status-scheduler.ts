@@ -15,10 +15,12 @@ import { prisma } from '../db/prisma.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
 import { isHostHealthy, recordHostSuccess, recordHostError, getAllHostHealth } from '../lib/incus/host-health.js'
 import { getInstanceState } from '../lib/incus/incus-instances.js'
+import { confirmInstanceAbsent } from '../lib/incus/confirm-instance-absent.js'
+import type { IncusClient } from '../lib/incus/incus-client.js'
 import { mapInstanceStatus } from '../lib/incus/incus-utils.js'
 import { sendNotification } from '../lib/notifier.js'
 import * as db from '../db/index.js'
-import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling } from './hourly-billing-scheduler.js'
+import { activateHourlyBilling, pauseHourlyBilling } from './hourly-billing-scheduler.js'
 
 // ==================== 配置常量 ====================
 
@@ -80,6 +82,22 @@ async function withTimeout<T>(
 }
 
 // ==================== 核心同步逻辑 ====================
+
+/** A status probe must never finalize deletion by itself: it has not cleaned
+ * Caddy, settled billing, or established reservation ownership. */
+export async function reconcileMissingInstanceStatus(
+    instance: { id: number; incusId: string; status: string; version: number; billingMode: 'package' | 'hourly'; trafficBillingMode: 'package' | 'usage' },
+    client: Pick<IncusClient, 'request'>,
+    initialError: unknown
+): Promise<{ changed: boolean; from?: string; to?: string; error?: string }> {
+    if (!await confirmInstanceAbsent(client, instance.incusId, initialError)) return { changed: false }
+    // Recheck the observation so an in-flight deletion remains authoritative.
+    const current = await prisma.instance.findUnique({ where: { id: instance.id }, select: { status: true, version: true } })
+    if (!current || current.status !== instance.status || current.version !== instance.version) return { changed: false }
+    if (instance.billingMode === 'hourly') return { changed: false, error: 'Hourly runtime requires manual reconciliation' }
+    if (instance.trafficBillingMode === 'usage') return { changed: false, error: 'Traffic usage requires manual reconciliation' }
+    return { changed: false, error: 'Remote instance is absent; deletion and resources require reconciliation' }
+}
 
 /**
  * 获取需要同步的实例（优化版：增量 + 优先级）
@@ -146,6 +164,7 @@ async function syncInstanceStatus(
         status: string
         version: number
         billingMode: 'package' | 'hourly'
+        trafficBillingMode: 'package' | 'usage'
         host: {
             id: number
             name: string
@@ -157,6 +176,7 @@ async function syncInstanceStatus(
     }
 ): Promise<{ changed: boolean; from?: string; to?: string; error?: string }> {
     const startTime = Date.now()
+    let client: Awaited<ReturnType<typeof getIncusClient>> | null = null
 
     try {
         // 检查宿主机健康状态
@@ -169,7 +189,7 @@ async function syncInstanceStatus(
             return { changed: false, error: 'Host not found' }
         }
 
-        const client = await getIncusClient(host)
+        client = await getIncusClient(host)
 
         const state = await withTimeout(
             getInstanceState(client, instance.incusId) as Promise<{ status?: string }>,
@@ -248,26 +268,12 @@ async function syncInstanceStatus(
         const errorMessage = error instanceof Error ? error.message : String(error)
         recordHostError(instance.host.id)
 
-        // 如果实例不存在于 Incus，标记为已删除
-        if (errorMessage.includes('not found') || errorMessage.includes('Instance not found')) {
-            console.log(`[StatusSync] Instance ${instance.id} not found in Incus, marking as deleted`)
-            const updated = await prisma.instance.updateMany({
-                where: {
-                    id: instance.id,
-                    status: instance.status as 'running' | 'stopped',
-                    version: instance.version
-                },
-                data: { status: 'deleted', lastSyncedAt: new Date(), version: { increment: 1 } }
-            })
-            if (updated.count !== 1) return { changed: false }
-            if (instance.billingMode === 'hourly') {
-                await closeHourlyBilling(instance.id)
-            }
-            return {
-                changed: true,
-                from: instance.status,
-                to: 'deleted'
-            }
+        // A timeout, proxy error, or text containing "not found" is not proof
+        // that the remote resource is absent. Confirm a structured 404 from a
+        // separate exact-instance GET before changing state.
+        if (client) {
+            const result = await reconcileMissingInstanceStatus(instance, client, error)
+            if (result.changed || result.error) return result
         }
 
         return { changed: false, error: errorMessage }

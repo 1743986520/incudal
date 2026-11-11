@@ -12,6 +12,7 @@ import type {
 import { waitForOperation } from './incus-utils.js'
 import { buildIncusTlsConnectOptions, panelCertificatePaths, resolveIncusTarget, trustFromEnvironment, type IncusTlsConnectOptions } from './incus-tls.js'
 import { getIncusExecutionGuard, throwIfIncusExecutionAborted } from './incus-execution-guard.js'
+import { getRemoteOperationAbortSignal, throwIfRemoteOperationAborted } from '../../services/remote-operation-abort.js'
 
 export class IncusApiError extends Error {
   readonly statusCode: number
@@ -161,9 +162,11 @@ export class IncusClient {
 
     const guard = getIncusExecutionGuard()
     throwIfIncusExecutionAborted()
+    throwIfRemoteOperationAborted()
     if (method !== 'GET' && guard) {
       await guard.assertActive()
       throwIfIncusExecutionAborted()
+      throwIfRemoteOperationAborted()
     }
 
     const url = `${this.baseUrl}${path}`
@@ -184,9 +187,9 @@ export class IncusClient {
     if (body) {
       options.body = JSON.stringify(body)
     }
-    if (guard) {
-      options.signal = guard.signal
-    }
+    const lockSignal = getRemoteOperationAbortSignal()
+    if (guard && lockSignal) options.signal = AbortSignal.any([guard.signal, lockSignal])
+    else if (guard || lockSignal) options.signal = guard?.signal ?? lockSignal
 
     const response = await request(url, options)
     const text = await response.body.text()
@@ -231,11 +234,13 @@ export class IncusClient {
       const result = await waitForOperation(this, data.operation, timeout) as T
       throwIfIncusExecutionAborted()
       if (method !== 'GET' && guard) await guard.assertActive()
+      throwIfRemoteOperationAborted()
       return result
     }
 
     throwIfIncusExecutionAborted()
     if (method !== 'GET' && guard) await guard.assertActive()
+    throwIfRemoteOperationAborted()
     return (data.metadata || data) as T
   }
 

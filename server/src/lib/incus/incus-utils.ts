@@ -6,6 +6,7 @@ import { request } from 'undici'
 import type { IncusClient } from './incus-client.js'
 import type { IncusApiResponse, IncusOperation } from '../../types/incus.js'
 import { getIncusExecutionGuard, throwIfIncusExecutionAborted } from './incus-execution-guard.js'
+import { getRemoteOperationAbortSignal, throwIfRemoteOperationAborted } from '../../services/remote-operation-abort.js'
 
 /**
  * 等待异步操作完成
@@ -20,6 +21,7 @@ export async function waitForOperation(
 
   while (Date.now() - startTime < timeout) {
     throwIfIncusExecutionAborted()
+    throwIfRemoteOperationAborted()
     const op = await client.request<IncusOperation>('GET', `${operationUrl}/wait?timeout=10`)
 
     if (op.status === 'Success') {
@@ -46,6 +48,7 @@ export async function waitForOperationLong(
 
   while (Date.now() - startTime < timeout) {
     throwIfIncusExecutionAborted()
+    throwIfRemoteOperationAborted()
     // Wait up to 30 seconds per poll
     const waitTimeout = Math.min(30, Math.floor((timeout - (Date.now() - startTime)) / 1000))
     if (waitTimeout <= 0) break
@@ -54,11 +57,13 @@ export async function waitForOperationLong(
       // Use /wait endpoint for long polling
       const waitUrl = `${client.baseUrl}${operationUrl}/wait?timeout=${waitTimeout}`
 
+      const executionSignal = getIncusExecutionGuard()?.signal
+      const lockSignal = getRemoteOperationAbortSignal()
       const response = await request(waitUrl, {
         method: 'GET',
         dispatcher: client.agent!,
         headers: { 'Content-Type': 'application/json' },
-        signal: getIncusExecutionGuard()?.signal
+        signal: executionSignal && lockSignal ? AbortSignal.any([executionSignal, lockSignal]) : executionSignal ?? lockSignal
       })
 
       const text = await response.body.text()

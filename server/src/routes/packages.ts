@@ -2854,14 +2854,20 @@ export default async function packageRoutes(fastify: FastifyInstance) {
 
       // 如果修改了配额相关字段，同步到所有关联实例
       const quotaFields = ['portLimit', 'snapshotLimit', 'backupLimit', 'siteLimit', 'swapSize', 'trafficLimit']
+      // 方案限速（trafficLimitSpeed）变更同样要同步：更新实例的
+      // limitsIngress/limitsEgress 并强制刷新 NIC 带宽，否则「方案限速」对存量实例不生效
       const hasQuotaChange = quotaFields.some(f => updateData[f] !== undefined)
+        || updateData.trafficLimitSpeed !== undefined
+      const hasBandwidthChange = updateData.trafficLimitSpeed !== undefined
       if (hasQuotaChange) {
         const syncResult = await db.syncPlanQuotaToInstances(planIdNum, updatedPlan, existingPlan.swapSize)
         if (syncResult.count > 0) {
           if (syncResult.instanceIds.length > 0) {
             try {
               const { reconcileTrafficStateForInstanceIds } = await import('../services/traffic-scheduler.js')
-              await reconcileTrafficStateForInstanceIds(syncResult.instanceIds)
+              await reconcileTrafficStateForInstanceIds(syncResult.instanceIds, {
+                forceBandwidthApply: hasBandwidthChange
+              })
             } catch (err) {
               request.log.warn(err, '方案配额已同步，流量状态即时复核失败')
             }

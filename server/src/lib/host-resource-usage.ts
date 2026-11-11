@@ -1,4 +1,4 @@
-export const HOST_RESOURCE_INSTANCE_STATUSES = ['creating', 'running', 'stopped', 'suspended'] as const
+export const HOST_RESOURCE_INSTANCE_STATUSES = ['creating', 'running', 'stopped', 'suspended', 'deleting'] as const
 
 export interface HostResourceAllocation {
   status: string

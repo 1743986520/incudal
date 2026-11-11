@@ -6,6 +6,7 @@
 import { prisma } from './prisma.js'
 import type { InstanceBillingMode, PackagePlan, TrafficBillingMode } from '@prisma/client'
 import { applyTrafficMultiplier } from '../lib/traffic-multiplier.js'
+import { normalizePlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js'
 import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
 
 // ==================== 查询操作 ====================
@@ -280,6 +281,7 @@ export async function syncPlanQuotaToInstances(
   ]))
 
   const updatedTrafficInstanceIds: number[] = []
+  const updatedBandwidthInstanceIds: number[] = []
 
   async function applyTrafficLimitsToPlanInstances(): Promise<void> {
     const instances = await prisma.instance.findMany({
@@ -287,13 +289,25 @@ export async function syncPlanQuotaToInstances(
       select: { id: true, hostId: true, monthlyTrafficUsed: true, trafficBillingMode: true }
     })
 
+    // 方案限速（trafficLimitSpeed）变更时同步到实例的
+    // limitsIngress/limitsEgress，否则存量实例的 NIC 带宽
+    // 停留在旧值，表现为「方案限速没效果」
+    const planBandwidth = normalizePlanTrafficLimitSpeed(plan.trafficLimitSpeed)
+
     await Promise.all(instances.map(instance => {
       const monthlyTrafficLimit = applyTrafficMultiplier(plan.trafficLimit, multiplierByHostId.get(instance.hostId) ?? 1)
       updatedTrafficInstanceIds.push(instance.id)
+
+      const isUsage = instance.trafficBillingMode === 'usage'
+      if (!isUsage && planBandwidth) {
+        updatedBandwidthInstanceIds.push(instance.id)
+      }
+
       return prisma.instance.update({
         where: { id: instance.id },
         data: {
           monthlyTrafficLimit,
+          ...(isUsage || !planBandwidth ? {} : { limitsIngress: planBandwidth, limitsEgress: planBandwidth }),
           trafficStatus: instance.trafficBillingMode === 'usage'
             ? 'NORMAL'
             : calculateInstanceTrafficStatus(instance.monthlyTrafficUsed, monthlyTrafficLimit)
@@ -315,7 +329,7 @@ export async function syncPlanQuotaToInstances(
       }
     })
     await applyTrafficLimitsToPlanInstances()
-    return { count: vmResult.count, instanceIds: updatedTrafficInstanceIds }
+    return { count: vmResult.count, instanceIds: Array.from(new Set([...updatedTrafficInstanceIds, ...updatedBandwidthInstanceIds])) }
   }
 
   const enabledResult = await prisma.instance.updateMany({
@@ -355,7 +369,7 @@ export async function syncPlanQuotaToInstances(
     }
   })
   await applyTrafficLimitsToPlanInstances()
-  return { count: enabledResult.count + disabledQuotaResult.count, instanceIds: updatedTrafficInstanceIds }
+  return { count: enabledResult.count + disabledQuotaResult.count, instanceIds: Array.from(new Set([...updatedTrafficInstanceIds, ...updatedBandwidthInstanceIds])) }
 }
 
 /**

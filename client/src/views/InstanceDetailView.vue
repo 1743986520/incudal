@@ -22,6 +22,7 @@ const InstanceQuotaTab = defineAsyncComponent(() => import('@/components/instanc
 const InstanceConfigTab = defineAsyncComponent(() => import('@/components/instance/InstanceConfigTab.vue'))
 const InstanceSitesTab = defineAsyncComponent(() => import('@/components/instance/InstanceSitesTab.vue'))
 const InstanceLogsTab = defineAsyncComponent(() => import('@/components/instance/InstanceLogsTab.vue'))
+const DeletionReservationReconciliation = defineAsyncComponent(() => import('@/components/instance/DeletionReservationReconciliation.vue'))
 const SnapshotManager = defineAsyncComponent(() => import('@/components/SnapshotManager.vue'))
 const TrafficStats = defineAsyncComponent(() => import('@/components/instance/TrafficStats.vue'))
 // 低频模态框使用异步加载，减少实例详情页初始包体积（含重型 xterm 的 TerminalModal 尤为关键）
@@ -429,6 +430,8 @@ watch(activeTab, async (tab: TabType) => {
   }
   // 快照加载由 SnapshotManager 组件处理
 })
+
+const isDeleting = computed<boolean>(() => instance.value?.status?.toLowerCase() === 'deleting')
 
 const isRunning = computed<boolean>(() => {
   const s = instance.value?.status?.toLowerCase()
@@ -841,6 +844,8 @@ watch(visibleTabs, (tabs) => {
 })
 
 // 加载函数
+let instanceRequestGeneration = 0
+
 async function loadInstance(): Promise<void> {
   // 如果组件已卸载，直接返回，不执行任何操作
   if (!isComponentMounted.value) {
@@ -871,7 +876,9 @@ async function loadInstance(): Promise<void> {
       return
     }
     
+    const generation = ++instanceRequestGeneration
     const response = await api.instances.get(instanceId)
+    if (generation !== instanceRequestGeneration) return
     instance.value = (response as { instance?: Instance }).instance || null
     if (instance.value) {
       if (isHourlyInstance.value) {
@@ -1018,7 +1025,7 @@ async function loadStats(): Promise<void> {
     }
     
     // 检查实例状态是否变化（被动同步更新）
-    if (newStatus && instance.value) {
+    if (newStatus && instance.value && !isDeleting.value) {
       const normalizedStatus = newStatus.toLowerCase()
       const currentStatus = instance.value.status?.toLowerCase()
       if (normalizedStatus !== currentStatus) {
@@ -1309,6 +1316,14 @@ async function handleDestroy(): Promise<void> {
   destroyLoading.value = true
   try {
     const result = await api.billing.destroyInstance(instance.value.id)
+    if (result.pending) {
+      instanceRequestGeneration++
+      instance.value = { ...instance.value, status: 'deleting' }
+      polling.stop('stats')
+      showDestroyModal.value = false
+      toast.warning(t('instance.deletionPending'))
+      return
+    }
     if (result.isFreeInstance) {
       toast.success(t('instance.destroy.success'))
     } else {
@@ -1344,6 +1359,13 @@ async function handleErrorDestroy(): Promise<void> {
   errorDestroyLoading.value = true
   try {
     const result = await api.billing.destroyInstance(instance.value.id, { feeWaiver: 'error' })
+    if (result.pending) {
+      instanceRequestGeneration++
+      instance.value = { ...instance.value, status: 'deleting' }
+      polling.stop('stats')
+      toast.warning(t('instance.deletionPending'))
+      return
+    }
     if (result.isFreeInstance) {
       toast.success(t('instance.destroy.success'))
     } else {
@@ -1402,7 +1424,7 @@ const isOperationDisabled = computed<boolean>(() => {
   if (isSuspended.value && !isHostOwner) {
     return true
   }
-  return !!actionLoading.value || !!activeTask.value || hasPendingTransfer.value
+  return isDeleting.value || !!actionLoading.value || !!activeTask.value || hasPendingTransfer.value
 })
 
 // 操作
@@ -1492,12 +1514,19 @@ async function handleAction(action: InstanceAction): Promise<void> {
       startTaskPolling(response.taskId)
     }
     else if (action === 'delete') {
-      if (!confirm(t('instance.detail.actions.confirmDelete', { name: instance.value.name }))) {
+      if (!confirm(`${t('instance.detail.actions.confirmDelete', { name: instance.value.name })}\n\n${t('instance.deletionOfflineWarning')}`)) {
         actionLoading.value = ''
         return
       }
       
-      await api.instances.delete(instance.value.id)
+      const result = await api.instances.delete(instance.value.id)
+      if (result.status === 'deleting') {
+        instanceRequestGeneration++
+        instance.value = { ...instance.value, status: 'deleting' }
+        polling.stop('stats')
+        toast.warning(t('instance.deletionPending'))
+        return
+      }
       toast.success(t('instance.detail.actions.deleted'))
       router.push(getReturnPath())
       return
@@ -2534,7 +2563,7 @@ function formatHourlyDate(value: string | null | undefined): string {
           </div>
         </div>
         
-        <div class="flex items-center gap-2 flex-wrap">
+        <div class="flex items-center gap-2 flex-wrap" :inert="isDeleting">
           <!-- Active Task Indicator -->
           <div 
             v-if="activeTask"
@@ -2807,6 +2836,11 @@ function formatHourlyDate(value: string | null | undefined): string {
         </div>
       </div>
 
+      <div v-if="isDeleting" class="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-700 dark:text-yellow-400" role="status">
+        {{ $t('instance.deletionPending') }}
+      </div>
+      <DeletionReservationReconciliation v-if="isDeleting && authStore.isAdmin" :instance-id="instance.id" />
+
       <!-- Tab Navigation -->
       <div 
         class="flex gap-1 p-1 rounded-lg w-full sm:w-fit overflow-x-auto"
@@ -2895,7 +2929,7 @@ function formatHourlyDate(value: string | null | undefined): string {
 
       <!-- Tab Content -->
       <Transition name="tab" mode="out-in">
-        <div :key="activeTab">
+        <div :key="activeTab" :inert="isDeleting">
           <!-- Info Tab -->
           <div v-if="activeTab === 'info' && instance" class="space-y-4">
             <!-- Host Announcement Banner -->

@@ -77,6 +77,10 @@ function onConfirmInput(event: Event): void {
             </div>
           </div>
 
+          <p v-if="eligibleItems.some(item => item.isFreeInstance)" class="text-sm text-themed-muted">
+            {{ $t('instance.deletionOfflineWarning') }}
+          </p>
+
           <div class="grid gap-3 md:grid-cols-4">
             <div class="rounded-xl border p-4" :class="themeStore.isDark ? 'border-gray-800 bg-gray-950/60' : 'border-gray-200 bg-gray-50'">
               <div class="text-xs uppercase tracking-wide text-themed-muted">{{ $t('instance.batch.selectedCount', { count: selectedCount }) }}</div>

@@ -493,21 +493,28 @@ export async function adjustHostResources(id: number, deltas: {
  * 删除主机
  * 注意：在删除宿主机之前，必须先删除所有关联的记录以解除外键约�?
  */
+export class HostDeletionBlockedError extends Error {
+  constructor(public readonly reason: 'retired_reconciliation' | 'active_instances') {
+    super(reason === 'retired_reconciliation' ? 'Host has retired instances requiring reconciliation' : 'Host has active instances')
+    this.name = 'HostDeletionBlockedError'
+  }
+}
+
 export async function deleteHost(id: number): Promise<void> {
-  // 1. 先删除所有端口映射（PortMapping 的外键到 Host �?RESTRICT�?
-  await prisma.portMapping.deleteMany({
-    where: { hostId: id }
-  })
-  
-  // 2. 删除所有关联的实例记录（包括已删除状态的�?
-  // 这会自动删除关联的快照、备份、端口映射等（通过 Cascade�?
-  await prisma.instance.deleteMany({
-    where: { hostId: id }
-  })
-  
-  // 3. 删除宿主机（会自动删除关联的 PackageHost，因为它�?Cascade�?
-  await prisma.host.delete({
-    where: { id }
+  await prisma.$transaction(async tx => {
+    // Serialize with retirement, which locks the host before inserting the
+    // tombstone. The FK also protects direct instance/host deletion paths.
+    await tx.$queryRaw`SELECT id FROM hosts WHERE id = ${id} FOR UPDATE`
+    if (await tx.retiredInstanceTombstone.count({ where: { hostId: id } })) {
+      throw new HostDeletionBlockedError('retired_reconciliation')
+    }
+    if (await tx.instance.count({ where: { hostId: id, status: { not: 'deleted' } } })) {
+      throw new HostDeletionBlockedError('active_instances')
+    }
+    // Failures must not leave a live host with its port mappings removed.
+    await tx.portMapping.deleteMany({ where: { hostId: id } })
+    await tx.instance.deleteMany({ where: { hostId: id } })
+    await tx.host.delete({ where: { id } })
   })
 }
 

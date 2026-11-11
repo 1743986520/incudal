@@ -145,5 +145,14 @@ export async function getInstanceWithPermission(
         return null
     }
 
+    // Read-only views and a repeat of the deletion request remain available;
+    // other operations must not race a pending remote deletion.
+    const method = reply.request.method
+    const isDeleteRequest = method === 'DELETE' && reply.request.routeOptions.url === '/api/instances/:id'
+    if (instance.status === 'deleting' && method !== 'GET' && method !== 'HEAD' && !isDeleteRequest) {
+        reply.code(409).send({ error: 'Instance deletion is pending', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+        return null
+    }
+
     return instance
 }

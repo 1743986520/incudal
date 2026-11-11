@@ -8,10 +8,18 @@ import { createHash } from 'crypto'
 import { readFileSync } from 'fs'
 import type { PeerCertificate } from 'tls'
 import { formatHostForUrl } from './network-address.js'
+import { getRemoteOperationAbortSignal } from '../services/remote-operation-abort.js'
 
 // 请求超时配置（毫秒）
 const REQUEST_TIMEOUT = 30000 // 30秒
 const CONNECT_TIMEOUT = 10000 // 10秒
+
+export class CaddyApiError extends Error {
+  constructor(readonly statusCode: number, detail: string) {
+    super(`Caddy API error: ${statusCode} ${detail}`)
+    this.name = 'CaddyApiError'
+  }
+}
 
 export interface CaddyClientConfig {
   host: string // 宿主机 IP 或域名
@@ -122,12 +130,19 @@ export class CaddyClient {
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+    const lockSignal = getRemoteOperationAbortSignal()
+    const signal = lockSignal ? AbortSignal.any([controller.signal, lockSignal]) : controller.signal
+    // Undici's request signal alone may not interrupt a stalled TLS handshake.
+    // A client whose protecting lock was lost must not later issue its request.
+    const onLockAbort = () => { void this.agent.destroy().catch(() => {}) }
+    lockSignal?.addEventListener('abort', onLockAbort, { once: true })
 
     try {
+      signal.throwIfAborted()
       const response = await undiciRequest(url, {
         method,
         dispatcher: this.agent,
-        signal: controller.signal,
+        signal,
         headers: {
           'Authorization': this.authHeader,
           'Content-Type': 'application/json'
@@ -137,17 +152,19 @@ export class CaddyClient {
 
       if (response.statusCode >= 400) {
         const errorText = await response.body.text()
-        throw new Error(`Caddy API error: ${response.statusCode} ${errorText}`)
+        throw new CaddyApiError(response.statusCode, errorText)
       }
 
       // 某些请求没有响应体
       const text = await response.body.text()
+      signal.throwIfAborted()
       if (!text) {
         return {} as T
       }
       
       return JSON.parse(text) as T
     } finally {
+      lockSignal?.removeEventListener('abort', onLockAbort)
       clearTimeout(timeoutId)
     }
   }
@@ -277,20 +294,39 @@ export class CaddyClient {
    * @param domain 域名
    */
   async deleteSite(domain: string): Promise<void> {
-    // 新版部署的站点是哈希 ID；存量站点仍是旧的字符替换 ID，两个都尝试删除
-    const routeIds = [...new Set([buildSiteRouteId(domain), buildLegacySiteRouteId(domain)])]
+    const normalizedDomain = domain.toLowerCase()
+    const modernId = buildSiteRouteId(normalizedDomain)
+    const legacyId = buildLegacySiteRouteId(normalizedDomain)
 
-    for (const routeId of routeIds) {
-      try {
-        await this.request('DELETE', `/id/${routeId}`)
-        return
-      } catch (error) {
-        // 如果路由不存在，尝试下一个候选 ID
-        if (error instanceof Error && error.message.includes('404')) {
-          continue
-        }
-        throw error
-      }
+    try {
+      await this.request('DELETE', `/id/${modernId}`)
+    } catch (error) {
+      if (!(error instanceof CaddyApiError) || error.statusCode !== 404) throw error
+    }
+
+    // A deployment can contain both route generations. Clearing the modern
+    // route is not proof that a legacy route no longer points at the address.
+    // Legacy IDs replace dots with dashes and can collide for distinct
+    // domains. Never delete a legacy route until its matchers prove that it
+    // belongs exclusively to the requested domain.
+    let route: CaddyRoute
+    try {
+      route = await this.request<CaddyRoute>('GET', `/id/${legacyId}`)
+    } catch (error) {
+      if (error instanceof CaddyApiError && error.statusCode === 404) return
+      throw error
+    }
+    const matchers = route?.match
+    if (!Array.isArray(matchers) || matchers.length === 0 || !matchers.every(matcher =>
+      Array.isArray(matcher.host) && matcher.host.length > 0
+      && matcher.host.every(host => typeof host === 'string' && host.toLowerCase() === normalizedDomain)
+    )) {
+      throw new Error(`Cannot verify legacy Caddy route ownership for ${normalizedDomain}`)
+    }
+    try {
+      await this.request('DELETE', `/id/${legacyId}`)
+    } catch (error) {
+      if (!(error instanceof CaddyApiError) || error.statusCode !== 404) throw error
     }
   }
 

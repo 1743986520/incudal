@@ -150,6 +150,9 @@ function formatCurrency(value: number): string {
                 </p>
               </div>
             </div>
+            <p v-if="destroyInfo.isFreeInstance" class="text-sm text-themed-muted">
+              {{ t('instance.deletionOfflineWarning') }}
+            </p>
 
             <!-- Cannot destroy reason -->
             <div 

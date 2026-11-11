@@ -83,6 +83,13 @@ export async function startSchedulers(): Promise<void> {
   const CREATE_TIMEOUT_MS = 10 * 60 * 1000 // 10分钟
   const CREATE_TIMEOUT_CHECK_INTERVAL = 2 * 60 * 1000 // 每2分钟检查一次
 
+  const { runPendingInstanceDeletionRecovery } = await import('./pending-instance-deletion.js')
+  const runPendingDeletions = () => {
+    void runPendingInstanceDeletionRecovery().catch(error => console.error('[PendingDeletion] Recovery failed:', error))
+  }
+  runPendingDeletions()
+  setInterval(runPendingDeletions, CREATE_TIMEOUT_CHECK_INTERVAL)
+
   const runCreateTimeoutCleanup = async () => {
     try {
       const stuckInstances = await getStuckCreatingInstances(CREATE_TIMEOUT_MS)
@@ -183,96 +190,14 @@ export async function startSchedulers(): Promise<void> {
   // 重试；结算函数本身以退款 billing record / UserDestroyRecord 保证幂等。
   const runDeletionBillingRecovery = async () => {
     const { prisma } = await import('../db/prisma.js')
-    const { ensureInstanceDeleted, getIncusClient } = await import('../lib/incus/index.js')
-    const { closeHourlyBilling } = await import('./hourly-billing-scheduler.js')
+    const { recoverDeletionBilling, deletionBillingRecoveryWhere } = await import('./deletion-billing-recovery.js')
     const pendingInstances = await prisma.instance.findMany({
-      where: {
-        status: 'deleted',
-        deletionBillingPending: true
-      },
-      select: {
-        id: true,
-        incusId: true,
-        name: true,
-        userId: true,
-        hostId: true,
-        cpu: true,
-        memory: true,
-        disk: true,
-        networkMode: true,
-        portLimit: true,
-        billingPrice: true,
-        billingCycle: true,
-        expiresAt: true,
-        packagePlanId: true,
-        deletionBillingMode: true,
-        deletionRefundableValue: true,
-        deletionFeeWaiver: true
-      },
-      orderBy: { updatedAt: 'asc' },
-      take: 100
+      where: deletionBillingRecoveryWhere,
+      select: { id: true }, orderBy: { updatedAt: 'asc' }, take: 100
     })
-
     for (const instance of pendingInstances) {
       try {
-        const host = await getHostById(instance.hostId)
-        if (!host || host.status !== 'online') {
-          console.warn(`[DeletionRecovery] 实例 ${instance.id} 的宿主机不可用，暂不结算退款`)
-          continue
-        }
-
-        const client = await getIncusClient(host)
-        await ensureInstanceDeleted(client, instance.incusId)
-        await prisma.instance.updateMany({
-          where: { id: instance.id, status: 'deleted', deletionBillingPending: true },
-          data: { deletionRemoteDeleted: true }
-        })
-
-        if (instance.deletionBillingMode === 'hourly_close') {
-          await closeHourlyBilling(instance.id)
-          await db.completeHourlyDeletionBilling(instance.id)
-          console.log(`[DeletionRecovery] 实例 ${instance.id} 已完成按小时计费关闭与预付款释放`)
-          continue
-        }
-
-        const instanceBilling = {
-          id: instance.id,
-          userId: instance.userId,
-          hostId: instance.hostId,
-          name: instance.name
-        }
-
-        if (instance.deletionBillingMode === 'user_destroy') {
-          let refundableValue = instance.deletionRefundableValue === null
-            ? 0
-            : Number(instance.deletionRefundableValue)
-          if (instance.deletionRefundableValue === null) {
-            const quote = await db.calculateInstanceRemainingRefundQuote({
-              id: instance.id,
-              billingPrice: instance.billingPrice,
-              billingCycle: instance.billingCycle,
-              expiresAt: instance.expiresAt,
-              packagePlanId: instance.packagePlanId
-            })
-            refundableValue = quote.refundableValue
-          }
-          const settlement = await db.settleUserDestroyBilling({
-            requestUserId: instance.userId,
-            instance: instanceBilling,
-            refundableValue,
-            feeWaiver: instance.deletionFeeWaiver
-          })
-          console.log(`[DeletionRecovery] 实例 ${instance.id} 已完成用户退款结算 ¥${settlement.refundAmount.toFixed(2)}`)
-        } else if (instance.deletionBillingMode === 'privileged_delete') {
-          const refundAmount = await db.settlePrivilegedDeletionBilling({
-            instance: instanceBilling,
-            requestedRefundAmount: Number(instance.deletionRefundableValue || 0),
-            remark: `删除实例退款重试：${instance.name}`
-          })
-          console.log(`[DeletionRecovery] 实例 ${instance.id} 已完成管理端退款结算 ¥${refundAmount.toFixed(2)}`)
-        } else {
-          console.error(`[DeletionRecovery] 实例 ${instance.id} 的删除结算模式无效，保留待处理状态`)
-        }
+        await recoverDeletionBilling(instance.id)
       } catch (error) {
         console.error(`[DeletionRecovery] 实例 ${instance.id} 删除/退款结算仍未完成:`, error)
       }

@@ -148,8 +148,10 @@ export function getTrafficCountersFromState(
 export const THROTTLE_BANDWIDTH = '1Mbit'
 
 /**
- * 应用带宽限速
- * 设置 limits.ingress 和 limits.egress 为 1Mbit
+ * 应用带宽限速（超流量惩罚）
+ * 超流量后统一压到 1Mbit 紧急限速；方案级限速（trafficLimitSpeed）属于
+ * 常态带宽上限，由 buildNetworkDevices（创建时）与 restoreBandwidth
+ * （方案变更同步时）负责，不在这里处理。
  */
 export async function applyThrottle(
     client: IncusClient,

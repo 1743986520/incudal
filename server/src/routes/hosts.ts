@@ -11,6 +11,7 @@ import { dirname } from 'path'
 import { Agent, request as undiciRequest } from 'undici'
 import * as db from '../db/index.js'
 import { prisma } from '../db/prisma.js'
+import { recordNewInstanceReservation } from '../db/resource-reservation-evidence.js'
 import { checkHostingAccess } from '../lib/hosting-access.js'
 import { createInboxMessage } from '../db/inbox.js'
 import { createLog } from '../db/logs.js'
@@ -19,6 +20,8 @@ import { createInstanceTask, InstanceTaskConflictError, getActiveTaskForInstance
 import { getSSHKeyById, getSSHKeysByUserId } from '../db/ssh-keys.js'
 import { getEnabledCommandsByDistro, validateCommandsOwnership } from '../db/custom-init-commands.js'
 import { IncusClient, getIncusClient, removeIncusClient } from '../lib/incus/index.js'
+import { reconcileMissingInstanceStatus } from '../services/status-scheduler.js'
+import { closeInstanceSessions } from '../lib/terminal-proxy.js'
 import { listStoragePools, getStoragePoolResources, createStoragePool, deleteStoragePool, updateStoragePool } from '../lib/incus/incus-storage.js'
 import type { CreateHostRequest, UpdateHostRequest } from '../types/api.js'
 import type { Host } from '../types/database.js'
@@ -28,6 +31,8 @@ import { parseStringArray } from '../lib/json-validation.js'
 import { sendNotification } from '../lib/notifier.js'
 import { sendReleaseNotification } from '../lib/release-notifier.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
+import { canUpdateSyncedSite } from '../lib/proxy-site-cleanup-policy.js'
+import { withInstanceAndDomainRemoteOperationLock } from '../services/instance-remote-operation-lock.js'
 import { normalizeArchitecture } from '../lib/architecture.js'
 import { generateIncusConfig } from '../lib/incus-config-generator.js'
 import { sendAdminInstanceCreatedEmail, sendRenewalPriceUpdatedEmail } from '../lib/mailer.js'
@@ -2875,6 +2880,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     Body: { instanceIds: number[]; reason?: string; databaseOnly?: boolean }
   }>('/:id/instances/batch', {
     onRequest: [fastify.authenticate],
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     schema: {
       body: {
         type: 'object',
@@ -2908,7 +2914,11 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     }
 
     // 权限检查：只有节点所有者可以批量删除
-    if (host.user_id !== user.id && user.role !== 'admin') {
+    if (host.user_id === undefined) {
+      return reply.code(409).send({ error: 'Host ownership state unavailable', code: 'INSTANCE_STATE_CHANGED' })
+    }
+    const hostOwnerId = host.user_id
+    if (hostOwnerId !== user.id && user.role !== 'admin') {
       return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
     }
 
@@ -2917,7 +2927,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       where: {
         id: { in: instanceIds },
         hostId: hostId,
-        status: { not: 'deleted' }
+        status: { notIn: ['deleted', 'deleting'] }
       }
     })
 
@@ -2934,6 +2944,45 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           instanceIds: paidInstances.map(instance => instance.id)
         })
       }
+    }
+
+    if (!databaseOnly) {
+      // The ordinary batch path uses the exact same durable worker as a
+      // single deletion. In particular, never write `deleted` merely to
+      // claim work: its database trigger releases IPs immediately.
+      const results: Array<{ id: number; name: string; success: boolean; pending?: boolean; status?: 'deleting'; error?: string }> = []
+      for (const instance of instances) {
+        try {
+          const privilegedRefund = instance.userId !== hostOwnerId && instance.packagePlanId !== null && instance.billingMode !== 'hourly'
+          const hourly = instance.billingMode === 'hourly'
+          const claimed = await claimInstanceForDelete(instance.id, instance.status, {
+            authorization: {
+              actorUserId: user.id, actorRole: user.role, scope: 'host-only',
+              expectedUserId: instance.userId, expectedHostId: instance.hostId,
+              expectedHostUserId: hostOwnerId, expectedIncusId: instance.incusId,
+              expectedVersion: instance.version, expectedPackagePlanId: instance.packagePlanId,
+              expectedPackageId: instance.packageId, expectedSuspendReason: instance.suspendReason,
+              expectedBillingMode: instance.billingMode, expectedTrafficBillingMode: instance.trafficBillingMode
+            },
+            deletionBillingPending: privilegedRefund || hourly,
+            deletionBillingMode: hourly ? 'hourly_close' : privilegedRefund ? 'privileged_delete' : null,
+            pending: { requestedById: user.id, reason }
+          })
+          if (!claimed) {
+            results.push({ id: instance.id, name: instance.name, success: false, error: 'Instance state changed or an operation is in progress' })
+            continue
+          }
+          results.push({ id: instance.id, name: instance.name, success: false, pending: true, status: 'deleting' })
+          try { closeInstanceSessions(instance.id, 'Instance is being deleted') }
+          catch (error) { fastify.log.warn({ instanceId: instance.id, error }, 'Failed to close instance sessions after deletion claim') }
+        } catch (error) {
+          fastify.log.error({ instanceId: instance.id, error }, 'Failed to claim batch deletion')
+          results.push({ id: instance.id, name: instance.name, success: false, error: 'Failed to claim instance deletion' })
+        }
+      }
+      const pendingCount = results.filter(result => result.pending).length
+      const failedCount = results.filter(result => !result.pending && !result.success).length
+      return { message: 'Instance deletions queued', results, successCount: 0, pendingCount, failedCount, totalRefundAmount: 0 }
     }
 
     const results: { id: number; name: string; success: boolean; error?: string; refundAmount?: number }[] = []
@@ -2965,6 +3014,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     for (const instance of instances) {
       let deletionClaimed = false
       let remoteDeletionConfirmed = false
+      let localCleanupStarted = false
       let requestedRefundAmount = 0
       let refundAmount = 0
       try {
@@ -3001,18 +3051,29 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           && instance.billingMode !== 'hourly'
         const needsHourlyBillingClosure = !databaseOnly && instance.billingMode === 'hourly'
         const needsDeletionBilling = needsPrivilegedRefund || needsHourlyBillingClosure
-        if (needsDeletionBilling) {
-          const claimed = await claimInstanceForDelete(instance.id, instance.status, {
-            deletionBillingPending: true,
-            deletionBillingMode: needsPrivilegedRefund ? 'privileged_delete' : 'hourly_close'
-          })
-          if (!claimed) {
-            results.push({ id: instance.id, name: instance.name, success: false, error: '实例正在删除或已删除' })
-            continue
-          }
-          deletionClaimed = true
+        const claimed = await claimInstanceForDelete(instance.id, instance.status, {
+          authorization: {
+            actorUserId: user.id, actorRole: user.role, scope: 'host-only',
+            expectedUserId: instance.userId, expectedHostId: instance.hostId,
+            expectedHostUserId: hostOwnerId, expectedIncusId: instance.incusId,
+            expectedVersion: instance.version, expectedPackagePlanId: instance.packagePlanId,
+            expectedPackageId: instance.packageId, expectedSuspendReason: instance.suspendReason,
+            expectedBillingMode: instance.billingMode
+          },
+          deletionBillingPending: needsDeletionBilling,
+          deletionBillingMode: needsPrivilegedRefund ? 'privileged_delete' : needsHourlyBillingClosure ? 'hourly_close' : null
+        })
+        if (!claimed) {
+          results.push({ id: instance.id, name: instance.name, success: false, error: '实例正在删除或已删除' })
+          continue
+        }
+        deletionClaimed = true
+        // A legacy DB-only claim fires the database's IP cleanup trigger as
+        // soon as it writes `deleted`. Never restore the original status
+        // after that irreversible local effect, even if later cleanup fails.
+        if (databaseOnly) localCleanupStarted = true
 
-          if (needsPrivilegedRefund) {
+        if (needsPrivilegedRefund) {
             const billingInstance = await prisma.instance.findUnique({
               where: { id: instance.id },
               select: {
@@ -3036,7 +3097,6 @@ export default async function hostRoutes(fastify: FastifyInstance) {
               where: { id: instance.id },
               data: { deletionRefundableValue: requestedRefundAmount }
             })
-          }
         }
 
         if (!databaseOnly) {
@@ -3075,29 +3135,27 @@ export default async function hostRoutes(fastify: FastifyInstance) {
 
         // ===== 1. 删除反代站点（完整删除清 Caddy，DB-only 只清数据库）=====
         const proxySites = await getProxySitesByInstanceId(instance.id)
+        // From this point onward panel-only cleanup can have irreversible local
+        // effects. Only restore a claim if it failed before cleanup started.
+        localCleanupStarted = true
         if (proxySites.length > 0) {
-          // 仅完整删除模式尝试删除 Caddy 远程配置；DB-only 无论宿主机是否在线都不碰远端。
-          if (!databaseOnly && host.caddy_enabled && host.caddy_username && host.caddy_password) {
-            const targetHost = host.nat_public_ip || host.ip_address
-            if (targetHost) {
-              const caddyClient = createCaddyClient({
-                host: targetHost,
-                port: host.caddy_port || 8444,
-                username: host.caddy_username,
-                password: host.caddy_password
-              })
-              for (const site of proxySites) {
-                try {
-                  await caddyClient.deleteSite(site.domain)
-                } catch (caddyError) {
-                  // 忽略 Caddy 删除错误
-                }
-              }
-            }
-          }
-          // 始终删除数据库记录
           for (const site of proxySites) {
-            await deleteProxySite(site.id)
+            const locked = await withInstanceAndDomainRemoteOperationLock(instance.id, site.domain, async () => {
+              const current = await prisma.proxySite.findUnique({ where: { id: site.id } })
+              if (!current || current.instanceId !== instance.id || current.hostId !== host.id || current.domain !== site.domain) {
+                throw new Error('Proxy site identity changed during deletion')
+              }
+              if (!databaseOnly) {
+                const targetHost = host.nat_public_ip || host.ip_address
+                if (!host.caddy_enabled || !targetHost || !host.caddy_username || !host.caddy_password) {
+                  throw new Error('Caddy site removal cannot be confirmed')
+                }
+                const caddyClient = createCaddyClient({ host: targetHost, port: host.caddy_port || 8444, username: host.caddy_username, password: host.caddy_password })
+                await caddyClient.deleteSite(current.domain)
+              }
+              await deleteProxySite(current.id)
+            })
+            if (!locked.acquired) throw new Error('Proxy site operation in progress')
           }
         }
 
@@ -3251,13 +3309,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         )
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err)
-        if (deletionClaimed && !remoteDeletionConfirmed) {
+        if (deletionClaimed && !remoteDeletionConfirmed && (!databaseOnly || !localCleanupStarted)) {
           try {
             await prisma.instance.updateMany({
               where: {
                 id: instance.id,
-                status: 'deleted',
-                deletionBillingPending: true
+                status: 'deleted'
               },
               data: {
                 status: instance.status,
@@ -3306,7 +3363,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       const reservedPorts = await prisma.instance.aggregate({
         where: {
           hostId: hostId,
-          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
+          status: { in: ['creating', 'running', 'stopped', 'suspended', 'deleting'] },
           networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
         },
         _sum: { portLimit: true }
@@ -3377,11 +3434,22 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       })
     }
 
-    // 移除连接
-    await removeIncusClient(hostId)
+    // Deleting a host with retired records would destroy reconciliation
+    // evidence. The database operation also rechecks under the host row lock.
+    try {
+      await db.deleteHost(hostId)
+    } catch (error) {
+      if (error instanceof db.HostDeletionBlockedError) {
+        return reply.code(409).send({
+          error: error.message,
+          code: error.reason === 'retired_reconciliation' ? 'HOST_DELETION_REQUIRES_RECONCILIATION' : 'HOST_HAS_INSTANCES'
+        })
+      }
+      throw error
+    }
 
-    // 删除记录
-    await db.deleteHost(hostId)
+    // Close the cached connection only after the database deletion succeeds.
+    await removeIncusClient(hostId)
 
     // 注意：已取消配额限制，不再更新 hostUsed
 
@@ -4404,7 +4472,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       where: {
         id: { in: instanceIds },
         hostId: hostId,
-        status: { notIn: ['deleted', 'creating'] } // 排除已删除和创建中的实例
+        status: { notIn: ['deleted', 'deleting', 'creating'] } // 不得覆盖待删除状态
       }
     })
 
@@ -4482,10 +4550,16 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         let proxySitesUpdated = 0
 
         if (currentStatus !== incusStatus) {
-          await db.updateInstanceStatus(
-            instance.id,
-            incusStatus as 'creating' | 'running' | 'stopped' | 'error'
-          )
+          // Use the state observed before contacting Incus as a CAS guard. A
+          // concurrent deletion must never be overwritten by stale sync data.
+          const updated = await prisma.instance.updateMany({
+            where: { id: instance.id, status: currentStatus, version: instance.version },
+            data: { status: incusStatus as 'creating' | 'running' | 'stopped' | 'error', version: { increment: 1 } }
+          })
+          if (updated.count !== 1) {
+            results.push({ id: instance.id, name: instance.name, success: false, error: 'Instance state changed during synchronization' })
+            continue
+          }
           statusChanged = true
           changedCount++
         }
@@ -4546,10 +4620,22 @@ export default async function hostRoutes(fastify: FastifyInstance) {
               for (const site of proxySites) {
                 if (site.status === 'active' && site.enabled) {
                   try {
-                    await caddyClient.deleteSite(site.domain)
-                    await caddyClient.addSite(site.domain, newIpv4, site.targetPort, site.httpsEnabled)
-                    proxySitesUpdated++
-                    console.log(`[BatchSyncStatus] Updated proxy site "${site.domain}" to new IP ${newIpv4}`)
+                    const locked = await withInstanceAndDomainRemoteOperationLock(instance.id, site.domain, async () => {
+                      const current = await prisma.proxySite.findUnique({
+                        where: { id: site.id },
+                        include: { instance: { select: { status: true, hostId: true, ipv4: true } } }
+                      })
+                      if (!current || !canUpdateSyncedSite(current, {
+                        id: site.id, instanceId: instance.id, hostId: host.id, domain: site.domain, ipv4: newIpv4!
+                      })) return false
+                      await caddyClient.deleteSite(current.domain)
+                      await caddyClient.addSite(current.domain, newIpv4!, current.targetPort, current.httpsEnabled)
+                      return true
+                    })
+                    if (locked.acquired && locked.value) {
+                      proxySitesUpdated++
+                      console.log(`[BatchSyncStatus] Updated proxy site "${site.domain}" to new IP ${newIpv4}`)
+                    }
                   } catch (caddyErr) {
                     console.error(`[BatchSyncStatus] Failed to update proxy site "${site.domain}":`, caddyErr)
                   }
@@ -4576,32 +4662,12 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err)
         
-        // 如果实例在 Incus 中不存在，标记为已删除并回滚资源
-        if (errorMessage.includes('not found') || errorMessage.includes('Instance not found')) {
-          if (instance.billingMode === 'hourly') {
-            await closeHourlyBilling(instance.id)
-          }
-
-          // 1. 更新实例状态为已删除
-          await db.updateInstanceStatus(instance.id, 'deleted')
-          
-          // 2. 获取端口映射数量并回滚资源
-          await db.rollbackResources({
-            hostId: instance.hostId,
-            cpu: instance.cpu,
-            memory: instance.memory,
-            disk: instance.disk,
-            portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
-          })
-          
-          changedCount++
-          results.push({
-            id: instance.id,
-            name: instance.name,
-            success: true,
-            from: instance.status,
-            to: 'deleted'
-          })
+        // The status endpoint has no Caddy cleanup or reliable ownership and
+        // billing proof. Even a confirmed 404 cannot release shared resources;
+        // keep the instance visible so deletion/reconciliation can take over.
+        const absence = client ? await reconcileMissingInstanceStatus(instance, client, err) : { changed: false }
+        if (absence.error) {
+          results.push({ id: instance.id, name: instance.name, success: false, error: absence.error })
         } else {
           results.push({
             id: instance.id,
@@ -4622,7 +4688,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         const reservedPorts = await prisma.instance.aggregate({
           where: {
             hostId,
-            status: { in: ['creating', 'running', 'stopped', 'suspended'] },
+            status: { in: ['creating', 'running', 'stopped', 'suspended', 'deleting'] },
             networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
           },
           _sum: { portLimit: true }
@@ -4705,7 +4771,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     const reservedPorts = await prisma.instance.aggregate({
       where: {
         hostId,
-        status: { in: ['creating', 'running', 'stopped', 'suspended'] },
+        status: { in: ['creating', 'running', 'stopped', 'suspended', 'deleting'] },
         networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
       },
       _sum: { portLimit: true }
@@ -6295,6 +6361,8 @@ export default async function hostRoutes(fastify: FastifyInstance) {
         : null
 
       const txResult = await prisma.$transaction(async (tx) => {
+        const reservedPortCount = ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode)
+          ? (selectedPlan?.portLimit || pkgWithExtras.port_limit || 0) : 0
         const reservedHost = await db.selectAndReserveHostWithLock(tx, {
           packageHostIds: packageHostIds.length > 0 ? packageHostIds : undefined,
           nodeSelectors: JSON.parse(pkgWithExtras.node_selectors || '[]'),
@@ -6303,7 +6371,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           disk: requestedDisk,
           hostId,
           ownerId: pkg.user_id!,
-          portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode) ? (selectedPlan?.portLimit || pkgWithExtras.port_limit || 0) : 0
+          portCount: reservedPortCount
         })
 
         if (!reservedHost) {
@@ -6394,6 +6462,11 @@ export default async function hostRoutes(fastify: FastifyInstance) {
             nextTrafficBillingAt: selectedPlan?.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             autoRenew: false
           }
+        })
+
+        await recordNewInstanceReservation(tx, {
+          instanceId: instance.id, hostId: reservedHost.id, cpu: requestedCpu,
+          memory: requestedMemory, disk: requestedDisk, portCount: reservedPortCount
         })
 
         if (selectedPlan && billing && paidGiftExpiresAt && paidGiftDays) {

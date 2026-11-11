@@ -123,8 +123,9 @@ const displayIp = computed(() => ({
 const isRunning = computed(() => displayStatus.value.toLowerCase() === 'running')
 const isSuspended = computed(() => displayStatus.value.toLowerCase() === 'suspended')
 const isDeleted = computed(() => displayStatus.value.toLowerCase() === 'deleted')
+const isDeleting = computed(() => displayStatus.value.toLowerCase() === 'deleting')
 const hasActiveTask = computed(() => !!activeTask.value && !['COMPLETED', 'FAILED'].includes(activeTask.value.status))
-const isBusy = computed(() => loading.value || actionLoading.value !== '' || hasActiveTask.value)
+const isBusy = computed(() => loading.value || actionLoading.value !== '' || hasActiveTask.value || isDeleting.value)
 const canStart = computed(() => !!instance.value && !isBusy.value && !isRunning.value && !isSuspended.value && !isDeleted.value)
 const canStop = computed(() => !!instance.value && !isBusy.value && isRunning.value)
 const canRestart = computed(() => !!instance.value && !isBusy.value && isRunning.value)
@@ -132,7 +133,7 @@ const hasSyncPermission = computed(() => {
   const inst = instance.value
   return !!inst && (inst.isHostOwner === true || inst.isInstanceOwner === true)
 })
-const canSync = computed(() => hasSyncPermission.value && actionLoading.value !== 'sync' && !loading.value)
+const canSync = computed(() => hasSyncPermission.value && actionLoading.value !== 'sync' && !loading.value && !isDeleting.value)
 const canOpenTerminal = computed(() => !!instance.value && isRunning.value && !isDeleted.value)
 const canSuspend = computed(() => !!instance.value && !isBusy.value && !isSuspended.value && !isDeleted.value)
 const canUnsuspend = computed(() => !!instance.value && !isBusy.value && isSuspended.value)
@@ -521,7 +522,7 @@ async function deleteInstanceWithRefund(): Promise<void> {
     ? t('admin.billing.deleteRefundWarning')
     : t('instance.confirmDelete', { name: mergedInstance.value.name })
 
-  if (!window.confirm(confirmMessage)) return
+  if (!window.confirm(`${confirmMessage}\n\n${t('instance.deletionOfflineWarning')}`)) return
 
   const reasonInput = window.prompt(t('admin.billing.deleteRefundReasonPlaceholder'), '')
   if (reasonInput === null) return
@@ -536,8 +537,12 @@ async function deleteInstanceWithRefund(): Promise<void> {
   try {
     let result
     result = await api.instances.delete(instance.value.id, reason || undefined)
-    optimisticStatus.value = 'deleted'
-    toast.success(result.refundAmount && result.refundAmount > 0 ? t('admin.billing.deleteRefundSuccess') : t('common.deleteSuccess'))
+    optimisticStatus.value = result.status === 'deleting' ? 'deleting' : 'deleted'
+    if (result.status === 'deleting') {
+      toast.warning(t('instance.deletionPending'))
+    } else {
+      toast.success(result.refundAmount && result.refundAmount > 0 ? t('admin.billing.deleteRefundSuccess') : t('common.deleteSuccess'))
+    }
     await loadInstanceContext(true)
   } catch (error) {
     toast.error(`${t('instance.detail.actions.actionFailed')}: ${translateError(error)}`)

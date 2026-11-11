@@ -20,6 +20,7 @@ type TransferExecutionData = {
 
 export type CleanupSnapshot = {
   proxySiteIds: number[]
+  proxySiteVersions: Array<{ id: number; updatedAt: string }>
   portMappingIds: number[]
   snapshotIds: number[]
   backupIds: number[]
@@ -28,7 +29,7 @@ export type CleanupSnapshot = {
 }
 
 export async function assertCurrentInstanceOwner(tx: Prisma.TransactionClient, instanceId: number, fromUserId: number): Promise<void> {
-  const instance = await tx.instance.findFirst({ where: { id: instanceId, userId: fromUserId }, select: { id: true } })
+  const instance = await tx.instance.findFirst({ where: { id: instanceId, userId: fromUserId, status: { notIn: ['deleting', 'deleted'] } }, select: { id: true } })
   if (!instance) throw new Error('TRANSFER_INSTANCE_OWNER_CHANGED')
 }
 
@@ -64,10 +65,10 @@ export async function claimTransferTransaction(tx: Prisma.TransactionClient, dat
   await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, data.instanceId)
   const taskCount = await tx.instanceTask.count({ where: { instanceId: data.instanceId, status: { in: ['PENDING', 'PROCESSING'] } } })
   if (taskCount > 0) throw new Error('TRANSFER_INSTANCE_TASK_ACTIVE')
-  const instance = await tx.instance.findFirst({ where: { id: data.instanceId, status: { not: 'deleted' } }, select: { id: true, incusId: true, version: true } })
+  const instance = await tx.instance.findFirst({ where: { id: data.instanceId, status: { notIn: ['deleting', 'deleted'] } }, select: { id: true, incusId: true, version: true } })
   if (!instance) throw new Error('TRANSFER_INSTANCE_OWNER_CHANGED')
   const [proxySites, portMappings, snapshots, backups, snapshotPolicies, backupPolicies] = await Promise.all([
-    tx.proxySite.findMany({ where: { instanceId: data.instanceId }, select: { id: true } }),
+    tx.proxySite.findMany({ where: { instanceId: data.instanceId }, select: { id: true, updatedAt: true } }),
     tx.portMapping.findMany({ where: { instanceId: data.instanceId }, select: { id: true } }),
     tx.snapshot.findMany({ where: { instanceId: data.instanceId }, select: { id: true } }),
     tx.backup.findMany({ where: { instanceId: data.instanceId }, select: { id: true } }),
@@ -75,7 +76,7 @@ export async function claimTransferTransaction(tx: Prisma.TransactionClient, dat
     tx.backupPolicy.findMany({ where: { instanceId: data.instanceId }, select: { id: true } })
   ])
   const cleanupSnapshot: CleanupSnapshot = {
-    proxySiteIds: proxySites.map(x => x.id), portMappingIds: portMappings.map(x => x.id),
+    proxySiteIds: proxySites.map(x => x.id), proxySiteVersions: proxySites.map(x => ({ id: x.id, updatedAt: x.updatedAt.toISOString() })), portMappingIds: portMappings.map(x => x.id),
     snapshotIds: snapshots.map(x => x.id), backupIds: backups.map(x => x.id),
     snapshotPolicyIds: snapshotPolicies.map(x => x.id), backupPolicyIds: backupPolicies.map(x => x.id)
   }

@@ -5,6 +5,7 @@
 
 import { prisma } from './prisma.js'
 import { Prisma, type Instance, type PackagePlan } from '@prisma/client'
+import { readReservationEvidenceForUpdate, recordReservationRelease } from './resource-reservation-evidence.js'
 import { getInstanceAffBinding, isAffRebateEnabled, processAffCommission, reverseAffCommissionForInstance } from './aff.js'
 import {
   countDiscountedMonthsForInstance,
@@ -43,6 +44,7 @@ import {
   tryAdvisoryTransactionLock
 } from './advisory-locks.js'
 import { decrementHostResourceCounters } from './quota-operations.js'
+import { throwIfRemoteOperationAborted } from '../services/remote-operation-abort.js'
 
 // ==================== 类型定义 ====================
 
@@ -283,7 +285,8 @@ interface BillingValueBreakdown {
  */
 async function getBillingValueBreakdownForClient(
   client: BillingDbClient,
-  instanceId: number
+  instanceId: number,
+  atTime = new Date()
 ): Promise<BillingValueBreakdown> {
   const lineageInstanceIds = await getInstanceBillingLineageIds(instanceId, client)
   const instanceIds = lineageInstanceIds.length > 0 ? lineageInstanceIds : [instanceId]
@@ -380,7 +383,7 @@ async function getBillingValueBreakdownForClient(
   let totalHostedValue = 0
   let remainingUserValue = 0
   let remainingHostedValue = 0
-  const now = new Date()
+  const now = atTime
 
   for (const value of values) {
     totalUserValue += value.netUserAmount
@@ -415,12 +418,12 @@ async function calculateHostedRefundAmountForClient(
   client: BillingDbClient,
   instanceId: number,
   requestedUserRefund: number,
-  options: { allowHistorical?: boolean } = {}
+  options: { allowHistorical?: boolean; atTime?: Date } = {}
 ): Promise<number> {
   const requestedAmount = Number(requestedUserRefund)
   if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) return 0
 
-  const breakdown = await getBillingValueBreakdownForClient(client, instanceId)
+  const breakdown = await getBillingValueBreakdownForClient(client, instanceId, options.atTime)
   if (!breakdown.hasPositiveBillingRecords) return roundCurrency(requestedAmount)
 
   const allowHistorical = options.allowHistorical !== false
@@ -451,7 +454,7 @@ export async function getHostedRefundAmountInTransaction(
 export async function settleUserDestroyBilling(
   params: UserDestroyBillingSettlementParams
 ): Promise<{ refundAmount: number; feeAmount: number; isFirstTime: boolean }> {
-  const { requestUserId, instance, feeWaiver } = params
+  const { requestUserId, instance } = params
 
   return prisma.$transaction(async tx => {
     await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instance.id)
@@ -460,12 +463,18 @@ export async function settleUserDestroyBilling(
 
     const deletionState = await tx.instance.findUnique({
       where: { id: instance.id },
-      select: { deletionRemoteDeleted: true }
+      select: {
+        userId: true, hostId: true, status: true, deletionRemoteDeleted: true,
+        deletionBillingPending: true, deletionBillingMode: true,
+        deletionRefundableValue: true, deletionRequestedAt: true, deletionFeeWaiver: true
+      }
     })
     if (!deletionState?.deletionRemoteDeleted) {
       throw new Error('REMOTE_DELETION_NOT_CONFIRMED')
     }
-
+    if (requestUserId !== deletionState.userId || instance.userId !== deletionState.userId || instance.hostId !== deletionState.hostId) {
+      throw new Error('DELETION_BILLING_IDENTITY_CHANGED')
+    }
     const existingDestroy = await tx.userDestroyRecord.findUnique({
       where: { instanceId: instance.id }
     })
@@ -474,6 +483,7 @@ export async function settleUserDestroyBilling(
         where: { id: instance.id },
         data: clearDeletionBillingStateData()
       })
+      throwIfRemoteOperationAborted()
       return {
         refundAmount: Number(existingDestroy.refundAmount),
         feeAmount: Number(existingDestroy.feeAmount),
@@ -481,12 +491,25 @@ export async function settleUserDestroyBilling(
       }
     }
 
+    if (!deletionState.deletionBillingPending || deletionState.deletionBillingMode !== 'user_destroy') {
+      throw new Error('DELETION_BILLING_STATE_INVALID')
+    }
+    const feeWaiver = deletionState.deletionFeeWaiver
+    // Old deleted-state claims can have crashed before persisting the quote.
+    // Retain the existing recovery path only for those legacy rows; durable
+    // deleting-state claims must have an immutable persisted quotation.
+    const legacyQuote = deletionState.status === 'deleted' && deletionState.deletionRequestedAt === null
+      && Number.isFinite(params.refundableValue) && params.refundableValue >= 0
+      ? params.refundableValue : null
+    const quotedValue = deletionState.deletionRefundableValue === null ? legacyQuote : Number(deletionState.deletionRefundableValue)
+    if (quotedValue === null) throw new Error('DELETION_BILLING_QUOTE_MISSING')
+
     const destroyCount = await tx.userDestroyRecord.count({
       where: { userId: requestUserId }
     })
     const isFirstTime = destroyCount === 0
     const maxRefundable = await getMaxRefundableInTransaction(tx, instance.id)
-    const refundableValue = roundCurrency(Math.min(Math.max(0, params.refundableValue), maxRefundable))
+    const refundableValue = roundCurrency(Math.min(Math.max(0, quotedValue), maxRefundable))
     const feeAmount = !feeWaiver && !isFirstTime
       ? roundCurrency(refundableValue * 0.10)
       : 0
@@ -494,7 +517,10 @@ export async function settleUserDestroyBilling(
     const hostedRefundAmount = refundAmount > 0
       // The destruction fee is retained by the platform, so only the amount
       // actually returned to the user may be recovered from the host owner.
-      ? await calculateHostedRefundAmountForClient(tx, instance.id, refundAmount, { allowHistorical: false })
+      ? await calculateHostedRefundAmountForClient(tx, instance.id, refundAmount, {
+          allowHistorical: false,
+          atTime: deletionState.deletionRequestedAt ?? undefined
+        })
       : 0
 
     if (refundAmount > 0) {
@@ -563,6 +589,7 @@ export async function settleUserDestroyBilling(
       data: clearDeletionBillingStateData()
     })
 
+    throwIfRemoteOperationAborted()
     return { refundAmount, feeAmount, isFirstTime }
   })
 }
@@ -584,16 +611,23 @@ export async function settlePrivilegedDeletionBilling(
 
     const deletionState = await tx.instance.findUnique({
       where: { id: instance.id },
-      select: { deletionRemoteDeleted: true }
+      select: { deletionRemoteDeleted: true, deletionBillingPending: true, deletionBillingMode: true, deletionRequestedAt: true }
     })
     if (!deletionState?.deletionRemoteDeleted) {
       throw new Error('REMOTE_DELETION_NOT_CONFIRMED')
     }
 
+    // The refund and clearing the pending marker commit together. Retrying
+    // after that transaction must not pay a second time.
+    if (!deletionState.deletionBillingPending) return 0
+    if (deletionState.deletionBillingMode !== 'privileged_delete') {
+      throw new Error('INVALID_PRIVILEGED_DELETION_BILLING_MODE')
+    }
+
     const maxRefundable = await getMaxRefundableInTransaction(tx, instance.id)
     const refundAmount = roundCurrency(Math.min(Math.max(0, params.requestedRefundAmount), maxRefundable))
     const hostedRefundAmount = refundAmount > 0
-      ? await calculateHostedRefundAmountForClient(tx, instance.id, refundAmount)
+      ? await calculateHostedRefundAmountForClient(tx, instance.id, refundAmount, { atTime: deletionState.deletionRequestedAt ?? undefined })
       : 0
 
     if (refundAmount > 0) {
@@ -650,6 +684,7 @@ export async function settlePrivilegedDeletionBilling(
       data: clearDeletionBillingStateData()
     })
 
+    throwIfRemoteOperationAborted()
     return refundAmount
   })
 }
@@ -802,7 +837,9 @@ export async function failCreatingInstanceAndRollbackResources(
     if (claimed.count === 0) return false
 
     if (resourceRollback) {
+      const reservationBefore = await readReservationEvidenceForUpdate(tx, instanceId)
       await decrementHostResourceCounters(tx, resourceRollback)
+      await recordReservationRelease(tx, reservationBefore, { ...resourceRollback, instanceId, portCount: resourceRollback.portCount ?? 0 })
     }
 
     return claimed.count === 1
@@ -861,7 +898,9 @@ export async function failCreatingInstanceAndRefund(
     }
 
     if (resourceRollback) {
+      const reservationBefore = await readReservationEvidenceForUpdate(tx, instanceId)
       await decrementHostResourceCounters(tx, resourceRollback)
+      await recordReservationRelease(tx, reservationBefore, { ...resourceRollback, instanceId, portCount: resourceRollback.portCount ?? 0 })
     }
 
     if (instance.billingMode === 'hourly') {
@@ -998,7 +1037,7 @@ export async function calculateInstanceRemainingRefundQuote(instance: {
   billingCycle: number | null
   expiresAt: Date | null
   packagePlanId: number | null
-}, client: BillingDbClient = prisma): Promise<InstanceRemainingRefundQuote> {
+}, client: BillingDbClient = prisma, atTime = new Date()): Promise<InstanceRemainingRefundQuote> {
   const isPaid = !!(instance.packagePlanId && instance.expiresAt && instance.billingPrice)
 
   if (!isPaid) {
@@ -1011,7 +1050,7 @@ export async function calculateInstanceRemainingRefundQuote(instance: {
     }
   }
 
-  const now = new Date()
+  const now = atTime
   const expiresAt = new Date(instance.expiresAt!)
 
   if (expiresAt <= now) {
@@ -1027,7 +1066,7 @@ export async function calculateInstanceRemainingRefundQuote(instance: {
   const remainingDays = calculateRemainingDays(expiresAt, now)
   const [maxRefundableInfo, billingValueBreakdown] = await Promise.all([
     getMaxRefundableForClient(client, instance.id),
-    getBillingValueBreakdownForClient(client, instance.id)
+    getBillingValueBreakdownForClient(client, instance.id, atTime)
   ])
   const { maxRefundable } = maxRefundableInfo
 
@@ -1074,8 +1113,8 @@ export async function calculateInstanceRefund(instance: {
   billingCycle: number | null
   expiresAt: Date | null
   packagePlanId: number | null
-}): Promise<InstanceRefundResult> {
-  const quote = await calculateInstanceRemainingRefundQuote(instance)
+}, atTime = new Date()): Promise<InstanceRefundResult> {
+  const quote = await calculateInstanceRemainingRefundQuote(instance, prisma, atTime)
 
   return {
     remainingDays: quote.remainingDays,

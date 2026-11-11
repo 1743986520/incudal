@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { schedule } from 'node-cron'
 import { prisma } from '../db/prisma.js'
+import { advisoryTransactionLock, INSTANCE_OPERATION_LOCK_NAMESPACE } from '../db/advisory-locks.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
 import { getInstanceState, stopInstance } from '../lib/incus/incus-instances.js'
 import { sendTrafficBillingLowBalanceEmail } from '../lib/mailer.js'
@@ -105,8 +106,10 @@ async function sendLowBalanceWarnings(): Promise<void> {
   }
 }
 
-async function settleInstance(instanceId: number, now: Date, trigger: SettlementTrigger): Promise<SettlementResult | null> {
+export async function settleInstance(instanceId: number, now: Date, trigger: SettlementTrigger): Promise<SettlementResult | null> {
   return prisma.$transaction(async tx => {
+    // Serialize the status/balance decision with a pending-deletion claim.
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     const instance = await tx.instance.findUnique({
       where: { id: instanceId },
       include: {
@@ -315,6 +318,7 @@ async function settleInstance(instanceId: number, now: Date, trigger: Settlement
  */
 export async function payPendingTrafficBillAndUnsuspend(instanceId: number, userId: number): Promise<{ amount: number }> {
   return prisma.$transaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     const instance = await tx.instance.findUnique({
       where: { id: instanceId },
       include: { host: { select: { trafficResetDay: true } } }

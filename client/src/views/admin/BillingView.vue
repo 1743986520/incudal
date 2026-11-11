@@ -757,7 +757,8 @@ async function executeAction() {
         }
         {
           const result = await api.admin.deleteAndRefundInstance(id, actionForm.value.refundType, actionForm.value.reason)
-          toast.success(result.message || t('admin.billing.deleteRefundSuccess'))
+          if (result.pending || result.status === 'deleting') toast.warning(t('instance.deletionPending'))
+          else toast.success(result.message || t('admin.billing.deleteRefundSuccess'))
         }
         break
       case 'deleteRefundDatabaseOnly':

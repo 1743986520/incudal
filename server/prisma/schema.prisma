@@ -89,6 +89,7 @@ enum InstanceStatus {
   stopped
   suspended // 封停状态（到期或手动封停）
   error
+  deleting
   deleted
 }
 
@@ -678,6 +679,8 @@ model Host {
   diskUsed            Int          @default(0) @map("disk_used")
   tags                Json?        @default("[]")
   natPortsUsedCount   Int          @default(0) @map("nat_ports_used_count")
+  // Monotonic invalidation token, advanced by a DB trigger on counter changes.
+  reservationEpoch    BigInt       @default(0) @map("reservation_epoch")
   cpuAllowanceMax     Int          @default(0) @map("cpu_allowance_max")
   memoryMax           Int          @default(0) @map("memory_max")
   instanceType        InstanceType @default(container) @map("instance_type")
@@ -736,6 +739,7 @@ model Host {
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   instances    Instance[]
+  retiredInstanceTombstones RetiredInstanceTombstone[]
   ipAddresses  IpAddress[]
   allowedImages HostAllowedImage[]
   portMappings PortMapping[]
@@ -1045,6 +1049,11 @@ model Instance {
   deletionBillingMode      String?  @map("deletion_billing_mode")
   deletionRefundableValue  Decimal? @map("deletion_refundable_value") @db.Decimal(10, 2)
   deletionFeeWaiver        Boolean  @default(false) @map("deletion_fee_waiver")
+  deletionOriginalStatus   InstanceStatus? @map("deletion_original_status")
+  deletionRequestedAt      DateTime? @map("deletion_requested_at")
+  deletionLastAttemptAt    DateTime? @map("deletion_last_attempt_at")
+  deletionRequestedById    Int? @map("deletion_requested_by_id")
+  deletionReason           String? @map("deletion_reason")
   cpu              Int
   memory           Int
   disk             Int
@@ -1143,6 +1152,7 @@ model Instance {
   backupPolicy    BackupPolicy?
   snapshotPolicy  SnapshotPolicy?
   trafficSnapshot TrafficSnapshot?
+  resourceReservation InstanceResourceReservation?
   dailyTraffic    DailyTraffic[]
   transfers       InstanceTransfer[]
   ipAddresses     IpAddress[]
@@ -1165,10 +1175,12 @@ model Instance {
   auditIgnores     InstanceAuditIgnore[]
   auditScans       InstanceAuditScan[]
   auditActions     InstanceAuditAction[]
+  retiredTombstone RetiredInstanceTombstone?
 
   @@index([userId])
   @@index([hostId])
   @@index([status])
+  @@index([status, deletionLastAttemptAt])
   @@index([hostId, status]) // 高可用优化：状态同步调度器使用
   @@index([expiresAt])      // 计费调度器使用：查找即将到期的实例
   @@index([autoRenew, expiresAt]) // 计费调度器使用：自动续费查询
@@ -1176,6 +1188,45 @@ model Instance {
   @@index([billingMode, status])
   @@index([userId, displayOrder, createdAt(sort: Desc)])
   @@map("instances")
+}
+
+// Preserve unresolved accounting and the unverified remote state when an
+// operator logically removes an instance from a retired host.
+model RetiredInstanceTombstone {
+  instanceId              Int      @id @map("instance_id")
+  hostId                  Int      @map("host_id")
+  sourceDigest            String   @map("source_digest")
+  retirementDigest        String   @map("retirement_digest")
+  originalBillingMode     String?  @map("original_billing_mode")
+  remoteDeletionConfirmed Boolean  @default(false) @map("remote_deletion_confirmed")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  instance Instance @relation(fields: [instanceId], references: [id], onDelete: Restrict)
+  host     Host     @relation(fields: [hostId], references: [id], onDelete: Restrict)
+
+  @@index([hostId])
+  @@map("retired_instance_tombstones")
+}
+
+// Absence means legacy/unknown. A reserved observation is only trusted while
+// its host epoch still matches and the resource snapshot is unchanged.
+model InstanceResourceReservation {
+  instanceId Int      @id @map("instance_id")
+  hostId     Int      @map("host_id")
+  state      String
+  generation Int      @default(1)
+  hostEpoch  BigInt   @map("host_epoch")
+  cpu        Int
+  memory     Int
+  disk       Int
+  portCount  Int      @map("port_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([hostId, state])
+  @@map("instance_resource_reservations")
 }
 
 // IP 地址类型枚举

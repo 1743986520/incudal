@@ -19,6 +19,8 @@ import { deleteBackup as deleteIncusBackup } from '../lib/incus/incus-backups.js
 import { renameInstance as renameIncusInstance } from '../lib/incus/incus-restore.js'
 import { getProxySitesByInstanceId, deleteProxySite } from '../db/proxy-sites.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
+import { canCleanupTransferredSite } from '../lib/proxy-site-cleanup-policy.js'
+import { withInstanceAndDomainRemoteOperationLock } from '../services/instance-remote-operation-lock.js'
 import { prisma } from '../db/prisma.js'
 import { claimTransferTransaction, markTransferPhase, rollbackProcessingTransfer, settleTransferWithRefund } from '../db/transfer-safety.js'
 
@@ -26,6 +28,42 @@ import { claimTransferTransaction, markTransferPhase, rollbackProcessingTransfer
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8)
 const claimToken = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 32)
 const TRANSFER_CLAIM_LEASE_MS = 30 * 60 * 1000
+
+/** Remove only unchanged sites captured before transfer, under the same locks
+ * as site mutations and pending deletion. A new owner's edits must survive. */
+async function cleanupTransferredProxySites(
+    instanceId: number,
+    host: Awaited<ReturnType<typeof db.getHostById>>,
+    versions: Array<{ id: number; updatedAt: string }>
+): Promise<void> {
+    const snapshots = new Map(versions.map(site => [site.id, site.updatedAt]))
+    const sites = await getProxySitesByInstanceId(instanceId)
+    for (const site of sites) {
+        const expectedUpdatedAt = snapshots.get(site.id)
+        if (!expectedUpdatedAt) continue
+        try {
+            const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, site.domain, async () => {
+                const current = await prisma.proxySite.findUnique({
+                    where: { id: site.id },
+                    include: { instance: { select: { status: true } } }
+                })
+                if (!canCleanupTransferredSite(current, {
+                    id: site.id, instanceId, hostId: host?.id, domain: site.domain, updatedAt: expectedUpdatedAt
+                }) || !current || !host) return
+                const targetHost = host.nat_public_ip || host.ip_address
+                if (!host.caddy_enabled || !targetHost || !host.caddy_username || !host.caddy_password) {
+                    throw new Error('Caddy site removal cannot be confirmed')
+                }
+                const client = createCaddyClient({ host: targetHost, port: host.caddy_port || 8444, username: host.caddy_username, password: host.caddy_password })
+                await client.deleteSite(current.domain)
+                await deleteProxySite(current.id)
+            })
+            if (!locked.acquired) console.warn(`[Transfer] Proxy site operation in progress (${site.id})`)
+        } catch (error) {
+            console.error(`[Transfer] Failed to safely remove proxy site (${site.id}):`, error)
+        }
+    }
+}
 const TRANSFER_TRANSACTION_OPTIONS = {
     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     timeout: 10000
@@ -527,34 +565,7 @@ export default async function transferRoutes(fastify: FastifyInstance) {
         // ===== 3. 数据库更新成功后，删除附属资源（失败仅记录日志，不影响转移结果）=====
         
         // 3.1 删除反代站点（Caddy 远程 + 数据库）
-        const proxySites = await getProxySitesByInstanceId(transfer.instanceId)
-        if (proxySites.length > 0) {
-            if (host?.caddy_enabled && host.caddy_username && host.caddy_password) {
-                const targetHost = host.nat_public_ip || host.ip_address
-                if (targetHost) {
-                    const caddyClient = createCaddyClient({
-                        host: targetHost,
-                        port: host.caddy_port || 8444,
-                        username: host.caddy_username,
-                        password: host.caddy_password
-                    })
-                    for (const site of proxySites) {
-                        try {
-                            await caddyClient.deleteSite(site.domain)
-                        } catch (err) {
-                            console.error(`[Transfer] Failed to delete Caddy site (${site.domain}):`, err)
-                        }
-                    }
-                }
-            }
-            for (const site of proxySites) {
-                try {
-                    await deleteProxySite(site.id)
-                } catch (err) {
-                    console.error(`[Transfer] Failed to delete proxy site DB record (${site.domain}):`, err)
-                }
-            }
-        }
+        await cleanupTransferredProxySites(transfer.instanceId, host, claim.cleanupSnapshot.proxySiteVersions)
 
         // 3.2 删除端口映射（Incus 设备 + 数据库）
         // 注意：实例已重命名，设备随实例迁移，所以使用新的 incus_id
@@ -934,34 +945,7 @@ export default async function transferRoutes(fastify: FastifyInstance) {
         // ===== 3. 数据库更新成功后，删除附属资源 =====
         
         // 3.1 删除反代站点
-        const proxySites = await getProxySitesByInstanceId(transfer.instanceId)
-        if (proxySites.length > 0) {
-            if (host?.caddy_enabled && host.caddy_username && host.caddy_password) {
-                const targetHost = host.nat_public_ip || host.ip_address
-                if (targetHost) {
-                    const caddyClient = createCaddyClient({
-                        host: targetHost,
-                        port: host.caddy_port || 8444,
-                        username: host.caddy_username,
-                        password: host.caddy_password
-                    })
-                    for (const site of proxySites) {
-                        try {
-                            await caddyClient.deleteSite(site.domain)
-                        } catch (err) {
-                            console.error(`[Transfer] Failed to delete Caddy site (${site.domain}):`, err)
-                        }
-                    }
-                }
-            }
-            for (const site of proxySites) {
-                try {
-                    await deleteProxySite(site.id)
-                } catch (err) {
-                    console.error(`[Transfer] Failed to delete proxy site DB record (${site.domain}):`, err)
-                }
-            }
-        }
+        await cleanupTransferredProxySites(transfer.instanceId, host, claim.cleanupSnapshot.proxySiteVersions)
 
         // 3.2 删除端口映射
         const portMappings = await db.getPortMappings(transfer.instanceId)

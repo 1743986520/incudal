@@ -127,6 +127,15 @@ export function buildNetworkDevices(options: BuildNetworkDevicesOptions): Record
       eth1Device.hwaddr = eth1Hwaddr
     }
 
+    // 带宽限制同样应用到 eth1（routed 走宿主机 veth，tc 限速生效）；
+    // 否则 IPv6 流量完全绕过 eth0 的限速，方案限速形同虛設
+    if (limitsIngress) {
+      eth1Device['limits.ingress'] = limitsIngress
+    }
+    if (limitsEgress) {
+      eth1Device['limits.egress'] = limitsEgress
+    }
+
     // 如果有网段分配，添加 ipv6.routes
     if (ipv6Config.subnet) {
       eth1Device['ipv6.routes'] = ipv6Config.subnet

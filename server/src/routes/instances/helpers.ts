@@ -36,16 +36,68 @@ export async function claimInstanceForDelete(
   instanceId: number,
   currentStatus: InstanceStatus,
   options: {
+    authorization: {
+      actorUserId: number
+      actorRole: 'admin' | 'user'
+      scope: 'instance-or-host' | 'host-only'
+      expectedUserId: number
+      expectedHostId: number
+      expectedHostUserId: number
+      expectedIncusId: string
+      expectedVersion: number
+      expectedPackagePlanId: number | null
+      expectedPackageId: number | null
+      expectedSuspendReason: string | null
+      expectedBillingMode: 'package' | 'hourly'
+      expectedTrafficBillingMode?: 'package' | 'usage'
+    }
     deletionBillingPending?: boolean
     deletionBillingMode?: 'privileged_delete' | 'hourly_close' | null
     deletionRefundableValue?: number | null
-  } = {}
+    pending?: { requestedById: number; reason?: string }
+  }
 ): Promise<boolean> {
+  // A deleted instance is already claimed or finalized; never reset its
+  // pending settlement by treating its current status as a fresh claim.
+  if (currentStatus === 'deleted' || currentStatus === 'deleting' || (options.pending && currentStatus === 'creating')) return false
+
   return prisma.$transaction(async (tx) => {
     const locked = await tryAdvisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     if (!locked) return false
 
-    const [activeRestoreTask, activeUploadTask, activeInstanceTask] = await Promise.all([
+    // Lock the host owner row through the claim commit. A stale host-owner
+    // permission snapshot must not authorize deletion after ownership changes.
+    const auth = options.authorization
+    // User role and ban changes update this same row. Holding it through the
+    // claim prevents an in-flight request from using revoked authorization.
+    const actors = await tx.$queryRaw<Array<{ role: string; status: string }>>`
+      SELECT "role", "status" FROM "users" WHERE "id" = ${auth.actorUserId} FOR UPDATE
+    `
+    if (actors[0]?.status !== 'active' || actors[0]?.role !== auth.actorRole) return false
+    const hosts = await tx.$queryRaw<Array<{ userId: number }>>`
+      SELECT "user_id" AS "userId" FROM "hosts" WHERE "id" = ${auth.expectedHostId} FOR UPDATE
+    `
+    const hostOwnerId = hosts[0]?.userId
+    if (hostOwnerId !== auth.expectedHostUserId) return false
+    const authorized = auth.actorRole === 'admin' || auth.actorUserId === hostOwnerId
+      || (auth.scope === 'instance-or-host' && auth.actorUserId === auth.expectedUserId)
+    if (!authorized) return false
+
+    // Regular instance owners remain subject to the package deletion policy.
+    // A shared row lock prevents that policy changing between revalidation and
+    // the claim; privileged host owners/admins retain the existing exemption.
+    const privileged = auth.actorRole === 'admin' || auth.actorUserId === hostOwnerId
+    if (!privileged && auth.scope === 'instance-or-host') {
+      if (auth.expectedPackagePlanId !== null || currentStatus === 'suspended') return false
+      if (auth.expectedPackageId !== null) {
+        const policies = await tx.$queryRaw<Array<{ allowed: boolean }>>`
+          SELECT "allow_instance_deletion" AS "allowed" FROM "packages" WHERE "id" = ${auth.expectedPackageId} FOR SHARE
+        `
+        if (policies[0]?.allowed !== true) return false
+      }
+    }
+
+    const [activeRestoreTask, activeUploadTask, activeInstanceTask, activeTransfer] = await Promise.all([
       tx.restoreTask.findFirst({
         where: { instanceId, status: { in: ['PENDING', 'PROCESSING'] } },
         select: { id: true }
@@ -57,17 +109,40 @@ export async function claimInstanceForDelete(
       tx.instanceTask.findFirst({
         where: { instanceId, status: { in: ['PENDING', 'PROCESSING'] } },
         select: { id: true }
+      }),
+      tx.instanceTransfer.findFirst({
+        where: { instanceId, status: { in: ['pending', 'processing'] } },
+        select: { id: true }
       })
     ])
-    if (activeRestoreTask || activeUploadTask || activeInstanceTask) return false
+    if (activeRestoreTask || activeUploadTask || activeInstanceTask || activeTransfer) return false
 
     const result = await tx.instance.updateMany({
       where: {
         id: instanceId,
-        status: currentStatus
+        status: currentStatus,
+        userId: auth.expectedUserId,
+        hostId: auth.expectedHostId,
+        incusId: auth.expectedIncusId,
+        version: auth.expectedVersion,
+        packagePlanId: auth.expectedPackagePlanId,
+        packageId: auth.expectedPackageId,
+        suspendReason: auth.expectedSuspendReason,
+        billingMode: auth.expectedBillingMode,
+        ...(auth.expectedTrafficBillingMode === undefined ? {} : { trafficBillingMode: auth.expectedTrafficBillingMode }),
+        // Provisioning cleanup is a separate, externally visible operation.
+        // Never claim a row while its cleanup owner could still act on it.
+        ...(options.pending ? { provisioningCleanupPending: false } : {})
       },
       data: {
-        status: 'deleted',
+        status: options.pending ? 'deleting' : 'deleted',
+        ...(options.pending ? {
+          version: { increment: 1 },
+          deletionOriginalStatus: currentStatus,
+          deletionRequestedAt: new Date(),
+          deletionRequestedById: options.pending.requestedById,
+          deletionReason: options.pending.reason?.trim() || null
+        } : {}),
         deletionBillingPending: options.deletionBillingPending === true,
         deletionRemoteDeleted: false,
         deletionBillingMode: options.deletionBillingMode ?? null,
@@ -115,6 +190,10 @@ export function ensureInstanceNotSuspended(
   instance: { status: string; suspend_reason?: string | null },
   reply: FastifyReply
 ): boolean {
+  if (instance.status === 'deleting') {
+    reply.code(409).send({ error: 'Instance deletion in progress', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+    return false
+  }
   if (instance.status !== 'suspended') {
     return true
   }

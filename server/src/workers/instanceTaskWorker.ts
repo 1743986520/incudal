@@ -11,7 +11,7 @@
 
 import { prisma } from '../db/prisma.js'
 import { InstanceTaskType } from '@prisma/client'
-import { getIncusClient, getInstance, updateInstance, deleteInstance, createInstance } from '../lib/incus/index.js'
+import { getIncusClient, getInstance, updateInstance, deleteInstance, ensureInstanceDeleted, createInstance } from '../lib/incus/index.js'
 import {
   startInstance,
   startInstanceWithNvramRepair,
@@ -45,7 +45,9 @@ import { resetInstanceCloudInitState } from '../lib/cloud-init-status.js'
 import { resolveIncusSwapValue } from '../lib/instance-swap.js'
 import { selectBindableIpv4ListenAddress } from '../lib/network-address.js'
 import { getSystemImageAvailabilityForHost } from '../db/images.js'
-import { createCaddyClient } from '../lib/caddy-client.js'
+import { withInstanceRemoteOperationLock } from '../services/instance-remote-operation-lock.js'
+import { removeTaskProxyRoutes } from '../services/instance-task-proxy-cleanup.js'
+import { throwIfRemoteOperationAborted } from '../services/remote-operation-abort.js'
 import { resolveInstanceTrafficLimitForHost } from '../lib/traffic-multiplier.js'
 import { calculateInstanceTrafficStatus } from '../services/traffic-utils.js'
 import { ProxyStrategyFactory } from '../lib/proxy/index.js'
@@ -1468,7 +1470,18 @@ async function executeRecreateTask(
     console.warn('[Recreate] 删除快照失败，继续执行')
   }
 
-  // 3. 删除端口映射、备份、反代站点等关联数据（重建不保留任何数据）
+  // Keep the instance and domain reservations until Caddy has confirmed the
+  // old routes are gone. A failed cleanup must not drop the ownership records.
+  const recreateProxyCleanup = await withInstanceRemoteOperationLock(task.instanceId, async () => {
+    const currentHost = await db.getHostById(host.id)
+    if (!currentHost) throw new Error('源节点不存在')
+    await removeTaskProxyRoutes(task.instanceId, currentHost)
+    throwIfRemoteOperationAborted()
+    await prisma.proxySite.deleteMany({ where: { instanceId: task.instanceId } })
+  })
+  if (!recreateProxyCleanup.acquired) throw new Error('Instance remote operation is in progress')
+
+  // 3. 删除端口映射、备份等关联数据（重建不保留任何数据）
   try {
     const deletedPorts = await prisma.portMapping.deleteMany({ where: { instanceId: task.instanceId } })
     if (deletedPorts.count > 0) {
@@ -1477,11 +1490,6 @@ async function executeRecreateTask(
     const deletedBackups = await prisma.backup.deleteMany({ where: { instanceId: task.instanceId } })
     if (deletedBackups.count > 0) {
       console.log(`[Recreate] 删除 ${deletedBackups.count} 个备份记录`)
-    }
-    // 删除反代站点
-    const deletedSites = await prisma.proxySite.deleteMany({ where: { instanceId: task.instanceId } })
-    if (deletedSites.count > 0) {
-      console.log(`[Recreate] 删除 ${deletedSites.count} 个反代站点记录`)
     }
     // 删除备份策略
     const deletedBackupPolicy = await prisma.backupPolicy.deleteMany({ where: { instanceId: task.instanceId } })
@@ -2072,9 +2080,6 @@ async function executeChangeHostTask(
 
     await updateProgress('switching_database')
 
-    const proxySites = await prisma.proxySite.findMany({
-      where: { instanceId: task.instanceId }
-    })
     let deletedPortMappingsCount = 0
     let baseTrafficLimit = pkg.monthly_traffic_limit ? BigInt(pkg.monthly_traffic_limit) : null
     if (instance.package_plan_id) {
@@ -2084,111 +2089,98 @@ async function executeChangeHostTask(
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      const monthlyTrafficLimit = await resolveInstanceTrafficLimitForHost(tx as any, {
-        packageId: instance.package_id,
-        hostId: targetHostId,
-        baseTrafficLimit
-      })
-      const currentTraffic = await tx.instance.findUniqueOrThrow({
-        where: { id: task.instanceId },
-        select: { monthlyTrafficUsed: true, trafficBillingMode: true }
-      })
-
-      const deletedPortMappings = await tx.portMapping.deleteMany({ where: { instanceId: task.instanceId } })
-      deletedPortMappingsCount = deletedPortMappings.count
-      await tx.snapshot.deleteMany({ where: { instanceId: task.instanceId } })
-      await tx.backup.deleteMany({ where: { instanceId: task.instanceId } })
-      await tx.restoreTask.deleteMany({
-        where: {
-          instanceId: task.instanceId,
-          status: { in: ['COMPLETED', 'FAILED'] }
-        }
-      })
-      await tx.backupUploadTask.deleteMany({
-        where: {
-          instanceId: task.instanceId,
-          status: { in: ['COMPLETED', 'FAILED'] }
-        }
-      })
-      await tx.proxySite.deleteMany({ where: { instanceId: task.instanceId } })
-      await tx.backupPolicy.deleteMany({ where: { instanceId: task.instanceId } })
-      await tx.snapshotPolicy.deleteMany({ where: { instanceId: task.instanceId } })
-      await tx.trafficSnapshot.deleteMany({ where: { instanceId: task.instanceId } })
-      await tx.ipAddress.deleteMany({ where: { instanceId: task.instanceId } })
-      await tx.ipv6Subnet.deleteMany({ where: { instanceId: task.instanceId } })
-
-      await tx.instance.update({
-        where: { id: task.instanceId },
-        data: {
+    const changeHostProxyCleanup = await withInstanceRemoteOperationLock(task.instanceId, async () => {
+      await removeTaskProxyRoutes(task.instanceId, sourceHost)
+      throwIfRemoteOperationAborted()
+      await prisma.$transaction(async (tx) => {
+        const monthlyTrafficLimit = await resolveInstanceTrafficLimitForHost(tx as any, {
+          packageId: instance.package_id,
           hostId: targetHostId,
-          incusId: newIncusId,
-          rootPassword: encryptSensitiveData(rootPassword),
-          status: 'running',
-          ipv4: actualIpv4,
-          ipv6: actualIpv6,
-          storagePoolName: storagePool,
-          monthlyTrafficLimit,
-          trafficStatus: currentTraffic.trafficBillingMode === 'usage'
-            ? 'NORMAL'
-            : calculateInstanceTrafficStatus(currentTraffic.monthlyTrafficUsed, monthlyTrafficLimit),
-          cloudInitState: null,
-          cloudInitSource: null,
-          cloudInitLastCheckedAt: null,
-          cloudInitCompletedAt: null,
-          cloudInitManualCompletedAt: null,
-          cloudInitManualCompletedBy: null
+          baseTrafficLimit
+        })
+        const currentTraffic = await tx.instance.findUniqueOrThrow({
+          where: { id: task.instanceId },
+          select: { monthlyTrafficUsed: true, trafficBillingMode: true }
+        })
+
+        const deletedPortMappings = await tx.portMapping.deleteMany({ where: { instanceId: task.instanceId } })
+        deletedPortMappingsCount = deletedPortMappings.count
+        await tx.snapshot.deleteMany({ where: { instanceId: task.instanceId } })
+        await tx.backup.deleteMany({ where: { instanceId: task.instanceId } })
+        await tx.restoreTask.deleteMany({
+          where: {
+            instanceId: task.instanceId,
+            status: { in: ['COMPLETED', 'FAILED'] }
+          }
+        })
+        await tx.backupUploadTask.deleteMany({
+          where: {
+            instanceId: task.instanceId,
+            status: { in: ['COMPLETED', 'FAILED'] }
+          }
+        })
+        await tx.proxySite.deleteMany({ where: { instanceId: task.instanceId } })
+        await tx.backupPolicy.deleteMany({ where: { instanceId: task.instanceId } })
+        await tx.snapshotPolicy.deleteMany({ where: { instanceId: task.instanceId } })
+        await tx.trafficSnapshot.deleteMany({ where: { instanceId: task.instanceId } })
+        await tx.ipAddress.deleteMany({ where: { instanceId: task.instanceId } })
+        await tx.ipv6Subnet.deleteMany({ where: { instanceId: task.instanceId } })
+
+        await tx.instance.update({
+          where: { id: task.instanceId },
+          data: {
+            hostId: targetHostId,
+            incusId: newIncusId,
+            rootPassword: encryptSensitiveData(rootPassword),
+            status: 'running',
+            ipv4: actualIpv4,
+            ipv6: actualIpv6,
+            storagePoolName: storagePool,
+            monthlyTrafficLimit,
+            trafficStatus: currentTraffic.trafficBillingMode === 'usage'
+              ? 'NORMAL'
+              : calculateInstanceTrafficStatus(currentTraffic.monthlyTrafficUsed, monthlyTrafficLimit),
+            cloudInitState: null,
+            cloudInitSource: null,
+            cloudInitLastCheckedAt: null,
+            cloudInitCompletedAt: null,
+            cloudInitManualCompletedAt: null,
+            cloudInitManualCompletedBy: null
+          }
+        })
+
+        if (actualIpv4) {
+          await tx.ipAddress.create({
+            data: {
+              address: actualIpv4,
+              type: 'inet4',
+              isPrimary: true,
+              isCustom: false,
+              device: 'eth0',
+              hostId: targetHostId,
+              instanceId: task.instanceId
+            }
+          })
         }
+
+        if (actualIpv6) {
+          await tx.ipAddress.create({
+            data: {
+              address: actualIpv6,
+              type: 'inet6',
+              isPrimary: true,
+              isCustom: false,
+              device: 'eth1',
+              hostId: targetHostId,
+              instanceId: task.instanceId
+            }
+          })
+        }
+        throwIfRemoteOperationAborted()
       })
-
-      if (actualIpv4) {
-        await tx.ipAddress.create({
-          data: {
-            address: actualIpv4,
-            type: 'inet4',
-            isPrimary: true,
-            isCustom: false,
-            device: 'eth0',
-            hostId: targetHostId,
-            instanceId: task.instanceId
-          }
-        })
-      }
-
-      if (actualIpv6) {
-        await tx.ipAddress.create({
-          data: {
-            address: actualIpv6,
-            type: 'inet6',
-            isPrimary: true,
-            isCustom: false,
-            device: 'eth1',
-            hostId: targetHostId,
-            instanceId: task.instanceId
-          }
-        })
-      }
+      dbSwitched = true
     })
-    dbSwitched = true
-
-    if (proxySites.length > 0 && sourceHost.caddy_enabled && sourceHost.caddy_username && sourceHost.caddy_password) {
-      const caddyHost = sourceHost.nat_public_ip || sourceHost.ip_address
-      if (caddyHost) {
-        const caddyClient = createCaddyClient({
-          host: caddyHost,
-          port: sourceHost.caddy_port || 8444,
-          username: sourceHost.caddy_username,
-          password: sourceHost.caddy_password
-        })
-        for (const site of proxySites) {
-          try {
-            await caddyClient.deleteSite(site.domain)
-          } catch (err) {
-            console.warn(`[ChangeHost] 删除 Caddy 站点 ${site.domain} 失败，数据库记录已清理:`, err)
-          }
-        }
-      }
-    }
+    if (!changeHostProxyCleanup.acquired) throw new Error('Instance remote operation is in progress')
 
     await updateProgress('deleting_old')
     let sourceClient: Awaited<ReturnType<typeof getIncusClient>> | null = null
@@ -2205,18 +2197,13 @@ async function executeChangeHostTask(
         throwIfIncusExecutionAborted()
         console.warn(`[ChangeHost] 停止源实例 ${oldIncusId} 失败，继续尝试删除:`, err)
       }
-      await deleteInstance(sourceClient, oldIncusId)
+      await ensureInstanceDeleted(sourceClient, oldIncusId)
       console.log(`[ChangeHost] 源实例 ${oldIncusId} 已删除`)
       sourceInstanceReleased = true
     } catch (err) {
       throwIfIncusExecutionAborted()
       const errMsg = err instanceof Error ? err.message : String(err)
-      if (errMsg.includes('not found') || errMsg.includes('Instance not found')) {
-        console.log(`[ChangeHost] 源实例 ${oldIncusId} 已不存在`)
-        sourceInstanceReleased = true
-      } else {
-        console.warn(`[ChangeHost] 源实例 ${oldIncusId} 删除失败，需要人工清理: ${errMsg}`)
-      }
+      console.warn(`[ChangeHost] 源实例 ${oldIncusId} 未确认删除，需要人工清理: ${errMsg}`)
     }
 
     try {
@@ -2339,15 +2326,10 @@ async function executeChangeHostTask(
             throwIfIncusExecutionAborted()
             // Instance may not have reached running state; deletion can still proceed.
           }
-          await deleteInstance(targetClient, newIncusId)
+          await ensureInstanceDeleted(targetClient, newIncusId)
           targetInstanceReleased = true
         } catch (cleanupErr) {
-          const cleanupMessage = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
-          if (cleanupMessage.includes('not found') || cleanupMessage.includes('Instance not found')) {
-            targetInstanceReleased = true
-          } else {
-            console.warn(`[ChangeHost] 清理目标节点新实例 ${newIncusId} 失败:`, cleanupErr)
-          }
+          console.warn(`[ChangeHost] 清理目标节点新实例 ${newIncusId} 未确认:`, cleanupErr)
         }
       }
       if (targetResourcesReserved) {

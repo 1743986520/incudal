@@ -162,6 +162,7 @@ function getDetailError(id: number): string { return props.detailConfigErrors[id
                   <input
                     type="checkbox"
                     class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                    :disabled="instance.status?.toLowerCase() === 'deleting'"
                     :checked="isSelected(instance.id)"
                     @change="emit('toggle-select', instance.id)"
                   />
@@ -240,14 +241,14 @@ function getDetailError(id: number): string { return props.detailConfigErrors[id
                 </div>
 
                 <div class="mt-3 flex flex-wrap justify-end gap-2" @click.stop>
-                  <button class="btn-ghost btn-sm" :disabled="props.isInstanceSyncing(instance.id)" :title="t('admin.hosts.batchSyncStatus')" @click="emit('sync-instance', instance)">
+                  <button class="btn-ghost btn-sm" :disabled="instance.status?.toLowerCase() === 'deleting' || props.isInstanceSyncing(instance.id)" :title="t('admin.hosts.batchSyncStatus')" @click="emit('sync-instance', instance)">
                     <svg v-if="props.isInstanceSyncing(instance.id)" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
                     <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   </button>
-                  <button v-if="instance.packagePlanId && !isHourlyInstance(instance)" class="btn-ghost btn-sm" :title="t('host.price.editPrice')" @click="emit('open-price', instance)">
+                  <button v-if="instance.status?.toLowerCase() !== 'deleting' && instance.packagePlanId && !isHourlyInstance(instance)" class="btn-ghost btn-sm" :title="t('host.price.editPrice')" @click="emit('open-price', instance)">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   </button>
-                  <button class="btn-secondary btn-sm" @click="emit('open-single-config', instance.id)">{{ t('host.batchConfig.button') }}</button>
+                  <button class="btn-secondary btn-sm" :disabled="instance.status?.toLowerCase() === 'deleting'" @click="emit('open-single-config', instance.id)">{{ t('host.batchConfig.button') }}</button>
                   <button class="btn-primary btn-sm" @click="emit('open-detail', instance.id)">{{ t('common.details') }}</button>
                 </div>
               </div>
@@ -315,7 +316,7 @@ function getDetailError(id: number): string { return props.detailConfigErrors[id
 
             <div class="rounded-2xl border p-4 xl:col-span-3" :class="shellClass(props.isDark)">
               <div class="mb-4 text-xs font-semibold uppercase tracking-[0.2em]" :class="textMuted(props.isDark)">{{ t('common.actions') }}</div>
-              <div class="flex flex-wrap gap-2" @click.stop>
+              <div class="flex flex-wrap gap-2" :inert="instance.status?.toLowerCase() === 'deleting'" @click.stop>
                 <button class="btn-secondary btn-sm" @click="emit('open-single-config', instance.id)">{{ t('host.batchConfig.button') }}</button>
                 <button class="btn-secondary btn-sm" :disabled="props.isInstanceSyncing(instance.id)" @click="emit('sync-instance', instance)">{{ props.isInstanceSyncing(instance.id) ? t('common.syncing') : t('admin.hosts.batchSyncStatus') }}</button>
                 <button v-if="props.getDetailConfig(instance.id)?.swap.available && props.canToggleSwap(instance)" class="btn-secondary btn-sm" :disabled="props.isSwapActionLoading(instance.id)" @click="emit('toggle-swap', instance)">{{ props.isSwapActionLoading(instance.id) ? t('common.processing') : (props.getDetailConfig(instance.id)?.swap.enabled ? t('instanceConfig.swap.disableButton') : t('instanceConfig.swap.enableButton')) }}</button>

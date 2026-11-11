@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
+import { advisoryTransactionLock, INSTANCE_OPERATION_LOCK_NAMESPACE } from '../db/advisory-locks.js'
 import type { IncusInstance } from '../types/incus.js'
 
 type InstanceNetworkMode = 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
@@ -336,13 +337,19 @@ export async function persistResolvedInstanceNetworkAddresses(
   const ipv4Changed = oldIpv4 !== newIpv4
   const ipv6Changed = oldIpv6 !== newIpv6
 
-  await prisma.$transaction(async (tx) => {
+  const applied = await prisma.$transaction(async (tx) => {
+    // The address rows and instance fields must not be changed after another
+    // request claims deletion or moves the instance to a different host.
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instance.id)
+    await tx.$queryRaw`SELECT id FROM "instances" WHERE id = ${instance.id} FOR UPDATE`
     const currentInstance = await tx.instance.findUnique({
       where: { id: instance.id },
-      select: { status: true }
+      select: { status: true, hostId: true, ipv4: true, ipv6: true }
     })
-    if (!currentInstance || currentInstance.status === 'deleted') {
-      return
+    if (!currentInstance || currentInstance.status === 'deleted' || currentInstance.status === 'deleting' ||
+        (instance.hostId != null && currentInstance.hostId !== instance.hostId) ||
+        currentInstance.ipv4 !== oldIpv4 || currentInstance.ipv6 !== oldIpv6) {
+      return false
     }
 
     const updateData: Record<string, unknown> = {}
@@ -355,7 +362,7 @@ export async function persistResolvedInstanceNetworkAddresses(
       await tx.instance.updateMany({
         where: {
           id: instance.id,
-          status: { not: 'deleted' }
+          status: { notIn: ['deleted', 'deleting'] }
         },
         data: updateData
       })
@@ -363,7 +370,12 @@ export async function persistResolvedInstanceNetworkAddresses(
 
     await syncPrimaryIpAddress(tx, instance, 'inet4', newIpv4, resolved.ipv4Device)
     await syncPrimaryIpAddress(tx, instance, 'inet6', newIpv6, resolved.ipv6Device)
+    return true
   })
+
+  if (!applied) {
+    return { ipv4Changed: false, oldIpv4, newIpv4: oldIpv4, ipv6Changed: false, oldIpv6, newIpv6: oldIpv6 }
+  }
 
   return {
     ipv4Changed,

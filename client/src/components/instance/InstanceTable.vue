@@ -117,6 +117,7 @@ function truncateIpv6(ip: string): string {
               <input
                 type="checkbox"
                 class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                :disabled="instance.status?.toLowerCase() === 'deleting'"
                 :checked="selectedIds.has(instance.id)"
                 @change="emit('toggle-select', instance.id)"
               />

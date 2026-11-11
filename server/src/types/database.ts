@@ -180,7 +180,7 @@ export interface Package {
 
 // ==================== 实例相关 ====================
 
-export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'suspended' | 'error' | 'deleted'
+export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'suspended' | 'error' | 'deleting' | 'deleted'
 
 export interface Instance {
   id: number

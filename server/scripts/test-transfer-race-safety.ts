@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   assertCurrentInstanceOwner,
+  claimTransferTransaction,
   executeTransferTransaction,
   rollbackProcessingTransfer
 } from '../src/db/transfer-safety.js'
@@ -25,7 +26,42 @@ test('creation revalidates the current instance owner inside the transaction', a
   const calls: unknown[] = []
   const tx = { instance: { findFirst: async (args: unknown) => { calls.push(args); return null } } }
   await assert.rejects(assertCurrentInstanceOwner(tx as never, 41, 7), /TRANSFER_INSTANCE_OWNER_CHANGED/)
-  assert.deepEqual(calls, [{ where: { id: 41, userId: 7 }, select: { id: true } }])
+  assert.deepEqual(calls, [{ where: { id: 41, userId: 7, status: { notIn: ['deleting', 'deleted'] } }, select: { id: true } }])
+})
+
+test('transfer claim refuses instances already pending deletion', async () => {
+  let where: unknown
+  const tx = {
+    ...lock,
+    instanceTask: { count: async () => 0 },
+    instance: { findFirst: async (args: { where: unknown }) => { where = args.where; return null } }
+  }
+  await assert.rejects(claimTransferTransaction(tx as never, {
+    transferId: 3, instanceId: 41, actorUserId: 9, actorRole: 'receiver',
+    claimToken: 'claim-3', newIncusId: 'new', leaseUntil: new Date()
+  }), /TRANSFER_INSTANCE_OWNER_CHANGED/)
+  assert.deepEqual(where, { id: 41, status: { notIn: ['deleting', 'deleted'] } })
+})
+
+test('transfer claim records the exact site versions to avoid deleting later edits', async () => {
+  const changedAt = new Date('2026-01-01T12:00:00.000Z')
+  let update: unknown
+  const empty = { findMany: async () => [] }
+  const tx = {
+    ...lock,
+    instanceTask: { count: async () => 0 },
+    instance: { findFirst: async () => ({ id: 41, incusId: 'old', version: 4 }) },
+    proxySite: { findMany: async () => [{ id: 11, updatedAt: changedAt }] },
+    portMapping: empty, snapshot: empty, backup: empty, snapshotPolicy: empty, backupPolicy: empty,
+    instanceTransfer: { updateMany: async (args: unknown) => { update = args; return { count: 1 } } }
+  }
+  const claim = await claimTransferTransaction(tx as never, {
+    transferId: 3, instanceId: 41, actorUserId: 9, actorRole: 'receiver',
+    claimToken: 'claim-3', newIncusId: 'new', leaseUntil: new Date()
+  })
+  assert.deepEqual(claim.cleanupSnapshot.proxySiteVersions, [{ id: 11, updatedAt: changedAt.toISOString() }])
+  assert.deepEqual((update as { data: { cleanupSnapshot: { proxySiteVersions: unknown } } }).data.cleanupSnapshot.proxySiteVersions,
+    claim.cleanupSnapshot.proxySiteVersions)
 })
 
 test('execution rejects a transfer unless processing and all identity fields match', async () => {

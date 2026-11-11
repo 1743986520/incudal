@@ -14,6 +14,7 @@ import { checkSnapshotQuota } from '../db/quota-operations.js'
 import type { CreateSnapshotRequest } from '../types/api.js'
 import { getInstanceWithPermission } from '../lib/permission.js'
 import { checkTransferLock, ensureInstanceNotSuspended } from './instances/helpers.js'
+import { withInstanceRemoteOperationLock } from '../services/instance-remote-operation-lock.js'
 
 export default async function snapshotRoutes(fastify: FastifyInstance) {
 
@@ -73,79 +74,86 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    const { name, description } = request.body
+    const locked = await withInstanceRemoteOperationLock(instanceIdNum, async () => {
+      const { name, description } = request.body
 
-    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
-    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
-    if (!instance) return
+      // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+      const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+      if (!instance) return
+      if (instance.status === 'deleted') return reply.code(409).send({ error: 'Instance is deleted', code: 'INSTANCE_DELETE_IN_PROGRESS' })
 
-    // 封停状态不允许创建快照
-    if (!ensureInstanceNotSuspended(instance, reply)) return
+      // 封停状态不允许创建快照
+      if (!ensureInstanceNotSuspended(instance, reply)) return
 
-    // 实例必须是运行或停止状态
-    if (!['running', 'stopped'].includes(instance.status)) {
-      return reply.code(400).send(apiError(ErrorCode.INSTANCE_STATUS_INVALID))
-    }
-
-    // 检查转移锁定
-    if (await checkTransferLock(instanceIdNum, reply)) return
-
-    // 检查配额
-    const quotaCheck = await checkSnapshotQuota(instance.user_id, instanceIdNum)
-    if (!quotaCheck.allowed) {
-      return reply.code(400).send(apiError(ErrorCode.QUOTA_SNAPSHOT_EXCEEDED, quotaCheck.message))
-    }
-
-    // 生成 Incus 快照名称
-    const timestamp = Date.now()
-    const incusName = `snap-${name.replace(/[^a-zA-Z0-9-_]/g, '-')}-${timestamp}`
-
-    try {
-      // 获取宿主机信息并创建 Incus 客户端
-      const host = await db.getHostById(instance.host_id)
-      if (!host) {
-        return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+      // 实例必须是运行或停止状态
+      if (!['running', 'stopped'].includes(instance.status)) {
+        return reply.code(400).send(apiError(ErrorCode.INSTANCE_STATUS_INVALID))
       }
-      const client = await getIncusClient(host)
 
-      // 在 Incus 中创建快照
-      await createSnapshot(client, instance.incus_id, incusName)
+      // 检查转移锁定
+      if (await checkTransferLock(instanceIdNum, reply)) return
 
-      // 保存到数据库
-      const snapshotId = await db.createSnapshot({
-        instanceId: instanceIdNum,
-        incusName,
-        name,
-        description,
-        stateful: false
-      })
+      // 检查配额
+      const quotaCheck = await checkSnapshotQuota(instance.user_id, instanceIdNum)
+      if (!quotaCheck.allowed) {
+        return reply.code(400).send(apiError(ErrorCode.QUOTA_SNAPSHOT_EXCEEDED, quotaCheck.message))
+      }
 
-      // 发送通知
-      await sendNotification(request.user.id, 'snapshot_created', {
-        instanceName: instance.name,
-        snapshotName: name,
-        hostName: host.name
-      })
+      // 生成 Incus 快照名称
+      const timestamp = Date.now()
+      const incusName = `snap-${name.replace(/[^a-zA-Z0-9-_]/g, '-')}-${timestamp}`
 
-      await createLog(request.user.id, 'snapshot', 'snapshot.create', `Created snapshot "${name}" for instance "${instance.name}" [host: ${host.name}]`, 'success', { instanceId: instanceIdNum })
+      try {
+        // 获取宿主机信息并创建 Incus 客户端
+        const host = await db.getHostById(instance.host_id)
+        if (!host) {
+          return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+        }
+        const client = await getIncusClient(host)
 
-      reply.code(201).send({
-        message: 'Snapshot created',
-        snapshot: {
-          id: snapshotId,
-          name,
+        // 在 Incus 中创建快照
+        await createSnapshot(client, instance.incus_id, incusName)
+
+        // 保存到数据库
+        const snapshotId = await db.createSnapshot({
+          instanceId: instanceIdNum,
           incusName,
+          name,
           description,
           stateful: false
-        }
-      })
-    } catch (err) {
-      fastify.log.error(err)
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      await createLog(request.user.id, 'snapshot', 'snapshot.create', `Failed to create snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
-      // Incus 错误细节只留在服务端日志与操作日志，不回传客户端（审查项 P3-04）
-      return reply.code(500).send({ error: '创建快照失败，请稍后重试', code: 'OPERATION_FAILED' })
+        })
+
+        // 发送通知
+        await sendNotification(request.user.id, 'snapshot_created', {
+          instanceName: instance.name,
+          snapshotName: name,
+          hostName: host.name
+        })
+
+        await createLog(request.user.id, 'snapshot', 'snapshot.create', `Created snapshot "${name}" for instance "${instance.name}" [host: ${host.name}]`, 'success', { instanceId: instanceIdNum })
+
+        reply.code(201).send({
+          message: 'Snapshot created',
+          snapshot: {
+            id: snapshotId,
+            name,
+            incusName,
+            description,
+            stateful: false
+          }
+        })
+      } catch (err) {
+        fastify.log.error(err)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        await createLog(request.user.id, 'snapshot', 'snapshot.create', `Failed to create snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
+        // Incus 错误细节只留在服务端日志与操作日志，不回传客户端（审查项 P3-04）
+        return reply.code(500).send({ error: '创建快照失败，请稍后重试', code: 'OPERATION_FAILED' })
+      }
+    })
+    if (!locked.acquired) {
+      return reply.code(409).send({ error: 'Instance operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
     }
+    return locked.value
   })
 
   // 删除快照
@@ -160,51 +168,58 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
-    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
-    if (!instance) return
+    const locked = await withInstanceRemoteOperationLock(instanceIdNum, async () => {
+      // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+      const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+      if (!instance) return
+      if (instance.status === 'deleted') return reply.code(409).send({ error: 'Instance is deleted', code: 'INSTANCE_DELETE_IN_PROGRESS' })
 
-    // 获取快照信息
-    const snapshot = await db.getSnapshotById(snapshotIdNum)
-    if (!snapshot || snapshot.instance_id !== instanceIdNum) {
-      return reply.code(404).send(apiError(ErrorCode.SNAPSHOT_NOT_FOUND))
-    }
-
-    // 检查转移锁定
-    if (await checkTransferLock(instanceIdNum, reply)) return
-
-
-
-    try {
-      // 获取宿主机信息并创建 Incus 客户端
-      const host = await db.getHostById(instance.host_id)
-      if (!host) {
-        return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+      // 获取快照信息
+      const snapshot = await db.getSnapshotById(snapshotIdNum)
+      if (!snapshot || snapshot.instance_id !== instanceIdNum) {
+        return reply.code(404).send(apiError(ErrorCode.SNAPSHOT_NOT_FOUND))
       }
-      const client = await getIncusClient(host)
 
-      // 在 Incus 中删除快照
-      await deleteSnapshot(client, instance.incus_id, snapshot.incus_name)
+      // 检查转移锁定
+      if (await checkTransferLock(instanceIdNum, reply)) return
 
-      // 从数据库删除
-      await db.deleteSnapshot(snapshotIdNum)
 
-      // 发送通知
-      await sendNotification(request.user.id, 'snapshot_deleted', {
-        instanceName: instance.name,
-        snapshotName: snapshot.name,
-        hostName: host.name
-      })
 
-      await createLog(request.user.id, 'snapshot', 'snapshot.delete', `Deleted snapshot "${snapshot.name}" of instance "${instance.name}" [host: ${host.name}]`, 'success', { instanceId: instanceIdNum })
+      try {
+        // 获取宿主机信息并创建 Incus 客户端
+        const host = await db.getHostById(instance.host_id)
+        if (!host) {
+          return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+        }
+        const client = await getIncusClient(host)
 
-      return { message: 'Snapshot deleted' }
-    } catch (err) {
-      fastify.log.error(err)
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      await createLog(request.user.id, 'snapshot', 'snapshot.delete', `Failed to delete snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
-      return reply.code(500).send({ error: '删除快照失败，请稍后重试', code: 'OPERATION_FAILED' })
+        // 在 Incus 中删除快照
+        await deleteSnapshot(client, instance.incus_id, snapshot.incus_name)
+
+        // 从数据库删除
+        await db.deleteSnapshot(snapshotIdNum)
+
+        // 发送通知
+        await sendNotification(request.user.id, 'snapshot_deleted', {
+          instanceName: instance.name,
+          snapshotName: snapshot.name,
+          hostName: host.name
+        })
+
+        await createLog(request.user.id, 'snapshot', 'snapshot.delete', `Deleted snapshot "${snapshot.name}" of instance "${instance.name}" [host: ${host.name}]`, 'success', { instanceId: instanceIdNum })
+
+        return { message: 'Snapshot deleted' }
+      } catch (err) {
+        fastify.log.error(err)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        await createLog(request.user.id, 'snapshot', 'snapshot.delete', `Failed to delete snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
+        return reply.code(500).send({ error: '删除快照失败，请稍后重试', code: 'OPERATION_FAILED' })
+      }
+    })
+    if (!locked.acquired) {
+      return reply.code(409).send({ error: 'Instance operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
     }
+    return locked.value
   })
 
   // 恢复快照
@@ -229,54 +244,61 @@ export default async function snapshotRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
-    const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
-    if (!instance) return
+    const locked = await withInstanceRemoteOperationLock(instanceIdNum, async () => {
+      // 验证实例归属与权限（管理员、实例所有者、宿主机所有者）
+      const instance = await getInstanceWithPermission(request.user, instanceIdNum, reply)
+      if (!instance) return
+      if (instance.status === 'deleted') return reply.code(409).send({ error: 'Instance is deleted', code: 'INSTANCE_DELETE_IN_PROGRESS' })
 
-    // 获取快照信息
-    const snapshot = await db.getSnapshotById(snapshotIdNum)
-    if (!snapshot || snapshot.instance_id !== instanceIdNum) {
-      return reply.code(404).send(apiError(ErrorCode.SNAPSHOT_NOT_FOUND))
-    }
-
-    // 封停状态不允许恢复快照
-    if (!ensureInstanceNotSuspended(instance, reply)) return
-
-    // 实例必须停止才能恢复
-    if (instance.status !== 'stopped') {
-      return reply.code(400).send(apiError(ErrorCode.SNAPSHOT_RESTORE_REQUIRES_STOP))
-    }
-
-    // 检查转移锁定
-    if (await checkTransferLock(instanceIdNum, reply)) return
-
-    try {
-      // 获取宿主机信息并创建 Incus 客户端
-      const host = await db.getHostById(instance.host_id)
-      if (!host) {
-        return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+      // 获取快照信息
+      const snapshot = await db.getSnapshotById(snapshotIdNum)
+      if (!snapshot || snapshot.instance_id !== instanceIdNum) {
+        return reply.code(404).send(apiError(ErrorCode.SNAPSHOT_NOT_FOUND))
       }
-      const client = await getIncusClient(host)
 
-      // 在 Incus 中恢复快照
-      await restoreSnapshot(client, instance.incus_id, snapshot.incus_name)
+      // 封停状态不允许恢复快照
+      if (!ensureInstanceNotSuspended(instance, reply)) return
 
-      // 发送通知
-      await sendNotification(request.user.id, 'snapshot_restored', {
-        instanceName: instance.name,
-        snapshotName: snapshot.name,
-        hostName: host.name
-      })
+      // 实例必须停止才能恢复
+      if (instance.status !== 'stopped') {
+        return reply.code(400).send(apiError(ErrorCode.SNAPSHOT_RESTORE_REQUIRES_STOP))
+      }
 
-      await createLog(request.user.id, 'snapshot', 'snapshot.restore', `Restored instance "${instance.name}" to snapshot "${snapshot.name}" [host: ${host.name}]`, 'success', { instanceId: instanceIdNum })
+      // 检查转移锁定
+      if (await checkTransferLock(instanceIdNum, reply)) return
 
-      return { message: 'Snapshot restored' }
-    } catch (err) {
-      fastify.log.error(err)
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      await createLog(request.user.id, 'snapshot', 'snapshot.restore', `Failed to restore snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
-      return reply.code(500).send({ error: '恢复快照失败，请稍后重试', code: 'OPERATION_FAILED' })
+      try {
+        // 获取宿主机信息并创建 Incus 客户端
+        const host = await db.getHostById(instance.host_id)
+        if (!host) {
+          return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+        }
+        const client = await getIncusClient(host)
+
+        // 在 Incus 中恢复快照
+        await restoreSnapshot(client, instance.incus_id, snapshot.incus_name)
+
+        // 发送通知
+        await sendNotification(request.user.id, 'snapshot_restored', {
+          instanceName: instance.name,
+          snapshotName: snapshot.name,
+          hostName: host.name
+        })
+
+        await createLog(request.user.id, 'snapshot', 'snapshot.restore', `Restored instance "${instance.name}" to snapshot "${snapshot.name}" [host: ${host.name}]`, 'success', { instanceId: instanceIdNum })
+
+        return { message: 'Snapshot restored' }
+      } catch (err) {
+        fastify.log.error(err)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        await createLog(request.user.id, 'snapshot', 'snapshot.restore', `Failed to restore snapshot: ${errorMessage}`, 'failed', { instanceId: instanceIdNum })
+        return reply.code(500).send({ error: '恢复快照失败，请稍后重试', code: 'OPERATION_FAILED' })
+      }
+    })
+    if (!locked.acquired) {
+      return reply.code(409).send({ error: 'Instance operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
     }
+    return locked.value
   })
 
   // 获取自动快照策略

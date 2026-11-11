@@ -81,7 +81,8 @@ const batchDestroyPreview = ref<BatchDestroyPreviewItem[]>([])
 const filterUserId = ref<number | null>(null)
 const filterUserName = ref<string>('')
 
-const isAllSelected = computed(() => instances.value.length > 0 && selectedIds.value.size === instances.value.length)
+const selectableInstances = computed(() => instances.value.filter(instance => instance.status?.toLowerCase() !== 'deleting'))
+const isAllSelected = computed(() => selectableInstances.value.length > 0 && selectableInstances.value.every(instance => selectedIds.value.has(instance.id)))
 const selectedCount = computed(() => selectedIds.value.size)
 const selectedInstances = computed(() => instances.value.filter(instance => selectedIds.value.has(instance.id)))
 const selectedRunningCount = computed(() => selectedInstances.value.filter(instance => instance.status?.toLowerCase() === 'running').length)
@@ -348,7 +349,7 @@ async function loadInstances(force = false): Promise<void> {
       return loadInstances(force)
     }
 
-    const visibleIds = new Set(nextInstances.map(instance => instance.id))
+    const visibleIds = new Set(nextInstances.filter(instance => instance.status?.toLowerCase() !== 'deleting').map(instance => instance.id))
     selectedIds.value = new Set([...selectedIds.value].filter(id => visibleIds.has(id)))
   } catch (error) {
     if (generation === instancesRequestGeneration) console.error('Failed to load instances:', error)
@@ -361,11 +362,12 @@ function toggleSelectAll(): void {
   if (isAllSelected.value) {
     selectedIds.value = new Set()
   } else {
-    selectedIds.value = new Set(instances.value.map(instance => instance.id))
+    selectedIds.value = new Set(selectableInstances.value.map(instance => instance.id))
   }
 }
 
 function toggleSelect(id: number): void {
+  if (!selectableInstances.value.some(instance => instance.id === id)) return
   const next = new Set(selectedIds.value)
   if (next.has(id)) {
     next.delete(id)
@@ -541,11 +543,16 @@ async function handleAction(instance: Instance, action: InstanceRowAction): Prom
       toast.success(t('instance.retryCreateStarted', { name: instance.name }))
     }
     else if (action === 'delete') {
-      if (!confirm(t('instance.confirmDelete', { name: instance.name }))) {
+      if (!confirm(`${t('instance.confirmDelete', { name: instance.name })}\n\n${t('instance.deletionOfflineWarning')}`)) {
         delete actionLoading.value[instance.id]
         return
       }
-      await api.instances.delete(instance.id)
+      const result = await api.instances.delete(instance.id)
+      if (result.status === 'deleting') {
+        toast.warning(t('instance.deletionPending'))
+        await loadInstances(true)
+        return
+      }
       // 立即从本地列表移除，提供即时反馈
       instances.value = instances.value.filter(i => i.id !== instance.id)
       total.value = Math.max(0, total.value - 1)
@@ -755,7 +762,13 @@ async function confirmBatchDestroy(): Promise<void> {
   batchDestroySubmitting.value = true
   try {
     const result = await api.billing.destroyInstancesBatch(Array.from(selectedIds.value))
-    if (result.failedCount > 0) {
+    if (result.pendingCount) {
+      toast.warning(`${t('instance.batch.partialResult', {
+        success: result.successCount,
+        failed: result.failedCount,
+        skipped: result.skippedCount
+      })} ${t('instance.deletionPendingCount', { count: result.pendingCount })}`)
+    } else if (result.failedCount > 0) {
       toast.warning(t('instance.batch.partialResult', {
         success: result.successCount,
         failed: result.failedCount,

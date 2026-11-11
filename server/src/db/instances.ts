@@ -368,8 +368,8 @@ export async function updateInstanceStatus(
   }
 
   if (status === 'deleted') {
-    await prisma.instance.update({
-      where: { id },
+    await prisma.instance.updateMany({
+      where: { id, status: { not: 'deleting' } },
       data: updateData
     })
     return
@@ -378,7 +378,7 @@ export async function updateInstanceStatus(
   await prisma.instance.updateMany({
     where: {
       id,
-      status: { not: 'deleted' }
+      status: { notIn: ['deleted', 'deleting'] }
     },
     data: updateData
   })

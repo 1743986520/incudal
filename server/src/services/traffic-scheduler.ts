@@ -187,7 +187,8 @@ async function checkAndThrottle(
 async function checkAndRestore(
     instance: RunningTrafficInstance,
     client: IncusClient,
-    forceUsageRestore = false
+    forceUsageRestore = false,
+    forceBandwidthApply = false
 ): Promise<void> {
     const userQuota = instance.user.quota
     if (!userQuota) return
@@ -202,7 +203,10 @@ async function checkAndRestore(
 
     if (userUnderLimit && (usageBilling || instanceUnderLimit)) {
         const remoteThrottled = await isThrottled(client, instance.incusId)
-        if (instance.trafficStatus !== 'LIMITED' && !remoteThrottled && !(usageBilling && forceUsageRestore)) {
+        // forceBandwidthApply: 方案限速/带宽配置变更后，即使实例未超量也要把
+        // NIC 上的 limits 刷新成新的方案带宽，否则「方案限速」对存量实例不生效
+        if (instance.trafficStatus !== 'LIMITED' && !remoteThrottled
+            && !((usageBilling && forceUsageRestore) || forceBandwidthApply)) {
             if (userQuota.trafficStatus !== desiredUserStatus) {
                 await trafficDb.updateUserTrafficStatus(instance.userId, desiredUserStatus)
             }
@@ -240,7 +244,7 @@ async function checkAndRestore(
 
 async function reconcileTrafficState(
     instances: RunningTrafficInstance[],
-    options: { forceUsageRestore?: boolean } = {}
+    options: { forceUsageRestore?: boolean; forceBandwidthApply?: boolean } = {}
 ): Promise<void> {
     if (instances.length === 0) {
         return
@@ -274,19 +278,32 @@ async function reconcileTrafficState(
             hostInstances.map(instance =>
                 hostLimit(async () => {
                     await checkAndThrottle(instance, client)
-                    await checkAndRestore(instance, client, options.forceUsageRestore === true)
+                    await checkAndRestore(
+                        instance,
+                        client,
+                        options.forceUsageRestore === true,
+                        options.forceBandwidthApply === true
+                    )
                 })
             )
         )
     }
 }
 
-export async function reconcileTrafficStateForInstanceIds(instanceIds: number[]): Promise<void> {
+export async function reconcileTrafficStateForInstanceIds(
+    instanceIds: number[],
+    options: { forceBandwidthApply?: boolean } = {}
+): Promise<void> {
     const instances = await trafficDb.getRunningInstancesForTrafficByIds(instanceIds)
     // Explicit reconciliation follows configuration/reset changes. Force a
     // usage-billed instance back to its unthrottled/base package bandwidth even
     // when the stale remote cap is not the standard emergency throttle value.
-    await reconcileTrafficState(instances, { forceUsageRestore: true })
+    // forceBandwidthApply additionally refreshes the NIC bandwidth of ordinary
+    // package-billed instances so plan speed edits take effect immediately.
+    await reconcileTrafficState(instances, {
+        forceUsageRestore: true,
+        forceBandwidthApply: options.forceBandwidthApply === true
+    })
 }
 
 export async function reconcileTrafficStateForUser(userId: number): Promise<void> {

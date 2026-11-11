@@ -8,11 +8,13 @@ import * as dns from 'dns'
 import { promisify } from 'util'
 import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
+import { getActiveTaskForInstance } from '../db/instance-tasks.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
 import { getDnsRecordType } from '../lib/network-address.js'
 import { requireInstanceViewPermission } from '../lib/permission.js'
 import { ensureInstanceNotSuspended } from './instances/helpers.js'
+import { withInstanceAndDomainRemoteOperationLock } from '../services/instance-remote-operation-lock.js'
 import {
   createProxySite,
   getProxySitesByInstanceId,
@@ -146,91 +148,100 @@ export default async function proxySitesRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '域名格式无效（不支持泛域名）' })
     }
 
-    const instance = await db.getInstanceById(instanceId)
-    if (!instance) {
-      return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
-    }
+    const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, normalizedDomain, async () => {
+      const instance = await db.getInstanceById(instanceId)
+      if (!instance) {
+        return reply.code(404).send(apiError(ErrorCode.INSTANCE_NOT_FOUND))
+      }
+      if (instance.status === 'deleted') return reply.code(409).send({ error: 'Instance is deleted', code: 'INSTANCE_DELETE_IN_PROGRESS' })
 
-    // 封停状态不允许操作
-    if (!ensureInstanceNotSuspended(instance, reply)) return
+      // 封停状态不允许操作
+      if (!ensureInstanceNotSuspended(instance, reply)) return
 
-    // 权限检查
-    if (instance.user_id !== user.id) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+      // 权限检查
+      if (instance.user_id !== user.id) {
+        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+      }
 
-    const host = await db.getHostById(instance.host_id)
-    if (!host) {
-      return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
-    }
+      if (await getActiveTaskForInstance(instanceId)) {
+        return reply.code(409).send({ error: 'Instance operation in progress', code: 'TASK_IN_PROGRESS' })
+      }
 
-    // 检查 Caddy 是否启用
-    if (!host.caddy_enabled) {
-      return reply.code(400).send({ error: '请先在宿主机安装 Caddy' })
-    }
+      const host = await db.getHostById(instance.host_id)
+      if (!host) {
+        return reply.code(404).send(apiError(ErrorCode.HOST_NOT_FOUND))
+      }
 
-    // 检查站点数量配额
-    const currentSiteCount = await getProxySiteCountByInstance(instanceId)
-    // 实例的 siteLimit 为 null 时，继承套餐的设置
-    const pkg = instance.package_id ? await db.getPackageById(instance.package_id) : null
-    const siteLimit = instance.site_limit ?? pkg?.site_limit ?? 10
+      // 检查 Caddy 是否启用
+      if (!host.caddy_enabled) {
+        return reply.code(400).send({ error: '请先在宿主机安装 Caddy' })
+      }
+
+      // 检查站点数量配额
+      const currentSiteCount = await getProxySiteCountByInstance(instanceId)
+      // 实例的 siteLimit 为 null 时，继承套餐的设置
+      const pkg = instance.package_id ? await db.getPackageById(instance.package_id) : null
+      const siteLimit = instance.site_limit ?? pkg?.site_limit ?? 10
     
-    // siteLimit = 0 表示不限制
-    if (siteLimit !== 0 && currentSiteCount >= siteLimit) {
-      return reply.code(400).send({ 
-        error: `已达到站点数量上限 (${siteLimit})`,
-        code: 'SITE_LIMIT_EXCEEDED'
+      // siteLimit = 0 表示不限制
+      if (siteLimit !== 0 && currentSiteCount >= siteLimit) {
+        return reply.code(400).send({
+          error: `已达到站点数量上限 (${siteLimit})`,
+          code: 'SITE_LIMIT_EXCEEDED'
+        })
+      }
+
+      // 检查域名是否已被使用
+      if (await isDomainUsed(host.id, normalizedDomain)) {
+        return reply.code(400).send({ error: '该域名已被使用' })
+      }
+
+      // 实例需要有内网 IP
+      if (!instance.ipv4) {
+        return reply.code(400).send({ error: '实例未分配 IPv4 地址' })
+      }
+
+      // 在数据库创建记录（状态为 pending，等待 DNS 解析）
+      const site = await createProxySite({
+        instanceId,
+        hostId: host.id,
+        domain: normalizedDomain,
+        targetPort,
+        httpsEnabled,
+        remark: remark?.trim() || undefined
       })
-    }
 
-    // 检查域名是否已被使用
-    if (await isDomainUsed(host.id, normalizedDomain)) {
-      return reply.code(400).send({ error: '该域名已被使用' })
-    }
+      // 返回 DNS 解析提示，不立即发送到 Caddy
+      const dnsRecordValue = host.nat_public_ip || host.ip_address || ''
+      const dnsRecordType = dnsRecordValue ? getDnsRecordType(dnsRecordValue) : 'A'
 
-    // 实例需要有内网 IP
-    if (!instance.ipv4) {
-      return reply.code(400).send({ error: '实例未分配 IPv4 地址' })
-    }
+      await createLog(
+        user.id,
+        'proxy',
+        'site.create',
+        `Created proxy site "${normalizedDomain}" (pending DNS)`,
+        'success',
+        { instanceId }
+      )
 
-    // 在数据库创建记录（状态为 pending，等待 DNS 解析）
-    const site = await createProxySite({
-      instanceId,
-      hostId: host.id,
-      domain: normalizedDomain,
-      targetPort,
-      httpsEnabled,
-      remark: remark?.trim() || undefined
+      return {
+        site: {
+          id: site.id,
+          domain: site.domain,
+          targetPort: site.targetPort,
+          httpsEnabled: site.httpsEnabled,
+          status: 'pending'
+        },
+        dnsHint: {
+          type: dnsRecordType,
+          host: normalizedDomain,
+          value: dnsRecordValue
+        },
+        message: '站点已创建，请配置 DNS 后点击“检测 DNS”激活'
+      }
     })
-
-    // 返回 DNS 解析提示，不立即发送到 Caddy
-    const dnsRecordValue = host.nat_public_ip || host.ip_address || ''
-    const dnsRecordType = dnsRecordValue ? getDnsRecordType(dnsRecordValue) : 'A'
-
-    await createLog(
-      user.id,
-      'proxy',
-      'site.create',
-      `Created proxy site "${normalizedDomain}" (pending DNS)`,
-      'success',
-      { instanceId }
-    )
-
-    return {
-      site: {
-        id: site.id,
-        domain: site.domain,
-        targetPort: site.targetPort,
-        httpsEnabled: site.httpsEnabled,
-        status: 'pending'
-      },
-      dnsHint: {
-        type: dnsRecordType,
-        host: normalizedDomain,
-        value: dnsRecordValue
-      },
-      message: '站点已创建，请配置 DNS 后点击“检测 DNS”激活'
-    }
+    if (!locked.acquired) return reply.code(409).send({ error: 'Instance or domain operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
+    return locked.value
   })
 
   /**
@@ -252,62 +263,79 @@ export default async function proxySitesRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    const site = await getProxySiteById(siteId)
-    if (!site) {
-      return reply.code(404).send({ error: '站点不存在' })
-    }
-
-    // 验证站点属于该实例
-    if (site.instanceId !== instanceId) {
-      return reply.code(400).send({ error: '站点不属于该实例' })
-    }
-
-    // 封停状态不允许操作
-    if (site.instance.status === 'suspended') {
-      if (site.instance.suspendReason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+    // The first read only determines the lock key. Re-read all permissions
+    // and site data after acquiring instance -> domain locks.
+    const candidate = await getProxySiteById(siteId)
+    if (!candidate || candidate.instanceId !== instanceId) return reply.code(404).send({ error: '站点不存在' })
+    const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, candidate.domain, async () => {
+      const site = await getProxySiteById(siteId)
+      if (!site) {
+        return reply.code(404).send({ error: '站点不存在' })
       }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
 
-    // 权限检查
-    if (site.instance.userId !== user.id) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+      // 验证站点属于该实例
+      if (site.instanceId !== instanceId) {
+        return reply.code(400).send({ error: '站点不属于该实例' })
+      }
 
-    // 从 Caddy 删除
-    try {
-      if (site.host.caddyEnabled && site.host.caddyUsername && site.host.caddyPassword) {
-        const targetHost = site.host.natPublicIp || site.host.ipAddress || ''
-        if (targetHost) {
-          const client = createCaddyClient({
-            host: targetHost,
-            port: site.host.caddyPort || 8444,
-            username: site.host.caddyUsername,
-            password: site.host.caddyPassword
-          })
+      if (site.domain !== candidate.domain || site.hostId !== candidate.hostId || site.instance.hostId !== site.hostId) {
+        return reply.code(409).send({ error: 'Site changed', code: 'INSTANCE_STATE_CHANGED' })
+      }
+      if (site.instance.status === 'deleting' || site.instance.status === 'deleted') {
+        return reply.code(409).send({ error: 'Instance deletion in progress', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+      }
 
-          await client.deleteSite(site.domain)
+      // 封停状态不允许操作
+      if (site.instance.status === 'suspended') {
+        if (site.instance.suspendReason === 'expired') {
+          return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
         }
+        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
       }
-    } catch (err) {
-      request.log.error(err, 'Failed to remove site from Caddy')
-      // 继续删除数据库记录
-    }
 
-    // 删除数据库记录
-    await deleteProxySite(siteId)
+      // 权限检查
+      if (site.instance.userId !== user.id) {
+        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+      }
 
-    await createLog(
-      user.id,
-      'proxy',
-      'site.delete',
-      `Deleted proxy site "${site.domain}"`,
-      'success',
-      { instanceId }
-    )
+      if (await getActiveTaskForInstance(instanceId)) {
+        return reply.code(409).send({ error: 'Instance operation in progress', code: 'TASK_IN_PROGRESS' })
+      }
 
-    return { message: '站点已删除' }
+      // 从 Caddy 删除
+      try {
+        const targetHost = site.host.natPublicIp || site.host.ipAddress
+        if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword || !targetHost) {
+          return reply.code(503).send({ error: 'Unable to confirm site removal', code: 'SITE_DELETE_UNCONFIRMED' })
+        }
+        const client = createCaddyClient({
+          host: targetHost,
+          port: site.host.caddyPort || 8444,
+          username: site.host.caddyUsername,
+          password: site.host.caddyPassword
+        })
+        await client.deleteSite(site.domain)
+      } catch (err) {
+        request.log.error(err, 'Failed to remove site from Caddy')
+        return reply.code(503).send({ error: 'Unable to confirm site removal', code: 'SITE_DELETE_UNCONFIRMED' })
+      }
+
+      // 删除数据库记录
+      await deleteProxySite(siteId)
+
+      await createLog(
+        user.id,
+        'proxy',
+        'site.delete',
+        `Deleted proxy site "${site.domain}"`,
+        'success',
+        { instanceId }
+      )
+
+      return { message: '站点已删除' }
+    })
+    if (!locked.acquired) return reply.code(409).send({ error: 'Instance or domain operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
+    return locked.value
   })
 
   /**
@@ -331,148 +359,167 @@ export default async function proxySitesRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    const site = await getProxySiteById(siteId)
-    if (!site || site.instanceId !== instanceId) {
-      return reply.code(404).send({ error: '站点不存在' })
-    }
-
-    // 封停状态不允许操作
-    if (site.instance.status === 'suspended') {
-      if (site.instance.suspendReason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+    // The first read only determines the lock key. Re-read all permissions
+    // and site data after acquiring instance -> domain locks.
+    const candidate = await getProxySiteById(siteId)
+    if (!candidate || candidate.instanceId !== instanceId) return reply.code(404).send({ error: '站点不存在' })
+    const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, candidate.domain, async () => {
+      const site = await getProxySiteById(siteId)
+      if (!site || site.instanceId !== instanceId) {
+        return reply.code(404).send({ error: '站点不存在' })
       }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
 
-    if (site.instance.userId !== user.id) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
-
-    // 获取宿主机公网 IP
-    const expectedIp = site.host.natPublicIp || site.host.ipAddress
-    if (!expectedIp) {
-      return reply.code(400).send({ error: '宿主机未配置公网 IP' })
-    }
-
-    // 检测 DNS 解析
-    let resolvedIps: string[] = []
-    let dnsError: string | null = null
-
-    try {
-      // 尝试解析 IPv4
-      const ipv4s = await dnsResolve4(site.domain)
-      resolvedIps = resolvedIps.concat(ipv4s)
-    } catch {
-      // IPv4 解析失败
-    }
-
-    try {
-      // 尝试解析 IPv6
-      const ipv6s = await dnsResolve6(site.domain)
-      resolvedIps = resolvedIps.concat(ipv6s)
-    } catch {
-      // IPv6 解析失败
-    }
-
-    if (resolvedIps.length === 0) {
-      dnsError = 'DNS 未解析，请检查域名配置'
-      return {
-        dnsResolved: false,
-        expectedIp,
-        resolvedIps: [],
-        error: dnsError,
-        status: site.status
+      if (site.domain !== candidate.domain || site.hostId !== candidate.hostId || site.instance.hostId !== site.hostId) {
+        return reply.code(409).send({ error: 'Site changed', code: 'INSTANCE_STATE_CHANGED' })
       }
-    }
+      if (site.instance.status === 'deleting' || site.instance.status === 'deleted') {
+        return reply.code(409).send({ error: 'Instance deletion in progress', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+      }
 
-    // 检查 IP 是否匹配
-    const ipMatches = resolvedIps.includes(expectedIp)
-    
-    if (!ipMatches) {
-      dnsError = `DNS 解析到 ${resolvedIps.join(', ')}，但期望的是 ${expectedIp}`
+      // 封停状态不允许操作
+      if (site.instance.status === 'suspended') {
+        if (site.instance.suspendReason === 'expired') {
+          return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+        }
+        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
+      }
+
+      if (site.instance.userId !== user.id) {
+        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+      }
+
+      if (await getActiveTaskForInstance(instanceId)) {
+        return reply.code(409).send({ error: 'Instance operation in progress', code: 'TASK_IN_PROGRESS' })
+      }
+
+      // 获取宿主机公网 IP
+      const expectedIp = site.host.natPublicIp || site.host.ipAddress
+      if (!expectedIp) {
+        return reply.code(400).send({ error: '宿主机未配置公网 IP' })
+      }
+
+      // 检测 DNS 解析
+      let resolvedIps: string[] = []
+      let dnsError: string | null = null
+
+      try {
+        // 尝试解析 IPv4
+        const ipv4s = await dnsResolve4(site.domain)
+        resolvedIps = resolvedIps.concat(ipv4s)
+      } catch {
+        // IPv4 解析失败
+      }
+
+      try {
+        // 尝试解析 IPv6
+        const ipv6s = await dnsResolve6(site.domain)
+        resolvedIps = resolvedIps.concat(ipv6s)
+      } catch {
+        // IPv6 解析失败
+      }
+
+      if (resolvedIps.length === 0) {
+        dnsError = 'DNS 未解析，请检查域名配置'
+        return {
+          dnsResolved: false,
+          expectedIp,
+          resolvedIps: [],
+          error: dnsError,
+          status: site.status
+        }
+      }
+
+      // 检查 IP 是否匹配
+      const ipMatches = resolvedIps.includes(expectedIp)
+
+      if (!ipMatches) {
+        dnsError = `DNS 解析到 ${resolvedIps.join(', ')}，但期望的是 ${expectedIp}`
+        return {
+          dnsResolved: true,
+          ipMatches: false,
+          expectedIp,
+          resolvedIps,
+          error: dnsError,
+          status: site.status
+        }
+      }
+
+      // DNS 正确，如果站点还是 pending 状态，自动激活
+      if (site.status === 'pending') {
+        try {
+          if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
+            throw new Error('Caddy 未启用')
+          }
+
+          const instanceIp = site.instance.ipv4
+          if (!instanceIp) {
+            throw new Error('实例未分配 IP')
+          }
+
+          const client = createCaddyClient({
+            host: expectedIp,
+            port: site.host.caddyPort || 8444,
+            username: site.host.caddyUsername,
+            password: site.host.caddyPassword
+          })
+
+          // 先删除可能存在的旧配置（防止实例删除时 Caddy 删除失败导致残留）
+          try {
+            await client.deleteSite(site.domain)
+          } catch {
+            // 删除失败不影响后续操作（可能路由不存在）
+          }
+
+          await client.addSite(site.domain, instanceIp, site.targetPort, site.httpsEnabled)
+          await updateProxySiteStatus(site.id, 'active')
+
+          await createLog(
+            user.id,
+            'proxy',
+            'site.activate',
+            `Activated proxy site "${site.domain}" after DNS verification`,
+            'success',
+            { instanceId }
+          )
+
+          return {
+            dnsResolved: true,
+            ipMatches: true,
+            expectedIp,
+            resolvedIps,
+            activated: true,
+            status: 'active',
+            message: 'DNS 验证通过，站点已激活'
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err)
+          await updateProxySiteStatus(site.id, 'error', errorMessage)
+          request.log.error(err, 'Failed to activate site after DNS check')
+        
+          return {
+            dnsResolved: true,
+            ipMatches: true,
+            expectedIp,
+            resolvedIps,
+            activated: false,
+            status: 'error',
+            error: `激活失败: ${errorMessage}`
+          }
+        }
+      }
+
+      // 站点已经是 active 或 error 状态
       return {
         dnsResolved: true,
-        ipMatches: false,
+        ipMatches: true,
         expectedIp,
         resolvedIps,
-        error: dnsError,
-        status: site.status
+        status: site.status,
+        message: site.status === 'active' ? '站点已激活' : '请点击刷新重试配置'
       }
-    }
-
-    // DNS 正确，如果站点还是 pending 状态，自动激活
-    if (site.status === 'pending') {
-      try {
-        if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
-          throw new Error('Caddy 未启用')
-        }
-
-        const instanceIp = site.instance.ipv4
-        if (!instanceIp) {
-          throw new Error('实例未分配 IP')
-        }
-
-        const client = createCaddyClient({
-          host: expectedIp,
-          port: site.host.caddyPort || 8444,
-          username: site.host.caddyUsername,
-          password: site.host.caddyPassword
-        })
-
-        // 先删除可能存在的旧配置（防止实例删除时 Caddy 删除失败导致残留）
-        try {
-          await client.deleteSite(site.domain)
-        } catch {
-          // 删除失败不影响后续操作（可能路由不存在）
-        }
-
-        await client.addSite(site.domain, instanceIp, site.targetPort, site.httpsEnabled)
-        await updateProxySiteStatus(site.id, 'active')
-
-        await createLog(
-          user.id,
-          'proxy',
-          'site.activate',
-          `Activated proxy site "${site.domain}" after DNS verification`,
-          'success',
-          { instanceId }
-        )
-
-        return {
-          dnsResolved: true,
-          ipMatches: true,
-          expectedIp,
-          resolvedIps,
-          activated: true,
-          status: 'active',
-          message: 'DNS 验证通过，站点已激活'
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err)
-        await updateProxySiteStatus(site.id, 'error', errorMessage)
-        request.log.error(err, 'Failed to activate site after DNS check')
-        
-        return {
-          dnsResolved: true,
-          ipMatches: true,
-          expectedIp,
-          resolvedIps,
-          activated: false,
-          status: 'error',
-          error: `激活失败: ${errorMessage}`
-        }
-      }
-    }
-
-    // 站点已经是 active 或 error 状态
-    return {
-      dnsResolved: true,
-      ipMatches: true,
-      expectedIp,
-      resolvedIps,
-      status: site.status,
-      message: site.status === 'active' ? '站点已激活' : '请点击刷新重试配置'
-    }
+    })
+    if (!locked.acquired) return reply.code(409).send({ error: 'Instance or domain operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
+    return locked.value
   })
 
   /**
@@ -494,87 +541,106 @@ export default async function proxySitesRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    const site = await getProxySiteById(siteId)
-    if (!site || site.instanceId !== instanceId) {
-      return reply.code(404).send({ error: '站点不存在' })
-    }
-
-    // 封停状态不允许操作
-    if (site.instance.status === 'suspended') {
-      if (site.instance.suspendReason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
-      }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
-
-    if (site.instance.userId !== user.id) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
-
-    // 重新尝试配置
-    try {
-      // 禁用的站点不允许刷新
-      if (!site.enabled) {
-        return reply.code(400).send({ error: '站点已禁用，请先启用' })
+    // The first read only determines the lock key. Re-read all permissions
+    // and site data after acquiring instance -> domain locks.
+    const candidate = await getProxySiteById(siteId)
+    if (!candidate || candidate.instanceId !== instanceId) return reply.code(404).send({ error: '站点不存在' })
+    const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, candidate.domain, async () => {
+      const site = await getProxySiteById(siteId)
+      if (!site || site.instanceId !== instanceId) {
+        return reply.code(404).send({ error: '站点不存在' })
       }
 
-      if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
-        return reply.code(400).send({ error: 'Caddy 未启用' })
+      if (site.domain !== candidate.domain || site.hostId !== candidate.hostId || site.instance.hostId !== site.hostId) {
+        return reply.code(409).send({ error: 'Site changed', code: 'INSTANCE_STATE_CHANGED' })
+      }
+      if (site.instance.status === 'deleting' || site.instance.status === 'deleted') {
+        return reply.code(409).send({ error: 'Instance deletion in progress', code: 'INSTANCE_DELETE_IN_PROGRESS' })
       }
 
-      const targetHost = site.host.natPublicIp || site.host.ipAddress
-      if (!targetHost) {
-        return reply.code(400).send({ error: '宿主机未配置公网 IP' })
+      // 封停状态不允许操作
+      if (site.instance.status === 'suspended') {
+        if (site.instance.suspendReason === 'expired') {
+          return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+        }
+        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
       }
 
-      const instanceIp = site.instance.ipv4
-      if (!instanceIp) {
-        return reply.code(400).send({ error: '实例未分配 IP' })
+      if (site.instance.userId !== user.id) {
+        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
       }
 
-      const client = createCaddyClient({
-        host: targetHost,
-        port: site.host.caddyPort || 8444,
-        username: site.host.caddyUsername,
-        password: site.host.caddyPassword
-      })
+      if (await getActiveTaskForInstance(instanceId)) {
+        return reply.code(409).send({ error: 'Instance operation in progress', code: 'TASK_IN_PROGRESS' })
+      }
 
-      // 先删除旧路由（避免重复添加）
+      // 重新尝试配置
       try {
-        await client.deleteSite(site.domain)
-      } catch {
-        // 删除失败不影响后续操作（可能路由不存在）
+        // 禁用的站点不允许刷新
+        if (!site.enabled) {
+          return reply.code(400).send({ error: '站点已禁用，请先启用' })
+        }
+
+        if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
+          return reply.code(400).send({ error: 'Caddy 未启用' })
+        }
+
+        const targetHost = site.host.natPublicIp || site.host.ipAddress
+        if (!targetHost) {
+          return reply.code(400).send({ error: '宿主机未配置公网 IP' })
+        }
+
+        const instanceIp = site.instance.ipv4
+        if (!instanceIp) {
+          return reply.code(400).send({ error: '实例未分配 IP' })
+        }
+
+        const client = createCaddyClient({
+          host: targetHost,
+          port: site.host.caddyPort || 8444,
+          username: site.host.caddyUsername,
+          password: site.host.caddyPassword
+        })
+
+        // 先删除旧路由（避免重复添加）
+        try {
+          await client.deleteSite(site.domain)
+        } catch {
+          // 删除失败不影响后续操作（可能路由不存在）
+        }
+
+        // 重新添加路由
+        await client.addSite(site.domain, instanceIp, site.targetPort, site.httpsEnabled)
+        await updateProxySiteStatus(site.id, 'active')
+
+        await createLog(
+          user.id,
+          'proxy',
+          'site.refresh',
+          `Refreshed proxy site "${site.domain}"`,
+          'success',
+          { instanceId }
+        )
+
+        return { message: '站点配置已刷新', status: 'active' }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        await updateProxySiteStatus(site.id, 'error', errorMessage)
+
+        await createLog(
+          user.id,
+          'proxy',
+          'site.refresh',
+          `Failed to refresh proxy site "${site.domain}": ${errorMessage}`,
+          'failed',
+          { instanceId }
+        )
+
+        return reply.code(500).send({ error: `配置失败: ${errorMessage}` })
       }
-
-      // 重新添加路由
-      await client.addSite(site.domain, instanceIp, site.targetPort, site.httpsEnabled)
-      await updateProxySiteStatus(site.id, 'active')
-
-      await createLog(
-        user.id,
-        'proxy',
-        'site.refresh',
-        `Refreshed proxy site "${site.domain}"`,
-        'success',
-        { instanceId }
-      )
-
-      return { message: '站点配置已刷新', status: 'active' }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      await updateProxySiteStatus(site.id, 'error', errorMessage)
-
-      await createLog(
-        user.id,
-        'proxy',
-        'site.refresh',
-        `Failed to refresh proxy site "${site.domain}": ${errorMessage}`,
-        'failed',
-        { instanceId }
-      )
-
-      return reply.code(500).send({ error: `配置失败: ${errorMessage}` })
-    }
+    })
+    if (!locked.acquired) return reply.code(409).send({ error: 'Instance or domain operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
+    return locked.value
   })
 
   /**
@@ -622,141 +688,160 @@ export default async function proxySitesRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '请提供要修改的字段' })
     }
 
-    const site = await getProxySiteById(siteId)
-    if (!site || site.instanceId !== instanceId) {
-      return reply.code(404).send({ error: '站点不存在' })
-    }
-
-    // 封停状态不允许操作
-    if (site.instance.status === 'suspended') {
-      if (site.instance.suspendReason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+    // The first read only determines the lock key. Re-read all permissions
+    // and site data after acquiring instance -> domain locks.
+    const candidate = await getProxySiteById(siteId)
+    if (!candidate || candidate.instanceId !== instanceId) return reply.code(404).send({ error: '站点不存在' })
+    const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, candidate.domain, async () => {
+      const site = await getProxySiteById(siteId)
+      if (!site || site.instanceId !== instanceId) {
+        return reply.code(404).send({ error: '站点不存在' })
       }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
 
-    if (site.instance.userId !== user.id) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+      if (site.domain !== candidate.domain || site.hostId !== candidate.hostId || site.instance.hostId !== site.hostId) {
+        return reply.code(409).send({ error: 'Site changed', code: 'INSTANCE_STATE_CHANGED' })
+      }
+      if (site.instance.status === 'deleting' || site.instance.status === 'deleted') {
+        return reply.code(409).send({ error: 'Instance deletion in progress', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+      }
 
-    // 检查站点是否启用
-    if (!site.enabled) {
-      return reply.code(400).send({ error: '请先启用站点' })
-    }
+      // 封停状态不允许操作
+      if (site.instance.status === 'suspended') {
+        if (site.instance.suspendReason === 'expired') {
+          return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+        }
+        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
+      }
 
-    // 确定最终配置
-    const newTargetPort = targetPort ?? site.targetPort
-    const newHttpsEnabled = httpsEnabled ?? site.httpsEnabled
-    const newRemark = remark !== undefined ? (remark.trim() || null) : site.remark
+      if (site.instance.userId !== user.id) {
+        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+      }
 
-    // 检查是否只修改了 remark（不需要更新 Caddy）
-    const onlyRemarkChanged = newTargetPort === site.targetPort && newHttpsEnabled === site.httpsEnabled && newRemark !== site.remark
+      if (await getActiveTaskForInstance(instanceId)) {
+        return reply.code(409).send({ error: 'Instance operation in progress', code: 'TASK_IN_PROGRESS' })
+      }
 
-    if (onlyRemarkChanged) {
-      // 只修改备注，不需要更新 Caddy
-      await updateProxySite(site.id, { remark: newRemark })
+      // 检查站点是否启用
+      if (!site.enabled) {
+        return reply.code(400).send({ error: '请先启用站点' })
+      }
+
+      // 确定最终配置
+      const newTargetPort = targetPort ?? site.targetPort
+      const newHttpsEnabled = httpsEnabled ?? site.httpsEnabled
+      const newRemark = remark !== undefined ? (remark.trim() || null) : site.remark
+
+      // 检查是否只修改了 remark（不需要更新 Caddy）
+      const onlyRemarkChanged = newTargetPort === site.targetPort && newHttpsEnabled === site.httpsEnabled && newRemark !== site.remark
+
+      if (onlyRemarkChanged) {
+        // 只修改备注，不需要更新 Caddy
+        await updateProxySite(site.id, { remark: newRemark })
       
-      await createLog(
-        user.id,
-        'proxy',
-        'site.update',
-        `Updated proxy site "${site.domain}" remark`,
-        'success',
-        { instanceId }
-      )
+        await createLog(
+          user.id,
+          'proxy',
+          'site.update',
+          `Updated proxy site "${site.domain}" remark`,
+          'success',
+          { instanceId }
+        )
 
-      return {
-        message: '站点备注已更新',
-        site: {
-          id: site.id,
-          domain: site.domain,
-          targetPort: site.targetPort,
-          httpsEnabled: site.httpsEnabled,
-          remark: newRemark,
-          status: site.status
+        return {
+          message: '站点备注已更新',
+          site: {
+            id: site.id,
+            domain: site.domain,
+            targetPort: site.targetPort,
+            httpsEnabled: site.httpsEnabled,
+            remark: newRemark,
+            status: site.status
+          }
         }
       }
-    }
 
-    // 如果配置没有变化（包括 remark），直接返回
-    if (newTargetPort === site.targetPort && newHttpsEnabled === site.httpsEnabled && newRemark === site.remark) {
-      return { message: '配置无变化', site: { id: site.id, domain: site.domain, targetPort: site.targetPort, httpsEnabled: site.httpsEnabled, remark: site.remark, status: site.status } }
-    }
+      // 如果配置没有变化（包括 remark），直接返回
+      if (newTargetPort === site.targetPort && newHttpsEnabled === site.httpsEnabled && newRemark === site.remark) {
+        return { message: '配置无变化', site: { id: site.id, domain: site.domain, targetPort: site.targetPort, httpsEnabled: site.httpsEnabled, remark: site.remark, status: site.status } }
+      }
 
-    // 需要更新 Caddy 配置
-    // 检查 Caddy 是否可用
-    if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
-      return reply.code(400).send({ error: 'Caddy 未启用' })
-    }
+      // 需要更新 Caddy 配置
+      // 检查 Caddy 是否可用
+      if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
+        return reply.code(400).send({ error: 'Caddy 未启用' })
+      }
 
-    const targetHost = site.host.natPublicIp || site.host.ipAddress
-    if (!targetHost) {
-      return reply.code(400).send({ error: '宿主机未配置公网 IP' })
-    }
+      const targetHost = site.host.natPublicIp || site.host.ipAddress
+      if (!targetHost) {
+        return reply.code(400).send({ error: '宿主机未配置公网 IP' })
+      }
 
-    const instanceIp = site.instance.ipv4
-    if (!instanceIp) {
-      return reply.code(400).send({ error: '实例未分配 IP' })
-    }
+      const instanceIp = site.instance.ipv4
+      if (!instanceIp) {
+        return reply.code(400).send({ error: '实例未分配 IP' })
+      }
 
-    // 确定最终配置
-    const finalTargetPort = targetPort ?? site.targetPort
-    const finalHttpsEnabled = httpsEnabled ?? site.httpsEnabled
+      // 确定最终配置
+      const finalTargetPort = targetPort ?? site.targetPort
+      const finalHttpsEnabled = httpsEnabled ?? site.httpsEnabled
 
-    // 如果配置没有变化，直接返回
-    if (finalTargetPort === site.targetPort && finalHttpsEnabled === site.httpsEnabled) {
-      return { message: '配置无变化', site: { id: site.id, domain: site.domain, targetPort: site.targetPort, httpsEnabled: site.httpsEnabled, remark: site.remark, status: site.status } }
-    }
+      // 如果配置没有变化，直接返回
+      if (finalTargetPort === site.targetPort && finalHttpsEnabled === site.httpsEnabled) {
+        return { message: '配置无变化', site: { id: site.id, domain: site.domain, targetPort: site.targetPort, httpsEnabled: site.httpsEnabled, remark: site.remark, status: site.status } }
+      }
 
-    try {
-      const client = createCaddyClient({
-        host: targetHost,
-        port: site.host.caddyPort || 8444,
-        username: site.host.caddyUsername,
-        password: site.host.caddyPassword
-      })
+      try {
+        const client = createCaddyClient({
+          host: targetHost,
+          port: site.host.caddyPort || 8444,
+          username: site.host.caddyUsername,
+          password: site.host.caddyPassword
+        })
 
-      // 先删除旧路由
-      await client.deleteSite(site.domain)
+        // 先删除旧路由
+        await client.deleteSite(site.domain)
 
-      // 再添加新路由
-      await client.addSite(site.domain, instanceIp, finalTargetPort, finalHttpsEnabled)
+        // 再添加新路由
+        await client.addSite(site.domain, instanceIp, finalTargetPort, finalHttpsEnabled)
 
-      // 更新数据库
-      await updateProxySite(site.id, {
-        targetPort: finalTargetPort,
-        httpsEnabled: finalHttpsEnabled,
-        remark: newRemark,
-        status: 'active',
-        error: null
-      })
-
-      await createLog(
-        user.id,
-        'proxy',
-        'site.update',
-        `Updated proxy site "${site.domain}": port=${finalTargetPort}, https=${finalHttpsEnabled}`,
-        'success',
-        { instanceId }
-      )
-
-      return {
-        message: '站点配置已更新',
-        site: {
-          id: site.id,
-          domain: site.domain,
+        // 更新数据库
+        await updateProxySite(site.id, {
           targetPort: finalTargetPort,
           httpsEnabled: finalHttpsEnabled,
           remark: newRemark,
-          status: 'active'
+          status: 'active',
+          error: null
+        })
+
+        await createLog(
+          user.id,
+          'proxy',
+          'site.update',
+          `Updated proxy site "${site.domain}": port=${finalTargetPort}, https=${finalHttpsEnabled}`,
+          'success',
+          { instanceId }
+        )
+
+        return {
+          message: '站点配置已更新',
+          site: {
+            id: site.id,
+            domain: site.domain,
+            targetPort: finalTargetPort,
+            httpsEnabled: finalHttpsEnabled,
+            remark: newRemark,
+            status: 'active'
+          }
         }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        await updateProxySiteStatus(site.id, 'error', errorMessage)
+        request.log.error(err, 'Failed to update site configuration')
+        return reply.code(500).send({ error: `更新失败: ${errorMessage}` })
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      await updateProxySiteStatus(site.id, 'error', errorMessage)
-      request.log.error(err, 'Failed to update site configuration')
-      return reply.code(500).send({ error: `更新失败: ${errorMessage}` })
-    }
+    })
+    if (!locked.acquired) return reply.code(409).send({ error: 'Instance or domain operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
+    return locked.value
   })
 
   /**
@@ -778,86 +863,105 @@ export default async function proxySitesRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
     }
 
-    const site = await getProxySiteById(siteId)
-    if (!site || site.instanceId !== instanceId) {
-      return reply.code(404).send({ error: '站点不存在' })
-    }
-
-    // 封停状态不允许操作
-    if (site.instance.status === 'suspended') {
-      if (site.instance.suspendReason === 'expired') {
-        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
+    // The first read only determines the lock key. Re-read all permissions
+    // and site data after acquiring instance -> domain locks.
+    const candidate = await getProxySiteById(siteId)
+    if (!candidate || candidate.instanceId !== instanceId) return reply.code(404).send({ error: '站点不存在' })
+    const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, candidate.domain, async () => {
+      const site = await getProxySiteById(siteId)
+      if (!site || site.instanceId !== instanceId) {
+        return reply.code(404).send({ error: '站点不存在' })
       }
-      return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
-    }
 
-    if (site.instance.userId !== user.id) {
-      return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
-    }
+      if (site.domain !== candidate.domain || site.hostId !== candidate.hostId || site.instance.hostId !== site.hostId) {
+        return reply.code(409).send({ error: 'Site changed', code: 'INSTANCE_STATE_CHANGED' })
+      }
+      if (site.instance.status === 'deleting' || site.instance.status === 'deleted') {
+        return reply.code(409).send({ error: 'Instance deletion in progress', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+      }
 
-    // 检查 Caddy 是否启用
-    if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
-      return reply.code(400).send({ error: 'Caddy 未启用' })
-    }
-
-    const targetHost = site.host.natPublicIp || site.host.ipAddress
-    if (!targetHost) {
-      return reply.code(400).send({ error: '宿主机未配置公网 IP' })
-    }
-
-    const newEnabled = !site.enabled
-
-    try {
-      const client = createCaddyClient({
-        host: targetHost,
-        port: site.host.caddyPort || 8444,
-        username: site.host.caddyUsername,
-        password: site.host.caddyPassword
-      })
-
-      if (newEnabled) {
-        // 启用站点：添加 Caddy 配置
-        const instanceIp = site.instance.ipv4
-        if (!instanceIp) {
-          return reply.code(400).send({ error: '实例未分配 IP' })
+      // 封停状态不允许操作
+      if (site.instance.status === 'suspended') {
+        if (site.instance.suspendReason === 'expired') {
+          return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
         }
-        // 先删除可能存在的旧配置（防止残留）
-        try {
+        return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED))
+      }
+
+      if (site.instance.userId !== user.id) {
+        return reply.code(403).send(apiError(ErrorCode.FORBIDDEN))
+      }
+
+      if (await getActiveTaskForInstance(instanceId)) {
+        return reply.code(409).send({ error: 'Instance operation in progress', code: 'TASK_IN_PROGRESS' })
+      }
+
+      // 检查 Caddy 是否启用
+      if (!site.host.caddyEnabled || !site.host.caddyUsername || !site.host.caddyPassword) {
+        return reply.code(400).send({ error: 'Caddy 未启用' })
+      }
+
+      const targetHost = site.host.natPublicIp || site.host.ipAddress
+      if (!targetHost) {
+        return reply.code(400).send({ error: '宿主机未配置公网 IP' })
+      }
+
+      const newEnabled = !site.enabled
+
+      try {
+        const client = createCaddyClient({
+          host: targetHost,
+          port: site.host.caddyPort || 8444,
+          username: site.host.caddyUsername,
+          password: site.host.caddyPassword
+        })
+
+        if (newEnabled) {
+          // 启用站点：添加 Caddy 配置
+          const instanceIp = site.instance.ipv4
+          if (!instanceIp) {
+            return reply.code(400).send({ error: '实例未分配 IP' })
+          }
+          // 先删除可能存在的旧配置（防止残留）
+          try {
+            await client.deleteSite(site.domain)
+          } catch {
+            // 删除失败不影响后续操作
+          }
+          await client.addSite(site.domain, instanceIp, site.targetPort, site.httpsEnabled)
+          await updateProxySiteStatus(site.id, 'active', null, newEnabled)
+        } else {
+          // 禁用站点：删除 Caddy 配置
           await client.deleteSite(site.domain)
-        } catch {
-          // 删除失败不影响后续操作
+          await updateProxySiteStatus(site.id, 'pending', null, newEnabled)  // 设为 pending 表示未激活
         }
-        await client.addSite(site.domain, instanceIp, site.targetPort, site.httpsEnabled)
-        await updateProxySiteStatus(site.id, 'active', null, newEnabled)
-      } else {
-        // 禁用站点：删除 Caddy 配置
-        await client.deleteSite(site.domain)
-        await updateProxySiteStatus(site.id, 'pending', null, newEnabled)  // 设为 pending 表示未激活
+
+        // 更新数据库 enabled 状态
+        // 注：已在 updateProxySiteStatus 中一并更新，此处移除独立调用
+        // await toggleProxySiteEnabled(site.id, newEnabled)
+
+        await createLog(
+          user.id,
+          'proxy',
+          newEnabled ? 'site.enable' : 'site.disable',
+          `${newEnabled ? 'Enabled' : 'Disabled'} proxy site "${site.domain}"`,
+          'success',
+          { instanceId }
+        )
+
+        return {
+          message: newEnabled ? '站点已启用' : '站点已禁用',
+          enabled: newEnabled,
+          status: newEnabled ? 'active' : 'pending'
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        request.log.error(err, `Failed to ${newEnabled ? 'enable' : 'disable'} site`)
+        return reply.code(500).send({ error: `操作失败: ${errorMessage}` })
       }
-
-      // 更新数据库 enabled 状态
-      // 注：已在 updateProxySiteStatus 中一并更新，此处移除独立调用
-      // await toggleProxySiteEnabled(site.id, newEnabled)
-
-      await createLog(
-        user.id,
-        'proxy',
-        newEnabled ? 'site.enable' : 'site.disable',
-        `${newEnabled ? 'Enabled' : 'Disabled'} proxy site "${site.domain}"`,
-        'success',
-        { instanceId }
-      )
-
-      return {
-        message: newEnabled ? '站点已启用' : '站点已禁用',
-        enabled: newEnabled,
-        status: newEnabled ? 'active' : 'pending'
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      request.log.error(err, `Failed to ${newEnabled ? 'enable' : 'disable'} site`)
-      return reply.code(500).send({ error: `操作失败: ${errorMessage}` })
-    }
+    })
+    if (!locked.acquired) return reply.code(409).send({ error: 'Instance or domain operation in progress', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
+    return locked.value
   })
 
   /**

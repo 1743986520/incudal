@@ -61,7 +61,8 @@ function canRetryProvision(instance: Instance): boolean {
 }
 
 function canDeleteInstance(instance: Instance): boolean {
-  return (instance.status?.toLowerCase() === 'error' || isHourlyInstance(instance) || !instance.packagePlanId)
+  return instance.status?.toLowerCase() !== 'deleting'
+    && (instance.status?.toLowerCase() === 'error' || isHourlyInstance(instance) || !instance.packagePlanId)
     && (instance as any).allow_instance_deletion !== false
 }
 </script>
@@ -85,6 +86,7 @@ function canDeleteInstance(instance: Instance): boolean {
               <input
                 type="checkbox"
                 class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer touch-manipulation"
+                :disabled="instance.status?.toLowerCase() === 'deleting'"
                 :checked="selectedIds.has(instance.id)"
                 @click.stop
                 @change.stop="emit('toggle-select', instance.id)"

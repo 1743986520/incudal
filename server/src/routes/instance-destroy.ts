@@ -9,11 +9,10 @@ import * as db from '../db/index.js'
 import { prisma } from '../db/prisma.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
-import { sendHostManagedInstanceNotification, sendNotification } from '../lib/notifier.js'
-import { sendInstanceDestroyRefundEmail } from '../lib/mailer.js'
-import { sendReleaseNotification } from '../lib/release-notifier.js'
-import { collectTrafficForRunningInstance } from '../services/instance-traffic-collector.js'
-import { closeHourlyBilling } from '../services/hourly-billing-scheduler.js'
+import { closeInstanceSessions } from '../lib/terminal-proxy.js'
+import { claimInstanceForDelete } from './instances/helpers.js'
+import { processPendingInstanceDeletion } from '../services/pending-instance-deletion.js'
+import { withInstanceRemoteOperationLock } from '../services/instance-remote-operation-lock.js'
 import {
   INSTANCE_OPERATION_LOCK_NAMESPACE,
   tryAdvisoryTransactionLock
@@ -58,6 +57,8 @@ interface BatchDestroyResultItem {
   name: string
   success: boolean
   skipped?: boolean
+  pending?: boolean
+  status?: 'deleting'
   reason?: string
   refundAmount?: number
   feeAmount?: number
@@ -174,62 +175,145 @@ function roundMoney(value: number): number {
   return Number(value.toFixed(2))
 }
 
-async function claimInstanceForUserDestroy(
-  instanceId: number,
-  userId: number,
-  currentStatus: InstanceStatus,
+/** Free, package-traffic instances have no refund, destroy fee or final
+ * usage settlement. Use the same durable deletion as ordinary DELETE. */
+async function destroyFreeInstanceDurably(
+  user: { id: number; role: 'admin' | 'user' },
+  instance: {
+    id: number; userId: number; hostId: number; incusId: string; version: number
+    status: InstanceStatus; packageId: number | null; packagePlanId: number | null
+    billingMode: 'package' | 'hourly'; trafficBillingMode: 'package' | 'usage'; suspendReason: string | null
+    host: { userId: number }
+  },
+  logger: { warn: (...args: any[]) => void }
+): Promise<'completed' | 'pending' | 'conflict'> {
+  const claimed = await claimInstanceForDelete(instance.id, instance.status, {
+    authorization: {
+      actorUserId: user.id, actorRole: user.role, scope: 'instance-or-host',
+      expectedUserId: instance.userId, expectedHostId: instance.hostId,
+      expectedHostUserId: instance.host.userId, expectedIncusId: instance.incusId,
+      expectedVersion: instance.version, expectedPackagePlanId: instance.packagePlanId,
+      expectedPackageId: instance.packageId, expectedSuspendReason: instance.suspendReason,
+      expectedBillingMode: instance.billingMode, expectedTrafficBillingMode: instance.trafficBillingMode
+    },
+    pending: { requestedById: user.id }
+  })
+  if (!claimed) return 'conflict'
+
+  closeInstanceSessions(instance.id, 'Instance is being deleted')
+  try {
+    if (await processPendingInstanceDeletion(instance.id)) return 'completed'
+  } catch (error) {
+    logger.warn({ instanceId: instance.id, error }, 'Free instance destruction remains pending')
+  }
+  return 'pending'
+}
+
+export async function claimInstanceForUserDestroy(
+  expected: {
+    id: number; userId: number; hostId: number; incusId: string; version: number
+    status: InstanceStatus; packageId: number | null; packagePlanId: number | null
+    billingMode: 'package' | 'hourly'; suspendReason: string | null; expiresAt: Date | null
+    trafficBillingMode: 'package' | 'usage'; monthlyTrafficUsed: bigint; monthlyTrafficLimit: bigint | null; trafficSettledBytes: bigint
+    package: { allowInstanceDeletion: boolean; destroyTrafficLimit: bigint } | null
+  },
+  actor: { id: number; role: 'admin' | 'user' },
+  currentMonthlyTrafficUsed: bigint,
   deletionBillingMode: 'user_destroy' | 'hourly_close' | null,
   feeWaiver: boolean
 ): Promise<boolean> {
+  const instanceId = expected.id
+  const currentStatus = expected.status
+  if (expected.userId !== actor.id) return false
+  if (currentStatus === 'deleted' || currentStatus === 'deleting') return false
   return prisma.$transaction(async (tx) => {
     const locked = await tryAdvisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     if (!locked) return false
 
+    const actors = await tx.$queryRaw<Array<{ role: string; status: string }>>`
+      SELECT "role", "status" FROM "users" WHERE "id" = ${actor.id} FOR UPDATE
+    `
+    if (actors[0]?.status !== 'active' || actors[0]?.role !== actor.role) return false
+
+    if (expected.packageId !== null) {
+      const policies = await tx.$queryRaw<Array<{ allowed: boolean; trafficLimit: bigint }>>`
+        SELECT "allow_instance_deletion" AS "allowed", "destroy_traffic_limit" AS "trafficLimit"
+        FROM "packages" WHERE "id" = ${expected.packageId} FOR UPDATE
+      `
+      if (!expected.package || !policies[0]?.allowed || policies[0].allowed !== expected.package.allowInstanceDeletion
+        || policies[0].trafficLimit !== expected.package.destroyTrafficLimit) return false
+    }
+
     const blockingTask = await getDestroyBlockingTask(instanceId, tx)
     if (blockingTask) return false
+    const activeTransfer = await tx.instanceTransfer.findFirst({
+      where: { instanceId, status: { in: ['pending', 'processing'] } }, select: { id: true }
+    })
+    if (activeTransfer) return false
 
+    const requestedAt = new Date()
     const result = await tx.instance.updateMany({
       where: {
         id: instanceId,
-        userId,
-        status: currentStatus
+        userId: expected.userId,
+        hostId: expected.hostId,
+        incusId: expected.incusId,
+        version: expected.version,
+        status: currentStatus,
+        packageId: expected.packageId,
+        packagePlanId: expected.packagePlanId,
+        billingMode: expected.billingMode,
+        suspendReason: expected.suspendReason,
+        expiresAt: expected.expiresAt,
+        trafficBillingMode: expected.trafficBillingMode,
+        monthlyTrafficUsed: currentMonthlyTrafficUsed,
+        monthlyTrafficLimit: expected.monthlyTrafficLimit,
+        trafficSettledBytes: expected.trafficSettledBytes,
+        provisioningCleanupPending: false
       },
       data: {
-        status: 'deleted',
+        status: 'deleting',
         version: { increment: 1 },
         deletionBillingPending: deletionBillingMode !== null,
         deletionRemoteDeleted: false,
         deletionBillingMode,
         deletionRefundableValue: null,
-        deletionFeeWaiver: deletionBillingMode !== null ? feeWaiver : false
+        deletionFeeWaiver: deletionBillingMode !== null ? feeWaiver : false,
+        deletionOriginalStatus: currentStatus,
+        deletionRequestedAt: requestedAt,
+        deletionRequestedById: actor.id,
+        deletionReason: null
       }
     })
 
+    if (result.count === 1 && deletionBillingMode === 'user_destroy') {
+      // Persist the request-time quote in the same transaction as the claim;
+      // it is a ceiling only, never evidence of eligibility or final usage.
+      const current = await tx.instance.findUniqueOrThrow({
+        where: { id: instanceId },
+        select: { id: true, billingPrice: true, billingCycle: true, expiresAt: true, packagePlanId: true }
+      })
+      const quote = await db.calculateInstanceRemainingRefundQuote(current, tx, requestedAt)
+      await tx.instance.update({ where: { id: instanceId }, data: { deletionRefundableValue: quote.isPaid ? quote.refundableValue : 0 } })
+    }
     return result.count === 1
   })
 }
 
-async function restoreClaimedInstanceStatus(
-  instanceId: number,
-  userId: number,
-  originalStatus: InstanceStatus
-): Promise<void> {
-  await prisma.instance.updateMany({
-    where: {
-      id: instanceId,
-      userId,
-      status: 'deleted'
-    },
-    data: {
-      status: originalStatus,
-      version: { increment: 1 },
-      deletionBillingPending: false,
-      deletionRemoteDeleted: false,
-      deletionBillingMode: null,
-      deletionRefundableValue: null,
-      deletionFeeWaiver: false
-    }
-  })
+/** Paid destruction is durable, but must not pretend stale traffic
+ * proves eligibility. It remains pending for a final-usage reconciliation. */
+async function queueOfflinePaidDestroy(
+  instance: Parameters<typeof claimInstanceForUserDestroy>[0],
+  actor: Parameters<typeof claimInstanceForUserDestroy>[1],
+  feeWaiver: boolean
+): Promise<boolean> {
+  const mode = db.isHourlyInstance(instance) ? 'hourly_close' : 'user_destroy'
+  const locked = await withInstanceRemoteOperationLock(instance.id, () =>
+    claimInstanceForUserDestroy(instance, actor, instance.monthlyTrafficUsed, mode, feeWaiver)
+  )
+  if (!locked.acquired || !locked.value) return false
+  closeInstanceSessions(instance.id, 'Instance destruction pending reconciliation')
+  return true
 }
 
 async function buildBatchDestroyPreviewItem(userId: number, instanceId: number): Promise<BatchDestroyPreviewItem> {
@@ -296,12 +380,12 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
     }
   }
 
-  if (instance.status === 'deleted') {
+  if (instance.status === 'deleted' || instance.status === 'deleting') {
     return {
       id: instance.id,
       name: instance.name,
       canDestroy: false,
-      cannotDestroyReason: '实例已删除',
+      cannotDestroyReason: instance.status === 'deleting' ? '实例正在销毁' : '实例已删除',
       isFreeInstance: db.isFreeInstance(instance),
       isFirstTime: false,
       feeWaiverEligible: false,
@@ -470,7 +554,7 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
 }
 
 async function executeDestroyForUser(
-  user: { id: number; username: string },
+  user: { id: number; username: string; role: 'admin' | 'user' },
   instanceId: number,
   logger: { warn: (...args: any[]) => void; error: (...args: any[]) => void }
 ): Promise<BatchDestroyResultItem> {
@@ -478,7 +562,7 @@ async function executeDestroyForUser(
     where: { id: instanceId },
     include: {
       user: { select: { id: true, username: true, balance: true, email: true } },
-      host: { select: { id: true, name: true, userId: true } },
+      host: { select: { id: true, name: true, userId: true, status: true } },
       package: { select: { allowInstanceDeletion: true, destroyTrafficLimit: true } }
     }
   })
@@ -498,6 +582,9 @@ async function executeDestroyForUser(
   if (instance.status === 'deleted') {
     return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例已删除' }
   }
+  if (instance.status === 'deleting') {
+    return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例正在销毁' }
+  }
 
   if (instance.status === 'creating') {
     return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例正在创建中，无法销毁' }
@@ -513,235 +600,23 @@ async function executeDestroyForUser(
   }
 
   const isFreeInstance = db.isFreeInstance(instance)
-  const destroyRecords = await prisma.userDestroyRecord.findMany({
-    where: { userId: user.id },
-    orderBy: { destroyedAt: 'desc' }
-  })
-  let isFirstTime = destroyRecords.length === 0
-  const feeWaiver = instance.status === 'error'
-
-  let currentMonthlyTrafficUsed = instance.monthlyTrafficUsed
-  if (!isFreeInstance && instance.status === 'running') {
-    const collectResult = await collectTrafficForRunningInstance(instanceId)
-    if (!collectResult.success) {
-      logger.warn({ instanceId, error: collectResult.error }, '销毁前即时采集流量失败')
-    } else {
-      currentMonthlyTrafficUsed = collectResult.currentUsage
-    }
+  if (isFreeInstance) {
+    const result = await destroyFreeInstanceDurably(user, instance, logger)
+    if (result === 'conflict') return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例正在销毁或已删除' }
+    if (result === 'pending') return { id: instance.id, name: instance.name, success: false, pending: true, status: 'deleting', isFreeInstance: true }
+    return { id: instance.id, name: instance.name, success: true, refundAmount: 0, feeAmount: 0, isFreeInstance: true }
   }
-
-  if (
-    !isFreeInstance
-    && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-    && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance, currentMonthlyTrafficUsed), getDestroyTrafficLimit(instance))
-  ) {
+  // Final traffic since the last sample is not provable while the guest may
+  // still be running. Preserve the claim and its quote for manual review.
+  if (!canUserDestroyExpiredSuspendedPaidInstance(instance)
+    && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance), getDestroyTrafficLimit(instance))) {
     return { id: instance.id, name: instance.name, success: false, skipped: true, reason: getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance)) }
   }
-
-  let feeAmount = 0
-  let refundAmount = 0
-  let refundableValue = 0
-
-  const deletionBillingMode = db.isHourlyInstance(instance)
-    ? 'hourly_close'
-    : !isFreeInstance
-      ? 'user_destroy'
-      : null
-  const claimed = await claimInstanceForUserDestroy(
-    instanceId,
-    user.id,
-    instance.status,
-    deletionBillingMode,
-    feeWaiver
-  )
-  if (!claimed) {
-    return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例正在销毁或已删除' }
+  if (!await queueOfflinePaidDestroy(instance, user, instance.status === 'error')) {
+    return { id: instance.id, name: instance.name, success: false, skipped: true, reason: '实例正在操作、销毁或创建清理中' }
   }
+  return { id: instance.id, name: instance.name, success: false, pending: true, status: 'deleting', isFreeInstance: false }
 
-  let incusDeleted = false
-  try {
-    // 认领删除后再读取计费字段，避免续费/方案变更刚好提交时使用旧退款报价。
-    const currentBillingInstance = await prisma.instance.findUnique({
-      where: { id: instanceId },
-      select: {
-        billingPrice: true,
-        billingCycle: true,
-        expiresAt: true,
-        packagePlanId: true
-      }
-    })
-    if (!isFreeInstance && currentBillingInstance?.expiresAt && currentBillingInstance.billingPrice && currentBillingInstance.billingCycle) {
-      const refundQuote = await db.calculateInstanceRemainingRefundQuote({
-        id: instanceId,
-        billingPrice: currentBillingInstance.billingPrice,
-        billingCycle: currentBillingInstance.billingCycle,
-        expiresAt: currentBillingInstance.expiresAt,
-        packagePlanId: currentBillingInstance.packagePlanId
-      })
-      if (refundQuote.isPaid) refundableValue = refundQuote.refundableValue
-    }
-
-    if (deletionBillingMode) {
-      await prisma.instance.update({
-        where: { id: instanceId },
-        data: { deletionRefundableValue: refundableValue }
-      })
-    }
-
-    if (!feeWaiver) {
-      const currentFeeRate = calculateFeeRate(destroyRecords.length)
-      if (!isFirstTime) feeAmount = roundMoney(refundableValue * currentFeeRate)
-    }
-    refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
-
-    const host = await db.getHostById(instance.hostId)
-    if (!host) {
-      throw new Error('Host not found')
-    }
-
-    const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
-    const client = await getIncusClient(host)
-    await ensureInstanceDeleted(client, instance.incusId)
-    incusDeleted = true
-    await prisma.instance.update({
-      where: { id: instanceId },
-      data: { deletionRemoteDeleted: true }
-    })
-
-    if (db.isHourlyInstance(instance)) {
-      await closeHourlyBilling(instanceId)
-      await db.completeHourlyDeletionBilling(instanceId)
-    } else if (!isFreeInstance) {
-      const billingResult = await db.settleUserDestroyBilling({
-        requestUserId: user.id,
-        instance,
-        refundableValue,
-        feeWaiver
-      })
-      refundAmount = billingResult.refundAmount
-      feeAmount = billingResult.feeAmount
-      isFirstTime = billingResult.isFirstTime
-    }
-
-    try {
-      await prisma.snapshot.deleteMany({ where: { instanceId } })
-      await prisma.backup.deleteMany({ where: { instanceId } })
-      await prisma.portMapping.deleteMany({ where: { instanceId } })
-      await prisma.proxySite.deleteMany({ where: { instanceId } })
-      await prisma.dailyTraffic.deleteMany({ where: { instanceId } })
-      await prisma.ipAddress.deleteMany({ where: { instanceId } })
-      await prisma.ipv6Subnet.deleteMany({ where: { instanceId } })
-      await prisma.restoreTask.deleteMany({ where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } } })
-      await prisma.backupUploadTask.deleteMany({ where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } } })
-      await prisma.instanceTask.deleteMany({ where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } } })
-      await prisma.instanceTransfer.updateMany({
-        where: { instanceId, status: 'pending' },
-        data: { status: 'cancelled', cancelledAt: new Date() }
-      })
-    } catch (cleanupErr) {
-      logger.warn(cleanupErr, '清理关联数据失败')
-    }
-    await db.rollbackResources({
-      hostId: instance.hostId,
-      cpu: instance.cpu,
-      memory: instance.memory,
-      disk: instance.disk,
-      portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
-    })
-
-    const usedResources = await db.calculateHostResourcesFromInstances(instance.hostId)
-    const reservedPorts = await prisma.instance.aggregate({
-        where: {
-          hostId: instance.hostId,
-          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
-          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
-        },
-        _sum: { portLimit: true }
-      })
-      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
-    await db.updateHostResources(instance.hostId, {
-      cpuUsed: usedResources.cpuUsed,
-      memoryUsed: usedResources.memoryUsed,
-      diskUsed: usedResources.diskUsed
-    })
-      await prisma.host.update({
-        where: { id: instance.hostId },
-        data: { natPortsUsedCount: actualPortsUsed }
-      })
-
-      await createLog(
-      user.id,
-      'billing',
-      'instance.user_destroy',
-      `User destroyed instance "${instance.name}" (Host: ${instance.host.name}, Refund: ¥${refundAmount.toFixed(2)}, Fee: ¥${feeAmount.toFixed(2)})`,
-      'success'
-    )
-
-    await sendNotification(user.id, 'instance_deleted_refunded', {
-      instanceName: instance.name,
-      refundAmount,
-      feeAmount,
-      isFreeInstance
-    })
-
-    if (!isFreeInstance && instance.user?.email) {
-      try {
-        await sendInstanceDestroyRefundEmail(instance.user.email, {
-          username: instance.user.username,
-          instanceName: instance.name,
-          refundAmount,
-          feeAmount,
-          refundType: '余额退款',
-          isUserDestroy: true
-        })
-      } catch (emailErr) {
-        logger.warn(emailErr, '发送销毁退款邮件失败')
-      }
-    }
-
-    sendHostManagedInstanceNotification(
-      instance.hostId,
-      'destroy',
-      {
-        username: user.username,
-        instanceName: instance.name,
-        refundAmount,
-        feeAmount
-      }
-    ).catch(err => {
-      logger.warn(err, '发送节点销毁通知失败')
-    })
-
-    if (instance.packageId) {
-      sendReleaseNotification({
-        packageId: instance.packageId,
-        cpu: instance.cpu,
-        memory: instance.memory,
-        source: '用户销毁实例'
-      }).catch(() => {})
-    }
-
-    return {
-      id: instance.id,
-      name: instance.name,
-      success: true,
-      refundAmount,
-      feeAmount,
-      isFirstTime,
-      isFreeInstance
-    }
-  } catch (error) {
-    if (!incusDeleted) {
-      await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
-    }
-    logger.error(error, '销毁实例失败')
-    return {
-      id: instance.id,
-      name: instance.name,
-      success: false,
-      reason: '销毁实例失败'
-    }
-  }
 }
 
 export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
@@ -820,7 +695,8 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
 
     const userMeta = {
       id: request.user.id,
-      username: request.user.username
+      username: request.user.username,
+      role: request.user.role
     }
 
     const results: BatchDestroyResultItem[] = []
@@ -831,19 +707,21 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
 
     const successCount = results.filter(item => item.success).length
     const skippedCount = results.filter(item => item.skipped).length
-    const failedCount = results.length - successCount - skippedCount
+    const pendingCount = results.filter(item => item.pending).length
+    const failedCount = results.length - successCount - skippedCount - pendingCount
 
     await createLog(
       request.user.id,
       'billing',
       'instance.batch_destroy',
-      `Batch destroy processed ${results.length} instance(s): success=${successCount}, skipped=${skippedCount}, failed=${failedCount}`,
+      `Batch destroy processed ${results.length} instance(s): success=${successCount}, pending=${pendingCount}, skipped=${skippedCount}, failed=${failedCount}`,
       failedCount > 0 ? 'warning' : 'success'
     )
 
     return {
-      message: successCount > 0 ? '批量销毁已处理' : '没有实例完成销毁',
+      message: successCount > 0 || pendingCount > 0 ? '批量销毁已处理' : '没有实例完成销毁',
       successCount,
+      pendingCount,
       skippedCount,
       failedCount,
       results
@@ -884,6 +762,9 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     // 检查实例状态
     if (instance.status === 'deleted') {
       return reply.code(400).send({ error: '实例已删除', canDestroy: false })
+    }
+    if (instance.status === 'deleting') {
+      return reply.code(409).send({ error: '实例正在销毁', code: 'INSTANCE_DESTROY_IN_PROGRESS', canDestroy: false })
     }
 
     if (instance.status === 'creating') {
@@ -1018,7 +899,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       where: { id: instanceId },
       include: {
         user: { select: { id: true, username: true, balance: true, email: true } },
-        host: { select: { id: true, name: true, userId: true } },
+        host: { select: { id: true, name: true, userId: true, status: true } },
         package: { select: { allowInstanceDeletion: true, destroyTrafficLimit: true } }
       }
     })
@@ -1040,6 +921,9 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     if (instance.status === 'deleted') {
       return reply.code(400).send({ error: '实例已删除' })
     }
+    if (instance.status === 'deleting') {
+      return reply.code(409).send({ error: '实例正在销毁', code: 'INSTANCE_DESTROY_IN_PROGRESS' })
+    }
 
     if (instance.status === 'creating') {
       return reply.code(400).send({ error: '实例正在创建中，无法销毁' })
@@ -1060,265 +944,25 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
     // 免费实例检查
     const isFreeInstance = db.isFreeInstance(instance)
 
-    // 查询用户销毁记录
-    const destroyRecords = await prisma.userDestroyRecord.findMany({
-      where: { userId: user.id },
-      orderBy: { destroyedAt: 'desc' }
-    })
-
-    let isFirstTime = destroyRecords.length === 0
-    // 已移除冷却期限制，付费实例可随时销毁
-
-    // 异常实例免手续费
-    const isErrorState = instance.status === 'error'
-    const feeWaiver = request.query.feeWaiver === 'error' && isErrorState
-    let currentMonthlyTrafficUsed = instance.monthlyTrafficUsed
-
-    if (!isFreeInstance && instance.status === 'running') {
-      const collectResult = await collectTrafficForRunningInstance(instanceId)
-      if (!collectResult.success) {
-        request.log.warn({ instanceId, error: collectResult.error }, '销毁前即时采集流量失败')
-      } else {
-        currentMonthlyTrafficUsed = collectResult.currentUsage
-      }
+    if (isFreeInstance) {
+      const result = await destroyFreeInstanceDurably(user, instance, request.log)
+      if (result === 'conflict') return reply.code(409).send({ error: '实例正在销毁或已删除', code: 'INSTANCE_DESTROY_IN_PROGRESS' })
+      if (result === 'pending') return reply.code(202).send({ success: false, pending: true, status: 'deleting', message: 'Instance destruction pending', isFreeInstance: true })
+      const previousDestroyCount = await prisma.userDestroyRecord.count({ where: { userId: user.id } })
+      return { success: true, message: '实例已销毁', refundAmount: 0, feeAmount: 0, isFirstTime: previousDestroyCount === 0, isFreeInstance: true }
     }
 
-    if (
-      !isFreeInstance
-      && !canUserDestroyExpiredSuspendedPaidInstance(instance)
-      && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance, currentMonthlyTrafficUsed), getDestroyTrafficLimit(instance))
-    ) {
-      return reply.code(400).send(apiError(
-        ErrorCode.INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED,
-        getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance))
-      ))
+    // Preserve the request without deleting or refunding until final traffic
+    // is established from trustworthy evidence, even when the host is online.
+    if (!canUserDestroyExpiredSuspendedPaidInstance(instance)
+      && exceedsPaidDestroyTrafficLimit(getDestroyTrafficUsage(instance), getDestroyTrafficLimit(instance))) {
+      return reply.code(400).send(apiError(ErrorCode.INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED, getDestroyTrafficLimitReason(getDestroyTrafficLimit(instance))))
     }
-
-    // 先认领实例并标记待结算状态；远端删除成功后才允许清除该状态。
-    let feeAmount = 0
-    let refundAmount = 0
-    let refundableValue = 0
-  const deletionBillingMode = db.isHourlyInstance(instance)
-    ? 'hourly_close'
-    : !isFreeInstance
-      ? 'user_destroy'
-      : null
-
-    const claimed = await claimInstanceForUserDestroy(
-      instanceId,
-      user.id,
-      instance.status,
-      deletionBillingMode,
-      feeWaiver
-    )
-    if (!claimed) {
-      return reply.code(409).send({
-        error: '实例正在销毁或已删除',
-        code: 'INSTANCE_DESTROY_IN_PROGRESS'
-      })
+    const feeWaiver = request.query.feeWaiver === 'error' && instance.status === 'error'
+    if (!await queueOfflinePaidDestroy(instance, user, feeWaiver)) {
+      return reply.code(409).send({ error: '实例正在操作、销毁或创建清理中', code: 'INSTANCE_DESTROY_IN_PROGRESS' })
     }
+    return reply.code(202).send({ success: false, pending: true, status: 'deleting', message: 'Instance destruction pending reconciliation', isFreeInstance: false })
 
-    let incusDeleted = false
-    let sourceHostUnavailable = false
-    try {
-      const currentBillingInstance = await prisma.instance.findUnique({
-        where: { id: instanceId },
-        select: {
-          billingPrice: true,
-          billingCycle: true,
-          expiresAt: true,
-          packagePlanId: true
-        }
-      })
-      if (!isFreeInstance && currentBillingInstance?.expiresAt && currentBillingInstance.billingPrice && currentBillingInstance.billingCycle) {
-        const refundQuote = await db.calculateInstanceRemainingRefundQuote({
-          id: instanceId,
-          billingPrice: currentBillingInstance.billingPrice,
-          billingCycle: currentBillingInstance.billingCycle,
-          expiresAt: currentBillingInstance.expiresAt,
-          packagePlanId: currentBillingInstance.packagePlanId
-        })
-        if (refundQuote.isPaid) refundableValue = refundQuote.refundableValue
-      }
-
-      if (deletionBillingMode) {
-        await prisma.instance.update({
-          where: { id: instanceId },
-          data: { deletionRefundableValue: refundableValue }
-        })
-      }
-
-      if (!feeWaiver) {
-        const currentFeeRate = calculateFeeRate(destroyRecords.length)
-        if (!isFirstTime) feeAmount = roundMoney(refundableValue * currentFeeRate)
-      }
-      refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
-
-      const host = await db.getHostById(instance.hostId)
-      if (!host || host.status !== 'online') {
-        sourceHostUnavailable = true
-        throw new Error('Source host is unavailable')
-      }
-
-      try {
-        const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
-        const client = await getIncusClient(host)
-        await ensureInstanceDeleted(client, instance.incusId)
-        incusDeleted = true
-        await prisma.instance.update({
-          where: { id: instanceId },
-          data: { deletionRemoteDeleted: true }
-        })
-      } catch (error) {
-        sourceHostUnavailable = true
-        throw error
-      }
-
-      if (db.isHourlyInstance(instance)) {
-        await closeHourlyBilling(instanceId)
-        await db.completeHourlyDeletionBilling(instanceId)
-      } else if (!isFreeInstance) {
-        const billingResult = await db.settleUserDestroyBilling({
-          requestUserId: user.id,
-          instance,
-          refundableValue,
-          feeWaiver
-        })
-        refundAmount = billingResult.refundAmount
-        feeAmount = billingResult.feeAmount
-        isFirstTime = billingResult.isFirstTime
-      }
-
-      // 2. 获取端口映射数量（用于释放资源）
-
-      // 3. 清理关联数据
-      try {
-        await prisma.snapshot.deleteMany({ where: { instanceId } })
-        await prisma.backup.deleteMany({ where: { instanceId } })
-        await prisma.portMapping.deleteMany({ where: { instanceId } })
-        await prisma.proxySite.deleteMany({ where: { instanceId } })
-        await prisma.dailyTraffic.deleteMany({ where: { instanceId } })
-        await prisma.ipAddress.deleteMany({ where: { instanceId } })
-        await prisma.ipv6Subnet.deleteMany({ where: { instanceId } })
-        await prisma.restoreTask.deleteMany({ where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } } })
-        await prisma.backupUploadTask.deleteMany({ where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } } })
-        await prisma.instanceTask.deleteMany({ where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } } })
-        await prisma.instanceTransfer.updateMany({
-          where: { instanceId, status: 'pending' },
-          data: { status: 'cancelled', cancelledAt: new Date() }
-        })
-      } catch (cleanupErr) {
-        request.log.warn(cleanupErr, '清理关联数据失败')
-      }
-
-      // 6. 释放宿主机资源
-      await db.rollbackResources({
-        hostId: instance.hostId,
-        cpu: instance.cpu,
-        memory: instance.memory,
-        disk: instance.disk,
-        portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.networkMode) ? (instance.portLimit ?? 0) : 0
-      })
-
-      // 重新计算宿主机资源使用量
-      const usedResources = await db.calculateHostResourcesFromInstances(instance.hostId)
-      const reservedPorts = await prisma.instance.aggregate({
-        where: {
-          hostId: instance.hostId,
-          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
-          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
-        },
-        _sum: { portLimit: true }
-      })
-      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
-      await db.updateHostResources(instance.hostId, {
-        cpuUsed: usedResources.cpuUsed,
-        memoryUsed: usedResources.memoryUsed,
-        diskUsed: usedResources.diskUsed
-      })
-      await prisma.host.update({
-        where: { id: instance.hostId },
-        data: { natPortsUsedCount: actualPortsUsed }
-      })
-
-      // 8. 记录操作日志
-      await createLog(
-        user.id,
-        'billing',
-        'instance.user_destroy',
-        `User destroyed instance "${instance.name}" (Host: ${instance.host.name}, Refund: ¥${refundAmount.toFixed(2)}, Fee: ¥${feeAmount.toFixed(2)})`,
-        'success'
-      )
-
-      // 9. 通知用户
-      await sendNotification(user.id, 'instance_deleted_refunded', {
-        instanceName: instance.name,
-        refundAmount,
-        feeAmount,
-        isFreeInstance
-      })
-
-      if (!isFreeInstance && instance.user?.email) {
-        try {
-          await sendInstanceDestroyRefundEmail(instance.user.email, {
-            username: instance.user.username,
-            instanceName: instance.name,
-            refundAmount,
-            feeAmount,
-            refundType: '余额退款',
-            isUserDestroy: true
-          })
-        } catch (emailErr) {
-          request.log.warn(emailErr, '发送销毁退款邮件失败')
-        }
-      }
-
-      sendHostManagedInstanceNotification(
-        instance.hostId,
-        'destroy',
-        {
-          username: user.username,
-          instanceName: instance.name,
-          refundAmount,
-          feeAmount
-        }
-      ).catch(err => {
-        request.log.warn(err, '发送节点销毁通知失败')
-      })
-
-      // 10. 向套餐绑定的通知渠道发送"资源释放"通知
-      if (instance.packageId) {
-        sendReleaseNotification({
-          packageId: instance.packageId,
-          cpu: instance.cpu,
-          memory: instance.memory,
-          source: '用户销毁实例'
-        }).catch(() => {})
-      }
-
-      return {
-        success: true,
-        message: isFreeInstance
-          ? '实例已销毁'
-          : `实例已销毁${refundAmount > 0 ? `，已退款 ¥${refundAmount.toFixed(2)}` : ''}${feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : ''}`,
-        refundAmount,
-        feeAmount,
-        isFirstTime,
-        isFreeInstance
-      }
-    } catch (error) {
-      if (!incusDeleted) {
-        await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
-      }
-      if (sourceHostUnavailable) {
-        request.log.warn({ instanceId, error }, 'Source host unavailable during instance destroy')
-        return reply.code(409).send({
-          error: '源节点无法连接，确认节点恢复在线后再重试；在无法确认远端实例已删除前不会退款',
-          code: 'SOURCE_HOST_UNAVAILABLE'
-        })
-      }
-      request.log.error(error, '销毁实例失败')
-      return reply.code(500).send({ error: '销毁实例失败', code: 'INSTANCE_DESTROY_FAILED' })
-    }
   })
 }

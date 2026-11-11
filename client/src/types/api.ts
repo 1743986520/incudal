@@ -422,7 +422,7 @@ export interface Instance {
   display_order?: number
   image: string
   imageName?: string | null  // 镜像显示名称
-  status: 'creating' | 'running' | 'stopped' | 'suspended' | 'error' | 'deleted'
+  status: 'creating' | 'running' | 'stopped' | 'suspended' | 'error' | 'deleting' | 'deleted'
   cpu: number
   memory: number
   disk: number

@@ -78,6 +78,7 @@ import instanceBillingRoutes from './routes/instance-billing.js'
 import instanceDestroyRoutes from './routes/instance-destroy.js'
 import rechargeRoutes from './routes/recharge.js'
 import adminBillingRoutes from './routes/admin-billing.js'
+import deletionReservationReconciliationRoutes from './routes/deletion-reservation-reconciliation.js'
 import adminStatisticsRoutes from './routes/admin-statistics.js'
 import adminHostingRoutes from './routes/admin-hosting.js'
 import affRoutes from './routes/aff.js'
@@ -469,6 +470,7 @@ await fastify.register(instanceDestroyRoutes, { prefix: '/api/instances' })
 await fastify.register(hourlyBillingRoutes, { prefix: '/api' })
 await fastify.register(rechargeRoutes)
 await fastify.register(adminBillingRoutes)
+await fastify.register(deletionReservationReconciliationRoutes)
 await fastify.register(adminStatisticsRoutes)
 await fastify.register(adminHostingRoutes)
 await fastify.register(affRoutes, { prefix: '/api/aff' })

@@ -5,6 +5,8 @@
 import { prisma } from './prisma.js'
 import { Prisma } from '@prisma/client'
 import type { BackupUploadTask, BackupUploadTaskStatus } from '@prisma/client'
+import { advisoryTransactionLock, INSTANCE_OPERATION_LOCK_NAMESPACE } from './advisory-locks.js'
+import { InstanceUnavailableForTaskError } from './instance-tasks.js'
 
 /**
  * 创建备份上传任务
@@ -21,15 +23,20 @@ export async function createBackupUploadTask(data: {
     storageConfigId: number
 }): Promise<BackupUploadTask | null> {
     try {
-        return await prisma.backupUploadTask.create({
-            data: {
-                userId: data.userId,
-                instanceId: data.instanceId,
-                backupId: data.backupId,
-                hostId: data.hostId,
-                storageConfigId: data.storageConfigId,
-                status: 'PENDING'
-            }
+        return await prisma.$transaction(async tx => {
+            await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, data.instanceId)
+            const instance = await tx.instance.findUnique({ where: { id: data.instanceId }, select: { status: true } })
+            if (!instance || instance.status === 'deleting' || instance.status === 'deleted') throw new InstanceUnavailableForTaskError()
+            return tx.backupUploadTask.create({
+                data: {
+                    userId: data.userId,
+                    instanceId: data.instanceId,
+                    backupId: data.backupId,
+                    hostId: data.hostId,
+                    storageConfigId: data.storageConfigId,
+                    status: 'PENDING'
+                }
+            })
         })
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

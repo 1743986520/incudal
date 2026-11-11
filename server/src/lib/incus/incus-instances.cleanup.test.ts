@@ -50,6 +50,35 @@ test('ensureInstanceDeleted keeps unknown Incus errors as failures', async () =>
   )
 })
 
+test('ensureInstanceDeleted does not treat a non-404 not-found error as deletion', async () => {
+  const client = fakeClient(async (method, path) => {
+    throw new IncusApiError('Instance not found on unavailable backend', {
+      statusCode: 503, method, path
+    })
+  })
+
+  await assert.rejects(() => ensureInstanceDeleted(client, 'demo'), /unavailable backend/)
+})
+
+test('ensureInstanceDeleted waits until the instance disappears after DELETE', async () => {
+  let deleted = false
+  let confirmationChecks = 0
+  const client = fakeClient(async (method, path) => {
+    if (method === 'DELETE') {
+      deleted = true
+      return {}
+    }
+    if (path.endsWith('/state')) return { status: 'Stopped' }
+    if (deleted && ++confirmationChecks > 1) {
+      throw new IncusApiError('Instance not found', { statusCode: 404, method, path })
+    }
+    return { name: 'demo', status: 'Stopped' }
+  })
+
+  await ensureInstanceDeleted(client, 'demo')
+  assert.equal(confirmationChecks, 2)
+})
+
 test('waitForProvisioningInstanceResolution treats a running instance as a successful provision', async () => {
   const client = fakeClient(async (method, path) => {
     assert.equal(method, 'GET')

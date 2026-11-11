@@ -1,6 +1,28 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/stores/auth'
 
+export interface DeletionReservationReconciliation {
+  instance: { id: number; name: string; incusId: string; deletionRequestedAt: string | null; status: string; deletionRemoteDeleted: boolean; deletionOriginalStatus: string | null; deletionBillingPending: boolean; deletionBillingMode: string | null; billingMode: string; trafficBillingMode: string; provisioningCleanupPending: boolean; version: number; hostId: number; cpu: number; memory: number; disk: number; portCount: number; networkMode: string }
+  host: { status: string; reservationEpoch: string; cpuUsed: number; memoryUsed: number; diskUsed: number; natPortsUsedCount: number }
+  reservation: { state: string; hostEpoch: string; generation: number } | null
+}
+
+export interface DeletionReservationAttestation {
+  requestId: string
+  state: 'reserved' | 'released'
+  evidenceReference: string
+  reason: string
+  expected: { instanceVersion: number; hostId: number; cpu: number; memory: number; disk: number; portCount: number; hostEpoch: string }
+}
+
+export interface DeletionBillingReviewInput {
+  requestId: string
+  category: 'hourly' | 'usage' | 'user_destroy'
+  evidenceReference: string
+  note: string
+  expected: { instanceVersion: number; hostId: number; incusId: string; requestedAt: string }
+}
+
 // Keep bearer tokens in memory only. Session restoration uses the HttpOnly
 // refresh-token cookie, so XSS cannot recover a persisted access token.
 let memoryAccessToken: string | null = null
@@ -982,7 +1004,7 @@ const api = {
       http.post(`/ws/instances/${id}/terminal-ticket`, {}),
     updateOrder: (id: number, action: 'top' | 'up' | 'down' | 'bottom'): Promise<{ message: string; updated: number }> =>
       http.patch(`/instances/${id}/order`, { action }),
-    delete: (id: number, reason?: string): Promise<{ message: string; refundAmount?: number }> =>
+    delete: (id: number, reason?: string): Promise<{ message: string; refundAmount?: number; status?: 'deleting' }> =>
       http.delete(`/instances/${id}`, {
         data: {
           ...(reason ? { reason } : {})
@@ -1490,9 +1512,10 @@ const api = {
     // 批量删除实例
     batchDeleteInstances: (hostId: number, instanceIds: number[], reason?: string, databaseOnly?: boolean): Promise<{
       message: string
-      results: Array<{ id: number; name: string; success: boolean; error?: string; refundAmount?: number }>
+      results: Array<{ id: number; name: string; success: boolean; pending?: boolean; status?: 'deleting'; error?: string; refundAmount?: number }>
       successCount: number
       failedCount: number
+      pendingCount?: number
       totalRefundAmount: number
     }> => http.delete(`/hosts/${hostId}/instances/batch`, { data: { instanceIds, reason, databaseOnly }, timeout: TIMEOUT.BATCH }),
     // 批量赠送时长
@@ -3222,7 +3245,14 @@ const api = {
 
     // 执行销毁
     destroyInstance: (instanceId: number, options?: { feeWaiver?: string }): Promise<{
+      success: false
+      pending: true
+      status: 'deleting'
+      message: string
+      isFreeInstance: true
+    } | {
       success: boolean
+      pending?: false
       message: string
       refundAmount: number
       feeAmount: number
@@ -3267,10 +3297,13 @@ const api = {
       successCount: number
       skippedCount: number
       failedCount: number
+      pendingCount?: number
       results: Array<{
         id: number
         name: string
         success: boolean
+        pending?: boolean
+        status?: 'deleting'
         skipped?: boolean
         reason?: string
         refundAmount?: number
@@ -3584,6 +3617,14 @@ const api = {
 
   // 管理员 API
   admin: {
+    getDeletionReservationReconciliation: (instanceId: number): Promise<DeletionReservationReconciliation> =>
+      http.get(`/admin/instances/${instanceId}/deletion-reservation-reconciliation`),
+    attestDeletionReservation: (instanceId: number, data: DeletionReservationAttestation): Promise<{ result: 'recorded' | 'already_recorded' }> =>
+      http.post(`/admin/instances/${instanceId}/deletion-reservation-reconciliation`, data),
+    getDeletionBillingReviews: (instanceId: number): Promise<{ reviews: Array<{ id: number; actorId: number; createdAt: string; category: DeletionBillingReviewInput['category']; evidenceReference: string; note: string }> }> =>
+      http.get(`/admin/instances/${instanceId}/deletion-billing-review`),
+    recordDeletionBillingReview: (instanceId: number, data: DeletionBillingReviewInput): Promise<{ result: 'recorded' | 'already_recorded' }> =>
+      http.post(`/admin/instances/${instanceId}/deletion-billing-review`, data),
     setHourlyHostEnabled: (id: number, enabled: boolean): Promise<{ hostId: number; hourlyBillingEnabled: boolean }> =>
       http.patch(`/admin/hourly-billing/hosts/${id}`, { enabled }),
     getHourlyInstances: (): Promise<{ instances: Array<Record<string, unknown>> }> => http.get('/admin/hourly-billing/instances'),
@@ -3986,6 +4027,8 @@ const api = {
     // 管理员删除并退款
     deleteAndRefundInstance: (instanceId: number, refundType: 'remaining' | 'full', reason: string, databaseOnly: boolean = false): Promise<{
       success: boolean
+      pending?: boolean
+      status?: 'deleting'
       message: string
       refundAmount: number
       refundType: string

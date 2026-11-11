@@ -317,9 +317,9 @@ export async function getSuspendedInstancesOlderThan(days: number): Promise<Inst
 
   return prisma.instance.findMany({
     where: {
-      // deleted + expired 表示删除任务已认领但尚未完成数据库清理；
-      // 纳入查询可以恢复进程崩溃或外部删除失败后的清理。
-      status: { in: ['suspended', 'deleted'] },
+      // Legacy deleted claims may already have lost their IP reservation; do
+      // not infer that the address still belongs to them or auto-release it.
+      status: 'suspended',
       suspendReason: 'expired',
       suspendedAt: {
         not: null,
@@ -330,8 +330,8 @@ export async function getSuspendedInstancesOlderThan(days: number): Promise<Inst
 }
 
 /**
- * 认领一个到期删除候选。schema 没有 deleting 状态，因此复用
- * `deleted + expired` 作为短暂的删除中标记，并用 version 绑定认领代次。
+ * Claim an expired instance without releasing its address. The durable
+ * deletion worker owns remote confirmation and atomic resource finalization.
  */
 export async function claimExpiredInstanceForDeletion(
   instanceId: number,
@@ -346,22 +346,21 @@ export async function claimExpiredInstanceForDeletion(
       return null
     }
 
-    // 进程在外部删除或数据库清理之间崩溃时，允许下一轮继续处理同一认领。
-    if (
-      current.status === 'deleted' &&
-      current.suspendReason === 'expired' &&
-      current.version === expectedVersion
-    ) {
-      return current
-    }
-
     if (
       current.status !== 'suspended' ||
       current.suspendReason !== 'expired' ||
-      current.version !== expectedVersion
+      current.version !== expectedVersion || current.provisioningCleanupPending
     ) {
       return null
     }
+
+    const [instanceTask, restoreTask, uploadTask, transfer] = await Promise.all([
+      tx.instanceTask.findFirst({ where: { instanceId, status: { in: ['PENDING', 'PROCESSING'] } }, select: { id: true } }),
+      tx.restoreTask.findFirst({ where: { instanceId, status: { in: ['PENDING', 'PROCESSING'] } }, select: { id: true } }),
+      tx.backupUploadTask.findFirst({ where: { instanceId, status: { in: ['PENDING', 'PROCESSING'] } }, select: { id: true } }),
+      tx.instanceTransfer.findFirst({ where: { instanceId, status: { in: ['pending', 'processing'] } }, select: { id: true } })
+    ])
+    if (instanceTask || restoreTask || uploadTask || transfer) return null
 
     const claimed = await tx.instance.updateMany({
       where: {
@@ -369,38 +368,25 @@ export async function claimExpiredInstanceForDeletion(
         status: 'suspended',
         suspendReason: 'expired',
         version: expectedVersion,
-        suspendedAt: expectedSuspendedAt
+        suspendedAt: expectedSuspendedAt,
+        provisioningCleanupPending: false
       },
       data: {
-        status: 'deleted',
-        version: { increment: 1 }
+        status: 'deleting',
+        version: { increment: 1 },
+        deletionOriginalStatus: 'suspended',
+        deletionRequestedAt: new Date(),
+        deletionRequestedById: null,
+        deletionReason: null,
+        deletionRemoteDeleted: false,
+        deletionBillingPending: current.billingMode === 'hourly',
+        deletionBillingMode: current.billingMode === 'hourly' ? 'hourly_close' : null,
+        deletionRefundableValue: null,
+        deletionFeeWaiver: false
       }
     })
 
     if (claimed.count !== 1) return null
     return tx.instance.findUnique({ where: { id: instanceId } })
-  })
-}
-
-/** 恢复外部删除失败的到期删除认领，使下一轮调度可以重试。 */
-export async function restoreExpiredInstanceDeletionClaim(
-  instanceId: number,
-  claimVersion: number
-): Promise<boolean> {
-  return prisma.$transaction(async tx => {
-    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
-    const result = await tx.instance.updateMany({
-      where: {
-        id: instanceId,
-        status: 'deleted',
-        suspendReason: 'expired',
-        version: claimVersion
-      },
-      data: {
-        status: 'suspended',
-        version: { increment: 1 }
-      }
-    })
-    return result.count === 1
   })
 }

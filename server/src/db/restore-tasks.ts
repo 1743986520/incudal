@@ -3,6 +3,8 @@
  */
 
 import { prisma } from './prisma.js'
+import { advisoryTransactionLock, INSTANCE_OPERATION_LOCK_NAMESPACE } from './advisory-locks.js'
+import { InstanceUnavailableForTaskError } from './instance-tasks.js'
 
 export interface CreateRestoreTaskData {
     instanceId: number
@@ -18,17 +20,22 @@ export interface CreateRestoreTaskData {
  * 创建恢复任务
  */
 export async function createRestoreTask(data: CreateRestoreTaskData): Promise<number> {
-    const task = await prisma.restoreTask.create({
-        data: {
-            instanceId: data.instanceId,
-            backupId: data.backupId,
-            hostId: data.hostId,
-            userId: data.userId,
-            tempInstanceName: data.tempInstanceName,
-            originalInstanceName: data.originalInstanceName,
-            originalIncusId: data.originalIncusId,
-            status: 'PENDING'
-        }
+    const task = await prisma.$transaction(async tx => {
+        await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, data.instanceId)
+        const instance = await tx.instance.findUnique({ where: { id: data.instanceId }, select: { status: true } })
+        if (!instance || instance.status === 'deleting' || instance.status === 'deleted') throw new InstanceUnavailableForTaskError()
+        return tx.restoreTask.create({
+            data: {
+                instanceId: data.instanceId,
+                backupId: data.backupId,
+                hostId: data.hostId,
+                userId: data.userId,
+                tempInstanceName: data.tempInstanceName,
+                originalInstanceName: data.originalInstanceName,
+                originalIncusId: data.originalIncusId,
+                status: 'PENDING'
+            }
+        })
     })
     return task.id
 }

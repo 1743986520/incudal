@@ -11,6 +11,7 @@ import { createSnapshot as createIncusSnapshot } from '../lib/incus/incus-snapsh
 import * as db from '../db/index.js'
 import { sendNotification } from '../lib/notifier.js'
 import { createLog } from '../db/logs.js'
+import { withInstanceRemoteOperationLock } from './instance-remote-operation-lock.js'
 
 // 并发限制：同时最多处理 5 个任务
 const limit = pLimit(5)
@@ -76,7 +77,7 @@ function generateName(prefix: string): string {
  * 执行自动快照（带重试）
  * 配额继承自套餐包，满额时删除最旧的自动快照
  */
-async function executeAutoSnapshot(
+async function executeAutoSnapshotUnlocked(
     policy: {
         instanceId: number
         instance: {
@@ -223,6 +224,21 @@ async function executeAutoSnapshot(
         'failed',
         { instanceId: instance.id }
     )
+}
+
+// Policies may have been selected before a deletion claim. Re-read after
+// acquiring the same session lock used by the pending-deletion worker.
+async function executeAutoSnapshot(policy: Parameters<typeof executeAutoSnapshotUnlocked>[0]): Promise<void> {
+    const locked = await withInstanceRemoteOperationLock(policy.instanceId, async () => {
+        const current = await prisma.instance.findUnique({
+            where: { id: policy.instanceId },
+            select: { status: true, incusId: true, userId: true }
+        })
+        if (!current || !['running', 'stopped'].includes(current.status)
+            || current.incusId !== policy.instance.incusId || current.userId !== policy.instance.userId) return
+        await executeAutoSnapshotUnlocked(policy)
+    })
+    if (!locked.acquired) console.log(`[AutoPolicy] Instance ${policy.instanceId} has another remote operation, skipping snapshot`)
 }
 
 /**

@@ -7,20 +7,19 @@ import * as db from '../db/index.js'
 import { createLog } from '../db/logs.js'
 import { apiError, ErrorCode, type ErrorCodeType } from '../lib/errors.js'
 import { prisma } from '../db/prisma.js'
+import { recordNewInstanceReservation } from '../db/resource-reservation-evidence.js'
 import type { InstanceStatus, Prisma } from '@prisma/client'
 import { getIncusClient } from '../lib/incus/index.js'
 import {
   getInstanceState,
   getInstance,
   stopInstance,
-  ensureInstanceDeleted,
   updateInstance,
   addDevice,
   removeDevice,
   mapInstanceStatus,
   getTrafficCountersFromState
 } from '../lib/incus/index.js'
-import { deleteSnapshot } from '../lib/incus/incus-snapshots.js'
 import { generateIncusConfig, generateRandomPassword } from '../lib/incus-config-generator.js'
 import { encryptSensitiveData, decryptSensitiveData, validateName } from '../lib/security.js'
 import {
@@ -32,7 +31,7 @@ import {
   persistCloudInitStatus
 } from '../lib/cloud-init-status.js'
 import { payPendingTrafficBillAndUnsuspend } from '../services/traffic-billing-scheduler.js'
-import { activateHourlyBilling, closeHourlyBilling, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance, settleSuspendedHourlyRuntime } from '../services/hourly-billing-scheduler.js'
+import { activateHourlyBilling, pauseHourlyBilling, resumeHourlyBilling, settleHourlyInstance } from '../services/hourly-billing-scheduler.js'
 import { hourlyPricingFromPackagePlan, hourlyPricingFromSnapshot, snapshotHourlyPricing, validateHourlyResources } from '../lib/hourly-billing.js'
 import { customAlphabet } from 'nanoid'
 
@@ -48,12 +47,15 @@ import {
   isValidSystemImage
 } from '../db/images.js'
 import { generateRandomIPv6 } from '../lib/ip-calculator.js'
-import { getProxySitesByInstanceId, deleteProxySite } from '../db/proxy-sites.js'
+import { getProxySitesByInstanceId } from '../db/proxy-sites.js'
 import { calculateVipLevel, getVipBadgeStyleForLevel, getVipRules } from '../services/vip-levels.js'
 import { ProxyStrategyFactory } from '../lib/proxy/index.js'
 import { createCaddyClient } from '../lib/caddy-client.js'
+import { canUpdateSyncedSite } from '../lib/proxy-site-cleanup-policy.js'
+import { withInstanceAndDomainRemoteOperationLock } from '../services/instance-remote-operation-lock.js'
 import { sendHostManagedInstanceNotification, sendNotification } from '../lib/notifier.js'
-import { createInstanceTask, InstanceTaskConflictError, getInstanceTaskById, getActiveTaskForInstance, getTaskQueuePosition, cancelInstanceTask } from '../db/instance-tasks.js'
+import { createInstanceTask, InstanceTaskConflictError, InstanceUnavailableForTaskError, getInstanceTaskById, getActiveTaskForInstance, getTaskQueuePosition, cancelInstanceTask } from '../db/instance-tasks.js'
+import { AdvisoryLockBusyError } from '../db/advisory-locks.js'
 import { canRecoverInstanceTask } from '../workers/instance-task-lease.js'
 import { closeInstanceSessions } from '../lib/terminal-proxy.js'
 import { calculateDiscountAmount, getCycleDays } from '../lib/billing-calc.js'
@@ -99,6 +101,10 @@ async function createInstanceTaskGuarded(
   try {
     return await createInstanceTask(data)
   } catch (error) {
+    if (error instanceof InstanceUnavailableForTaskError || error instanceof AdvisoryLockBusyError) {
+      reply.code(409).send({ error: 'Instance operation unavailable', code: 'INSTANCE_OPERATION_IN_PROGRESS' })
+      return null
+    }
     if (error instanceof InstanceTaskConflictError) {
       reply.code(409).send({
         error: 'Instance has an active task',
@@ -1479,6 +1485,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             nextTrafficBillingAt: selectedPlan?.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             autoRenew: false
           }
+        })
+
+        await recordNewInstanceReservation(tx, {
+          instanceId: instance.id, hostId: lockedHost.id, cpu: requestedCpu,
+          memory: requestedMemory, disk: requestedDisk, portCount: reservedNatPortCount
         })
 
         if (selectedPlanIsHourly && hourlyPricing) {
@@ -3296,10 +3307,22 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             for (const site of proxySites) {
               if (site.status === 'active' && site.enabled) {
                 try {
-                  await caddyClient.deleteSite(site.domain)
-                  await caddyClient.addSite(site.domain, newIpv4, site.targetPort, site.httpsEnabled)
-                  proxySitesUpdated++
-                  console.log(`[SyncStatus] Updated proxy site "${site.domain}" to new IP ${newIpv4}`)
+                  const locked = await withInstanceAndDomainRemoteOperationLock(instanceId, site.domain, async () => {
+                    const current = await prisma.proxySite.findUnique({
+                      where: { id: site.id },
+                      include: { instance: { select: { status: true, hostId: true, ipv4: true } } }
+                    })
+                    if (!current || !canUpdateSyncedSite(current, {
+                      id: site.id, instanceId, hostId: host.id, domain: site.domain, ipv4: newIpv4!
+                    })) return false
+                    await caddyClient.deleteSite(current.domain)
+                    await caddyClient.addSite(current.domain, newIpv4!, current.targetPort, current.httpsEnabled)
+                    return true
+                  })
+                  if (locked.acquired && locked.value) {
+                    proxySitesUpdated++
+                    console.log(`[SyncStatus] Updated proxy site "${site.domain}" to new IP ${newIpv4}`)
+                  }
                 } catch (caddyErr) {
                   console.error(`[SyncStatus] Failed to update proxy site "${site.domain}":`, caddyErr)
                 }
@@ -3844,9 +3867,19 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const instance = await getInstanceWithPermission(user, instanceId, reply)
     if (!instance) return
 
+    if (instance.status === 'creating') {
+      return reply.code(409).send({ error: 'Instance provisioning is still in progress', code: 'INSTANCE_PROVISION_IN_PROGRESS' })
+    }
+    const deletionState = await prisma.instance.findUnique({ where: { id: instanceId }, select: { trafficBillingMode: true } })
+    if (!deletionState) return reply.code(409).send({ error: 'Instance state unavailable', code: 'INSTANCE_STATE_CHANGED' })
+
     // checkInstancePermission 已判定权限；此处需要明确区分宿主机拥有者/管理员以决定是否检查套餐限制
     const host = await db.getHostById(instance.host_id)
-    const isHostOwner = !!(host && host.user_id === user.id)
+    if (!host || host.user_id === undefined || instance.version === undefined || !instance.billing_mode) {
+      return reply.code(409).send({ error: 'Instance ownership state unavailable', code: 'INSTANCE_STATE_CHANGED' })
+    }
+    const hostOwnerId = host.user_id
+    const isHostOwner = hostOwnerId === user.id
     const isAdmin = user.role === 'admin'
     const isPrivilegedDeleter = isHostOwner || isAdmin
 
@@ -3860,8 +3893,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     // 封禁状态检查：实例所有者不能删除被封禁的实例，仅节点所有者可以
     // 这是安全措施，防止用户绕过前端禁用按钮通过API直接删除
-    const isHourlyInsufficientBalance = instance.billing_mode === 'hourly' && instance.suspend_reason === 'hourly_billing_insufficient_balance'
-    if (instance.status === 'suspended' && !isPrivilegedDeleter && !isHourlyInsufficientBalance) {
+    if (instance.status === 'suspended' && !isPrivilegedDeleter) {
       if (instance.suspend_reason === 'expired') {
         return reply.code(403).send(apiError(ErrorCode.INSTANCE_SUSPENDED_EXPIRED))
       }
@@ -3883,402 +3915,42 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // 检查转移锁定
     if (await checkTransferLock(instanceId, reply)) return
 
-    let incusDeleted = false
-    let sourceHostUnavailable = false
-    let client: Awaited<ReturnType<typeof getIncusClient>> | null = null
+    const needsPrivilegedRefund = isPrivilegedDeleter
+      && instance.user_id !== user.id
+      && !!instance.package_plan_id
+
     try {
-      // ===== 0. 关闭该实例的所有终端连接 =====
-      const closedSessions = closeInstanceSessions(instanceId, 'Instance is being deleted')
-      if (closedSessions > 0) {
-        console.log(`[Delete] Closed ${closedSessions} terminal session(s) for instance ${instanceId}`)
-      }
-
-      // 导入需要的删除函数
-      const { deleteBackup: deleteIncusBackup } = await import('../lib/incus/incus-backups.js')
-      const { sendNotification } = await import('../lib/notifier.js')
-
-      // 检查是否有正在进行的恢复任务
-      const activeRestoreTask = await prisma.restoreTask.findFirst({
-        where: {
-          instanceId,
-          status: { in: ['PENDING', 'PROCESSING'] }
-        }
-      })
-      if (activeRestoreTask) {
-        return reply.code(409).send({
-          error: '该实例有正在进行的恢复任务，请等待完成或取消',
-          code: 'RESTORE_IN_PROGRESS'
-        })
-      }
-
-      // 检查是否有正在进行的备份上传任务
-      const activeUploadTask = await prisma.backupUploadTask.findFirst({
-        where: {
-          instanceId,
-          status: { in: ['PENDING', 'PROCESSING'] }
-        }
-      })
-      if (activeUploadTask) {
-        return reply.code(409).send({
-          error: '该实例有正在进行的备份上传任务，请等待完成或取消',
-          code: 'UPLOAD_IN_PROGRESS'
-        })
-      }
-
-      // 检查是否有正在进行的实例操作任务
-      const activeInstanceTask = await getActiveTaskForInstance(instanceId)
-      if (activeInstanceTask) {
-        return reply.code(409).send({
-          error: '该实例有正在进行的操作任务，请等待完成',
-          code: 'TASK_IN_PROGRESS',
-          taskId: activeInstanceTask.id,
-          taskType: activeInstanceTask.taskType,
-          status: activeInstanceTask.status
-        })
-      }
-
-      const needsPrivilegedRefund = isPrivilegedDeleter
-        && instance.user_id !== user.id
-        && !!instance.package_plan_id
-        && instance.billing_mode !== 'hourly'
-      const needsHourlyBillingClosure = instance.billing_mode === 'hourly'
-      let requestedPrivilegedRefund = 0
-
       const claimed = await claimInstanceForDelete(instanceId, instance.status as InstanceStatus, {
-        deletionBillingPending: needsPrivilegedRefund || needsHourlyBillingClosure,
-        deletionBillingMode: needsPrivilegedRefund
-          ? 'privileged_delete'
-          : needsHourlyBillingClosure
-            ? 'hourly_close'
-            : null,
-        deletionRefundableValue: null
+        authorization: {
+          actorUserId: user.id, actorRole: user.role, scope: 'instance-or-host',
+          expectedUserId: instance.user_id, expectedHostId: instance.host_id,
+          expectedHostUserId: hostOwnerId, expectedIncusId: instance.incus_id,
+          expectedVersion: instance.version, expectedPackagePlanId: instance.package_plan_id,
+          expectedPackageId: instance.package_id, expectedSuspendReason: instance.suspend_reason,
+          expectedBillingMode: instance.billing_mode,
+          expectedTrafficBillingMode: deletionState.trafficBillingMode
+        },
+        // Hourly accounts must be explicitly closed after the final runtime
+        // is established; merely marking the instance deleting is not proof
+        // that the remote guest has stopped or that its reserve is refundable.
+        deletionBillingPending: instance.billing_mode === 'hourly' || needsPrivilegedRefund,
+        deletionBillingMode: instance.billing_mode === 'hourly' ? 'hourly_close' : needsPrivilegedRefund ? 'privileged_delete' : null,
+        pending: { requestedById: user.id, reason }
       })
       if (!claimed) {
-        return reply.code(409).send({
-          error: '实例正在删除或已删除',
-          code: 'INSTANCE_DELETE_IN_PROGRESS'
-        })
+        return reply.code(409).send({ error: '实例正在删除或已删除', code: 'INSTANCE_DELETE_IN_PROGRESS' })
       }
-
-      // 认领后重新读取计费字段，避免续费/方案变更与删除并发时使用旧报价。
-      if (needsPrivilegedRefund) {
-        const billingInstance = await prisma.instance.findUnique({
-          where: { id: instance.id },
-          select: {
-            billingPrice: true,
-            billingCycle: true,
-            expiresAt: true,
-            packagePlanId: true
-          }
-        })
-        if (!billingInstance) {
-          throw new Error('Instance billing data unavailable')
-        }
-        const refundInfo = await db.calculateInstanceRefund({
-          id: instance.id,
-          billingPrice: billingInstance.billingPrice,
-          billingCycle: billingInstance.billingCycle,
-          expiresAt: billingInstance.expiresAt,
-          packagePlanId: billingInstance.packagePlanId
-        })
-        requestedPrivilegedRefund = refundInfo.isPaid ? refundInfo.refundAmount : 0
-        await prisma.instance.update({
-          where: { id: instance.id },
-          data: { deletionRefundableValue: requestedPrivilegedRefund }
-        })
-      }
-
-      // ===== 0.1 先确认 Incus 实例已删除，之后才允许退款和本地清理 =====
-      if (!host || host.status !== 'online') {
-        sourceHostUnavailable = true
-        throw new Error('Source host is unavailable')
-      }
-
+      closeInstanceSessions(instanceId, 'Instance is being deleted')
+      const { processPendingInstanceDeletion } = await import('../services/pending-instance-deletion.js')
       try {
-        client = await getIncusClient(host)
-        // If a debt stop previously failed, settle any remaining runtime while
-        // the guest is still inspectable; after deletion there is no reliable
-        // way to tell whether its last interval was powered on.
-        if (instance.billing_mode === 'hourly') {
-          await settleSuspendedHourlyRuntime(instanceId)
-        }
-        await ensureInstanceDeleted(client, instance.incus_id)
-        incusDeleted = true
-        await prisma.instance.update({
-          where: { id: instanceId },
-          data: { deletionRemoteDeleted: true }
-        })
+        const result = await processPendingInstanceDeletion(instanceId)
+        if (result) return { message: 'Instance deleted', refundAmount: result.refundAmount > 0 ? result.refundAmount : undefined }
       } catch (error) {
-        sourceHostUnavailable = true
-        throw error
+        request.log.warn({ instanceId, error }, 'Instance deletion remains pending')
       }
-
-      if (instance.billing_mode === 'hourly') {
-        await closeHourlyBilling(instanceId)
-        await db.completeHourlyDeletionBilling(instanceId)
-      }
-
-      // ===== 0.2 处理退款（节点所有者/管理员删除他人的付费实例时）=====
-      let hostOwnerRefundAmount = 0
-      if (needsPrivilegedRefund) {
-        hostOwnerRefundAmount = await db.settlePrivilegedDeletionBilling({
-          instance: {
-            id: instance.id,
-            userId: instance.user_id,
-            hostId: instance.host_id,
-            name: instance.name
-          },
-          requestedRefundAmount: requestedPrivilegedRefund,
-          remark: `托管实例被删除退款：${instance.name}`
-        })
-      }
-
-      // ===== 1. 删除反代站点（Caddy 远程 + 数据库）=====
-      const proxySites = await getProxySitesByInstanceId(instanceId)
-      if (proxySites.length > 0) {
-        // 尝试删除 Caddy 远程配置
-        if (host?.caddy_enabled && host.caddy_username && host.caddy_password) {
-          const targetHost = host.nat_public_ip || host.ip_address
-          if (targetHost) {
-            const caddyClient = createCaddyClient({
-              host: targetHost,
-              port: host.caddy_port || 8444,
-              username: host.caddy_username,
-              password: host.caddy_password
-            })
-
-            for (const site of proxySites) {
-              try {
-                await caddyClient.deleteSite(site.domain)
-              } catch (caddyError) {
-                const errorMessage = caddyError instanceof Error ? caddyError.message : String(caddyError)
-                console.error(`删除 Caddy 反代站点失败 (${site.domain}):`, errorMessage)
-              }
-            }
-          }
-        }
-        // 始终删除数据库记录（无论 Caddy 是否启用）
-        for (const site of proxySites) {
-          await deleteProxySite(site.id)
-        }
-      }
-
-      // ===== 2. 删除端口映射（Incus 设备 + 数据库）=====
-      const portMappings = await db.getPortMappings(instanceId)
-      if (portMappings && portMappings.length > 0) {
-        for (const mapping of portMappings) {
-          const map = mapping as { id: number; protocol: string; public_port: number }
-          // 尝试删除 Incus 设备
-          if (client) {
-            const deviceName = `proxy-${map.protocol}-${map.public_port}`
-            try {
-              await removeDevice(client, instance.incus_id, deviceName)
-            } catch (deviceError) {
-              const errorMessage = deviceError instanceof Error ? deviceError.message : String(deviceError)
-              console.error(`删除端口映射设备失败 (${deviceName}):`, errorMessage)
-            }
-          }
-          // 始终删除数据库记录
-          await db.deletePortMapping(map.id)
-        }
-      }
-
-      // ===== 3. 删除快照（Incus 远程 + 数据库）=====
-      const snapshots = await db.getSnapshotsByInstanceId(instanceId)
-      if (snapshots.length > 0) {
-        for (const snapshot of snapshots) {
-          // 尝试删除 Incus 快照
-          if (client) {
-            try {
-              await deleteSnapshot(client, instance.incus_id, snapshot.incus_name)
-            } catch (snapshotError) {
-              const errorMessage = snapshotError instanceof Error ? snapshotError.message : String(snapshotError)
-              console.error(`删除 Incus 快照失败 (${snapshot.name}):`, errorMessage)
-            }
-          }
-          // 始终删除数据库记录
-          await db.deleteSnapshot(snapshot.id)
-        }
-      }
-
-      // ===== 4. 删除备份（Incus 远程 + 数据库软删除）=====
-      const backups = await db.getBackupsByInstanceId(instanceId)
-      if (backups.length > 0) {
-        for (const backup of backups) {
-          // 尝试删除 Incus 备份
-          if (client) {
-            try {
-              await deleteIncusBackup(client, instance.incus_id, backup.incus_name)
-            } catch (backupError) {
-              const errorMessage = backupError instanceof Error ? backupError.message : String(backupError)
-              console.error(`删除 Incus 备份失败 (${backup.name}):`, errorMessage)
-            }
-          }
-          // 始终软删除数据库记录
-          await db.deleteBackup(backup.id)
-        }
-      }
-
-      // ===== 5. 删除快照策略和备份策略 =====
-      try {
-        await prisma.snapshotPolicy.deleteMany({ where: { instanceId } })
-        await prisma.backupPolicy.deleteMany({ where: { instanceId } })
-      } catch (policyError) {
-        const errorMessage = policyError instanceof Error ? policyError.message : String(policyError)
-        console.error('删除策略失败:', errorMessage)
-      }
-
-      // ===== 5.1 删除流量相关记录 =====
-      try {
-        await prisma.trafficSnapshot.deleteMany({ where: { instanceId } })
-        await prisma.dailyTraffic.deleteMany({ where: { instanceId } })
-      } catch (trafficError) {
-        const errorMessage = trafficError instanceof Error ? trafficError.message : String(trafficError)
-        console.error('删除流量记录失败:', errorMessage)
-      }
-
-      // ===== 5.2 删除 IP 地址和 IPv6 网段记录 =====
-      try {
-        await prisma.ipAddress.deleteMany({ where: { instanceId } })
-        await prisma.ipv6Subnet.deleteMany({ where: { instanceId } })
-      } catch (ipError) {
-        const errorMessage = ipError instanceof Error ? ipError.message : String(ipError)
-        console.error('删除 IP 记录失败:', errorMessage)
-      }
-
-      // ===== 5.3 删除历史任务记录（已完成/失败的恢复任务、上传任务和实例任务）=====
-      try {
-        await prisma.restoreTask.deleteMany({
-          where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } }
-        })
-        await prisma.backupUploadTask.deleteMany({
-          where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } }
-        })
-        await prisma.instanceTask.deleteMany({
-          where: { instanceId, status: { in: ['COMPLETED', 'FAILED'] } }
-        })
-      } catch (taskError) {
-        const errorMessage = taskError instanceof Error ? taskError.message : String(taskError)
-        console.error('删除历史任务记录失败:', errorMessage)
-      }
-
-      // ===== 5.4 取消待处理的转移请求 =====
-      try {
-        await prisma.instanceTransfer.updateMany({
-          where: { instanceId, status: 'pending' },
-          data: { status: 'cancelled', cancelledAt: new Date() }
-        })
-      } catch (transferError) {
-        const errorMessage = transferError instanceof Error ? transferError.message : String(transferError)
-        console.error('取消转移请求失败:', errorMessage)
-      }
-
-      // ===== 8. 释放用户配额和宿主机资源 =====
-      const portMappingsCount = portMappings?.length || 0
-      await db.rollbackResources({
-        hostId: instance.host_id,
-        cpu: instance.cpu,
-        memory: instance.memory,
-        disk: instance.disk,
-        portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(instance.network_mode) ? (instance.port_limit ?? 0) : 0
-      })
-
-      // 重新计算宿主机资源使用量（包括端口）
-      const usedResources = await db.calculateHostResourcesFromInstances(instance.host_id)
-      // 重新计算端口映射使用量
-      const reservedPorts = await prisma.instance.aggregate({
-        where: {
-          hostId: instance.host_id,
-          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
-          networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
-        },
-        _sum: { portLimit: true }
-      })
-      const actualPortsUsed = reservedPorts._sum.portLimit ?? 0
-      await db.updateHostResources(instance.host_id, {
-        cpuUsed: usedResources.cpuUsed,
-        memoryUsed: usedResources.memoryUsed,
-        diskUsed: usedResources.diskUsed
-      })
-      // 更新端口使用量
-      await prisma.host.update({
-        where: { id: instance.host_id },
-        data: { natPortsUsedCount: actualPortsUsed }
-      })
-
-      // ===== 10. 发送通知 =====
-      // 判断是否是宿主机所有者删除他人的实例
-      if (isPrivilegedDeleter && instance.user_id !== user.id) {
-        // 宿主机所有者删除他人的实例，如果提供了原因，发送特定通知给实例所有者
-        if (reason && reason.trim()) {
-          await sendNotification(instance.user_id, 'instance_deleted_by_host_owner', {
-            instanceName: instance.name,
-            hostName: host?.name || undefined,
-            deleteReason: reason.trim()
-          })
-        } else {
-          // 没有提供原因，发送普通删除通知
-          await sendNotification(instance.user_id, 'instance_deleted', {
-            instanceName: instance.name,
-            hostName: host?.name || undefined
-          })
-        }
-      } else {
-        // 用户删除自己的实例，发送通知给自己
-        await sendNotification(user.id, 'instance_deleted', {
-          instanceName: instance.name,
-          hostName: host?.name || undefined
-        })
-      }
-
-      // 无论谁删除的，都向套餐绑定的通知渠道发送"资源释放"通知
-      if (instance.package_id) {
-        const { sendReleaseNotification } = await import('../lib/release-notifier.js')
-        sendReleaseNotification({
-          packageId: instance.package_id,
-          cpu: instance.cpu,
-          memory: instance.memory,
-          source: isPrivilegedDeleter && instance.user_id !== user.id
-            ? (isAdmin ? '管理员删除实例' : '节点所有者删除实例')
-            : '用户删除实例'
-        }).catch(() => { })
-      }
-
-      await createLog(
-        user.id,
-        'instance',
-        'instance.delete',
-        `Deleted instance "${instance.name}" [host: ${host?.name || 'unknown'}, user: ${instance.user_id}, released resources: CPU=${instance.cpu}%, Memory=${instance.memory}MB, Disk=${instance.disk}MB, ports=${portMappingsCount}]`,
-        'success',
-        { instanceId }
-      )
-
-      return {
-        message: 'Instance deleted',
-        refundAmount: hostOwnerRefundAmount > 0 ? hostOwnerRefundAmount : undefined
-      }
+      return reply.code(202).send({ status: 'deleting', message: 'Instance deletion pending' })
     } catch (error) {
-      if (!incusDeleted) {
-        await prisma.instance.updateMany({
-          where: { id: instanceId, status: 'deleted' },
-          data: {
-            status: instance.status as InstanceStatus,
-            deletionBillingPending: false,
-            deletionRemoteDeleted: false,
-            deletionBillingMode: null,
-            deletionRefundableValue: null,
-            deletionFeeWaiver: false
-          }
-        })
-      }
-      if (sourceHostUnavailable) {
-        request.log.warn({ instanceId, error }, 'Source host unavailable during instance deletion')
-        return reply.code(409).send({
-          error: '源节点无法连接，确认节点恢复在线后再重试；在无法确认远端实例已删除前不会退款',
-          code: 'SOURCE_HOST_UNAVAILABLE'
-        })
-      }
-      request.log.error(error, '删除实例失败')
+      request.log.error(error, '删除实例认领失败')
       return reply.code(500).send({ error: '删除实例失败', code: 'INSTANCE_DELETE_FAILED' })
     }
   })

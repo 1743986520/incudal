@@ -7,6 +7,14 @@ import { prisma } from './prisma.js'
 import type { Log } from '../types/database.js'
 import type { Prisma } from '@prisma/client'
 
+// This audit record is also the durable idempotency key for a financial and
+// resource-reconciliation operation. It must outlive normal log retention.
+export const DELETION_RESERVATION_RECONCILIATION_ACTION = 'instance.deletion_reservation_reconciled'
+export const DELETION_BILLING_REVIEW_ACTION = 'instance.deletion_billing_review_noted'
+export const OPERATOR_PENDING_DELETION_ACTION = 'instance.operator_approved_pending_delete'
+// Retired hosts can no longer be contacted safely; retain this fence forever.
+export const OPERATOR_RETIRED_HOST_DELETION_ACTION = 'instance.operator_retired_host_deleted'
+
 // ==================== 日志模块常量 ====================
 
 export const LogModule = {
@@ -374,13 +382,14 @@ export async function getLogModules(): Promise<string[]> {
  * 清理旧的操作日志（保留最近 N 天）
  * 默认保留 90 天用于审计
  */
-export async function cleanOldLogs(days: number = 90): Promise<number> {
+export async function cleanOldLogs(days: number = 90, client: Pick<Prisma.TransactionClient, 'log'> = prisma): Promise<number> {
   const cutoffDate = new Date()
   cutoffDate.setDate(cutoffDate.getDate() - days)
 
-  const result = await prisma.log.deleteMany({
+  const result = await client.log.deleteMany({
     where: {
-      createdAt: { lt: cutoffDate }
+      createdAt: { lt: cutoffDate },
+      action: { notIn: [DELETION_RESERVATION_RECONCILIATION_ACTION, DELETION_BILLING_REVIEW_ACTION, OPERATOR_PENDING_DELETION_ACTION, OPERATOR_RETIRED_HOST_DELETION_ACTION] }
     }
   })
 

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { schedule } from 'node-cron'
 import { prisma } from '../db/prisma.js'
+import { advisoryTransactionLock, INSTANCE_OPERATION_LOCK_NAMESPACE } from '../db/advisory-locks.js'
 import { getIncusClient } from '../lib/incus/incus-pool.js'
 import { getInstanceState, stopInstance } from '../lib/incus/incus-instances.js'
 import {
@@ -122,7 +123,8 @@ async function stopInstanceForHourlyDebt(result: SettlementResult): Promise<void
         try {
           await runSerializableTransaction(tx => settleInTransaction(tx, result.instanceId, new Date(), {
             force: true,
-            accrueSuspendedDebt: true
+            accrueSuspendedDebt: true,
+            rejectDeleting: true
           }))
         } catch (error) {
           console.error(`[HourlyBilling] failed to accrue suspended runtime for instance ${result.instanceId}:`, error)
@@ -232,8 +234,12 @@ async function settleInTransaction(
   tx: HourlyTx,
   instanceId: number,
   now: Date,
-  options: { force?: boolean; accrueSuspendedDebt?: boolean } = {}
+  options: { force?: boolean; accrueSuspendedDebt?: boolean; rejectDeleting?: boolean } = {}
 ): Promise<SettlementResult> {
+  // A deletion claim uses the same lock. Otherwise the scheduler can read a
+  // stale non-running status, race the claim, and release a guest's reserve
+  // even though its host has not confirmed it stopped.
+  await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
   const initialAccount = await tx.hourlyBillingAccount.findUnique({
     where: { instanceId },
     include: {
@@ -297,6 +303,9 @@ async function settleInTransaction(
     account.instance.suspendReason === HOURLY_SUSPEND_REASON
   if (account.status !== 'active' && !accruingSuspendedDebt) {
     return { instanceId, suspended: account.status === 'suspended', host: account.instance.host }
+  }
+  if ((!options.force || options.rejectDeleting) && (account.instance.status === 'deleting' || account.instance.status === 'deleted')) {
+    return { instanceId, suspended: false, host: account.instance.host }
   }
   if (!options.force && account.instance.status !== 'running') {
     await tx.hourlyBillingAccount.update({
@@ -428,6 +437,7 @@ async function settleInTransaction(
 
 export async function activateHourlyBilling(instanceId: number): Promise<boolean> {
   const activated = await runSerializableTransaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     const account = await tx.hourlyBillingAccount.findUnique({
       where: { instanceId },
       include: { packagePlan: true, pricingVersion: true, instance: true }
@@ -444,6 +454,7 @@ export async function activateHourlyBilling(instanceId: number): Promise<boolean
       include: { packagePlan: true, pricingVersion: true, instance: true }
     })
     if (!lockedAccount) return false
+    if (lockedAccount.instance.status === 'deleting' || lockedAccount.instance.status === 'deleted') return false
     if (lockedAccount.status === 'active') return lockedAccount.instance.status === 'running'
     if (lockedAccount.status === 'suspended') {
       const now = new Date()
@@ -530,6 +541,7 @@ export async function activateHourlyBilling(instanceId: number): Promise<boolean
     const instance = await prisma.instance.findUnique({
       where: { id: instanceId },
       select: {
+        status: true,
         suspendReason: true,
         host: {
           select: {
@@ -544,7 +556,7 @@ export async function activateHourlyBilling(instanceId: number): Promise<boolean
         }
       }
     })
-    if (instance?.suspendReason === HOURLY_SUSPEND_REASON) {
+    if (instance?.status === 'suspended' && instance.suspendReason === HOURLY_SUSPEND_REASON) {
       await stopInstanceForHourlyDebt({ instanceId, suspended: true, host: instance.host })
     }
   }
@@ -553,6 +565,7 @@ export async function activateHourlyBilling(instanceId: number): Promise<boolean
 
 export async function resumeHourlyBilling(instanceId: number, userId: number): Promise<void> {
   await runSerializableTransaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     const account = await tx.hourlyBillingAccount.findUnique({
       where: { instanceId },
       include: { packagePlan: true, pricingVersion: true, instance: true }
@@ -569,6 +582,7 @@ export async function resumeHourlyBilling(instanceId: number, userId: number): P
       include: { packagePlan: true, pricingVersion: true, instance: true }
     })
     if (!lockedAccount || lockedAccount.instance.userId !== userId) throw new Error('HOURLY_ACCOUNT_NOT_FOUND')
+    if (lockedAccount.instance.status === 'deleting' || lockedAccount.instance.status === 'deleted') throw new Error('INSTANCE_DELETION_IN_PROGRESS')
     if (lockedAccount.status !== 'suspended') return
 
     const outstanding = new Prisma.Decimal(lockedAccount.outstandingAmount)
@@ -679,7 +693,10 @@ export async function payClosedHourlyDebt(instanceId: number, userId: number): P
 }
 
 export async function settleHourlyInstance(instanceId: number, now = new Date(), options: { force?: boolean } = {}): Promise<SettlementResult> {
-  const result = await runSerializableTransaction(tx => settleInTransaction(tx, instanceId, now, options))
+  // A previously fetched stale-account job can race a deletion claim. Even
+  // its forced settlement must recheck the state under the shared instance
+  // transaction lock; only the explicit close path may force a deleted row.
+  const result = await runSerializableTransaction(tx => settleInTransaction(tx, instanceId, now, { ...options, rejectDeleting: true }))
   await stopInstanceForHourlyDebt(result)
   return result
 }
@@ -696,6 +713,7 @@ export async function settleSuspendedHourlyRuntime(instanceId: number, now = new
       status: true,
       instance: {
         select: {
+          status: true,
           suspendReason: true,
           incusId: true,
           host: {
@@ -713,20 +731,29 @@ export async function settleSuspendedHourlyRuntime(instanceId: number, now = new
       }
     }
   })
-  if (!account || account.status !== 'suspended' || account.instance.suspendReason !== HOURLY_SUSPEND_REASON) return
+  if (!account || account.status !== 'suspended' || account.instance.status !== 'suspended'
+    || account.instance.suspendReason !== HOURLY_SUSPEND_REASON) return
 
   const client = await getIncusClient(account.instance.host)
   const state = await getInstanceState(client, account.instance.incusId) as { status?: string }
   if (state.status === 'Running' || state.status === 'Frozen') {
     await runSerializableTransaction(tx => settleInTransaction(tx, instanceId, now, {
       force: true,
-      accrueSuspendedDebt: true
+      accrueSuspendedDebt: true,
+      // A deletion can win after the remote sample but before this transaction.
+      // Never settle a deleting row using a stale observation of a live guest.
+      rejectDeleting: true
     }))
   }
 }
 
 export async function pauseHourlyBilling(instanceId: number, now = new Date()): Promise<SettlementResult> {
   const result = await runSerializableTransaction(async tx => {
+    await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
+    const current = await tx.instance.findUnique({ where: { id: instanceId }, select: { status: true } })
+    if (current?.status === 'deleting' || current?.status === 'deleted') {
+      return { instanceId, suspended: false, host: null }
+    }
     const result = await settleInTransaction(tx, instanceId, now, { force: true })
     const account = await tx.hourlyBillingAccount.findUnique({ where: { instanceId }, include: { instance: true } })
     if (!account || account.status === 'closed') return result
@@ -841,7 +868,7 @@ export async function runHourlyBillingJob(): Promise<void> {
   }
 
   const staleAccounts = await prisma.hourlyBillingAccount.findMany({
-    where: { status: 'active', instance: { status: { not: 'running' } } },
+    where: { status: 'active', instance: { status: { notIn: ['running', 'deleting', 'deleted'] } } },
     select: {
       instanceId: true,
       instance: {

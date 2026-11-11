@@ -242,12 +242,13 @@ const detailLoadingIds = ref<Set<number>>(new Set())
 const syncingInstanceIds = ref<Set<number>>(new Set())
 const swapActionLoadingIds = ref<Set<number>>(new Set())
 
+const selectableInstances = computed(() => instances.value.filter(instance => instance.status?.toLowerCase() !== 'deleting'))
 const isAllSelected = computed(() => {
-  return instances.value.length > 0 && selectedIds.value.size === instances.value.length
+  return selectableInstances.value.length > 0 && selectableInstances.value.every(instance => selectedIds.value.has(instance.id))
 })
 
 const isPartialSelected = computed(() => {
-  return selectedIds.value.size > 0 && selectedIds.value.size < instances.value.length
+  return selectedIds.value.size > 0 && !isAllSelected.value
 })
 
 const selectedCount = computed(() => selectedIds.value.size)
@@ -264,11 +265,12 @@ function toggleSelectAll() {
   if (isAllSelected.value) {
     selectedIds.value.clear()
   } else {
-    selectedIds.value = new Set(instances.value.map(i => i.id))
+    selectedIds.value = new Set(selectableInstances.value.map(i => i.id))
   }
 }
 
 function toggleSelect(id: number) {
+  if (!selectableInstances.value.some(instance => instance.id === id)) return
   if (selectedIds.value.has(id)) {
     selectedIds.value.delete(id)
   } else {
@@ -427,7 +429,11 @@ async function confirmBatchDelete(databaseOnly: boolean = false) {
         ? 'admin.hosts.batchDeletePartial'
         : 'admin.hosts.batchDeleteSuccess')
 
-    if (result.failedCount > 0) {
+    if ((result.pendingCount ?? 0) > 0) {
+      toast.warning(t('deletionReconciliation.batchSummary', {
+        success: result.successCount, failed: result.failedCount, pending: result.pendingCount
+      }))
+    } else if (result.failedCount > 0) {
       toast.warning(t(refundMessageKey, {
         success: result.successCount,
         failed: result.failedCount,
@@ -844,6 +850,8 @@ async function loadInstances() {
       sortOrder: sortOrder.value
     })
     instances.value = (res as any).instances || []
+    const pendingIds = new Set(instances.value.filter(instance => instance.status?.toLowerCase() === 'deleting').map(instance => instance.id))
+    selectedIds.value = new Set([...selectedIds.value].filter(id => !pendingIds.has(id)))
     total.value = (res as any).total || 0
     totalPages.value = (res as any).totalPages || 1
 
@@ -957,6 +965,7 @@ function getStatusInfo(status: string) {
     stopping: { label: t('instance.status.stopping'), class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
     restarting: { label: t('instance.status.restarting'), class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
     creating: { label: t('instance.status.creating'), class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
+    deleting: { label: t('instance.status.deleting'), class: 'badge-warning', dot: 'bg-yellow-500 animate-pulse' },
     error: { label: t('instance.status.error'), class: 'badge-error', dot: 'bg-red-500' }
   }
   return map[status?.toLowerCase()] || map.stopped

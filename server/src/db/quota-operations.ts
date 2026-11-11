@@ -16,6 +16,7 @@
 
 import { prisma } from './prisma.js'
 import { Prisma } from '@prisma/client'
+import { readReservationEvidenceForUpdate, recordReservationRetry } from './resource-reservation-evidence.js'
 import {
   INSTANCE_OPERATION_LOCK_NAMESPACE,
   advisoryTransactionLock
@@ -294,6 +295,7 @@ export async function claimInstanceAndReserveResources(options: {
 }): Promise<boolean> {
   return prisma.$transaction(async tx => {
     await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, options.instanceId)
+    const reservationBefore = await readReservationEvidenceForUpdate(tx, options.instanceId)
 
     const claimed = await tx.instance.updateMany({
       where: {
@@ -311,6 +313,7 @@ export async function claimInstanceAndReserveResources(options: {
     if (claimed.count === 0) return false
 
     await reserveHostResources(tx, options)
+    await recordReservationRetry(tx, reservationBefore, { ...options, portCount: options.portCount ?? 0 })
     return true
   }, QUOTA_TRANSACTION_OPTIONS)
 }

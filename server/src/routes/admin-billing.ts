@@ -5,6 +5,8 @@
 import { FastifyInstance } from 'fastify'
 import { Prisma, type InstanceStatus } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
+import { claimLegacyDeletionWithoutProxySites } from '../services/legacy-deletion-proxy-guard.js'
+import { recordNewInstanceReservation } from '../db/resource-reservation-evidence.js'
 import * as db from '../db/index.js'
 import { ensureHostStoragePoolOrReply } from './instances/helpers.js'
 import { createLog } from '../db/logs.js'
@@ -53,24 +55,39 @@ import { getInstanceBillingLineageIds } from '../db/billing-records.js'
 import { AdvisoryLockBusyError, INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
 import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { cleanupAndSettleFailedProvision } from '../services/provisioning-cleanup.js'
+import { processPendingInstanceDeletion } from '../services/pending-instance-deletion.js'
+import { closeInstanceSessions } from '../lib/terminal-proxy.js'
 
 // 自定义 nanoid，只使用小写字母和数字
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8)
 
-async function claimInstanceForAdminDelete(
-  instanceId: number,
-  currentStatus: InstanceStatus,
+export async function claimInstanceForAdminDelete(
+  expected: {
+    id: number; status: InstanceStatus; userId: number; hostId: number; incusId: string
+    version: number; packageId: number | null; packagePlanId: number | null
+    billingMode: 'package' | 'hourly'; suspendReason: string | null
+  },
+  adminId: number,
   options: {
     deletionBillingPending?: boolean
     deletionBillingMode?: 'privileged_delete' | 'hourly_close' | null
     deletionRefundableValue?: number | null
+    pending?: { refundType: 'remaining' | 'full'; reason: string }
   } = {}
 ): Promise<boolean> {
+  const instanceId = expected.id
+  const currentStatus = expected.status
+  if (currentStatus === 'deleted' || currentStatus === 'deleting' || (options.pending && currentStatus === 'creating')) return false
   return prisma.$transaction(async (tx) => {
     const locked = await tryAdvisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, instanceId)
     if (!locked) return false
 
-    const [activeRestoreTask, activeUploadTask, activeInstanceTask] = await Promise.all([
+    const actors = await tx.$queryRaw<Array<{ role: string; status: string }>>`
+      SELECT "role", "status" FROM "users" WHERE "id" = ${adminId} FOR UPDATE
+    `
+    if (actors[0]?.status !== 'active' || actors[0]?.role !== 'admin') return false
+
+    const [activeRestoreTask, activeUploadTask, activeInstanceTask, activeTransfer] = await Promise.all([
       tx.restoreTask.findFirst({
         where: { instanceId, status: { in: ['PENDING', 'PROCESSING'] } },
         select: { id: true }
@@ -82,25 +99,65 @@ async function claimInstanceForAdminDelete(
       tx.instanceTask.findFirst({
         where: { instanceId, status: { in: ['PENDING', 'PROCESSING'] } },
         select: { id: true }
+      }),
+      tx.instanceTransfer.findFirst({
+        where: { instanceId, status: { in: ['pending', 'processing'] } },
+        select: { id: true }
       })
     ])
-    if (activeRestoreTask || activeUploadTask || activeInstanceTask) return false
+    if (activeRestoreTask || activeUploadTask || activeInstanceTask || activeTransfer) return false
 
+    const requestedAt = options.pending ? new Date() : null
     const result = await tx.instance.updateMany({
       where: {
         id: instanceId,
-        status: currentStatus
+        status: currentStatus,
+        userId: expected.userId,
+        hostId: expected.hostId,
+        incusId: expected.incusId,
+        version: expected.version,
+        packageId: expected.packageId,
+        packagePlanId: expected.packagePlanId,
+        billingMode: expected.billingMode,
+        suspendReason: expected.suspendReason,
+        ...(options.pending ? { provisioningCleanupPending: false } : {})
       },
       data: {
-        status: 'deleted',
+        status: options.pending ? 'deleting' : 'deleted',
         version: { increment: 1 },
         deletionBillingPending: options.deletionBillingPending === true,
         deletionRemoteDeleted: false,
         deletionBillingMode: options.deletionBillingMode ?? null,
         deletionRefundableValue: options.deletionRefundableValue ?? null,
-        deletionFeeWaiver: false
+        deletionFeeWaiver: false,
+        ...(requestedAt ? {
+          deletionOriginalStatus: currentStatus,
+          deletionRequestedAt: requestedAt,
+          deletionRequestedById: adminId,
+          deletionReason: options.pending!.reason
+        } : {})
       }
     })
+
+    if (result.count === 1 && options.pending && options.deletionBillingMode === 'privileged_delete') {
+      // The refund mode and quotation must be durable at claim commit. A
+      // worker can run immediately after the transaction, so computing this
+      // later would turn a requested full refund into a remaining-value one.
+      const current = await tx.instance.findUniqueOrThrow({
+        where: { id: instanceId },
+        select: { id: true, billingPrice: true, billingCycle: true, expiresAt: true, packagePlanId: true }
+      })
+      const amount = options.pending.refundType === 'full'
+        ? await db.getMaxRefundableInTransaction(tx, instanceId)
+        : (await db.calculateInstanceRemainingRefundQuote(current, tx, requestedAt!)).refundableValue
+      await tx.instance.update({ where: { id: instanceId }, data: { deletionRefundableValue: amount } })
+    }
+    if (result.count === 1 && options.pending) {
+      await tx.log.create({ data: {
+        userId: adminId, instanceId, module: 'admin', action: 'instance.admin_delete_refund_requested',
+        content: JSON.stringify({ refundType: options.pending.refundType, reason: options.pending.reason }), result: 'success'
+      } })
+    }
 
     return result.count === 1
   })
@@ -1090,6 +1147,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       if (instance.status === 'deleted') {
         return reply.status(400).send({ error: '实例已删除' })
       }
+      if (instance.status === 'deleting') {
+        return reply.status(409).send({ error: 'Instance deletion is pending', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+      }
 
       // 只有付费实例可以延期
       if (!db.isPackageInstance(instance) || !instance.billingPrice) {
@@ -1152,7 +1212,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
           // 更新到期时间
           const instanceUpdate = await tx.instance.updateMany({
-            where: { id: instanceId, version: instance.version },
+            where: { id: instanceId, version: instance.version, status: { notIn: ['deleted', 'deleting'] } },
             data: {
               expiresAt: newExpiresAt,
               version: { increment: 1 },
@@ -1189,7 +1249,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         await prisma.$transaction(async (tx) => {
           // 更新到期时间
           const instanceUpdate = await tx.instance.updateMany({
-            where: { id: instanceId, version: instance.version },
+            where: { id: instanceId, version: instance.version, status: { notIn: ['deleted', 'deleting'] } },
             data: {
               expiresAt: newExpiresAt,
               version: { increment: 1 },
@@ -1475,7 +1535,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       return reply.status(400).send({ error: '无效的实例ID' })
     }
 
-    if (!reason || reason.trim().length < 2) {
+    if (typeof reason !== 'string' || reason.trim().length < 2 || reason.trim().length > 500) {
       return reply.status(400).send({ error: '请填写删除原因' })
     }
 
@@ -1512,7 +1572,23 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       const needsPrivilegedRefund = instance.packagePlanId !== null && instance.billingMode !== 'hourly'
       const needsHourlyBillingClosure = !databaseOnly && instance.billingMode === 'hourly'
-      const claimed = await claimInstanceForAdminDelete(instanceId, instance.status, {
+      if (!databaseOnly) {
+        const claimed = await claimInstanceForAdminDelete(instance, admin.id, {
+          deletionBillingPending: needsPrivilegedRefund || needsHourlyBillingClosure,
+          deletionBillingMode: needsPrivilegedRefund ? 'privileged_delete' : needsHourlyBillingClosure ? 'hourly_close' : null,
+          pending: { refundType, reason: reason.trim() }
+        })
+        if (!claimed) return reply.status(409).send({ error: '实例正在删除、创建或清理中', code: 'INSTANCE_DELETE_IN_PROGRESS' })
+        closeInstanceSessions(instanceId, 'Instance deletion pending')
+        try {
+          const result = await processPendingInstanceDeletion(instanceId)
+          if (result) return { success: true, refundAmount: result.refundAmount, refundType, message: '实例已删除' }
+        } catch (error) {
+          request.log.warn({ instanceId, error }, 'Admin deletion remains pending')
+        }
+        return reply.status(202).send({ success: false, pending: true, status: 'deleting', refundAmount: 0, refundType, message: 'Instance deletion pending reconciliation' })
+      }
+      const claimResult = await claimLegacyDeletionWithoutProxySites(instanceId, () => claimInstanceForAdminDelete(instance, admin.id, {
         deletionBillingPending: needsPrivilegedRefund || needsHourlyBillingClosure,
         deletionBillingMode: needsPrivilegedRefund
           ? 'privileged_delete'
@@ -1520,8 +1596,11 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             ? 'hourly_close'
             : null,
         deletionRefundableValue: null
-      })
-      if (!claimed) {
+      }))
+      if (claimResult === 'sites') {
+        return reply.status(409).send({ error: '请先确认并删除实例的反代站点', code: 'PROXY_SITE_CLEANUP_REQUIRED' })
+      }
+      if (claimResult !== 'claimed') {
         return reply.status(409).send({ error: '实例正在删除或已删除' })
       }
 
@@ -1699,7 +1778,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       const reservedPorts = await prisma.instance.aggregate({
         where: {
           hostId: instance.hostId,
-          status: { in: ['creating', 'running', 'stopped', 'suspended'] },
+          status: { in: ['creating', 'running', 'stopped', 'suspended', 'deleting'] },
           networkMode: { in: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'] }
         },
         _sum: { portLimit: true }
@@ -3251,6 +3330,8 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       let host: Awaited<ReturnType<typeof db.selectAndReserveHostWithLock>>
 
       const result = await prisma.$transaction(async (tx) => {
+        const reservedPortCount = ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode)
+          ? (selectedPlan?.portLimit ?? pkgWithExtras.port_limit ?? 0) : 0
         // 使用行锁选择并预占宿主机资源
         const lockedHost = await db.selectAndReserveHostWithLock(tx, {
           packageHostIds: packageHostIds.length > 0 ? packageHostIds : undefined,
@@ -3260,7 +3341,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           disk: requestedDisk,
           hostId: hostId,
           ownerId: pkg.user_id!,
-          portCount: ['nat', 'nat_ipv6', 'nat_ipv6_nat', 'ipv6_nat', 'ipv6_only'].includes(networkMode) ? (selectedPlan?.portLimit ?? pkgWithExtras.port_limit ?? 0) : 0
+          portCount: reservedPortCount
         })
 
         if (!lockedHost) {
@@ -3406,6 +3487,11 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
             nextTrafficBillingAt: selectedPlan?.trafficBillingMode === 'usage' ? new Date(Date.now() + 60 * 60 * 1000) : null,
             autoRenew: false
           }
+        })
+
+        await recordNewInstanceReservation(tx, {
+          instanceId: instance.id, hostId: lockedHost.id, cpu: requestedCpu,
+          memory: requestedMemory, disk: requestedDisk, portCount: reservedPortCount
         })
 
         // 更新余额日志，添加 instanceId

@@ -5,6 +5,14 @@
 import { prisma } from './prisma.js'
 import { Prisma } from '@prisma/client'
 import type { InstanceTaskType, InstanceTaskStatus, Prisma as PrismaTypes } from '@prisma/client'
+import { advisoryTransactionLock, INSTANCE_OPERATION_LOCK_NAMESPACE } from './advisory-locks.js'
+
+export class InstanceUnavailableForTaskError extends Error {
+  constructor() {
+    super('INSTANCE_UNAVAILABLE_FOR_TASK')
+    this.name = 'InstanceUnavailableForTaskError'
+  }
+}
 
 export interface CreateInstanceTaskData {
   instanceId: number
@@ -65,20 +73,27 @@ export interface InstanceTaskWithDetails {
 export async function createInstanceTask(data: CreateInstanceTaskData): Promise<InstanceTaskWithDetails> {
   // 注：使用 as any 绕过 Prisma 类型检查，因为 customInitCommandIds 字段在迁移后才会生成类型
   try {
-    const result = await prisma.instanceTask.create({
-      data: {
-        instanceId: data.instanceId,
-        hostId: data.hostId,
-        userId: data.userId,
-        taskType: data.taskType,
-        imageAlias: data.imageAlias || null,
-        sshKeyId: data.sshKeyId || null,
-        customInitCommandIds: data.customInitCommandIds ? JSON.stringify(data.customInitCommandIds) : null,
-        targetName: data.targetName || null,
-        targetHostId: data.targetHostId || null,
-        snapshotName: data.snapshotName || null,
-        status: 'PENDING'
-      } as any
+    const result = await prisma.$transaction(async tx => {
+      await advisoryTransactionLock(tx, INSTANCE_OPERATION_LOCK_NAMESPACE, data.instanceId)
+      const instance = await tx.instance.findUnique({ where: { id: data.instanceId }, select: { status: true } })
+      if (!instance || instance.status === 'deleting' || instance.status === 'deleted') {
+        throw new InstanceUnavailableForTaskError()
+      }
+      return tx.instanceTask.create({
+        data: {
+          instanceId: data.instanceId,
+          hostId: data.hostId,
+          userId: data.userId,
+          taskType: data.taskType,
+          imageAlias: data.imageAlias || null,
+          sshKeyId: data.sshKeyId || null,
+          customInitCommandIds: data.customInitCommandIds ? JSON.stringify(data.customInitCommandIds) : null,
+          targetName: data.targetName || null,
+          targetHostId: data.targetHostId || null,
+          snapshotName: data.snapshotName || null,
+          status: 'PENDING'
+        } as any
+      })
     })
     return result as unknown as InstanceTaskWithDetails
   } catch (error) {
