@@ -23,9 +23,7 @@ import {
 import { deleteSnapshot } from '../lib/incus/incus-snapshots.js'
 import { generateIncusConfig, generateRandomPassword } from '../lib/incus-config-generator.js'
 import { encryptSensitiveData, decryptSensitiveData, validateName } from '../lib/security.js'
-import {
-  claimOperationVerificationIfRequired
-} from '../lib/operation-verification.js'
+import { requestOperationConfirm } from '../lib/operation-confirm.js'
 import {
   detectCloudInitStatus,
   getCachedCloudInitStatus,
@@ -3598,37 +3596,26 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const claimedVerification = await claimOperationVerificationIfRequired(
-      user.id,
-      'reinstall_instance',
-      instanceId
-    )
-    if (!claimedVerification) {
-      return reply.code(403).send({
-        error: 'Sensitive operation requires verification',
-        code: 'VERIFICATION_REQUIRED',
-        operationType: 'reinstall_instance'
+    // 敏感操作：改为邮件确认链接，点击链接后由 /verification/confirm 入队重建任务
+    const confirmResult = await requestOperationConfirm({
+      userId: user.id,
+      operationType: 'reinstall_instance',
+      resourceId: instanceId,
+      payload: { imageAlias, sshKeyId, customInitCommandIds }
+    })
+    if (!confirmResult.success) {
+      request.log.error({ error: confirmResult.error }, 'Failed to send reinstall confirm email')
+      return reply.code(502).send({
+        error: '确认邮件发送失败，操作未执行，请稍后重试',
+        code: 'CONFIRM_EMAIL_SEND_FAILED'
       })
     }
 
-    // 创建异步任务
-    const task = await createInstanceTaskGuarded(reply, {
-      instanceId,
-      hostId: instance.host_id,
-      userId: user.id,
-      taskType: 'rebuild',
-      imageAlias,
-      sshKeyId,
-      customInitCommandIds
-    })
-    if (!task) return
+    await createLog(user.id, 'instance', 'instance.rebuild', `Confirmation email sent for rebuild of instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
 
-    await createLog(user.id, 'instance', 'instance.rebuild', `Queued rebuild task for instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
-
-    reply.code(202).send({
-      message: 'Instance rebuild task queued',
-      taskId: task.id,
-      status: task.status
+    return reply.code(202).send({
+      message: '确认邮件已发送，请点击邮件中的链接完成重装（1 小时内有效）',
+      confirmEmailSent: true
     })
   })
 
@@ -3751,54 +3738,45 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const claimedVerification = await claimOperationVerificationIfRequired(
-      user.id,
-      'recreate_instance',
-      instanceId
-    )
-    if (!claimedVerification) {
-      return reply.code(403).send({
-        error: 'Sensitive operation requires verification',
-        code: 'VERIFICATION_REQUIRED',
-        operationType: 'recreate_instance'
+    // 敏感操作：改为邮件确认链接，点击链接后由 /verification/confirm 入队重建任务
+    const confirmResult = await requestOperationConfirm({
+      userId: user.id,
+      operationType: 'recreate_instance',
+      resourceId: instanceId,
+      payload: { imageAlias, sshKeyId, customInitCommandIds }
+    })
+    if (!confirmResult.success) {
+      request.log.error({ error: confirmResult.error }, 'Failed to send recreate confirm email')
+      return reply.code(502).send({
+        error: '确认邮件发送失败，操作未执行，请稍后重试',
+        code: 'CONFIRM_EMAIL_SEND_FAILED'
       })
     }
 
-    // 创建异步任务
-    const task = await createInstanceTaskGuarded(reply, {
-      instanceId,
-      hostId: instance.host_id,
-      userId: user.id,
-      taskType: 'recreate',
-      imageAlias,
-      sshKeyId,
-      customInitCommandIds
-    })
-    if (!task) return
+    await createLog(user.id, 'instance', 'instance.recreate', `Confirmation email sent for recreate of instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
 
-    await createLog(user.id, 'instance', 'instance.recreate', `Queued recreate task for instance "${instance.name}" with image ${imageAlias}`, 'success', { instanceId })
-
-    reply.code(202).send({
-      message: 'Instance recreate task queued',
-      taskId: task.id,
-      status: task.status
+    return reply.code(202).send({
+      message: '确认邮件已发送，请点击邮件中的链接完成重建（1 小时内有效）',
+      confirmEmailSent: true
     })
   })
 
   // 删除实例
-  fastify.delete<{ Params: { id: string }; Body: { reason?: string } }>('/:id', {
+  fastify.delete<{ Params: { id: string }; Body: { reason?: string; force?: boolean } }>('/:id', {
     onRequest: [fastify.authenticate],
     schema: {
       body: {
         type: 'object',
         properties: {
-          reason: { type: 'string', maxLength: 500 }
+          reason: { type: 'string', maxLength: 500 },
+          force: { type: 'boolean', default: false }
         }
       }
     }
-  }, async (request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string; force?: boolean } }>, reply: FastifyReply) => {
     const { id } = request.params
     const { reason } = request.body || {}
+    const force = (request.body || {}).force === true
     const instanceId = Number(id)
 
     if (isNaN(instanceId)) {
@@ -3852,6 +3830,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     let incusDeleted = false
     let sourceHostUnavailable = false
+    // force 模式下保留待结算 claim，退款由恢复任务在节点恢复后自动完成
+    let keptPendingClaim = false
     let client: Awaited<ReturnType<typeof getIncusClient>> | null = null
     try {
       // ===== 0. 关闭该实例的所有终端连接 =====
@@ -3956,32 +3936,41 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
 
       // ===== 0.1 先确认 Incus 实例已删除，之后才允许退款和本地清理 =====
-      if (!host || host.status !== 'online') {
+      // force 模式：主机失联或远端删除未确认时保留待结算 claim，本地清理照常执行，
+      // 退款由删除退款恢复任务在节点恢复在线并确认远端删除后自动完成。
+      if (host && host.status === 'online') {
+        try {
+          client = await getIncusClient(host)
+          await ensureInstanceDeleted(client, instance.incus_id)
+          incusDeleted = true
+          await prisma.instance.update({
+            where: { id: instanceId },
+            data: { deletionRemoteDeleted: true }
+          })
+        } catch (error) {
+          if (!force) {
+            sourceHostUnavailable = true
+            throw error
+          }
+          keptPendingClaim = true
+          request.log.warn({ instanceId, error }, '强制删除：远端删除未确认，退款推迟到节点恢复后结算')
+        }
+      } else if (!force) {
         sourceHostUnavailable = true
         throw new Error('Source host is unavailable')
+      } else {
+        keptPendingClaim = true
+        request.log.warn({ instanceId }, '强制删除：源节点失联，退款推迟到节点恢复后结算')
       }
 
-      try {
-        client = await getIncusClient(host)
-        await ensureInstanceDeleted(client, instance.incus_id)
-        incusDeleted = true
-        await prisma.instance.update({
-          where: { id: instanceId },
-          data: { deletionRemoteDeleted: true }
-        })
-      } catch (error) {
-        sourceHostUnavailable = true
-        throw error
-      }
-
-      if (instance.billing_mode === 'hourly') {
+      if (incusDeleted && instance.billing_mode === 'hourly') {
         await closeHourlyBilling(instanceId)
         await db.completeHourlyDeletionBilling(instanceId)
       }
 
       // ===== 0.2 处理退款（节点所有者/管理员删除他人的付费实例时）=====
       let hostOwnerRefundAmount = 0
-      if (needsPrivilegedRefund) {
+      if (needsPrivilegedRefund && incusDeleted) {
         hostOwnerRefundAmount = await db.settlePrivilegedDeletionBilling({
           instance: {
             id: instance.id,
@@ -4215,11 +4204,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       )
 
       return {
-        message: 'Instance deleted',
-        refundAmount: hostOwnerRefundAmount > 0 ? hostOwnerRefundAmount : undefined
+        message: keptPendingClaim
+          ? 'Instance deleted; refund deferred until the host is back online and remote deletion is confirmed'
+          : 'Instance deleted',
+        refundAmount: hostOwnerRefundAmount > 0 ? hostOwnerRefundAmount : undefined,
+        refundPending: keptPendingClaim
       }
     } catch (error) {
-      if (!incusDeleted) {
+      if (!incusDeleted && !keptPendingClaim) {
         await prisma.instance.updateMany({
           where: { id: instanceId, status: 'deleted' },
           data: {

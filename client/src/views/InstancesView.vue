@@ -1125,12 +1125,12 @@ function closeBatchDestroyModal(force = false): void {
   batchDestroyPreview.value = []
 }
 
-async function confirmBatchDestroy(): Promise<void> {
+async function confirmBatchDestroy(force = false): Promise<void> {
   if (!batchDestroyCanSubmit.value) return
 
   batchDestroySubmitting.value = true
   try {
-    const result = await api.billing.destroyInstancesBatch(Array.from(selectedIds.value))
+    const result = await api.billing.destroyInstancesBatch(Array.from(selectedIds.value), force ? { force: true } : undefined)
     if (result.failedCount > 0) {
       toast.warning(t('instance.batch.partialResult', {
         success: result.successCount,
@@ -1144,6 +1144,11 @@ async function confirmBatchDestroy(): Promise<void> {
     clearSelection()
     await loadInstances(true)
   } catch (error: any) {
+    // 节点状态可能滞后于实际连通性；失联时询问是否强制删除（退款待节点恢复后自动到账）。
+    if (!force && error?.code === 'SOURCE_HOST_UNAVAILABLE' && window.confirm(t('instance.destroy.batchForceConfirm', { count: selectedIds.value.size }))) {
+      await confirmBatchDestroy(true)
+      return
+    }
     toast.error(t('instance.batch.actionFailed') + ': ' + translateError(error))
   } finally {
     batchDestroySubmitting.value = false
@@ -2657,7 +2662,7 @@ async function confirmBatchDestroy(): Promise<void> {
                 class="btn-sm text-white"
                 :class="themeStore.isDark ? 'bg-red-500/80 hover:bg-red-500 disabled:bg-red-500/40' : 'bg-red-500 hover:bg-red-600 disabled:bg-red-300'"
                 :disabled="!batchDestroyCanSubmit"
-                @click="confirmBatchDestroy"
+                @click="confirmBatchDestroy()"
               >
                 <svg v-if="batchDestroySubmitting" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

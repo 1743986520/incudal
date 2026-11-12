@@ -63,6 +63,8 @@ interface BatchDestroyResultItem {
   feeAmount?: number
   isFirstTime?: boolean
   isFreeInstance?: boolean
+  refundPending?: boolean
+  sourceHostUnavailable?: boolean
 }
 
 const BATCH_HIDDEN_REASON = '实例不存在或无权操作'
@@ -472,7 +474,8 @@ async function buildBatchDestroyPreviewItem(userId: number, instanceId: number):
 async function executeDestroyForUser(
   user: { id: number; username: string },
   instanceId: number,
-  logger: { warn: (...args: any[]) => void; error: (...args: any[]) => void }
+  logger: { warn: (...args: any[]) => void; error: (...args: any[]) => void },
+  force = false
 ): Promise<BatchDestroyResultItem> {
   const instance = await prisma.instance.findUnique({
     where: { id: instanceId },
@@ -559,6 +562,9 @@ async function executeDestroyForUser(
   }
 
   let incusDeleted = false
+  // force 模式下保留待结算 claim，退款由恢复任务在节点恢复后自动完成
+  let keptPendingClaim = false
+  let sourceHostUnavailable = false
   try {
     // 认领删除后再读取计费字段，避免续费/方案变更刚好提交时使用旧退款报价。
     const currentBillingInstance = await prisma.instance.findUnique({
@@ -599,28 +605,47 @@ async function executeDestroyForUser(
       throw new Error('Host not found')
     }
 
-    const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
-    const client = await getIncusClient(host)
-    await ensureInstanceDeleted(client, instance.incusId)
-    incusDeleted = true
-    await prisma.instance.update({
-      where: { id: instanceId },
-      data: { deletionRemoteDeleted: true }
-    })
+    if (host.status === 'online') {
+      try {
+        const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
+        const client = await getIncusClient(host)
+        await ensureInstanceDeleted(client, instance.incusId)
+        incusDeleted = true
+        await prisma.instance.update({
+          where: { id: instanceId },
+          data: { deletionRemoteDeleted: true }
+        })
+      } catch (error) {
+        if (!force) {
+          sourceHostUnavailable = true
+          throw error
+        }
+        keptPendingClaim = true
+        logger.warn({ instanceId, error }, '强制销毁：远端删除未确认，退款推迟到节点恢复后结算')
+      }
+    } else if (!force) {
+      sourceHostUnavailable = true
+      throw new Error('Source host is unavailable')
+    } else {
+      keptPendingClaim = true
+      logger.warn({ instanceId }, '强制销毁：源节点失联，退款推迟到节点恢复后结算')
+    }
 
-    if (db.isHourlyInstance(instance)) {
-      await closeHourlyBilling(instanceId)
-      await db.completeHourlyDeletionBilling(instanceId)
-    } else if (!isFreeInstance) {
-      const billingResult = await db.settleUserDestroyBilling({
-        requestUserId: user.id,
-        instance,
-        refundableValue,
-        feeWaiver
-      })
-      refundAmount = billingResult.refundAmount
-      feeAmount = billingResult.feeAmount
-      isFirstTime = billingResult.isFirstTime
+    if (incusDeleted) {
+      if (db.isHourlyInstance(instance)) {
+        await closeHourlyBilling(instanceId)
+        await db.completeHourlyDeletionBilling(instanceId)
+      } else if (!isFreeInstance) {
+        const billingResult = await db.settleUserDestroyBilling({
+          requestUserId: user.id,
+          instance,
+          refundableValue,
+          feeWaiver
+        })
+        refundAmount = billingResult.refundAmount
+        feeAmount = billingResult.feeAmount
+        isFirstTime = billingResult.isFirstTime
+      }
     }
 
     try {
@@ -673,29 +698,31 @@ async function executeDestroyForUser(
       user.id,
       'billing',
       'instance.user_destroy',
-      `User destroyed instance "${instance.name}" (Host: ${instance.host.name}, Refund: ¥${refundAmount.toFixed(2)}, Fee: ¥${feeAmount.toFixed(2)})`,
+      `User destroyed instance "${instance.name}" (Host: ${instance.host.name}, Refund: ¥${refundAmount.toFixed(2)}, Fee: ¥${feeAmount.toFixed(2)}${keptPendingClaim ? ', refund pending remote confirmation' : ''})`,
       'success'
     )
 
-    await sendNotification(user.id, 'instance_deleted_refunded', {
-      instanceName: instance.name,
-      refundAmount,
-      feeAmount,
-      isFreeInstance
-    })
+    if (!keptPendingClaim) {
+      await sendNotification(user.id, 'instance_deleted_refunded', {
+        instanceName: instance.name,
+        refundAmount,
+        feeAmount,
+        isFreeInstance
+      })
 
-    if (!isFreeInstance && instance.user?.email) {
-      try {
-        await sendInstanceDestroyRefundEmail(instance.user.email, {
-          username: instance.user.username,
-          instanceName: instance.name,
-          refundAmount,
-          feeAmount,
-          refundType: '余额退款',
-          isUserDestroy: true
-        })
-      } catch (emailErr) {
-        logger.warn(emailErr, '发送销毁退款邮件失败')
+      if (!isFreeInstance && instance.user?.email) {
+        try {
+          await sendInstanceDestroyRefundEmail(instance.user.email, {
+            username: instance.user.username,
+            instanceName: instance.name,
+            refundAmount,
+            feeAmount,
+            refundType: '余额退款',
+            isUserDestroy: true
+          })
+        } catch (emailErr) {
+          logger.warn(emailErr, '发送销毁退款邮件失败')
+        }
       }
     }
 
@@ -728,11 +755,22 @@ async function executeDestroyForUser(
       refundAmount,
       feeAmount,
       isFirstTime,
-      isFreeInstance
+      isFreeInstance,
+      refundPending: keptPendingClaim && !!deletionBillingMode
     }
   } catch (error) {
-    if (!incusDeleted) {
+    if (!incusDeleted && !keptPendingClaim) {
       await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
+    }
+    if (sourceHostUnavailable) {
+      logger.warn({ instanceId, error }, 'Source host unavailable during batch destroy')
+      return {
+        id: instance.id,
+        name: instance.name,
+        success: false,
+        reason: '源节点无法连接，可勾选强制删除（退款待节点恢复后自动到账）',
+        sourceHostUnavailable: true
+      }
     }
     logger.error(error, '销毁实例失败')
     return {
@@ -793,7 +831,7 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post<{
-    Body: { instanceIds: number[] }
+    Body: { instanceIds: number[]; force?: boolean }
   }>('/batch/destroy', {
     onRequest: [fastify.authenticateUser],
     config: { rateLimit: { max: 3, timeWindow: '1 minute' } },
@@ -807,7 +845,8 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
             items: { type: 'integer' },
             minItems: 1,
             maxItems: 100
-          }
+          },
+          force: { type: 'boolean', default: false }
         },
         additionalProperties: false
       }
@@ -822,10 +861,11 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       id: request.user.id,
       username: request.user.username
     }
+    const force = request.body.force === true
 
     const results: BatchDestroyResultItem[] = []
     for (const instanceId of uniqueIds) {
-      const result = await executeDestroyForUser(userMeta, instanceId, request.log)
+      const result = await executeDestroyForUser(userMeta, instanceId, request.log, force)
       results.push(result)
     }
 
@@ -1002,12 +1042,13 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
 
   // ==================== 执行销毁 ====================
   // POST /api/instances/:id/destroy
-  fastify.post<{ Params: { id: string }; Querystring: { feeWaiver?: string } }>('/:id/destroy', {
+  fastify.post<{ Params: { id: string }; Querystring: { feeWaiver?: string; force?: string } }>('/:id/destroy', {
     onRequest: [fastify.authenticate],
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } }
-  }, async (request: FastifyRequest<{ Params: { id: string }; Querystring: { feeWaiver?: string } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Params: { id: string }; Querystring: { feeWaiver?: string; force?: string } }>, reply: FastifyReply) => {
     const { user } = request
     const instanceId = Number(request.params.id)
+    const force = request.query.force === 'true'
 
     if (isNaN(instanceId)) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_ID))
@@ -1120,6 +1161,8 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
 
     let incusDeleted = false
     let sourceHostUnavailable = false
+    // force 模式下保留待结算 claim，退款由恢复任务在节点恢复后自动完成
+    let keptPendingClaim = false
     try {
       const currentBillingInstance = await prisma.instance.findUnique({
         where: { id: instanceId },
@@ -1155,38 +1198,52 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
       refundAmount = roundMoney(Math.max(0, refundableValue - feeAmount))
 
       const host = await db.getHostById(instance.hostId)
-      if (!host || host.status !== 'online') {
+      if (!host) {
+        sourceHostUnavailable = true
+        throw new Error('Host not found')
+      }
+
+      if (host.status === 'online') {
+        try {
+          const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
+          const client = await getIncusClient(host)
+          await ensureInstanceDeleted(client, instance.incusId)
+          incusDeleted = true
+          await prisma.instance.update({
+            where: { id: instanceId },
+            data: { deletionRemoteDeleted: true }
+          })
+        } catch (error) {
+          if (!force) {
+            sourceHostUnavailable = true
+            throw error
+          }
+          keptPendingClaim = true
+          request.log.warn({ instanceId, error }, '强制销毁：远端删除未确认，退款推迟到节点恢复后结算')
+        }
+      } else if (!force) {
         sourceHostUnavailable = true
         throw new Error('Source host is unavailable')
+      } else {
+        keptPendingClaim = true
+        request.log.warn({ instanceId }, '强制销毁：源节点失联，退款推迟到节点恢复后结算')
       }
 
-      try {
-        const { getIncusClient, ensureInstanceDeleted } = await import('../lib/incus/index.js')
-        const client = await getIncusClient(host)
-        await ensureInstanceDeleted(client, instance.incusId)
-        incusDeleted = true
-        await prisma.instance.update({
-          where: { id: instanceId },
-          data: { deletionRemoteDeleted: true }
-        })
-      } catch (error) {
-        sourceHostUnavailable = true
-        throw error
-      }
-
-      if (db.isHourlyInstance(instance)) {
-        await closeHourlyBilling(instanceId)
-        await db.completeHourlyDeletionBilling(instanceId)
-      } else if (!isFreeInstance) {
-        const billingResult = await db.settleUserDestroyBilling({
-          requestUserId: user.id,
-          instance,
-          refundableValue,
-          feeWaiver
-        })
-        refundAmount = billingResult.refundAmount
-        feeAmount = billingResult.feeAmount
-        isFirstTime = billingResult.isFirstTime
+      if (incusDeleted) {
+        if (db.isHourlyInstance(instance)) {
+          await closeHourlyBilling(instanceId)
+          await db.completeHourlyDeletionBilling(instanceId)
+        } else if (!isFreeInstance) {
+          const billingResult = await db.settleUserDestroyBilling({
+            requestUserId: user.id,
+            instance,
+            refundableValue,
+            feeWaiver
+          })
+          refundAmount = billingResult.refundAmount
+          feeAmount = billingResult.feeAmount
+          isFirstTime = billingResult.isFirstTime
+        }
       }
 
       // 2. 获取端口映射数量（用于释放资源）
@@ -1246,30 +1303,32 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
         user.id,
         'billing',
         'instance.user_destroy',
-        `User destroyed instance "${instance.name}" (Host: ${instance.host.name}, Refund: ¥${refundAmount.toFixed(2)}, Fee: ¥${feeAmount.toFixed(2)})`,
+        `User destroyed instance "${instance.name}" (Host: ${instance.host.name}, Refund: ¥${refundAmount.toFixed(2)}, Fee: ¥${feeAmount.toFixed(2)}${keptPendingClaim ? ', refund pending remote confirmation' : ''})`,
         'success'
       )
 
-      // 9. 通知用户
-      await sendNotification(user.id, 'instance_deleted_refunded', {
-        instanceName: instance.name,
-        refundAmount,
-        feeAmount,
-        isFreeInstance
-      })
+      // 9. 通知用户（强制销毁、退款未结算时不发送退款通知/邮件，由恢复任务结算后处理）
+      if (!keptPendingClaim) {
+        await sendNotification(user.id, 'instance_deleted_refunded', {
+          instanceName: instance.name,
+          refundAmount,
+          feeAmount,
+          isFreeInstance
+        })
 
-      if (!isFreeInstance && instance.user?.email) {
-        try {
-          await sendInstanceDestroyRefundEmail(instance.user.email, {
-            username: instance.user.username,
-            instanceName: instance.name,
-            refundAmount,
-            feeAmount,
-            refundType: '余额退款',
-            isUserDestroy: true
-          })
-        } catch (emailErr) {
-          request.log.warn(emailErr, '发送销毁退款邮件失败')
+        if (!isFreeInstance && instance.user?.email) {
+          try {
+            await sendInstanceDestroyRefundEmail(instance.user.email, {
+              username: instance.user.username,
+              instanceName: instance.name,
+              refundAmount,
+              feeAmount,
+              refundType: '余额退款',
+              isUserDestroy: true
+            })
+          } catch (emailErr) {
+            request.log.warn(emailErr, '发送销毁退款邮件失败')
+          }
         }
       }
 
@@ -1298,16 +1357,21 @@ export default async function instanceDestroyRoutes(fastify: FastifyInstance) {
 
       return {
         success: true,
-        message: isFreeInstance
-          ? '实例已销毁'
-          : `实例已销毁${refundAmount > 0 ? `，已退款 ¥${refundAmount.toFixed(2)}` : ''}${feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : ''}`,
+        message: keptPendingClaim
+          ? (deletionBillingMode
+            ? `实例已删除；源节点失联，退款 ¥${refundAmount.toFixed(2)}${feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : ''}将在节点恢复在线并确认远端删除后自动到账`
+            : '实例已销毁')
+          : (isFreeInstance
+            ? '实例已销毁'
+            : `实例已销毁${refundAmount > 0 ? `，已退款 ¥${refundAmount.toFixed(2)}` : ''}${feeAmount > 0 ? `（手续费 ¥${feeAmount.toFixed(2)}）` : ''}`),
         refundAmount,
         feeAmount,
         isFirstTime,
-        isFreeInstance
+        isFreeInstance,
+        refundPending: keptPendingClaim && !!deletionBillingMode
       }
     } catch (error) {
-      if (!incusDeleted) {
+      if (!incusDeleted && !keptPendingClaim) {
         await restoreClaimedInstanceStatus(instanceId, user.id, instance.status)
       }
       if (sourceHostUnavailable) {

@@ -1297,12 +1297,14 @@ async function loadDestroyInfo(): Promise<void> {
 }
 
 // 执行销毁
-async function handleDestroy(): Promise<void> {
+async function handleDestroy(force = false): Promise<void> {
   if (!instance.value || !destroyInfo.value?.canDestroy) return
   destroyLoading.value = true
   try {
-    const result = await api.billing.destroyInstance(instance.value.id)
-    if (result.isFreeInstance) {
+    const result = await api.billing.destroyInstance(instance.value.id, force ? { force: true } : undefined)
+    if (result.refundPending) {
+      toast.success(t('instance.destroy.successPending'))
+    } else if (result.isFreeInstance) {
       toast.success(t('instance.destroy.success'))
     } else {
       toast.success(t('instance.destroy.successWithRefund', { amount: result.refundAmount.toFixed(2) }))
@@ -1314,6 +1316,11 @@ async function handleDestroy(): Promise<void> {
     const apiErr = err as { code?: string }
     if (apiErr.code === 'INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED') {
       await loadDestroyInfo()
+    }
+    // 节点状态可能滞后于实际连通性；失联时询问是否强制删除（退款待节点恢复后自动到账）。
+    if (!force && apiErr.code === 'SOURCE_HOST_UNAVAILABLE' && window.confirm(t('instance.destroy.forceConfirm'))) {
+      await handleDestroy(true)
+      return
     }
     toast.error(translateError(err))
   } finally {
@@ -1331,19 +1338,26 @@ watch(showDestroyModal, async (visible) => {
 })
 
 // 异常实例快速销毁（免手续费）
-async function handleErrorDestroy(): Promise<void> {
+async function handleErrorDestroy(force = false): Promise<void> {
   if (!instance.value) return
   if (!confirm(t('instance.errorBanner.confirmDestroy'))) return
   errorDestroyLoading.value = true
   try {
-    const result = await api.billing.destroyInstance(instance.value.id, { feeWaiver: 'error' })
-    if (result.isFreeInstance) {
+    const result = await api.billing.destroyInstance(instance.value.id, force ? { feeWaiver: 'error', force: true } : { feeWaiver: 'error' })
+    if (result.refundPending) {
+      toast.success(t('instance.destroy.successPending'))
+    } else if (result.isFreeInstance) {
       toast.success(t('instance.destroy.success'))
     } else {
       toast.success(t('instance.destroy.successWithRefund', { amount: result.refundAmount.toFixed(2) }))
     }
     router.push({ name: 'instances' })
   } catch (err) {
+    const apiErr = err as { code?: string }
+    if (!force && apiErr.code === 'SOURCE_HOST_UNAVAILABLE' && window.confirm(t('instance.destroy.forceConfirm'))) {
+      await handleErrorDestroy(true)
+      return
+    }
     toast.error(translateError(err))
   } finally {
     errorDestroyLoading.value = false
@@ -1556,9 +1570,13 @@ async function doRebuild(data: { image: string; sshKeyId: number; customInitComm
       sshKeyId: data.sshKeyId,
       customInitCommandIds: data.customInitCommandIds
     })
-    toast.success(t('instance.detail.actions.taskQueued'))
     showRebuildModal.value = false
-    startTaskPolling(response.taskId)
+    if (response.confirmEmailSent) {
+      toast.info(t('instance.detail.actions.confirmEmailSent'))
+      return
+    }
+    toast.success(t('instance.detail.actions.taskQueued'))
+    if (response.taskId) startTaskPolling(response.taskId)
   } catch (err: any) {
     toast.error(translateError(err))
   } finally {
@@ -1579,9 +1597,13 @@ async function doRecreate(data: { image: string; sshKeyId: number; customInitCom
       sshKeyId: data.sshKeyId,
       customInitCommandIds: data.customInitCommandIds
     })
-    toast.success(t('instance.detail.actions.taskQueued'))
     showRecreateModal.value = false
-    startTaskPolling(response.taskId)
+    if (response.confirmEmailSent) {
+      toast.info(t('instance.detail.actions.confirmEmailSent'))
+      return
+    }
+    toast.success(t('instance.detail.actions.taskQueued'))
+    if (response.taskId) startTaskPolling(response.taskId)
   } catch (err: any) {
     toast.error(translateError(err))
   } finally {
@@ -2857,7 +2879,7 @@ function formatHourlyDate(value: string | null | undefined): string {
             ? 'bg-red-600 hover:bg-red-700 text-white' 
             : 'bg-red-600 hover:bg-red-700 text-white'"
           :disabled="errorDestroyLoading || errorRetryLoading"
-          @click="handleErrorDestroy"
+          @click="handleErrorDestroy()"
         >
           <span v-if="errorDestroyLoading" class="inline-flex items-center gap-2">
             <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

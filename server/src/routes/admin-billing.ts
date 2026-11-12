@@ -51,7 +51,6 @@ import { normalizePlanTrafficLimitSpeed } from '../services/traffic-bandwidth.js
 import type { Host } from '../types/database.js'
 import { getInstanceBillingLineageIds } from '../db/billing-records.js'
 import { INSTANCE_OPERATION_LOCK_NAMESPACE, advisoryTransactionLock, tryAdvisoryTransactionLock } from '../db/advisory-locks.js'
-import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { cleanupAndSettleFailedProvision } from '../services/provisioning-cleanup.js'
 
 // 自定义 nanoid，只使用小写字母和数字
@@ -1408,10 +1407,11 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
   }, async (request, reply) => {
     const admin = request.user!
     const { id } = request.params as { id: string }
-    const { refundType, reason, databaseOnly } = request.body as {
+    const { refundType, reason, databaseOnly, confirmOffline } = request.body as {
       refundType: 'remaining' | 'full'  // remaining=按剩余价值, full=全额退款
       reason: string
       databaseOnly?: boolean  // 仅数据库删除，跳过 Incus 操作
+      confirmOffline?: boolean  // 管理员确认主机彻底失联/重装，远端实例已不存在，允许仅数据库删除并退款
     }
 
     const instanceId = parseInt(id, 10)
@@ -1445,17 +1445,18 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: '实例已删除' })
       }
 
-      // 仅数据库删除无法确认宿主机上的付费实例已经不存在，禁止在该
-      // 模式下自动退款，避免“面板删除成功、远端资源继续运行”。
-      if (databaseOnly && (instance.packagePlanId !== null || instance.billingMode === 'hourly')) {
+      // 仅数据库删除无法确认宿主机上的付费实例已经不存在，需要管理员显式确认
+      // （主机彻底失联/重装场景），避免“面板删除成功、远端资源继续运行”。
+      const isPaidInstance = instance.packagePlanId !== null || instance.billingMode === 'hourly'
+      if (databaseOnly && isPaidInstance && !confirmOffline) {
         return reply.status(409).send({
-          error: '付费实例必须先确认宿主机上的 Incus 实例已删除，不能仅删除数据库并退款',
+          error: '付费实例仅删除数据库需管理员确认远端实例已不存在（主机彻底失联或重装时勾选强制确认），否则请先连接宿主机确认 Incus 实例已删除',
           code: 'REMOTE_DELETION_REQUIRED_FOR_REFUND'
         })
       }
 
       const needsPrivilegedRefund = instance.packagePlanId !== null && instance.billingMode !== 'hourly'
-      const needsHourlyBillingClosure = !databaseOnly && instance.billingMode === 'hourly'
+      const needsHourlyBillingClosure = instance.billingMode === 'hourly' && (!databaseOnly || confirmOffline === true)
       const claimed = await claimInstanceForAdminDelete(instanceId, instance.status, {
         deletionBillingPending: needsPrivilegedRefund || needsHourlyBillingClosure,
         deletionBillingMode: needsPrivilegedRefund
@@ -1547,6 +1548,13 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           request.log.error(incusError, 'Incus 删除实例失败')
           throw incusError
         }
+      } else if (confirmOffline === true) {
+        // 管理员确认远端实例已不存在（主机彻底失联/重装），标记远端已删除并直接结算
+        await prisma.instance.update({
+          where: { id: instanceId },
+          data: { deletionRemoteDeleted: true }
+        })
+        incusDeleted = true
       }
 
       // 远端删除确认后再完成账务结算。
@@ -1664,7 +1672,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         admin.id,
         'admin',
         databaseOnly ? 'instance.admin_delete_refund_db_only' : 'instance.admin_delete_refund',
-        `Admin deleted${databaseOnly ? ' (database only)' : ''} and refunded instance "${instance.name}" (User: ${instance.user?.username}, RefundType: ${refundType}, Amount: ¥${refundAmount.toFixed(2)}): ${reason}`,
+        `Admin deleted${databaseOnly ? ` (database only${confirmOffline ? ', admin confirmed remote absent' : ''})` : ''} and refunded instance "${instance.name}" (User: ${instance.user?.username}, RefundType: ${refundType}, Amount: ¥${refundAmount.toFixed(2)}): ${reason}`,
         'success',
         { instanceId }
       )
@@ -1693,7 +1701,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         request.log.warn(emailErr, '删除退款邮件发送失败')
       }
 
-      const modeText = databaseOnly ? '（仅数据库）' : ''
+      const modeText = databaseOnly ? (confirmOffline ? '（仅数据库，管理员已确认远端不存在）' : '（仅数据库）') : ''
       return {
         success: true,
         message: `实例已删除${modeText}${refundAmount > 0 ? `，已退款 ¥${refundAmount.toFixed(2)}` : ''}`,
@@ -2981,10 +2989,9 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       disk?: number         // 硬盘（免费实例自定义配置）
       hostId: number        // 指定宿主机
       customInitCommandIds?: number[]  // 初始化命令
-      forceGenerateSshKey?: boolean
     }
 
-    const { username, name, packageId, planId, chargeFirstMonth = true, image, cpu, memory, disk, hostId, customInitCommandIds, forceGenerateSshKey = false } = body
+    const { username, name, packageId, planId, chargeFirstMonth = true, image, cpu, memory, disk, hostId, customInitCommandIds } = body
 
     try {
       // 1. 验证必填参数
@@ -3012,14 +3019,11 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
         return reply.status(400).send({ error: `用户 "${username}" 状态异常，无法创建实例` })
       }
 
-      // 4. 获取目标用户的 SSH 密钥
+      // 4. 获取目标用户的 SSH 密钥（可选）：没有密钥时实例以 root 密码登录，
+      //    接收者可在自己的控制台查看连接信息；需要密钥的用户自行在设置中添加公钥。
+      //    不再自动生成密钥——生成的私钥不该出现在赠送者面前。
       const targetUserSshKeys = await db.getSSHKeysByUserId(targetUser.id)
-      if (targetUserSshKeys.length === 0 && !forceGenerateSshKey) {
-        return reply.status(400).send({ error: `用户 "${username}" 没有 SSH 密钥，请先让用户添加 SSH 密钥` })
-      }
-      let sshKey = targetUserSshKeys[0]?.public_key
-      let generatedPrivateKey: string | null = null
-      let generatedSshKey: ReturnType<typeof generateSshKeyPair> | null = null
+      const sshKey = targetUserSshKeys[0]?.public_key
 
       // 5. 验证套餐
       const pkg = await db.getPackageById(packageId)
@@ -3163,12 +3167,6 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       const networkMode = (pkg.network_mode || 'nat') as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
       if (effectiveInstanceType === 'vm' && ['nat_ipv6_nat', 'ipv6_nat'].includes(networkMode)) {
         return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'KVM packages do not support IPv4 NAT & IPv6 NAT or IPv6 NAT network modes'))
-      }
-
-      if (!sshKey) {
-        generatedSshKey = generateSshKeyPair()
-        sshKey = generatedSshKey.publicKey
-        generatedPrivateKey = generatedSshKey.privateKey
       }
 
       const autoPassword = generateRandomPassword(16)
@@ -3391,20 +3389,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           }
         }
 
-        let generatedSshKeyId: number | null = null
-        if (generatedSshKey) {
-          const createdSshKey = await tx.sshKey.create({
-            data: {
-              userId: targetUser.id,
-              name: generatedSshKey.name,
-              publicKey: generatedSshKey.publicKey,
-              fingerprint: generatedSshKey.fingerprint
-            }
-          })
-          generatedSshKeyId = createdSshKey.id
-        }
-
-        return { instanceId: instance.id, host: lockedHost, planBandwidthLimit, generatedSshKeyId }
+        return { instanceId: instance.id, host: lockedHost, planBandwidthLimit }
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 15000
@@ -3415,16 +3400,6 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
 
       if (!host) {
         throw new Error('Host should not be null after successful transaction')
-      }
-
-      if (generatedSshKey && result.generatedSshKeyId) {
-        await createLog(
-          admin.id,
-          'ssh_key',
-          'ssh_key.generate_for_user',
-          `Generated SSH key "${generatedSshKey.name}" for user "${targetUser.username}" [keyId: ${result.generatedSshKeyId}, fingerprint: ${generatedSshKey.fingerprint}]`,
-          'success'
-        )
       }
 
       // 16. 分配 IP
@@ -3663,7 +3638,7 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
       }
 
       return reply.status(202).send({
-        message: '实例创建中',
+        message: '实例创建中。接收者可在其控制台查看连接信息（root 密码），不再向操作者返回对方凭据。',
         instance: {
           id: instanceId,
           name,
@@ -3672,13 +3647,11 @@ export default async function adminBillingRoutes(app: FastifyInstance): Promise<
           status: 'creating',
           user: { id: targetUser.id, username: targetUser.username },
           sshPort: metaData.sshPort,
-          rootPassword: metaData.rootPassword,
           isPaid: !!selectedPlan,
           planName: selectedPlan?.name ?? null,
           charged: chargeFirstMonth,
           amount: billing?.totalPrice ?? 0,
-          expiresAt: billing?.expiresAt?.toISOString() ?? null,
-          generatedPrivateKey
+          expiresAt: billing?.expiresAt?.toISOString() ?? null
         }
       })
 

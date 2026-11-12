@@ -75,12 +75,14 @@ export async function startSchedulers(): Promise<void> {
     }
   }, 5 * 60 * 1000) // 5分钟
 
-  // 启动创建超时清理任务（清理10分钟仍处于创建中的实例）
+  // 启动创建超时清理任务（清理20分钟仍处于创建中的实例）
   const db = await import('../db/index.js')
   const { getStuckCreatingInstances, getHostById } = db
   const { createLog } = await import('../db/logs.js')
   const { cleanupAndSettleFailedProvision } = await import('./provisioning-cleanup.js')
-  const CREATE_TIMEOUT_MS = 10 * 60 * 1000 // 10分钟
+  // 必须大于创建 API 的在途上限（INSTANCE_CREATE_TIMEOUT_MS = 15 分钟，慢主机拉镜像会用满）。
+  // 阈值低于它在途窗口时，清理任务会把仍在正常创建的实例误判为失败并退款。
+  const CREATE_TIMEOUT_MS = 20 * 60 * 1000 // 20分钟
   const CREATE_TIMEOUT_CHECK_INTERVAL = 2 * 60 * 1000 // 每2分钟检查一次
 
   const runCreateTimeoutCleanup = async () => {
@@ -98,11 +100,12 @@ export async function startSchedulers(): Promise<void> {
 
         // 先认领清理状态并确认 Incus 返回 404，再执行退款和资源回滚。
         // 清理失败时保留 creating + cleanup_pending，下一轮继续重试。
+        // 阈值（20min）已大于创建 API 在途上限（15min），能走到这里说明创建方已退出。
         const cleanup = await cleanupAndSettleFailedProvision({
           instanceId: instance.id,
           instanceName: instance.incus_id,
           host,
-          reason: '创建超过 10 分钟未完成',
+          reason: '创建超过 20 分钟未完成',
           resourceRollback: {
             hostId: instance.host_id,
             cpu: instance.cpu,
@@ -161,7 +164,7 @@ export async function startSchedulers(): Promise<void> {
           instance.user_id,
           'instance',
           'instance.create_timeout',
-          `Instance "${instance.name}" creation timed out after 10 minutes`,
+          `Instance "${instance.name}" creation timed out after 20 minutes`,
           'failed',
           { instanceId: instance.id }
         )
@@ -176,7 +179,7 @@ export async function startSchedulers(): Promise<void> {
   }
   setInterval(runCreateTimeoutCleanup, CREATE_TIMEOUT_CHECK_INTERVAL)
   runCreateTimeoutCleanup()
-  console.log('⏱️ 创建超时清理任务已启动（10分钟超时）')
+  console.log('⏱️ 创建超时清理任务已启动（20分钟超时）')
 
   // 删除流程的外部 Incus 操作与账务交易无法放在同一个数据库事务中。
   // 如果远端已删除但退款事务失败，保留 deletion_billing_pending 并由此任务
