@@ -456,7 +456,7 @@ async function handleSelfSubmit(): Promise<boolean> {
   return true
 }
 
-async function handleGiftSubmit(forceGenerateSshKey = false): Promise<void> {
+async function handleGiftSubmit(): Promise<void> {
   const normalizedUsername = targetUsername.value.trim()
   if (!canSubmitGift.value || targetLookupState.value === 'checking' || !targetUser.value
       || targetUser.value.username !== normalizedUsername || form.value.packageId === null) return
@@ -477,13 +477,11 @@ async function handleGiftSubmit(forceGenerateSshKey = false): Promise<void> {
     disk?: number
     planId?: number
     giftDays?: number
-    forceGenerateSshKey?: boolean
   } = {
     username: targetUser.value.username,
     name: form.value.name.trim(),
     packageId: form.value.packageId,
-    image: form.value.image,
-    forceGenerateSshKey
+    image: form.value.image
   }
 
   if (isGiftPaid.value && selectedPlanId.value) {
@@ -495,10 +493,11 @@ async function handleGiftSubmit(forceGenerateSshKey = false): Promise<void> {
     payload.disk = form.value.disk
   }
 
-  const result = await api.hosts.createInstanceForUser(props.hostId, payload)
+  await api.hosts.createInstanceForUser(props.hostId, payload)
   const createdForUsername = targetUser.value.username
 
   toast.success(t('host.createInstance.giftSuccess', { username: createdForUsername }))
+  toast.info(t('host.createInstance.giftCredentialsHint'))
 
   targetUsername.value = ''
   targetLookupUsername.value = ''
@@ -509,12 +508,6 @@ async function handleGiftSubmit(forceGenerateSshKey = false): Promise<void> {
   giftDays.value = 30
   form.value.name = ''
 
-  if (result.instance.generatedPrivateKey) {
-    generatedPrivateKey.value = result.instance.generatedPrivateKey
-    generatedKeyTargetUsername.value = createdForUsername
-    generatedKeyContinuation.value = 'none'
-    showGeneratedSshKeyModal.value = true
-  }
 }
 
 async function handleSubmit(): Promise<void> {
@@ -522,12 +515,6 @@ async function handleSubmit(): Promise<void> {
 
   if (createMode.value === 'self' && sshKeys.value.length === 0) {
     sshKeyGenerationContext.value = 'self'
-    showSshKeyGenerationPrompt.value = true
-    return
-  }
-
-  if (createMode.value === 'gift' && targetUser.value?.hasSshKey === false) {
-    sshKeyGenerationContext.value = 'gift'
     showSshKeyGenerationPrompt.value = true
     return
   }
@@ -560,10 +547,6 @@ async function confirmSshKeyGeneration(): Promise<void> {
       generatedPrivateKey.value = result.privateKey
       generatedKeyContinuation.value = 'self'
       showGeneratedSshKeyModal.value = true
-    } else {
-      submitting.value = true
-      await handleGiftSubmit(true)
-      showSshKeyGenerationPrompt.value = false
     }
   } catch (err: any) {
     toast.error(translateError(err))
@@ -831,11 +814,11 @@ async function continueAfterGeneratedSshKey(): Promise<void> {
   <SSHKeyGenerationPromptModal
     :visible="showSshKeyGenerationPrompt"
     :loading="sshKeyGenerating"
-    :title="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyTitle') : t('host.createInstance.forceGenerateSshKeyTitle')"
-    :description="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyDesc') : t('host.createInstance.forceGenerateSshKeyDesc')"
-    :confirm-label="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyConfirm') : t('host.createInstance.forceGenerateSshKeyConfirm')"
-    :cancel-label="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyCancel') : t('host.createInstance.forceGenerateSshKeyCancel')"
-    :loading-label="sshKeyGenerationContext === 'self' ? t('instance.createPage.autoGenerateSshKeyGenerating') : t('host.createInstance.forceGenerateSshKeyGenerating')"
+    :title="t('instance.createPage.autoGenerateSshKeyTitle')"
+    :description="t('instance.createPage.autoGenerateSshKeyDesc')"
+    :confirm-label="t('instance.createPage.autoGenerateSshKeyConfirm')"
+    :cancel-label="t('instance.createPage.autoGenerateSshKeyCancel')"
+    :loading-label="t('instance.createPage.autoGenerateSshKeyGenerating')"
     @close="closeSshKeyGenerationPrompt"
     @confirm="confirmSshKeyGeneration"
   />
@@ -843,10 +826,10 @@ async function continueAfterGeneratedSshKey(): Promise<void> {
   <GeneratedSshKeyModal
     :visible="showGeneratedSshKeyModal"
     :private-key="generatedPrivateKey"
-    :title="generatedKeyContinuation === 'self' ? t('instance.createPage.generatedSshKeyTitle') : t('host.createInstance.generatedPrivateKeyTitle')"
-    :description="generatedKeyContinuation === 'self' ? t('instance.createPage.generatedSshKeyDesc') : t('host.createInstance.generatedPrivateKeyDesc')"
-    :action-label="generatedKeyContinuation === 'self' ? t('instance.createPage.generatedSshKeyContinue') : t('host.createInstance.generatedPrivateKeyClose')"
+    :title="t('instance.createPage.generatedSshKeyTitle')"
+    :description="t('instance.createPage.generatedSshKeyDesc')"
+    :action-label="t('instance.createPage.generatedSshKeyContinue')"
     @close="closeGeneratedSshKeyModal"
-    @action="generatedKeyContinuation === 'self' ? continueAfterGeneratedSshKey() : closeGeneratedSshKeyModal()"
+    @action="continueAfterGeneratedSshKey"
   />
 </template>

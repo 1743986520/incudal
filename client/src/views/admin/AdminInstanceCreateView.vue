@@ -12,8 +12,6 @@ import PackageSelector from '@/components/instance/PackageSelector.vue'
 import ResourceSliders from '@/components/instance/ResourceSliders.vue'
 import HostSelector from '@/components/instance/HostSelector.vue'
 import ImageSelector from '@/components/instance/ImageSelector.vue'
-import SSHKeyGenerationPromptModal from '@/components/SSHKeyGenerationPromptModal.vue'
-import GeneratedSshKeyModal from '@/components/GeneratedSshKeyModal.vue'
 import type { Package, AvailableHost, PackagePlan } from '@/types/api'
 import { validateName as validateInstanceName } from '@/utils/validation'
 import { translateError } from '@/utils/errorHandler'
@@ -40,11 +38,6 @@ const loading = ref<boolean>(true)
 const packagesLoading = ref<boolean>(false)
 const submitting = ref<boolean>(false)
 const error = ref<string>('')
-const showSshKeyGenerationPrompt = ref<boolean>(false)
-const sshKeyGenerating = ref<boolean>(false)
-const showGeneratedSshKeyModal = ref<boolean>(false)
-const generatedPrivateKey = ref<string>('')
-const generatedKeyTargetUsername = ref<string>('')
 
 // 用户名搜索
 const usernameInput = ref('')
@@ -556,7 +549,7 @@ async function loadAvailableImages(pkgInstanceType?: 'container' | 'vm', memory?
   }
 }
 
-async function submitInstance(forceGenerateSshKey = false): Promise<boolean> {
+async function submitInstance(): Promise<boolean> {
   error.value = ''
   submitting.value = true
 
@@ -580,8 +573,7 @@ async function submitInstance(forceGenerateSshKey = false): Promise<boolean> {
       name: form.value.name,
       packageId: form.value.packageId,
       hostId: form.value.hostId,
-      image: form.value.image,
-      forceGenerateSshKey
+      image: form.value.image
     }
 
     // 付费实例参数
@@ -595,16 +587,10 @@ async function submitInstance(forceGenerateSshKey = false): Promise<boolean> {
       params.disk = form.value.disk
     }
 
-    const res = await api.admin.createInstance(params)
+    await api.admin.createInstance(params)
 
-    const createdForUsername = targetUser.value.username
     toast.success(t('admin.instanceCreate.success'))
-
-    // 显示创建结果
-    const instance = (res as any).instance
-    if (instance?.rootPassword) {
-      toast.info(`SSH Port: ${instance.sshPort}, Password: ${instance.rootPassword}`, 10000)
-    }
+    toast.info(t('admin.instanceCreate.credentialsHint'), 10000)
 
     // 重置表单
     usernameInput.value = ''
@@ -620,11 +606,6 @@ async function submitInstance(forceGenerateSshKey = false): Promise<boolean> {
       await selectPackage(packages.value[0])
     }
 
-    if (res.instance.generatedPrivateKey) {
-      generatedPrivateKey.value = res.instance.generatedPrivateKey
-      generatedKeyTargetUsername.value = createdForUsername
-      showGeneratedSshKeyModal.value = true
-    }
     return true
   } catch (err: any) {
     error.value = translateError(err)
@@ -636,31 +617,7 @@ async function submitInstance(forceGenerateSshKey = false): Promise<boolean> {
 
 async function handleSubmit(): Promise<void> {
   if (!canSubmit.value) return
-
-  if (targetUser.value?.hasSshKey === false) {
-    showSshKeyGenerationPrompt.value = true
-    return
-  }
-
   await submitInstance()
-}
-
-async function confirmSshKeyGeneration(): Promise<void> {
-  if (sshKeyGenerating.value) return
-
-  sshKeyGenerating.value = true
-  try {
-    const success = await submitInstance(true)
-    if (success) showSshKeyGenerationPrompt.value = false
-  } finally {
-    sshKeyGenerating.value = false
-  }
-}
-
-function closeGeneratedSshKeyModal(): void {
-  showGeneratedSshKeyModal.value = false
-  generatedPrivateKey.value = ''
-  generatedKeyTargetUsername.value = ''
 }
 </script>
 
@@ -913,25 +870,4 @@ function closeGeneratedSshKeyModal(): void {
     </form>
   </div>
 
-  <SSHKeyGenerationPromptModal
-    :visible="showSshKeyGenerationPrompt"
-    :loading="submitting"
-    :title="$t('admin.instanceCreate.forceGenerateSshKeyTitle')"
-    :description="$t('admin.instanceCreate.forceGenerateSshKeyDesc')"
-    :confirm-label="$t('admin.instanceCreate.forceGenerateSshKeyConfirm')"
-    :cancel-label="$t('admin.instanceCreate.forceGenerateSshKeyCancel')"
-    :loading-label="$t('admin.instanceCreate.forceGenerateSshKeyGenerating')"
-    @close="showSshKeyGenerationPrompt = false"
-    @confirm="confirmSshKeyGeneration"
-  />
-
-  <GeneratedSshKeyModal
-    :visible="showGeneratedSshKeyModal"
-    :private-key="generatedPrivateKey"
-    :title="$t('admin.instanceCreate.generatedPrivateKeyTitle')"
-    :description="$t('admin.instanceCreate.generatedPrivateKeyDesc', { username: generatedKeyTargetUsername })"
-    :action-label="$t('admin.instanceCreate.generatedPrivateKeyClose')"
-    @close="closeGeneratedSshKeyModal"
-    @action="closeGeneratedSshKeyModal"
-  />
 </template>

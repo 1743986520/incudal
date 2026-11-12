@@ -3,8 +3,12 @@ main() {
     # 显示横幅
     show_banner
 
-    # Root 权限检查
+    # Root 权限检查：非 root 时自动通过 sudo 重新执行（自包含安装，无需外层包装）
     if [[ "$EUID" -ne 0 ]]; then
+        if command -v sudo >/dev/null 2>&1 && [[ -f "$0" ]]; then
+            info "需要 root 权限，正在通过 sudo 重新执行..."
+            exec sudo -E bash "$0" "$@"
+        fi
         error "请以 root 权限运行此脚本"
         echo -e "  ${DIM}用法: sudo bash $0${NC}"
         exit 1

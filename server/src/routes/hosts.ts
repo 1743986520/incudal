@@ -72,7 +72,6 @@ import {
 import { provisionManagedInstanceAsync } from '../lib/managed-instance-provision.js'
 import crypto from 'crypto'
 import { normalizeNetworkPolicyInput } from '../services/host-network-policy.js'
-import { generateSshKeyPair } from '../lib/ssh-key-generator.js'
 import { checkInstanceOwnerOrAdminPermission } from '../lib/permission.js'
 import { claimInstanceForDelete, ensureInstanceNotSuspended, ensureHostStoragePoolOrReply } from './instances/helpers.js'
 import { assertAllowedHostUrl, buildIncusTlsConnectOptions, captureIncusServerCertificate, panelCertificatePaths, resolveIncusTarget } from '../lib/incus/incus-tls.js'
@@ -441,20 +440,20 @@ type HostInstallQuery = {
 
 const HOST_INSTALL_OS = new Set(['ubuntu', 'debian', 'rocky', 'alpine'])
 
-function readHostInstallTemplate(stage: 'bootstrap' | 'platform', os?: string): string {
+/**
+ * 组装自包含的安装 payload：单文件包含全部安装模块，一次下载即可完成安装。
+ * 不再按发行版拆分二次下载——旧引导脚本下载到的也是同一份完整 payload。
+ */
+function readHostInstallTemplate(_stage: 'bootstrap' | 'platform', os?: string): string {
   const templateRoot = join(__dirname, '../../templates')
-  if (stage === 'bootstrap') {
-    return readFileSync(join(templateRoot, 'install.sh'), 'utf-8')
-  }
 
-  if (!os || !HOST_INSTALL_OS.has(os)) {
-    throw new Error('Unsupported installer platform')
-  }
+  // 兼容旧引导脚本携带的 os 参数：仍然前置对应平台标记；未指定时使用内置检测
+  const platformModule = os && HOST_INSTALL_OS.has(os)
+    ? `platform/${os}.sh`
+    : 'platform-detect.sh'
 
-  // Keep platform, storage, and functional modules separate from the common
-  // entrypoint. The response is one executable payload after composition.
   const moduleNames = [
-    `platform/${os}.sh`,
+    platformModule,
     'prelude.sh',
     'storage.sh',
     'network.sh',
@@ -478,10 +477,14 @@ function resolveHostInstallStage(query: HostInstallQuery): 'bootstrap' | 'platfo
   throw new Error('Unsupported installer stage')
 }
 
+/**
+ * 节点安装命令。payload 自包含（含系统检测、依赖安装与 root 自提权），
+ * 命令本身只负责下载与启动：curl 缺失时退回 wget，Alpine 缺 bash 时自动补装。
+ */
 function buildHostInstallCommand(panelUrl: string, installToken: string): string {
   const scriptUrl = `${panelUrl}/api/hosts/install.sh/${installToken}`
   const quotedScriptUrl = `'${scriptUrl.replace(/'/g, `'"'"'`)}'`
-  return `incudal_as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }; if ! command -v curl >/dev/null 2>&1 || ! command -v bash >/dev/null 2>&1; then if command -v apk >/dev/null 2>&1; then incudal_as_root apk add --no-cache bash curl ca-certificates; elif command -v apt-get >/dev/null 2>&1; then incudal_as_root apt-get update && incudal_as_root apt-get install -y bash curl ca-certificates; elif command -v dnf >/dev/null 2>&1; then incudal_as_root dnf install -y bash curl ca-certificates; else echo 'Unsupported package manager' >&2; exit 1; fi; fi && curl --fail --show-error --location ${quotedScriptUrl} -o incudal.sh && incudal_as_root bash incudal.sh`
+  return `curl -fsSL ${quotedScriptUrl} -o incudal.sh || wget -O incudal.sh ${quotedScriptUrl}; if command -v bash >/dev/null 2>&1; then bash incudal.sh; else apk add bash && bash incudal.sh; fi`
 }
 
 export default async function hostRoutes(fastify: FastifyInstance) {
@@ -6019,7 +6022,6 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       cpu?: number
       memory?: number
       disk?: number
-      forceGenerateSshKey?: boolean
     }
   }>('/:id/instances/create-for-user', {
     onRequest: [fastify.authenticate],
@@ -6038,7 +6040,6 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           cpu: { type: 'integer', minimum: 15, maximum: 10000 },
           memory: { type: 'integer', minimum: 128, maximum: 524288 },
           disk: { type: 'integer', minimum: 512, maximum: 104857600 },
-          forceGenerateSshKey: { type: 'boolean' }
         }
       }
     }
@@ -6054,8 +6055,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       image,
       cpu,
       memory,
-      disk,
-      forceGenerateSshKey = false
+      disk
     } = request.body
 
     if (isNaN(hostId)) {
@@ -6101,13 +6101,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     }
 
     const targetUserSshKeys = await db.getSSHKeysByUserId(targetUser.id)
-    if (targetUserSshKeys.length === 0 && !forceGenerateSshKey) {
-      return reply.code(400).send({ error: `用户 "${username}" 没有 SSH 密钥，请先让用户添加 SSH 密钥` })
-    }
-
-    let sshKey = targetUserSshKeys[0]?.public_key
-    let generatedPrivateKey: string | null = null
-    let generatedSshKey: ReturnType<typeof generateSshKeyPair> | null = null
+    // SSH 密钥可选：没有密钥时实例以 root 密码登录，接收者在自己的控制台查看连接信息。
+    // 不再自动生成密钥——生成的私钥不该出现在赠送者面前。
+    const sshKey = targetUserSshKeys[0]?.public_key
     const pkg = await db.getPackageById(packageId)
     if (!pkg || !pkg.active) {
       return reply.code(400).send({ error: '套餐不存在或已禁用' })
@@ -6247,12 +6243,6 @@ export default async function hostRoutes(fastify: FastifyInstance) {
     const networkMode = (pkg.network_mode || 'nat') as 'nat' | 'nat_ipv6' | 'nat_ipv6_nat' | 'ipv6_only' | 'ipv6_nat'
     if (pkgInstanceType === 'vm' && ['nat_ipv6_nat', 'ipv6_nat'].includes(networkMode)) {
       return reply.code(400).send({ error: 'KVM packages do not support IPv4 NAT & IPv6 NAT or IPv6 NAT network modes' })
-    }
-
-    if (!sshKey) {
-      generatedSshKey = generateSshKeyPair()
-      sshKey = generatedSshKey.publicKey
-      generatedPrivateKey = generatedSshKey.privateKey
     }
 
     const autoPassword = randomUUID().replace(/-/g, '').slice(0, 16)
@@ -6395,23 +6385,9 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           })
         }
 
-        let generatedSshKeyId: number | null = null
-        if (generatedSshKey) {
-          const createdSshKey = await tx.sshKey.create({
-            data: {
-              userId: targetUser.id,
-              name: generatedSshKey.name,
-              publicKey: generatedSshKey.publicKey,
-              fingerprint: generatedSshKey.fingerprint
-            }
-          })
-          generatedSshKeyId = createdSshKey.id
-        }
-
         return {
           instanceId: instance.id,
-          reservedHost,
-          generatedSshKeyId
+          reservedHost
         }
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -6422,16 +6398,6 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       lockedHost = txResult.reservedHost
       if (!lockedHost) {
         throw new Error('HOST_NOT_FOUND')
-      }
-
-      if (generatedSshKey && txResult.generatedSshKeyId) {
-        await createLog(
-          operator.id,
-          'ssh_key',
-          'ssh_key.generate_for_user',
-          `Generated SSH key "${generatedSshKey.name}" for user "${targetUser.username}" [keyId: ${txResult.generatedSshKeyId}, fingerprint: ${generatedSshKey.fingerprint}]`,
-          'success'
-        )
       }
 
       let staticIPv4: string | null = null
@@ -6646,7 +6612,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
       }
 
       return reply.status(202).send({
-        message: '实例创建中',
+        message: '实例创建中。接收者可在其控制台查看连接信息（root 密码），不再向操作者返回对方凭据。',
         instance: {
           id: instanceId,
           name,
@@ -6659,8 +6625,7 @@ export default async function hostRoutes(fastify: FastifyInstance) {
           charged: false,
           amount: 0,
           expiresAt: paidGiftExpiresAt?.toISOString() ?? null,
-          giftDays: paidGiftDays ?? null,
-          generatedPrivateKey
+          giftDays: paidGiftDays ?? null
         }
       })
     } catch (error: any) {
