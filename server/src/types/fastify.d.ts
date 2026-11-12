@@ -22,6 +22,9 @@ declare module 'fastify' {
       iat?: number
       exp?: number
     }
+
+    /** 通过 API Key 认证后置为 true（全局范围门卫据此限制可执行操作） */
+    apiKeyAuth?: { keyId: number }
   }
 }
 
