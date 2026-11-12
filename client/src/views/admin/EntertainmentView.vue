@@ -161,6 +161,39 @@ async function loadRecords() {
   }
 }
 
+function getRecordStatusName(status: string): string {
+  return status === 'pending'
+    ? t('entertainment.admin.recordStatusPending')
+    : status === 'delivered'
+      ? t('entertainment.admin.recordStatusDelivered')
+      : t('entertainment.admin.recordStatusClaimed')
+}
+
+function recordStatusClass(status: string): string {
+  if (status === 'pending') return 'text-amber-500'
+  if (status === 'delivered') return 'text-green-500'
+  return 'text-blue-500'
+}
+
+async function deliverRecord(rec: { id: number; username?: string }): Promise<void> {
+  const input = window.prompt(t('entertainment.admin.ticketIdPrompt', { username: rec.username || '' }))
+  if (input === null) return
+  const trimmed = input.trim()
+  const ticketId = trimmed ? Number(trimmed) : undefined
+  if (trimmed && (ticketId === undefined || !Number.isInteger(ticketId) || ticketId <= 0)) {
+    toast.error(t('entertainment.admin.invalidTicketId'))
+    return
+  }
+
+  try {
+    await api.entertainment.adminDeliverPrize(rec.id, ticketId)
+    toast.success(t('entertainment.admin.deliverSuccess'))
+    await loadRecords()
+  } catch (err: any) {
+    toast.error(t('entertainment.admin.deliverFailed') + ': ' + (err?.message || ''))
+  }
+}
+
 function searchRecords() {
   recordsPage.value = 1
   loadRecords()
@@ -876,8 +909,10 @@ function getSeriesTitle(seriesId: string): string {
               <th class="px-4 py-3 font-medium">{{ $t('entertainment.admin.lotteryName') }}</th>
               <th class="px-4 py-3 font-medium">{{ $t('entertainment.admin.prize') }}</th>
               <th class="px-4 py-3 font-medium">{{ $t('entertainment.admin.prizeType') }}</th>
+              <th class="px-4 py-3 font-medium">{{ $t('entertainment.admin.recordStatus') }}</th>
               <th class="px-4 py-3 font-medium">{{ $t('entertainment.admin.value') }}</th>
               <th class="px-4 py-3 font-medium">{{ $t('entertainment.time') }}</th>
+              <th class="px-4 py-3 font-medium">{{ $t('entertainment.admin.recordActions') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-themed">
@@ -887,6 +922,9 @@ function getSeriesTitle(seriesId: string): string {
               <td class="px-4 py-3 text-sm text-themed">{{ rec.prizeName || '-' }}</td>
               <td class="px-4 py-3 text-sm">
                 <span class="badge badge-sm">{{ getPrizeTypeName(rec.prizeType) }}</span>
+              </td>
+              <td class="px-4 py-3 text-sm" :class="recordStatusClass(rec.status)">
+                {{ getRecordStatusName(rec.status) }}
               </td>
               <td class="px-4 py-3 text-sm text-themed">
                 <template v-if="rec.prizeType === 'points'">+{{ rec.prizeValue }}</template>
@@ -900,6 +938,17 @@ function getSeriesTitle(seriesId: string): string {
                 <template v-else>-</template>
               </td>
               <td class="px-4 py-3 text-sm text-themed-muted">{{ formatDate(rec.createdAt) }}</td>
+              <td class="px-4 py-3 text-sm">
+                <button
+                  v-if="rec.prizeType === 'instance' && rec.status === 'pending'"
+                  type="button"
+                  class="btn-primary btn-sm"
+                  @click="deliverRecord(rec)"
+                >
+                  {{ $t('entertainment.admin.deliverButton') }}
+                </button>
+                <span v-else class="text-themed-muted">-</span>
+              </td>
             </tr>
           </tbody>
         </table>
