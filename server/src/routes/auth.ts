@@ -40,10 +40,7 @@ import { shouldVerifyTurnstileForRegister } from '../lib/register-turnstile.js'
 import { isSmtpEnabled, sendVerificationEmail, sendLoginAlertEmail, sendPasswordResetEmail, sendFreeSiteRegisterGiftEmail } from '../lib/mailer.js'
 import { createVerificationCode, verifyCode } from '../db/email-verification.js'
 import { validateEmailDomain } from '../lib/email-domain.js'
-import {
-    isOperationVerified,
-    claimOperationVerification
-} from '../lib/operation-verification.js'
+import { requestOperationConfirm } from '../lib/operation-confirm.js'
 import {
     getRefreshTokenCookieOptions,
     getClearCookieOptions
@@ -1033,30 +1030,21 @@ export default async function authRoutes(fastify: FastifyInstance) {
   })
 
   // 禁用 2FA
-  fastify.post<{ Body: { password: string; code: string } }>('/2fa/disable', {
+  // 禁用 2FA：验证密码后发送邮件确认链接，点击链接后执行禁用
+  fastify.post<{ Body: { password: string } }>('/2fa/disable', {
     onRequest: [fastify.authenticate],
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
     schema: {
       body: {
         type: 'object',
-        required: ['password', 'code'],
+        required: ['password'],
         properties: {
-          password: { type: 'string' },
-          code: { type: 'string', minLength: 6, maxLength: 6 }
+          password: { type: 'string' }
         }
       }
     }
-  }, async (request: FastifyRequest<{ Body: { password: string; code: string } }>, reply: FastifyReply) => {
-    const { password, code } = request.body
-
-    // 敏感操作二次验证
-    const verified = await isOperationVerified(request.user.id, 'disable_2fa')
-    if (!verified) {
-      return reply.code(403).send({
-        error: 'Sensitive operation requires verification',
-        code: 'VERIFICATION_REQUIRED',
-        operationType: 'disable_2fa'
-      })
-    }
+  }, async (request: FastifyRequest<{ Body: { password: string } }>, reply: FastifyReply) => {
+    const { password } = request.body
 
     // 获取用户信息验证密码
     const user = await db.findUserById(request.user.id)
@@ -1070,36 +1058,27 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.code(401).send(apiError(ErrorCode.INVALID_CREDENTIALS))
     }
 
-    // 验证 2FA 码
-    const encryptedSecret = await db.get2FASecret(request.user.id)
-    if (encryptedSecret) {
-      const secret = decryptSensitiveData(encryptedSecret)
-      if (!secret || !verify2FAToken(code, secret)) {
-        return reply.code(400).send(apiError(ErrorCode.INVALID_2FA_CODE))
-      }
+    // 检查 2FA 是否启用
+    const status = await db.getUser2FAStatus(request.user.id)
+    if (!status.enabled) {
+      return reply.code(400).send(apiError(ErrorCode.TWO_FA_NOT_ENABLED))
     }
 
-    // 原子领取二次验证，防止并发请求重复执行禁用操作。
-    const claimedVerification = await claimOperationVerification(request.user.id, 'disable_2fa')
-    if (!claimedVerification) {
-      return reply.code(403).send({
-        error: 'Sensitive operation requires verification',
-        code: 'VERIFICATION_REQUIRED',
-        operationType: 'disable_2fa'
-      })
-    }
-
-    // 禁用 2FA（清除所有 2FA 数据包括恢复码）
-    await db.disable2FAComplete(request.user.id)
-
-    await createLog(request.user.id, 'security', '2fa.disable', 'Disabled two-factor authentication', 'success')
-
-    // 发送通知
-    await sendNotification(request.user.id, '2fa_disabled', {
-      instanceName: ''
+    // 发送邮件确认链接（1 小时有效，点击链接后才真正禁用）
+    const confirmResult = await requestOperationConfirm({
+      userId: request.user.id,
+      operationType: 'disable_2fa'
     })
 
-    return { message: '2FA disabled' }
+    if (!confirmResult.success) {
+      request.log.error({ error: confirmResult.error }, 'Failed to send 2FA disable confirm email')
+      return reply.code(502).send(apiError(ErrorCode.EMAIL_SEND_FAILED, '确认邮件发送失败，请稍后重试'))
+    }
+
+    return {
+      message: '确认邮件已发送，请点击邮件中的链接完成禁用（1 小时内有效）',
+      confirmEmailSent: true
+    }
   })
 
   // 获取剩余恢复码数量
@@ -1239,21 +1218,22 @@ export default async function authRoutes(fastify: FastifyInstance) {
   })
 
   // 重置密码
-  fastify.post<{ Body: { email: string; code: string; turnstileToken?: string } }>('/forgot-password/reset', {
+  fastify.post<{ Body: { email: string; code: string; newPassword: string; turnstileToken?: string } }>('/forgot-password/reset', {
     preHandler: [turnstileVerifier],
     schema: {
       body: {
         type: 'object',
-        required: ['email', 'code'],
+        required: ['email', 'code', 'newPassword'],
         properties: {
           email: { type: 'string', format: 'email' },
           code: { type: 'string', minLength: 6, maxLength: 6 },
+          newPassword: { type: 'string', minLength: 8, maxLength: 128 },
           turnstileToken: { type: 'string' }
         }
       }
     }
-  }, async (request: FastifyRequest<{ Body: { email: string; code: string; turnstileToken?: string } }>, reply: FastifyReply) => {
-    const { email, code } = request.body
+  }, async (request: FastifyRequest<{ Body: { email: string; code: string; newPassword: string; turnstileToken?: string } }>, reply: FastifyReply) => {
+    const { email, code, newPassword } = request.body
 
     // 检查 SMTP 是否启用
     const smtpEnabled = await isSmtpEnabled()
@@ -1266,7 +1246,13 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.INVALID_EMAIL))
     }
 
-    // 验证验证码
+    // 验证密码强度（用户自设密码，与注册同款策略；密码不通过邮件发送）
+    const passwordCheck = validatePassword(newPassword)
+    if (!passwordCheck.valid) {
+      return reply.code(400).send({ error: passwordCheck.message })
+    }
+
+    // 验证验证码（原子消费，防暴力破解）
     const isValid = await verifyCode(email, code)
     if (!isValid) {
       // 记录验证码验证失败的安全事件（防止暴力破解）
@@ -1299,34 +1285,14 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.code(403).send(apiError(ErrorCode.ACCOUNT_BANNED))
     }
 
-    // 生成新密码
-    const { generateRandomPassword } = await import('../lib/incus-config-generator.js')
-    const newPassword = generateRandomPassword(16)
     const passwordHash = await bcrypt.hash(newPassword, 12)
 
     // 检查用户是否启用了2FA
     const is2FAEnabled = await db.is2FAEnabled(user.id)
-    let twoFactorDisabled = false
+    const twoFactorDisabled = is2FAEnabled
 
-    // 先发送新密码邮件，投递成功后才执行不可逆的状态变更（审查项 P2-15）：
-    // 旧顺序先改密码/撤销会话再发信，SMTP 故障时用户永远收不到新密码，
-    // 接口却返回成功，用户被锁死在账户外。邮件发送失败时不做任何变更，
-    // 用户旧密码仍然有效，可稍后重试。
-    const sendResult = await sendPasswordResetEmail(email, {
-      username: user.username,
-      newPassword: newPassword,
-      twoFactorDisabled: is2FAEnabled
-    })
-
-    if (!sendResult.success) {
-      request.log.error({ error: sendResult.error }, 'Failed to send password reset email; password change aborted')
-      return reply.code(502).send(apiError(ErrorCode.EMAIL_SEND_FAILED, '密码重置邮件发送失败，账户密码未变更，请稍后重试'))
-    }
-
-    // 邮件已投递，原子更新密码并撤销所有会话；事务失败时旧密码仍然有效，
-    // 已发出的新密码不可用，用户重新走找回流程即可，不会被锁定
+    // 用户自设密码：直接原子更新并撤销所有会话（不再需要"先寄明文密码"的顺序约束）
     await updateUserPasswordAndInvalidateSessions(user.id, { passwordHash })
-    twoFactorDisabled = is2FAEnabled
 
     // 密码已变更后清理 2FA；此步失败不影响登录（用户持有新密码与 2FA 设备），仅记录日志
     if (is2FAEnabled) {
@@ -1342,6 +1308,19 @@ export default async function authRoutes(fastify: FastifyInstance) {
     // 清除认证缓存，确保令牌失效立即生效
     await clearAuthCache(user.id)
 
+    // 重置成功确认函（不含任何密码内容）；发送失败仅告警，不影响重置结果
+    try {
+      const sendResult = await sendPasswordResetEmail(email, {
+        username: user.username,
+        twoFactorDisabled
+      })
+      if (!sendResult.success) {
+        request.log.warn({ error: sendResult.error }, 'Failed to send password reset confirmation email')
+      }
+    } catch (emailErr) {
+      request.log.warn(emailErr, 'Failed to send password reset confirmation email')
+    }
+
     // 记录安全事件
     await logSecurityEvent(SecurityEventType.SUSPICIOUS_ACTIVITY, user.id, {
       ip: request.ip,
@@ -1351,7 +1330,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     })
 
     return {
-      message: 'Password reset successfully. Please check your email for the new password.',
+      message: 'Password reset successfully.',
       twoFactorDisabled: twoFactorDisabled
     }
   })

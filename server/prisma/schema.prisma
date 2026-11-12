@@ -444,8 +444,10 @@ model User {
   packageSharesOwned    PackageShare[] @relation("PackageShareOwner")
   packageSharesReceived PackageShare[] @relation("PackageShareReceiver")
 
-  // 敏感操作验证
-  operationVerifications OperationVerification[]
+  // 敏感操作邮件确认
+  operationConfirms OperationConfirm[]
+  // API Key（实例受限控制）
+  apiKeys ApiKey[]
 
   // 站内信
   inboxMessages InboxMessage[]
@@ -1773,12 +1775,13 @@ model InstanceTransfer {
 // ==================== 敏感操作二次验证模型 ====================
 
 enum OperationType {
-  // 账号相关操作（邮件验证）
+  // 账号相关操作（邮件确认链接）
   change_password
   disable_2fa
   change_email
   delete_account
-  // 资源相关操作（通知渠道验证）
+  api_key  // 创建 API Key（邮件确认后生成，完整密钥仅确认页显示一次）
+  // 资源相关操作（邮件确认链接）
   delete_instance
   reinstall_instance
   recreate_instance  // 重建实例
@@ -1787,32 +1790,45 @@ enum OperationType {
   delete_backup
 }
 
-enum VerificationChannel {
-  email
-  telegram
-  discord
-  webhook
+enum ApiKeyStatus {
+  active
+  disabled
 }
 
-model OperationVerification {
-  id            Int                 @id @default(autoincrement())
-  userId        Int                 @map("user_id")
-  operationType OperationType       @map("operation_type")
-  code          String // 6位验证码
-  channel       VerificationChannel // 验证渠道
-  resourceId    Int?                @map("resource_id") // 资源ID（如实例ID、快照ID等）
-  resourceType  String?             @map("resource_type") // 资源类型（instance/snapshot/backup）
-  verified      Boolean             @default(false)
-  verifiedAt    DateTime?           @map("verified_at")
-  expiresAt     DateTime            @map("expires_at")
-  createdAt     DateTime            @default(now()) @map("created_at")
+// API Key：仅允许对本人已购实例执行受限控制操作（开关机/端口/更换 IPv6）
+model ApiKey {
+  id           Int           @id @default(autoincrement())
+  userId       Int           @map("user_id")
+  name         String? // 用户自定义备注名
+  keyHash      String        @unique @map("key_hash") // sha256(完整密钥)，明文不落库
+  prefix       String // 完整密钥前缀（如 incu_sk_ab12），用于列表识别
+  status       ApiKeyStatus  @default(active)
+  lastUsedAt   DateTime?     @map("last_used_at")
+  requestCount Int           @default(0) @map("request_count")
+  createdAt    DateTime      @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, operationType, code])
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model OperationConfirm {
+  id            Int           @id @default(autoincrement())
+  userId        Int           @map("user_id")
+  operationType OperationType @map("operation_type")
+  resourceId    Int?          @map("resource_id") // 资源ID（如实例ID）
+  tokenHash     String        @unique @map("token_hash") // sha256(token)，邮件链接携带原始 token
+  payload       Json? // 确认时执行所需参数（如新密码哈希、重装镜像等）
+  expiresAt     DateTime      @map("expires_at")
+  consumedAt    DateTime?     @map("consumed_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, operationType, resourceId])
   @@index([expiresAt])
-  @@index([userId, verified]) // 清理已验证/已过期的验证码
-  @@map("operation_verifications")
+  @@map("operation_confirms")
 }
 
 // ==================== 分布式锁模型 ====================

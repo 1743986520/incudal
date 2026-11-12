@@ -88,21 +88,21 @@ async function confirmEnable() {
 }
 
 async function confirmDisable() {
-  if (!disablePassword.value || !disableCode.value) {
+  if (!disablePassword.value) {
     error.value = t('profile.twoFactorAuth.fillPasswordAndCode')
     return
   }
   loading.value = true
   error.value = ''
   try {
-    await api.auth.disable2FA(disablePassword.value, disableCode.value)
-    enabled.value = false
+    const res = await api.auth.disable2FA(disablePassword.value)
+    // 改为邮件确认链接：点击邮件中的链接后才真正禁用
     disableMode.value = false
     disablePassword.value = ''
     disableCode.value = ''
-    recoveryCodesStatus.value = null
-    success.value = t('profile.twoFactorAuth.disabledSuccess')
-    setTimeout(() => success.value = '', 3000)
+    success.value = t('profile.twoFactorAuth.confirmEmailSent')
+    setTimeout(() => success.value = '', 6000)
+    void res
   } catch (e: any) {
     error.value = e.message || t('profile.twoFactorAuth.disableFailed')
   } finally {
@@ -271,17 +271,6 @@ onMounted(loadStatus)
           :placeholder="$t('profile.twoFactorAuth.passwordPlaceholder')"
         />
       </div>
-      <div>
-        <label class="block text-xs text-themed-muted mb-1.5">{{ $t('profile.twoFactorAuth.verificationCode') }}</label>
-        <input 
-          v-model="disableCode"
-          type="text"
-          maxlength="6"
-          class="input"
-          :placeholder="$t('profile.twoFactorAuth.codePlaceholder')"
-        />
-      </div>
-
       <div class="flex space-x-3">
         <button :disabled="loading" class="btn-danger" @click="confirmDisable">
           {{ loading ? $t('profile.twoFactorAuth.processing') : $t('profile.twoFactorAuth.confirmDisable') }}

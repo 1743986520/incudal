@@ -625,17 +625,17 @@ async function cleanExpiredTemporaryData(): Promise<void> {
 
   try {
     // 并行执行各表清理
-    const [emailCodes, opVerifications, agentNonces, tokenInvalidations] = await Promise.all([
+    const [emailCodes, opConfirms, agentNonces, tokenInvalidations] = await Promise.all([
       // 清理过期的邮箱验证码
       prisma.emailVerificationCode.deleteMany({
         where: { expiresAt: { lt: now } }
       }),
-      // 清理已过期的操作验证码（保留 7 天已验证的记录用于审计）
-      prisma.operationVerification.deleteMany({
+      // 清理已过期/已消费的操作确认记录
+      prisma.operationConfirm.deleteMany({
         where: {
           OR: [
             { expiresAt: { lt: now } },
-            { verified: true, createdAt: { lt: sevenDaysAgo } }
+            { consumedAt: { not: null }, createdAt: { lt: sevenDaysAgo } }
           ]
         }
       }),
@@ -650,11 +650,11 @@ async function cleanExpiredTemporaryData(): Promise<void> {
     ])
 
     const duration = Date.now() - startTime
-    const total = emailCodes.count + opVerifications.count + agentNonces.count + tokenInvalidations.count
+    const total = emailCodes.count + opConfirms.count + agentNonces.count + tokenInvalidations.count
     if (total > 0) {
       console.log(
         `[Billing] Cleaned expired temp data in ${duration}ms: ` +
-        `emailCodes=${emailCodes.count}, opVerifications=${opVerifications.count}, ` +
+        `emailCodes=${emailCodes.count}, opConfirms=${opConfirms.count}, ` +
         `agentNonces=${agentNonces.count}, tokenInvalidations=${tokenInvalidations.count}`
       )
     }

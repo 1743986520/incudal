@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { prisma } from '../db/prisma.js'
 import { isAccessTokenInvalidated } from '../lib/security.js'
 import { sharedDel, sharedDelPrefix } from '../lib/shared-state.js'
+import { authenticateApiKey, extractApiKey } from '../lib/api-keys.js'
 
 // Authorization must use current database state. A request that started before
 // cache eviction can otherwise repopulate stale roles or token validity after
@@ -88,10 +89,38 @@ async function ensureCurrentAdmin(
 // ==================== Fastify 装饰器注册 ====================
 
 /**
+ * API Key 认证：请求头携带 X-API-Key（或 Bearer incu_sk_...）时启用。
+ * 认证成功后 request.user 强制为普通用户身份，可执行范围由
+ * app.ts 的全局范围门卫（apiKeyAuth 预检）进一步限制。
+ * 返回 true 表示请求已由本分支处理（含认证失败已回复 401 的情况）。
+ */
+async function handleApiKeyAuth(request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+  const apiKey = extractApiKey(request.headers as Record<string, unknown>)
+  if (!apiKey) return false
+
+  const auth = await authenticateApiKey(apiKey)
+  if (!auth) {
+    reply.code(401).send({ error: 'Invalid API key', code: 'INVALID_API_KEY' })
+    return true
+  }
+
+  request.user = {
+    id: auth.userId,
+    username: auth.username,
+    role: 'user',
+    sid: `apikey:${auth.keyId}`
+  }
+  request.apiKeyAuth = { keyId: auth.keyId }
+  return true
+}
+
+/**
  * 注册认证装饰器到 Fastify 实例
  */
 export async function registerAuthDecorators(fastify: FastifyInstance): Promise<void> {
   fastify.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
+    if (await handleApiKeyAuth(request, reply)) return
+
     try {
       await request.jwtVerify()
       if (!(await ensureActiveAccessToken(request, reply))) {
@@ -115,6 +144,8 @@ export async function registerAuthDecorators(fastify: FastifyInstance): Promise<
 
   // 组合认证+管理员检查的便捷 preHandler（简化版）
   fastify.decorate('authenticateAdmin', async function (request: FastifyRequest, reply: FastifyReply) {
+    if (await handleApiKeyAuth(request, reply)) return
+
     try {
       await request.jwtVerify()
       if (!(await ensureActiveAccessToken(request, reply))) {
@@ -130,6 +161,8 @@ export async function registerAuthDecorators(fastify: FastifyInstance): Promise<
 
   // 组合认证+普通用户检查（禁止管理员访问）（简化版）
   fastify.decorate('authenticateUser', async function (request: FastifyRequest, reply: FastifyReply) {
+    if (await handleApiKeyAuth(request, reply)) return
+
     try {
       await request.jwtVerify()
       if (!(await ensureActiveAccessToken(request, reply))) {

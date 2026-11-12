@@ -16,6 +16,9 @@ const brand = useBrand()
 
 const email = ref<string>('')
 const code = ref<string>('')
+const newPassword = ref<string>('')
+const confirmPassword = ref<string>('')
+const showPassword = ref<boolean>(false)
 const loading = ref<boolean>(false)
 const sendingCode = ref<boolean>(false)
 const error = ref<string>('')
@@ -84,6 +87,16 @@ async function resetPassword(): Promise<void> {
     return
   }
 
+  if (!newPassword.value || !confirmPassword.value) {
+    error.value = t('auth.forgotPassword.newPasswordRequired')
+    return
+  }
+
+  if (newPassword.value !== confirmPassword.value) {
+    error.value = t('auth.forgotPassword.passwordMismatch')
+    return
+  }
+
   if (turnstileEnabled.value && !turnstileToken.value) {
     error.value = t('auth.turnstileRequired')
     return
@@ -97,16 +110,17 @@ async function resetPassword(): Promise<void> {
     const response = await api.auth.resetPassword(
       email.value,
       code.value,
+      newPassword.value,
       turnstileEnabled.value ? turnstileToken.value : undefined
     )
-    
+
     toast.success(t('auth.forgotPassword.resetSuccess'))
-    
+
     // 如果取消了2FA，显示提示
     if (response.twoFactorDisabled) {
       toast.info(t('auth.forgotPassword.twoFactorDisabled'))
     }
-    
+
     // 跳转到登录页面
     setTimeout(() => {
       router.push('/login')
@@ -126,6 +140,9 @@ async function resetPassword(): Promise<void> {
 function backToEmail() {
   step.value = 'email'
   code.value = ''
+  newPassword.value = ''
+  confirmPassword.value = ''
+  showPassword.value = false
   error.value = ''
   success.value = ''
   if (turnstileRef.value) {
@@ -234,7 +251,7 @@ function backToEmail() {
           </div>
 
           <div>
-            <label 
+            <label
               class="block text-sm mb-1.5"
               :class="themeStore.isDark ? 'text-gray-400' : 'text-gray-600'"
             >{{ $t('auth.verificationCode') }}</label>
@@ -249,6 +266,49 @@ function backToEmail() {
             />
             <p class="text-xs mt-1" :class="themeStore.isDark ? 'text-gray-500' : 'text-gray-500'">
               {{ $t('auth.forgotPassword.codeHint') }}
+            </p>
+          </div>
+
+          <div>
+            <label
+              class="block text-sm mb-1.5"
+              :class="themeStore.isDark ? 'text-gray-400' : 'text-gray-600'"
+            >{{ $t('auth.forgotPassword.newPassword') }}</label>
+            <div class="relative">
+              <input
+                v-model="newPassword"
+                :type="showPassword ? 'text' : 'password'"
+                class="input pr-16"
+                :placeholder="$t('auth.forgotPassword.newPasswordPlaceholder')"
+                autocomplete="new-password"
+                required
+              />
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2 py-1 rounded"
+                :class="themeStore.isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'"
+                @click="showPassword = !showPassword"
+              >
+                {{ showPassword ? $t('auth.forgotPassword.hidePassword') : $t('auth.forgotPassword.showPassword') }}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label
+              class="block text-sm mb-1.5"
+              :class="themeStore.isDark ? 'text-gray-400' : 'text-gray-600'"
+            >{{ $t('auth.forgotPassword.confirmPassword') }}</label>
+            <input
+              v-model="confirmPassword"
+              :type="showPassword ? 'text' : 'password'"
+              class="input"
+              :placeholder="$t('auth.forgotPassword.confirmPasswordPlaceholder')"
+              autocomplete="new-password"
+              required
+            />
+            <p class="text-xs mt-1" :class="themeStore.isDark ? 'text-gray-500' : 'text-gray-500'">
+              {{ $t('auth.forgotPassword.passwordHint') }}
             </p>
           </div>
 

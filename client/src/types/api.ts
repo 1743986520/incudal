@@ -55,6 +55,7 @@ export interface RegisterResponse {
 export interface UpdateUserResponse {
   message: string
   reauthRequired?: boolean
+  confirmEmailSent?: boolean
 }
 
 export interface GenerateInviteRequest {

@@ -668,11 +668,11 @@ export async function runSystemCleanupJob(): Promise<void> {
             console.log(`[System] Cleaned up ${locksDeleted} expired distributed locks`)
         }
 
-        // 清理过期的操作验证记录
-        const { cleanupExpiredVerifications } = await import('../lib/operation-verification.js')
-        const verificationsDeleted = await cleanupExpiredVerifications()
-        if (verificationsDeleted > 0) {
-            console.log(`[System] Cleaned up ${verificationsDeleted} expired operation verifications`)
+        // 清理过期的操作确认链接记录
+        const { cleanupExpiredOperationConfirms } = await import('../lib/operation-confirm.js')
+        const confirmsDeleted = await cleanupExpiredOperationConfirms()
+        if (confirmsDeleted > 0) {
+            console.log(`[System] Cleaned up ${confirmsDeleted} expired operation confirms`)
         }
 
         // 清理过期的 Token 失效标记

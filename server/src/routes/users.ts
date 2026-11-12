@@ -12,10 +12,7 @@ import type { UpdateUserRequest } from '../types/api.js'
 import { apiError, ErrorCode } from '../lib/errors.js'
 import { containsDangerousChars, revokeAllUserRefreshTokens, getUserSessions, logAdminAction, validatePassword, invalidateUserAccessTokens, updateUserPasswordAndInvalidateSessions } from '../lib/security.js'
 import { clearAuthCache } from '../plugins/auth-decorators.js'
-import {
-    isOperationVerified,
-    claimOperationVerification
-} from '../lib/operation-verification.js'
+import { requestOperationConfirm } from '../lib/operation-confirm.js'
 import { isSmtpEnabled, sendAdminCreatedUserEmail, sendBanNotificationEmail, sendVerificationEmail } from '../lib/mailer.js'
 import { sendNotification } from '../lib/notifier.js'
 import { closeUserSessions } from '../lib/terminal-proxy.js'
@@ -641,17 +638,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return reply.code(400).send(apiError(ErrorCode.EMAIL_VERIFICATION_DISABLED))
     }
 
-    if (user.email) {
-      const verified = await isOperationVerified(userId, 'change_email')
-      if (!verified) {
-        return reply.code(403).send({
-          error: 'Sensitive operation requires verification',
-          code: 'VERIFICATION_REQUIRED',
-          operationType: 'change_email'
-        })
-      }
-    }
-
+    // 新邮箱验证码本身即证明控制权，不再叠加操作验证
     const validationResult = await validateEmailChangeTarget(request.body.email, user.email, userId)
     if ('error' in validationResult) {
       return reply.code(400).send(validationResult.error)
@@ -734,47 +721,21 @@ export default async function userRoutes(fastify: FastifyInstance) {
       && email !== user.email
       && Boolean(user.email)
 
-    // 敏感操作二次验证：修改密码或邮箱时需要验证（管理员修改他人时跳过）
-    if (request.user.id === userId) {
-      // 修改密码需要验证当前密码和二次验证
-      if (isChangingPassword) {
-        // 验证当前密码（防止会话劫持）
-        if (!currentPassword) {
-          return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'Current password is required'))
-        }
-        
-        const validPassword = await bcrypt.compare(currentPassword, user.password_hash)
-        if (!validPassword) {
-          return reply.code(401).send(apiError(ErrorCode.INVALID_CREDENTIALS, 'Current password is incorrect'))
-        }
-        
-        // 二次验证
-        const verified = await isOperationVerified(request.user.id, 'change_password')
-        if (!verified) {
-          return reply.code(403).send({
-            error: 'Sensitive operation requires verification',
-            code: 'VERIFICATION_REQUIRED',
-            operationType: 'change_password'
-          })
-        }
+    // 修改密码需要验证当前密码（防止会话劫持）；新密码改为邮件确认链接执行
+    if (request.user.id === userId && isChangingPassword) {
+      if (!currentPassword) {
+        return reply.code(400).send(apiError(ErrorCode.INVALID_PARAMS, 'Current password is required'))
       }
-      // 修改邮箱需要二次验证
-      if (email !== undefined && email !== user.email) {
-        if (isChangingEmail) {
-          const verified = await isOperationVerified(request.user.id, 'change_email')
-          if (!verified) {
-            return reply.code(403).send({
-              error: 'Sensitive operation requires verification',
-              code: 'VERIFICATION_REQUIRED',
-              operationType: 'change_email'
-            })
-          }
-        }
 
-        if (!emailCode) {
-          return reply.code(400).send(apiError(ErrorCode.EMAIL_CODE_REQUIRED))
-        }
+      const validPassword = await bcrypt.compare(currentPassword, user.password_hash)
+      if (!validPassword) {
+        return reply.code(401).send(apiError(ErrorCode.INVALID_CREDENTIALS, 'Current password is incorrect'))
       }
+    }
+
+    // 修改邮箱仍需新邮箱验证码（证明对新邮箱的控制权）
+    if (request.user.id === userId && isChangingEmail && !emailCode) {
+      return reply.code(400).send(apiError(ErrorCode.EMAIL_CODE_REQUIRED))
     }
 
     const updates: { email?: string; passwordHash?: string; avatarStyle?: string } = {}
@@ -795,64 +756,46 @@ export default async function userRoutes(fastify: FastifyInstance) {
       updates.email = validationResult.normalizedEmail
     }
 
+    // 本人改密：不再立即生效，改为邮件确认链接执行；管理员改他人密码保持直接生效
+    let pendingPasswordHash: string | undefined
     if (password) {
       // 验证新密码强度
       const passwordCheck = validatePassword(password)
       if (!passwordCheck.valid) {
         return reply.code(400).send(apiError(ErrorCode.PASSWORD_TOO_WEAK, passwordCheck.message))
       }
-      
-      updates.passwordHash = await bcrypt.hash(password, 12)
+
+      const passwordHash = await bcrypt.hash(password, 12)
+      if (isChangingPassword) {
+        pendingPasswordHash = passwordHash
+      } else {
+        updates.passwordHash = passwordHash
+      }
     }
 
     if (avatarStyle) {
       updates.avatarStyle = avatarStyle
     }
 
-    if (Object.keys(updates).length > 0) {
-      // 在真正修改前原子领取验证记录，避免并发请求复用同一份二次验证。
-      if (isChangingPassword) {
-        const claimed = await claimOperationVerification(request.user.id, 'change_password')
-        if (!claimed) {
-          return reply.code(403).send({
-            error: 'Sensitive operation requires verification',
-            code: 'VERIFICATION_REQUIRED',
-            operationType: 'change_password'
-          })
-        }
-      }
-      if (isChangingEmail) {
-        const claimed = await claimOperationVerification(request.user.id, 'change_email')
-        if (!claimed) {
-          return reply.code(403).send({
-            error: 'Sensitive operation requires verification',
-            code: 'VERIFICATION_REQUIRED',
-            operationType: 'change_email'
-          })
-        }
-      }
+    let confirmEmailSent = false
 
-      if (password) {
-        // 密码、资料变更、Refresh Token 撤销和 Access Token 失效标记原子完成。
-        // 失效标记写入失败时事务回滚，旧 Access Token 不会留在可用状态。
+    if (Object.keys(updates).length > 0) {
+      if (updates.passwordHash) {
+        // 管理员修改他人密码：密码、Refresh Token 撤销和 Access Token 失效标记原子完成
         await updateUserPasswordAndInvalidateSessions(userId, {
-          passwordHash: updates.passwordHash!,
+          passwordHash: updates.passwordHash,
           ...(updates.email !== undefined ? { email: updates.email } : {}),
           ...(updates.avatarStyle !== undefined ? { avatarStyle: updates.avatarStyle } : {})
         })
+        closeUserSessions(userId, 'Password updated by admin')
+        await clearAuthCache(userId)
       } else {
         await db.updateUser(userId, updates)
       }
 
-      if (password) {
-        closeUserSessions(userId, 'Password updated')
-        // 清除认证缓存，确保令牌失效立即生效
-        await clearAuthCache(userId)
-      }
-
       const updateActions: string[] = []
       if (email !== undefined) updateActions.push('email')
-      if (password) updateActions.push('password')
+      if (updates.passwordHash) updateActions.push('password')
       if (avatarStyle) updateActions.push('avatarStyle')
 
       await createLog(
@@ -863,20 +806,35 @@ export default async function userRoutes(fastify: FastifyInstance) {
         'success'
       )
 
-      // 密码/邮箱验证记录已在实际修改前原子领取。
-      if (request.user.id === userId) {
-        if (password) {
-          // 发送密码修改通知
-          await sendNotification(userId, 'password_changed', {
-            instanceName: ''
-          })
-        }
+      if (updates.passwordHash) {
+        await sendNotification(userId, 'password_changed', {
+          instanceName: ''
+        })
       }
     }
 
+    if (pendingPasswordHash) {
+      // 本人修改密码：邮件确认链接（1 小时内点击后生效，未确认则密码不变）
+      const confirmResult = await requestOperationConfirm({
+        userId: request.user.id,
+        operationType: 'change_password',
+        payload: { passwordHash: pendingPasswordHash }
+      })
+
+      if (!confirmResult.success) {
+        request.log.error({ error: confirmResult.error }, 'Failed to send password change confirm email')
+        return reply.code(502).send(apiError(ErrorCode.EMAIL_SEND_FAILED, '确认邮件发送失败，密码未变更，请稍后重试'))
+      }
+
+      confirmEmailSent = true
+    }
+
     return {
-      message: 'User info updated',
-      reauthRequired: Boolean(password && request.user.id === userId)
+      message: confirmEmailSent
+        ? 'User info updated; confirmation email sent for password change'
+        : 'User info updated',
+      reauthRequired: Boolean(updates.passwordHash && request.user.id === userId),
+      confirmEmailSent
     }
   })
 

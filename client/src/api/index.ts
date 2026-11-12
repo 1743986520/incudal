@@ -780,8 +780,8 @@ const api = {
       http.post('/auth/send-verification-code', { email, turnstileToken }),
     sendForgotPasswordCode: (email: string, turnstileToken?: string): Promise<{ message: string; expiresAt: string }> =>
       http.post('/auth/forgot-password/send-code', { email, turnstileToken }),
-    resetPassword: (email: string, code: string, turnstileToken?: string): Promise<{ message: string; twoFactorDisabled: boolean }> =>
-      http.post('/auth/forgot-password/reset', { email, code, turnstileToken }),
+    resetPassword: (email: string, code: string, newPassword: string, turnstileToken?: string): Promise<{ message: string; twoFactorDisabled: boolean }> =>
+      http.post('/auth/forgot-password/reset', { email, code, newPassword, turnstileToken }),
     me: (): Promise<{ user: User }> => http.get('/auth/me'),
     logout: (): Promise<void> => http.post('/auth/logout'),
     generateInvite: (data: GenerateInviteRequest = {}): Promise<{ code: string; codes?: string[]; count?: number; expiresAt?: string; url?: string }> =>
@@ -795,8 +795,8 @@ const api = {
       http.post('/auth/2fa/setup'),
     enable2FA: (code: string): Promise<{ message: string }> =>
       http.post('/auth/2fa/enable', { code }),
-    disable2FA: (password: string, code: string): Promise<{ message: string }> =>
-      http.post('/auth/2fa/disable', { password, code }),
+    disable2FA: (password: string): Promise<{ message: string; confirmEmailSent?: boolean }> =>
+      http.post('/auth/2fa/disable', { password }),
     getRecoveryCodes: (): Promise<{ total: number; remaining: number; used: number }> =>
       http.get('/auth/2fa/recovery-codes'),
     regenerateRecoveryCodes: (password: string, code: string): Promise<{ recoveryCodes: string[] }> =>
@@ -1021,9 +1021,9 @@ const api = {
     }> => http.get(`/instances/tasks/${taskId}`),
     recoverTask: (taskId: number, force = false): Promise<{ message: string; task: { id: number; status: string } }> =>
       http.post(`/instances/tasks/${taskId}/recover`, { force }),
-    rebuild: (id: number, data: { image: string; sshKeyId?: number; customInitCommandIds?: number[] }): Promise<{ message: string; taskId: number; status: string }> =>
+    rebuild: (id: number, data: { image: string; sshKeyId?: number; customInitCommandIds?: number[] }): Promise<{ message: string; taskId?: number; status?: string; confirmEmailSent?: boolean }> =>
       http.post(`/instances/${id}/rebuild`, data),
-    recreate: (id: number, data: { image: string; sshKeyId?: number; customInitCommandIds?: number[] }): Promise<{ message: string; taskId: number; status: string }> =>
+    recreate: (id: number, data: { image: string; sshKeyId?: number; customInitCommandIds?: number[] }): Promise<{ message: string; taskId?: number; status?: string; confirmEmailSent?: boolean }> =>
       http.post(`/instances/${id}/recreate`, data),
     addPort: (id: number, data: CreatePortMappingRequest): Promise<PortMapping> =>
       http.post(`/instances/${id}/ports`, data),
@@ -1505,7 +1505,6 @@ const api = {
       disk?: number
       planId?: number
       giftDays?: number
-      forceGenerateSshKey?: boolean
     }): Promise<{
       message: string
       instance: {
@@ -1521,7 +1520,6 @@ const api = {
         amount: number
         expiresAt: string | null
         giftDays?: number | null
-        generatedPrivateKey?: string | null
       }
     }> => http.post(`/hosts/${hostId}/instances/create-for-user`, data),
     // 修改付费实例的续费价格（托管节点所有者专用）
@@ -2623,37 +2621,36 @@ const api = {
     push: (id: number): Promise<{ message: string }> => http.post(`/transfers/${id}/push`)
   },
 
-  // 敏感操作二次验证
+  // 敏感操作邮件确认
   verification: {
-    // 请求验证码
-    request: (operationType: string, resourceId?: number): Promise<{
+    // 确认链接落地：校验 token 并执行操作（无需登录态）
+    confirm: (token: string): Promise<{
+      success: boolean
       message: string
-      success?: boolean
-      required?: boolean
-      channel: 'email' | 'telegram' | 'discord' | 'webhook'
-      target?: string
-      maskedTarget?: string
-      expiresAt?: string
-      expiresIn?: number
-      operationName?: string
-    }> => http.post('/verification/request', { operationType, resourceId }),
+      taskId?: number
+      apiKey?: { key: string; prefix: string }
+    }> => http.post('/verification/confirm', { token })
+  },
 
-    // 验证码校验
-    verify: (operationType: string, code: string, resourceId?: number): Promise<{
-      message: string
-      verified: boolean
-    }> => http.post('/verification/verify', { operationType, code, resourceId }),
 
-    // 检查是否已验证
-    check: (operationType: string, resourceId?: number): Promise<{
-      verified: boolean
-      expiresAt?: string
-    }> => http.get('/verification/check', { params: { operationType, resourceId } }),
-
-    // 获取支持的操作类型
-    getOperationTypes: (): Promise<{
-      operationTypes: Array<{ type: string; name: string; requiresResource: boolean }>
-    }> => http.get('/verification/operation-types')
+  // API Key（实例受限控制）
+  apiKeys: {
+    requestCreate: (name?: string): Promise<{ success: boolean; message: string; confirmEmailSent?: boolean }> =>
+      http.post('/api-keys/request', { name }),
+    list: (): Promise<{
+      keys: Array<{
+        id: number
+        name: string | null
+        prefix: string
+        status: 'active' | 'disabled'
+        lastUsedAt: string | null
+        requestCount: number
+        createdAt: string
+      }>
+    }> => http.get('/api-keys'),
+    setStatus: (id: number, status: 'active' | 'disabled'): Promise<{ success: boolean; message: string }> =>
+      http.patch(`/api-keys/${id}/status`, { status }),
+    remove: (id: number): Promise<{ success: boolean; message: string }> => http.delete(`/api-keys/${id}`)
   },
 
   // 站内信
@@ -3213,16 +3210,18 @@ const api = {
     }> => http.get(`/instances/${instanceId}/destroy-info`),
 
     // 执行销毁
-    destroyInstance: (instanceId: number, options?: { feeWaiver?: string }): Promise<{
+    destroyInstance: (instanceId: number, options?: { feeWaiver?: string; force?: boolean }): Promise<{
       success: boolean
       message: string
       refundAmount: number
       feeAmount: number
       isFirstTime: boolean
       isFreeInstance: boolean
+      refundPending?: boolean
     }> => {
       const params = new URLSearchParams()
       if (options?.feeWaiver) params.set('feeWaiver', options.feeWaiver)
+      if (options?.force) params.set('force', 'true')
       const query = params.toString()
       return http.post(`/instances/${instanceId}/destroy${query ? `?${query}` : ''}`)
     },
@@ -3254,7 +3253,7 @@ const api = {
       }>
     }> => http.post('/instances/batch/destroy-info', { instanceIds }, { timeout: TIMEOUT.BATCH }),
 
-    destroyInstancesBatch: (instanceIds: number[]): Promise<{
+    destroyInstancesBatch: (instanceIds: number[], options?: { force?: boolean }): Promise<{
       message: string
       successCount: number
       skippedCount: number
@@ -3269,8 +3268,10 @@ const api = {
         feeAmount?: number
         isFirstTime?: boolean
         isFreeInstance?: boolean
+        refundPending?: boolean
+        sourceHostUnavailable?: boolean
       }>
-    }> => http.post('/instances/batch/destroy', { instanceIds }, { timeout: TIMEOUT.BATCH }),
+    }> => http.post('/instances/batch/destroy', { instanceIds, force: options?.force === true }, { timeout: TIMEOUT.BATCH }),
 
     // 切换自动续费
     setAutoRenew: (instanceId: number, autoRenew: boolean): Promise<{
@@ -4352,7 +4353,6 @@ const api = {
       customInitCommandIds?: number[]
       planId?: number           // 付费方案ID（传入则创建付费实例）
       chargeFirstMonth?: boolean // 是否扣除首月费用（默认 true）
-      forceGenerateSshKey?: boolean // 目标用户没有 SSH 密钥时，由系统生成
     }): Promise<{
       message: string
       instance: {
@@ -4363,13 +4363,11 @@ const api = {
         status: string
         user: { id: number; username: string }
         sshPort: number
-        rootPassword: string
         isPaid: boolean
         planName: string | null
         charged: boolean
         amount: number
         expiresAt: string | null
-        generatedPrivateKey?: string | null
       }
     }> => http.post('/admin/instances/create', data),
 

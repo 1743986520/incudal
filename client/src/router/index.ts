@@ -93,6 +93,13 @@ const routes: RouteRecordRaw[] = [
     meta: { guest: true }
   },
   {
+    // 敏感操作邮件确认链接落地页（token 即授权，无需登录态）
+    path: '/confirm-operation',
+    name: 'confirm-operation',
+    component: () => import('@/views/ConfirmOperationView.vue'),
+    meta: { guest: true }
+  },
+  {
     path: '/',
     name: 'landing',
     component: () => import('@/views/LandingView.vue'),

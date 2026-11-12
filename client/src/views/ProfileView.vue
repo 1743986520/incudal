@@ -21,6 +21,7 @@ import TwoFactorSection from '@/components/profile/TwoFactorSection.vue'
 import OAuthSection from '@/components/profile/OAuthSection.vue'
 import TelegramBindingSection from '@/components/profile/TelegramBindingSection.vue'
 import SSHKeysSection from '@/components/profile/SSHKeysSection.vue'
+import ApiKeysSection from '@/components/profile/ApiKeysSection.vue'
 import NotificationSection from '@/components/profile/NotificationSection.vue'
 import LoginHistorySection from '@/components/profile/LoginHistorySection.vue'
 
@@ -53,6 +54,9 @@ const authStore = useAuthStore()
 
     <!-- SSH 公钥（仅普通用户） -->
     <SSHKeysSection v-if="!authStore.isAdmin" />
+
+    <!-- API Key（仅普通用户） -->
+    <ApiKeysSection v-if="!authStore.isAdmin" />
 
     <!-- 通知渠道 -->
     <NotificationSection />

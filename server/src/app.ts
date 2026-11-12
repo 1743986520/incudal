@@ -58,6 +58,7 @@ import transferRoutes from './routes/transfers.js'
 import friendsRoutes from './routes/friends.js'
 import ipAddressRoutes from './routes/ip-addresses.js'
 import verificationRoutes from './routes/verification.js'
+import apiKeyRoutes from './routes/api-keys.js'
 import proxySitesRoutes from './routes/proxy-sites.js'
 import inboxRoutes from './routes/inbox.js'
 import terminalRoutes from './routes/terminal.js'
@@ -398,6 +399,34 @@ await fastify.register(rateLimit, {
 // 注册认证装饰器
 await registerAuthDecorators(fastify)
 
+// ==================== API Key 范围门卫 ====================
+// API Key 认证后强制以普通用户身份访问已有路由；此门卫进一步把可执行操作
+// 限制在本人已购实例的只读查询、开/关机/重启、端口增删与更换 IPv6。
+// 路由级 onRequest(authenticate) 先于全局 preHandler 执行，user 已就绪。
+const API_KEY_ALLOWED_ROUTES: Array<{ method: string; pattern: RegExp }> = [
+  { method: 'GET', pattern: /^\/instances$/ },
+  { method: 'GET', pattern: /^\/instances\/\d+$/ },
+  { method: 'POST', pattern: /^\/instances\/\d+\/(start|stop|restart)$/ },
+  { method: 'POST', pattern: /^\/instances\/\d+\/ports$/ },
+  { method: 'DELETE', pattern: /^\/instances\/\d+\/ports\/\d+$/ },
+  { method: 'POST', pattern: /^\/instances\/\d+\/reassign-ipv6$/ }
+]
+
+function isAllowedApiKeyRoute(method: string, pathname: string): boolean {
+  return API_KEY_ALLOWED_ROUTES.some(rule => rule.method === method && rule.pattern.test(pathname))
+}
+
+fastify.addHook('preHandler', async (request, reply) => {
+  if (!request.apiKeyAuth) return
+  const pathname = request.url.split('?')[0].replace(/^\/api/, '')
+  if (!isAllowedApiKeyRoute(request.method, pathname)) {
+    return reply.code(403).send({
+      error: 'API key 不允许执行此操作（仅限本人实例的开关机、端口管理与更换 IPv6）',
+      code: 'API_KEY_SCOPE_EXCEEDED'
+    })
+  }
+})
+
 // 健康检查
 fastify.get('/api/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() }
@@ -422,6 +451,7 @@ await fastify.register(transferRoutes, { prefix: '/api/transfers' })
 await fastify.register(friendsRoutes, { prefix: '/api/friends' })
 await fastify.register(ipAddressRoutes, { prefix: '/api' })
 await fastify.register(verificationRoutes, { prefix: '/api/verification' })
+await fastify.register(apiKeyRoutes, { prefix: '/api/api-keys' })
 await fastify.register(proxySitesRoutes, { prefix: '/api' })
 await fastify.register(inboxRoutes, { prefix: '/api/inbox' })
 await fastify.register(terminalRoutes, { prefix: '/api/ws/instances' })
