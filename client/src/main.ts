@@ -62,28 +62,26 @@ initLocale().finally(() => {
   document.documentElement.lang = getLocale()
   app.mount('#app')
 
-  // 注册 Service Worker（仅生产环境）
+  // 清理遗留的 Service Worker 与 Cache Storage：
+  // 静态资源本身带 immutable 一年缓存头（HTTP 缓存已足够），SW 只会在每个用户
+  // 浏览器里额外囤积一份静态资源拷贝，占用大量站点存储。此清理幂等且开销极小，
+  // 对从未注册过 SW 的浏览器是无害的空操作。
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then(registration => {
-          console.log('Service Worker 注册成功:', registration.scope)
+      navigator.serviceWorker.getRegistrations()
+        .then(registrations => Promise.all(registrations.map(r => r.unregister())))
+        .then(removed => {
+          if (removed.some(Boolean)) console.log('Legacy service workers unregistered')
+        })
+        .catch(() => { /* 清理失败不影响使用 */ })
 
-          // 检测更新
-          registration.addEventListener('updatefound', () => {
-            const newWorker = registration.installing
-            if (newWorker) {
-              newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  console.log('有新版本可用，刷新页面后生效')
-                }
-              })
-            }
-          })
-        })
-        .catch(error => {
-          console.warn('Service Worker 注册失败:', error)
-        })
+      if ('caches' in window) {
+        caches.keys()
+          .then(names => Promise.all(
+            names.filter(name => name.startsWith('incudal-cache')).map(name => caches.delete(name))
+          ))
+          .catch(() => { /* 清理失败不影响使用 */ })
+      }
     })
   }
 })
