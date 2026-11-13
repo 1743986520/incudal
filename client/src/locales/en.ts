@@ -1,5 +1,4 @@
 export default {
-    // Common
     common: {
         confirm: 'Confirm',
         cancel: 'Cancel',
@@ -71,9 +70,7 @@ export default {
         month: 'Month',
         totalRecords: '{count} records in total',
         deleted: 'Deleted',
-        // Country names
         countries: {
-            // Asia
             cn: 'China',
             hk: 'Hong Kong',
             mo: 'Macau',
@@ -95,7 +92,6 @@ export default {
             sa: 'Saudi Arabia',
             il: 'Israel',
             tr: 'Turkey',
-            // Europe
             gb: 'United Kingdom',
             de: 'Germany',
             fr: 'France',
@@ -120,26 +116,21 @@ export default {
             gr: 'Greece',
             ua: 'Ukraine',
             ru: 'Russia',
-            // North America
             us: 'United States',
             ca: 'Canada',
             mx: 'Mexico',
-            // South America
             br: 'Brazil',
             ar: 'Argentina',
             cl: 'Chile',
             co: 'Colombia',
             pe: 'Peru',
-            // Oceania
             au: 'Australia',
             nz: 'New Zealand',
-            // Africa
             za: 'South Africa',
             eg: 'Egypt',
             ng: 'Nigeria',
             ke: 'Kenya',
         },
-        // Network modes (unified definition)
         networkMode: {
             nat: 'IPv4 NAT',
             nat_ipv6: 'IPv4 NAT & IPv6',
@@ -147,19 +138,21 @@ export default {
             ipv6_only: 'IPv6 Only',
             ipv6_nat: 'IPv6 NAT',
         },
-        // Instance types
         instanceType: {
             container: 'LXC',
             vm: 'KVM',
         },
-        // Enabled/Disabled states
         enabled: 'Enabled',
         disabled: 'Disabled',
         active: 'Active',
         inactive: 'Inactive',
         unlimited: 'Unlimited',
+        noResults: 'No results',
+        operationFailed: 'Operation failed',
+        prev: 'Prev',
+        retry: 'Retry',
+        user: 'User',
     },
-
     validation: {
         fields: {
             name: 'Name',
@@ -181,8 +174,6 @@ export default {
         ipAddressInvalid: '{field} format is invalid. Enter a valid IPv4 or IPv6 address',
         ipv4Invalid: '{field} format is invalid. Enter a valid IPv4 address',
     },
-
-    // Navigation
     nav: {
         main: 'Main',
         dashboard: 'Dashboard',
@@ -243,7 +234,6 @@ export default {
         telegramSettings: 'Telegram Settings',
         adminCreateInstance: 'Admin Create Instance',
     },
-
     hourlyBilling: {
         badge: 'Hourly',
         createTitle: 'Create Hourly Instance',
@@ -321,14 +311,11 @@ export default {
         balance: 'Balance',
         outstanding: 'Outstanding',
     },
-
-    // Theme
     theme: {
         dark: 'Dark Mode',
         light: 'Light Mode',
         system: 'System',
     },
-
     freeSite: {
         billingCycleLabel: {
             monthly: 'Monthly? The moon paid it',
@@ -405,7 +392,6 @@ export default {
             mailBalanceRequired: 'Balance is beside the point. Freebie site mode says use first.',
         },
     },
-
     publicSite: {
         brandTagline: 'Incus-powered NAT VPS platform',
         nav: {
@@ -528,8 +514,6 @@ export default {
             },
         },
     },
-
-    // Wallet
     wallet: {
         title: 'Wallet',
         description: 'Manage your account balance and recharge',
@@ -584,13 +568,13 @@ export default {
         paymentUuid: 'UUID:',
         paymentTxid: 'TxID:',
         paymentMethods: {
-          alipay: 'Alipay',
-          wxpay: 'WeChat Pay',
-          qqpay: 'QQ Wallet',
-          bank: 'Bank Card',
-          jdpay: 'JD Pay',
-          usdt: 'USDT',
-          usdtTrc20: 'USDT (TRC20)',
+            alipay: 'Alipay',
+            wxpay: 'WeChat Pay',
+            qqpay: 'QQ Wallet',
+            bank: 'Bank Card',
+            jdpay: 'JD Pay',
+            usdt: 'USDT',
+            usdtTrc20: 'USDT (TRC20)',
         },
         noProviders: 'No payment providers available',
         amountLabel: 'Recharge Amount',
@@ -653,8 +637,6 @@ export default {
         amountMismatch: 'Payment amount does not match order amount, please contact support',
         natDisclaimer: 'I understand all instances are NAT-based, IP connectivity to mainland China is not guaranteed, and all recharges are non-refundable.',
     },
-
-    // Official coupons (issued by the platform, discount borne by the platform, no AFF commission)
     officialCoupon: {
         label: 'Official Coupon',
         valid: 'Official coupon valid, {rate}% discount applied',
@@ -663,8 +645,6 @@ export default {
         benefit: 'This order gets {discount}% off, and the platform covers the discount',
         discountAmount: 'Official coupon discount',
     },
-
-    // Referral Program
     aff: {
         title: 'Referral Program',
         description: 'Invite friends to use your promo code and earn commission',
@@ -739,7 +719,6 @@ export default {
             empty: 'No leaderboard data yet',
             you: 'You',
         },
-        // Instance creation page promo code input
         promoCode: 'Promo Code',
         promoCodeOptional: 'Promo Code (Optional)',
         promoCodePlaceholder: 'Enter promo code (optional)',
@@ -756,7 +735,6 @@ export default {
         usingPromoCode: 'You are using a promo code',
         promoCodeBenefit: 'You enjoy {discount} discount, while providing about {commission}% commission to the sharer',
         commissionEstimate: 'Estimated ¥{amount} commission for the sharer',
-        // Admin review
         adminTitle: 'AFF Conversion Review',
         adminDescription: 'Review user AFF balance conversion requests',
         user: 'User',
@@ -775,7 +753,6 @@ export default {
         filterStatus: 'Status Filter',
         all: 'All',
     },
-
     popupAnnouncement: {
         title: 'Site Notice',
         subtitle: 'Please review this latest notice',
@@ -787,14 +764,10 @@ export default {
         dismissToday: 'Hide today',
         dismissForever: 'Never show again',
     },
-
-    // Language
     language: {
         zh: '中文',
         en: 'English',
     },
-
-    // Auth
     auth: {
         login: 'Login',
         loginTo: 'Login',
@@ -814,7 +787,7 @@ export default {
         rememberMe: 'Remember me',
         forgotPasswordLink: 'Forgot password',
         contactEmail: 'Contact email',
-        noAccount: "Don't have an account?",
+        noAccount: 'Don\'t have an account?',
         hasAccount: 'Already have an account?',
         loginSuccess: 'Login successful',
         logoutSuccess: 'Logged out',
@@ -836,7 +809,7 @@ export default {
         recoveryCode: 'Recovery Code',
         recoveryCodePlaceholder: 'Enter recovery code',
         recoveryCodeHint: 'Enter the recovery code saved when setting up 2FA (one-time use)',
-        useRecoveryCode: "Can't access authenticator? Use recovery code",
+        useRecoveryCode: 'Can\'t access authenticator? Use recovery code',
         useTotpCode: 'Use authenticator code',
         enterRecoveryCode: 'Please enter recovery code',
         enterTotpCode: 'Please enter verification code',
@@ -845,65 +818,38 @@ export default {
         verificationCodePlaceholder: 'Enter 6-digit code',
         invalidCode: 'Please enter a 6-digit code',
         forgotPassword: {
-          title: 'Forgot Password',
-          subtitle: 'Reset your password via email verification code',
-          sendCode: 'Send Verification Code',
-          codeSent: 'Verification code sent, please check your email',
-          codeHint: 'Please enter the 6-digit code sent to your email',
-          newPassword: 'New Password',
-          newPasswordPlaceholder: 'Enter a new password',
-          confirmPassword: 'Confirm New Password',
-          confirmPasswordPlaceholder: 'Enter the new password again',
-          showPassword: 'Show',
-          hidePassword: 'Hide',
-          passwordHint: 'At least 8 characters with uppercase, lowercase, and a number. Passwords are never sent by email.',
-          newPasswordRequired: 'Please set and confirm a new password',
-          passwordMismatch: 'The two passwords do not match',
-          resetPassword: 'Reset Password',
-          resetSuccess: 'Password reset successful! Please log in with your new password.',
-          twoFactorDisabled: 'Your two-factor authentication (2FA) has been automatically disabled. We recommend re-enabling it for account security.'
-        },
-        apiKeys: {
-          title: 'API Key',
-          description: 'After creating an API key you can use the panel API to perform limited control on your own instances (query, start/stop/restart, port management, IPv6 change). The full key is shown once on the email confirmation page.',
-          name: 'Label (optional)',
-          namePlaceholder: 'e.g. server monitoring script',
-          create: 'Create API Key',
-          confirmEmailSent: 'Confirmation email sent. Click the link in the email to finish creating the key (valid for 1 hour). The full key is shown once on the confirmation page — save it immediately.',
-          createFailed: 'Create request failed',
-          scopeHint: 'The API key only allows querying your own instances plus start/stop/restart, port management and IPv6 change. All other panel functions (wallet, tickets, transfers, reinstall, etc.) are rejected. Header example: X-API-Key: incu_sk_…; append ?mine=true when listing instances.',
-          empty: 'No API keys yet',
-          nameCol: 'Label',
-          prefixLabel: 'Key prefix',
-          statusLabel: 'Status',
-          lastUsed: 'Last used',
-          requests: 'Requests',
-          actions: 'Actions',
-          defaultName: 'Unnamed key',
-          statusActive: 'Active',
-          statusDisabled: 'Disabled',
-          never: 'Never used',
-          disable: 'Disable',
-          enable: 'Enable',
-          delete: 'Delete',
-          deleteConfirm: 'Delete key {prefix}…? Requests using it will fail immediately.',
-          enabled: 'API key enabled',
-          disabled: 'API key disabled',
-          deleted: 'API key deleted',
-          loadFailed: 'Failed to load API keys'
+            title: 'Forgot Password',
+            subtitle: 'Reset your password via email verification code',
+            sendCode: 'Send Verification Code',
+            codeSent: 'Verification code sent, please check your email',
+            codeHint: 'Please enter the 6-digit code sent to your email',
+            newPassword: 'New Password',
+            newPasswordPlaceholder: 'Enter a new password',
+            confirmPassword: 'Confirm New Password',
+            confirmPasswordPlaceholder: 'Enter the new password again',
+            showPassword: 'Show',
+            hidePassword: 'Hide',
+            passwordHint: 'At least 8 characters with uppercase, lowercase, and a number. Passwords are never sent by email.',
+            newPasswordRequired: 'Please set and confirm a new password',
+            passwordMismatch: 'The two passwords do not match',
+            resetPassword: 'Reset Password',
+            resetSuccess: 'Password reset successful! Please log in with your new password.',
+            twoFactorDisabled: 'Your two-factor authentication (2FA) has been automatically disabled. We recommend re-enabling it for account security.',
         },
         operationConfirm: {
-          processing: 'Confirming operation...',
-          successTitle: 'Operation confirmed',
-          failedTitle: 'Confirmation failed',
-          success: 'The operation was executed successfully',
-          failed: 'Confirmation failed',
-          missingToken: 'The link is missing its confirmation parameter. Please reopen it from the email.',
-          taskQueued: 'Task #{id} has been queued',
-          canClosePage: 'You can close this page',
-          backToPanel: 'Back to panel',
-          apiKeyOnceTitle: '⚠️ Save your API key now',
-          apiKeyOnceDesc: 'The full key will never be shown again. Call the panel API with header X-API-Key: <key> (limited to your own instances).',
+            processing: 'Confirming operation...',
+            successTitle: 'Operation confirmed',
+            failedTitle: 'Confirmation failed',
+            success: 'The operation was executed successfully',
+            failed: 'Confirmation failed',
+            missingToken: 'The link is missing its confirmation parameter. Please reopen it from the email.',
+            taskQueued: 'Task #{id} has been queued',
+            canClosePage: 'You can close this page',
+            backToPanel: 'Back to panel',
+            apiKeyOnceTitle: '⚠️ Save your API key now',
+            apiKeyOnceDesc: 'The full key will never be shown again. Call the panel API with header X-API-Key: <key> (limited to your own instances).',
+            copied: 'Copied',
+            copy: 'Copy',
         },
         oauthNotBound: 'Please bind your {provider} account in settings first to use quick login',
         oauthUserNotFound: 'User not found',
@@ -930,7 +876,6 @@ export default {
         passwordNeedsNumber: 'Password must contain at least one number',
         turnstileRequired: 'Please complete the verification',
         turnstileFailed: 'Verification failed, please try again',
-        // Email verification
         emailCode: 'Email Verification Code',
         emailCodePlaceholder: 'Enter 6-digit code',
         emailCodeRequired: 'Please enter email verification code',
@@ -946,7 +891,6 @@ export default {
         confirmEmail: 'Confirm Email Address',
         confirmEmailMessage: 'Verification code will be sent to the following email. Please confirm the address is correct:',
         confirmAndSend: 'Confirm & Send',
-        // Terms of Service
         tos: {
             title: 'Terms of Service',
             agreePrefix: 'I have read and agree to the',
@@ -955,24 +899,19 @@ export default {
             understood: 'I Understand',
             loadFailed: 'Failed to load Terms of Service',
         },
+        enterEmailFirst: 'Please enter your email address first',
     },
-
-    // User Menu
     userMenu: {
         profile: 'Profile',
         myInstances: 'My Instances',
         logout: 'Logout',
     },
-
-    // Quota
     quota: {
         hosts: 'Hosts',
         instances: 'Instances',
         friends: 'Friends',
         packages: 'Packages',
     },
-
-    // Instance
     instance: {
         title: 'Instances',
         create: 'Create Instance',
@@ -992,7 +931,6 @@ export default {
         config: 'Config',
         user: 'User',
         details: 'Details',
-        // Resource quotas (for order summary)
         ports: 'Ports',
         snapshots: 'Snapshots',
         backups: 'Backups',
@@ -1155,7 +1093,6 @@ export default {
             packagePrerequisiteRequired: 'Prerequisite: you must first own a normal instance of the “{package}” package before creating an instance from this package.',
             destroyTrafficNotice: 'Destroy limit: this instance can only be destroyed while its current-month traffic usage is below 5 GB.',
             firstPaidInstanceNotice: 'Destroy limit: this instance can only be destroyed while its current-month traffic usage is below 5 GB.',
-            // Order Summary
             orderSummary: 'Order Summary',
             packageName: 'Package',
             planName: 'Plan',
@@ -1164,7 +1101,6 @@ export default {
             month: 'mo',
             resourceConfig: 'Resource Configuration',
             planFee: 'Plan Fee',
-            // Package Source
             source: {
                 official: 'Official',
                 market: 'Marketplace',
@@ -1186,7 +1122,6 @@ export default {
                 noImages: 'No images available',
                 selectSshKey: 'Select SSH Key',
             },
-            // Hosted Disclaimer
             hostedDisclaimer: {
                 title: 'Hosted Node Notice',
                 content: 'This is a user-hosted node. Support is handled by the host owner (UID:{uid}). only provides platform services with no quality guarantees. If the host owner becomes unavailable, their hosting balance will be refunded to the affected users\' panel balance.',
@@ -1260,7 +1195,6 @@ export default {
             destroyNotAllowed: 'This package does not allow user-initiated deletion or refunds',
             destroyFailed: 'Failed to destroy instance',
         },
-        // Mobile card
         mobileCard: {
             ipAddress: 'IP Address',
             config: 'Config',
@@ -1276,14 +1210,11 @@ export default {
             backups: 'Backups',
             sites: 'Sites',
         },
-        // Instance create components
         selector: {
-            // Region selection
             selectRegion: 'Select Region',
             allRegions: 'All',
             noRegions: 'No regions available',
             packageCount: '{count} packages',
-            // Package selection
             selectPackage: 'Select Package',
             selectPlan: 'Select Plan',
             planDesc: 'Choose a paid plan that suits your needs',
@@ -1330,14 +1261,12 @@ export default {
             prevPage: 'Previous',
             nextPage: 'Next',
             pageInfo: 'Page {current}/{total}, {count} total',
-            // Plan resource quotas
             ports: 'Ports',
             snapshots: 'Snapshots',
             backups: 'Backups',
             sites: 'Sites',
             bandwidth: 'Bandwidth',
         },
-        // Paid subscription card
         subscription: {
             premium: 'Premium',
             expiresAt: 'Expires At',
@@ -1384,7 +1313,6 @@ export default {
             applyAffNoStackHint: 'Promo codes do not stack.',
             applyAffNextRenewalHint: 'The promo code takes effect from the next unsettled renewal.',
             applyAffHistoryHint: 'Completed renewal bills will not be modified.',
-            // Auto renew
             autoRenew: 'Auto Renew',
             autoRenewOn: 'Auto-renew enabled',
             autoRenewOff: 'Auto-renew not enabled',
@@ -1396,7 +1324,6 @@ export default {
             autoRenewDesc: 'Once enabled, the instance will automatically renew per {cycle} cycle, costing ￥{price} each time',
             currentStatus: 'Current Status',
         },
-        // Instance destroy
         destroy: {
             button: 'Destroy',
             title: 'Destroy Instance',
@@ -1412,7 +1339,6 @@ export default {
             ruleTrafficThresholdDesc: 'If current-cycle usage reaches or exceeds {limit}, this paid instance cannot be destroyed',
             ruleFreeInstance: 'Free instances can be destroyed directly',
             ruleFreeInstanceDesc: 'Free instance destroy has no refund and does not count towards destroy quota',
-            // Preview info
             instanceInfo: 'Instance Info',
             instanceName: 'Instance Name',
             hostName: 'Node',
@@ -1427,14 +1353,12 @@ export default {
             firstTimeFree: 'First time fee-free',
             freeInstanceNoRefund: 'Free instance no refund',
             days: 'days',
-            // Confirm
             confirmTitle: 'Confirm Destroy',
             confirmHint: 'Please enter the instance name {name} to confirm destroy',
             confirmPlaceholder: 'Enter instance name to confirm',
             confirmButton: 'Confirm Destroy',
             destroying: 'Destroying...',
             cancel: 'Cancel',
-            // Status
             success: 'Instance destroyed',
             successWithRefund: 'Instance destroyed, refunded ¥{amount}',
             successPending: 'Instance removed; the source host is unreachable. The refund will be issued automatically once the host is back online and remote deletion is confirmed',
@@ -1443,10 +1367,8 @@ export default {
             failed: 'Destroy failed',
             loadFailed: 'Failed to load destroy info',
             forcePanelDeleteConfirm: 'The source host cannot be reached. Panel-only removal is allowed only for free instances, does not contact the host, and never issues a refund. Paid or hourly instances require confirmed remote deletion. Continue?',
-            // Cannot destroy reasons
             cannotDestroy: 'Cannot Destroy',
         },
-        // Instance detail page
         detail: {
             invalidId: 'Invalid instance ID',
             notExist: 'Instance does not exist',
@@ -1555,7 +1477,6 @@ export default {
                 success: 'Copied to clipboard',
                 failed: 'Copy failed',
             },
-            // Info tab
             info: {
                 title: 'Basic Info',
                 instanceId: 'Instance ID',
@@ -1601,7 +1522,6 @@ export default {
                 redeem: 'Redeem',
                 redeemTitle: 'Redeem Resources',
             },
-            // Cloud-init initialization status
             cloudInit: {
                 initializing: 'Initializing',
                 retry: 'Retry',
@@ -1619,7 +1539,6 @@ export default {
                 manualShort: 'Done',
                 manualCompleteSuccess: 'Cloud-init has been marked complete manually',
             },
-            // Network tab
             network: {
                 title: 'Network Addresses',
                 privateIpv4: 'Private IPv4',
@@ -1651,7 +1570,6 @@ export default {
                 ipDeleted: 'IPv6 address deleted',
                 ipDeleteFailed: 'Failed to delete IPv6 address',
                 confirmDeleteIp: 'Are you sure you want to delete this IPv6 address?',
-                // IPv6 management additions
                 primaryIpv6: 'Primary IPv6',
                 extraIpv6: 'Extra IPv6',
                 ipv6Subnets: 'IPv6 Subnets',
@@ -1691,7 +1609,6 @@ export default {
                 ipv6AlreadyExists: 'IPv6 address is already in use',
                 instanceMustRunning: 'Instance must be running to manage IPv6',
                 loading: 'Loading...',
-                // Reassign IPv6
                 reassignIpv6: 'Reassign',
                 reassignIpv6Confirm: 'Are you sure you want to reassign IPv6 address?',
                 reassignIpv6ConfirmHint: 'You need to rebuild the system for the new IPv6 to take effect',
@@ -1703,7 +1620,6 @@ export default {
                 reassignIpv6CooldownShort: 'In {hours}h',
                 reassignIpv6NotSupported: 'This instance does not support IPv6 reassignment',
             },
-            // Quota tab
             quotaTab: {
                 title: 'Instance Quota Settings',
                 portLimit: 'NAT Port Limit',
@@ -1723,7 +1639,6 @@ export default {
                 saving: 'Saving...',
             },
         },
-        // Config edit modal
         configEdit: {
             title: 'Edit Configuration',
             hint: 'CPU and memory changes take effect immediately without restart. Disk can only be increased.',
@@ -1748,7 +1663,6 @@ export default {
             packageRequired: 'Instance must be bound to a package to edit configuration',
             loadPackageFailed: 'Failed to load package information, please try again later',
         },
-        // Sites management
         sites: {
             title: 'Sites',
             addSite: 'Add Site',
@@ -1819,9 +1733,10 @@ export default {
                 days: 'days',
             },
         },
+        networkMode: {
+            routed: 'Routed',
+        },
     },
-
-    // Port mapping modal
     portModal: {
         singleMode: 'Single port',
         batchMode: 'Port range',
@@ -1850,7 +1765,6 @@ export default {
         cancel: 'Cancel',
         adding: 'Adding...',
         add: 'Add',
-        // Range input support
         rangeHint: 'Supports range input, e.g. 80-85',
         invalidPortFormat: 'Invalid port format, enter a single port or port range (e.g. 80-85)',
         ipv6OnlySshPortHint: 'Port 22 does not need a mapping. Use the public IPv6 for SSH; the front door is already lit.',
@@ -1860,8 +1774,6 @@ export default {
         quotaRemaining: '{remain} remaining',
         quotaInsufficient: 'Quota insufficient, need {need}, only {remain} remaining',
     },
-
-    // Port conflict resolution modal
     portConflict: {
         title: 'Some Ports Are Occupied',
         subtitle: '{count} port conflicts',
@@ -1875,8 +1787,6 @@ export default {
         cancel: 'Cancel',
         confirm: 'Confirm Changes',
     },
-
-    // Rebuild modal
     rebuildModal: {
         title: 'Rebuild System',
         dangerWarning: 'Dangerous Operation',
@@ -1897,8 +1807,6 @@ export default {
         rebuilding: 'Rebuilding...',
         confirmRebuild: 'Confirm Rebuild',
     },
-
-    // Recreate instance modal
     recreateModal: {
         title: 'Recreate Instance',
         dangerWarning: 'Dangerous Operation',
@@ -1920,8 +1828,6 @@ export default {
         recreating: 'Recreating...',
         confirmRecreate: 'Confirm Recreate',
     },
-
-    // Snapshot management
     snapshot: {
         title: 'Snapshots',
         autoPolicy: 'Auto Snapshot Enabled',
@@ -1985,8 +1891,6 @@ export default {
             policySaveFailed: 'Save failed',
         },
     },
-
-    // Backup management
     backup: {
         title: 'Backups',
         autoPolicy: 'Auto Backup Enabled',
@@ -2090,7 +1994,6 @@ export default {
             uploadFailed: 'Upload failed',
             uploadCancelled: 'Upload task cancelled',
         },
-        // Upload to remote storage
         upload: 'Upload',
         uploadRemote: 'Upload to Cloud',
         uploadModal: {
@@ -2112,8 +2015,6 @@ export default {
             queuePosition: 'Queue position: #{position}',
         },
     },
-
-    // Dashboard
     dashboard: {
         title: 'Dashboard',
         welcome: 'Welcome back',
@@ -2197,9 +2098,36 @@ export default {
             full: '{greeting}, {member}',
         },
     },
-
-    // Profile
     profile: {
+        apiKeys: {
+            title: 'API Key',
+            description: 'After creating an API key you can use the panel API to perform limited control on your own instances (query, start/stop/restart, port management, IPv6 change). The full key is shown once on the email confirmation page.',
+            name: 'Label (optional)',
+            namePlaceholder: 'e.g. server monitoring script',
+            create: 'Create API Key',
+            confirmEmailSent: 'Confirmation email sent. Click the link in the email to finish creating the key (valid for 1 hour). The full key is shown once on the confirmation page — save it immediately.',
+            createFailed: 'Create request failed',
+            scopeHint: 'The API key only allows querying your own instances plus start/stop/restart, port management and IPv6 change. All other panel functions (wallet, tickets, transfers, reinstall, etc.) are rejected. Header example: X-API-Key: incu_sk_…; append ?mine=true when listing instances.',
+            empty: 'No API keys yet',
+            nameCol: 'Label',
+            prefixLabel: 'Key prefix',
+            statusLabel: 'Status',
+            lastUsed: 'Last used',
+            requests: 'Requests',
+            actions: 'Actions',
+            defaultName: 'Unnamed key',
+            statusActive: 'Active',
+            statusDisabled: 'Disabled',
+            never: 'Never used',
+            disable: 'Disable',
+            enable: 'Enable',
+            delete: 'Delete',
+            deleteConfirm: 'Delete key {prefix}…? Requests using it will fail immediately.',
+            enabled: 'API key enabled',
+            disabled: 'API key disabled',
+            deleted: 'API key deleted',
+            loadFailed: 'Failed to load API keys',
+        },
         title: 'Profile',
         basicInfo: 'Basic Info',
         security: 'Security',
@@ -2210,7 +2138,6 @@ export default {
         twoFactor: 'Two-Factor Auth',
         enableTwoFactor: 'Enable 2FA',
         disableTwoFactor: 'Disable 2FA',
-        // Account section
         account: {
             title: 'Account',
             username: 'Username',
@@ -2260,10 +2187,9 @@ export default {
                 confirmAction: 'Confirm',
                 updateSuccess: 'Email updated',
                 verifying: 'Verifying...',
-                submitting: 'Submitting...'
-            }
+                submitting: 'Submitting...',
+            },
         },
-        // Avatar
         avatar: {
             title: 'Avatar Style',
             saveSuccess: 'Avatar style updated',
@@ -2301,7 +2227,6 @@ export default {
                 thumbs: 'Thumbs',
             },
         },
-        // Resource quota
         resourceQuota: {
             title: 'Resource Quota',
             hosts: 'Hosts',
@@ -2309,7 +2234,6 @@ export default {
             friends: 'Friends',
             unit: '',
         },
-        // Billing (BillingSection component)
         billing: {
             title: 'Account Balance',
             currentBalance: 'Current Balance',
@@ -2364,7 +2288,6 @@ export default {
                 refunded: 'Refunded',
             },
         },
-        // User billing (legacy)
         userBilling: {
             title: 'Balance & Recharge',
             balance: 'Current Balance',
@@ -2391,7 +2314,6 @@ export default {
             rechargeFailed: 'Recharge failed',
             loadFailed: 'Load failed',
         },
-        // Increase quota
         increaseQuota: {
             title: 'Increase Quota',
             description: 'You can increase quota when usage reaches 50%',
@@ -2416,7 +2338,6 @@ export default {
             instancesInvalid: 'Instances can only increase 50 each time',
             friendsInvalid: 'Friends can only increase 10 each time',
         },
-        // Password section
         password: {
             title: 'Change Password',
             current: 'Current Password',
@@ -2433,7 +2354,6 @@ export default {
             updating: 'Updating...',
             update: 'Update Password',
         },
-        // Two-factor auth
         twoFactorAuth: {
             title: 'Two-Factor Authentication (2FA)',
             status: 'Status',
@@ -2482,7 +2402,6 @@ export default {
             enterCodeError: 'Please enter a 6-digit code',
             fillPasswordAndCode: 'Please fill in password and verification code',
         },
-        // Sessions
         sessions: {
             title: 'Login Sessions',
             logoutAll: 'Logout All Devices',
@@ -2506,7 +2425,6 @@ export default {
             hoursAgo: '{n} hours ago',
             daysAgo: '{n} days ago',
         },
-        // OAuth
         oauth: {
             title: 'Linked Accounts',
             description: 'Link accounts for quick login',
@@ -2530,7 +2448,6 @@ export default {
                 missingCode: 'Authorization info missing, please try again',
             },
         },
-        // SSH Keys
         sshKeys: {
             title: 'SSH Public Keys',
             description: 'Used for SSH connection to instances',
@@ -2563,7 +2480,6 @@ export default {
             nextPage: 'Next',
             pageInfo: 'Page {current}/{total}, {count} total',
         },
-        // Notifications
         notifications: {
             title: 'Notification Channels',
             description: 'Receive notifications for instances, snapshots, and other events',
@@ -2668,7 +2584,6 @@ export default {
             unlinked: 'Telegram binding removed',
             unlinkFailed: 'Failed to unlink Telegram: {error}',
         },
-        // Remote Storage
         storage: {
             title: 'Remote Storage',
             description: 'Configure WebDAV/FTP/SFTP storage for backup uploads',
@@ -2700,15 +2615,12 @@ export default {
             setDefaultSuccess: 'Set as default',
             setDefaultFailed: 'Set default failed',
         },
-        // Login history
         loginHistory: {
             title: 'Login History',
             description: 'View your account login records',
             empty: 'No login records',
         },
     },
-
-    // Admin
     admin: {
         systemUpdate: {
             title: 'System Update',
@@ -2721,7 +2633,7 @@ export default {
             modes: {
                 auto: 'Auto detect',
                 docker: 'Docker Compose',
-                release: 'systemd release'
+                release: 'systemd release',
             },
             check: 'Check for updates',
             checking: 'Checking...',
@@ -2757,8 +2669,8 @@ export default {
                 idle: 'Not started',
                 running: 'Running',
                 succeeded: 'Completed',
-                failed: 'Failed'
-            }
+                failed: 'Failed',
+            },
         },
         statistics: {
             title: 'Statistics',
@@ -2982,7 +2894,6 @@ export default {
             instanceDaysInvalid: 'VIP{level} gift days must be a positive integer',
             instanceQuantityInvalid: 'VIP{level} instance quantity must be a positive integer',
         },
-        // Mail management
         mail: {
             title: 'Mail Management',
             description: 'Manage mail sources, plans and subscriptions',
@@ -3050,7 +2961,6 @@ export default {
                 successWithRefund: 'Subscription cancelled, refunded ¥{amount}',
             },
         },
-        // Admin create instance
         instanceCreate: {
             title: 'Create Instance',
             description: 'Create instance for user as a gift, no payment required',
@@ -3081,7 +2991,6 @@ export default {
                 official: 'Official Packages',
                 hosted: 'Hosted Packages',
             },
-            // Paid instance related
             instanceType: 'Instance Type',
             freeInstance: 'Free Instance',
             paidInstance: 'Paid Instance',
@@ -3098,8 +3007,8 @@ export default {
             insufficientBalance: 'Insufficient user balance',
             paidSummary: 'Paid Summary',
             paidInstanceHint: 'Create paid instance, billed by plan',
+            credentialsHint: 'Credentials are no longer returned with the creation result; the recipient can view connection details in their own console.',
         },
-        // Broadcast announcement
         broadcast: {
             title: 'Site-wide Announcement',
             description: 'Send notification to all active users',
@@ -3115,7 +3024,6 @@ export default {
             sendSuccess: 'Successfully sent to {count} users',
             sendFailed: 'Failed to send',
             hint: 'Announcement will be sent to all users with "Active" status.',
-            // History
             history: 'History',
             noHistory: 'No sending records',
             recipients: 'Sent to {count} recipients',
@@ -3127,7 +3035,6 @@ export default {
                 host_message: 'Host Owner Message',
             },
         },
-        // System settings
         system: {
             title: 'System Settings',
             description: 'Configure system initial parameters and defaults',
@@ -3206,7 +3113,7 @@ export default {
             openRegistration: 'Open',
             inviteOnly: 'Invite Only',
             adminRegistrationEmails: 'Admin email suffixes',
-            adminRegistrationEmailsPlaceholder: "For example: {'@'}abc.com\n{'@'}example.org",
+            adminRegistrationEmailsPlaceholder: 'For example: {\'@\'}abc.com\n{\'@\'}example.org',
             adminRegistrationEmailsDesc: 'Enter email suffixes separated by commas, semicolons, or new lines. Users with a matching, verified email become administrators after registration.',
             affRebate: {
                 title: 'Referral Rebates',
@@ -3299,7 +3206,7 @@ export default {
                 giftBalanceDesc: 'Added to the account balance after registration, in yuan.',
                 giftPoints: 'Gift Points',
                 giftPointsDesc: 'Added to the entertainment points account after registration.',
-                giftRequiresFreeSite: 'Enable Freebie Site before configuring registration gifts.'
+                giftRequiresFreeSite: 'Enable Freebie Site before configuring registration gifts.',
             },
             unitCount: '',
             reset: 'Reset',
@@ -3314,7 +3221,6 @@ export default {
             note3: 'Host quota limits the number of hosts a user can create (0 = feature not authorized).',
             note4: 'Friend quota limits the number of friends a user can add (0 = feature not authorized).',
             note5: 'Package quota limits the number of packages a user can create (0 = feature not authorized).',
-            // Turnstile config
             turnstile: {
                 title: 'Cloudflare Turnstile',
                 description: 'Configure bot protection for login, registration and sensitive operations',
@@ -3337,7 +3243,6 @@ export default {
                 apiBaseDesc: 'DiceBear avatar API base URL, can self-host for better performance',
                 helpText: 'Learn how to self-host DiceBear:',
             },
-            // SMTP Email configuration
             smtp: {
                 title: 'SMTP Email Service',
                 description: 'Configure SMTP server to enable email verification. Users will need to verify their email when registering',
@@ -3355,7 +3260,7 @@ export default {
                 password: 'Password',
                 passwordPlaceholder: 'App password or authorization code',
                 fromEmail: 'From Email',
-                fromEmailPlaceholder: "noreply{'@'}example.com",
+                fromEmailPlaceholder: 'noreply{\'@\'}example.com',
                 fromName: 'From Name',
                 testConnection: 'Test Connection',
                 testing: 'Testing...',
@@ -3371,7 +3276,6 @@ export default {
                 testEmailFailed: 'Failed to send test email',
                 helpText: 'Make sure the SMTP server address, port, username and password are correct. Most email providers require an app password instead of your login password.',
             },
-            // Email domain whitelist configuration
             emailDomain: {
                 title: 'Email Domain Whitelist',
                 description: 'Restrict registration to specific email domains to improve user quality',
@@ -3384,7 +3288,6 @@ export default {
                 allowedDomainsDesc: 'Enter allowed email domains, comma-separated or one per line. Leave empty to use the default whitelist (includes Gmail, Outlook, iCloud, Yahoo, Proton, and other major email services).',
                 helpText: 'Default whitelist includes: Gmail, Outlook/Hotmail, iCloud, Yahoo, Zoho, Proton, Fastmail, Tuta, Posteo, Disroot, Riseup, and other major email services.',
             },
-            // Transfer settings
             transfer: {
                 title: 'Transfer Settings',
                 description: 'Configure instance transfer settings',
@@ -3404,7 +3307,7 @@ export default {
                 title: 'Footer Contact Links',
                 description: 'Configure the email button shown at the bottom of the sidebar',
                 email: 'Contact Email',
-                emailPlaceholder: "support{'@'}example.com or mailto:support{'@'}example.com",
+                emailPlaceholder: 'support{\'@\'}example.com or mailto:support{\'@\'}example.com',
                 emailDesc: 'Leave empty to hide the email button. You can enter either an email address or a full mailto: link.',
                 telegram: 'Telegram Group Link',
                 telegramPlaceholder: 'https://t.me/your_group',
@@ -3426,7 +3329,6 @@ export default {
                 targetIdDesc: 'Optional. Leave empty to use Lsky defaults.',
             },
         },
-        // User management
         users: {
             title: 'User Management',
             description: 'Manage platform users and invite codes',
@@ -3438,7 +3340,7 @@ export default {
                 usernamePlaceholder: 'e.g. demo_user',
                 usernameHint: '3-32 characters, must start with a letter, letters, numbers, underscores, and hyphens only',
                 email: 'Email',
-                emailPlaceholder: "user{'@'}example.com",
+                emailPlaceholder: 'user{\'@\'}example.com',
                 verifyEmail: 'Verify Email',
                 verifyEmailHint: 'When enabled, send and enter an email verification code first; the initial password will be emailed after creation',
                 emailCode: 'Email Verification Code',
@@ -3458,7 +3360,7 @@ export default {
                 passwordOnceHint: 'After closing or leaving this page, this password cannot be viewed again.',
                 passwordEmailHint: 'The password has been delivered to the user by email.',
                 continueCreate: 'Create Another',
-                backToUsers: 'Back to Users'
+                backToUsers: 'Back to Users',
             },
             generateInvite: 'Generate Invite',
             userInfo: 'User',
@@ -3500,7 +3402,6 @@ export default {
             loadFailed: 'Failed to load users',
             userVipLevels: 'User VIP Levels',
             vipBenefits: 'Membership Benefits',
-            // Invite codes
             invites: 'Invite Codes',
             inviteCode: 'Invite Code',
             inviteStatus: 'Status',
@@ -3521,7 +3422,6 @@ export default {
             confirmDeleteInvite: 'Are you sure to delete invite code {code}?',
             inviteDeleted: 'Invite code deleted',
             deleteFailed: 'Delete failed',
-            // Generate invite
             generateInviteTitle: 'Generate Invite Code',
             inviteCount: 'Quantity',
             countUnit: '',
@@ -3536,14 +3436,12 @@ export default {
             generate: 'Generate',
             generating: 'Generating...',
             generateFailed: 'Failed to generate invite code',
-            // Invite result
             inviteGenerated: 'Invite Code Generated',
             validUntil: 'Valid until',
             copyCode: 'Copy Code',
             copyAllCodes: 'Copy All',
             copyLink: 'Copy Link',
             copied: 'Copied!',
-            // Quota edit
             editQuota: 'Edit Quota',
             instanceLimit: 'Instance Limit',
             instanceLimitHint: 'Maximum number of instances the user can create',
@@ -3572,7 +3470,6 @@ export default {
             totalRecords: '{count} records',
             prevPage: 'Previous',
             nextPage: 'Next',
-            // Reset password
             resetPassword: 'Reset Password',
             resetPasswordConfirm: 'Are you sure to reset password for user "{name}"?',
             resetPasswordHint: 'A new password will be generated automatically. All user sessions will be revoked and re-login with new password is required.',
@@ -3582,17 +3479,14 @@ export default {
             newPasswordFor: 'New password for "{name}":',
             copyPassword: 'Copy Password',
             copyPasswordHint: 'Please save this password securely. It cannot be viewed again after closing this dialog.',
-            // Disable 2FA
             disable2FA: 'Disable 2FA',
             disable2FAConfirm: 'Are you sure to disable two-factor authentication for user "{name}"?',
             disable2FAWarning: 'After disabling, the user will no longer need a verification code to log in, which may reduce account security.',
             twoFADisabled: 'Two-factor authentication disabled',
-            // Unbind GitHub
             unbindGitHub: 'Unbind GitHub',
             unbindGitHubConfirm: 'Are you sure to unbind GitHub OAuth for user "{name}"?',
             unbindGitHubWarning: 'After unbinding, the user will not be able to use GitHub quick login.',
             githubUnbound: 'GitHub OAuth unbound successfully',
-            // User activity and login records
             userActivity: 'User Activity',
             registeredNew: 'New',
             registeredDays: 'Registered {days}d',
@@ -3601,7 +3495,6 @@ export default {
             loginRecords: 'Login Records',
             noLoginRecords: 'No login records',
             loadLoginRecordsFailed: 'Failed to load login records',
-            // Send message
             sendMessage: 'Send Message',
             sendMessageTo: 'Send Message to {username}',
             messageTitle: 'Message Title',
@@ -3612,7 +3505,6 @@ export default {
             messageContentRequired: 'Please enter message content',
             messageSent: 'Message sent',
             messageSendFailed: 'Failed to send message',
-            // User balance
             balance: 'Balance',
             viewBalance: 'View Balance Details',
             consumed: 'Consumed',
@@ -3641,7 +3533,6 @@ export default {
                 balance_transfer_in: 'Balance Transfer In',
                 balance_transfer_fee: 'Balance Transfer Fee',
             },
-            // Adjust balance
             adjustBalance: 'Adjust Balance',
             adjustBalanceFor: 'Adjust Balance for {username}',
             adjustType: 'Adjustment Type',
@@ -3655,7 +3546,6 @@ export default {
             reasonRequired: 'Please enter a reason',
             balanceAdjusted: 'Balance adjusted successfully',
             balanceAdjustFailed: 'Failed to adjust balance',
-            // Points
             points: 'Points',
             earned: 'Total',
             totalEarnedPoints: 'Total earned points',
@@ -3670,7 +3560,6 @@ export default {
             invalidPointsAmount: 'Please enter a valid points amount',
             pointsAdjusted: 'Points adjusted successfully',
             pointsAdjustFailed: 'Failed to adjust points',
-            // Hosting balance
             hostingBalance: 'Hosting Balance',
             hostingBalanceDetails: 'Hosting Balance Details',
             hostingBalanceOverview: 'Overview',
@@ -3701,7 +3590,6 @@ export default {
                 withdraw: 'Withdraw',
                 admin_adjust: 'Admin Adjust',
             },
-            // Linked accounts detection
             linkedAccounts: 'Linked Accounts',
             detectDays: 'Detection Range',
             daysUnit: 'days',
@@ -3724,7 +3612,6 @@ export default {
             lastLoginAt: 'Last login',
             noLinkedAccounts: 'No linked accounts detected, your users are clean!',
         },
-        // Host management
         hosts: {
             title: 'Host Management',
             description: 'Manage hosts and node groups',
@@ -3762,7 +3649,6 @@ export default {
             confirmDelete: 'Are you sure to delete host "{name}"?',
             hostDeleted: 'Host deleted',
             deleteFailed: 'Delete failed',
-            // Add/Edit host
             addHost: 'Add Host',
             editHost: 'Edit Host',
             hostName: 'Name',
@@ -3815,9 +3701,7 @@ export default {
             typeChangeWarning: 'Host type change warning',
             addFailed: 'Add failed',
             updateFailed: 'Update failed',
-            // Init config
             initConfig: 'Init Config',
-            // Storage config
             storageConfig: 'Storage Config',
             storageDriver: 'Storage Driver',
             storageDriverZfs: 'ZFS (Recommended)',
@@ -3828,7 +3712,6 @@ export default {
             storagePath: 'Device Path',
             storagePathHint: 'e.g. /dev/sdb',
             storageSize: 'Storage Size',
-            // Network config
             networkConfig: 'Network Config',
             networkOption: 'Network Option',
             networkOptionHint: 'Select the network egress mode for container instances',
@@ -3846,13 +3729,11 @@ export default {
             ipv6ParentInterfaceHint: 'Physical NIC name on the host for IPv6 routed mode (e.g. eth0)',
             ipv6ParentInterfaceRequired: 'Please enter IPv6 parent interface',
             enableApi: 'Enable API',
-            // Sysctl config
             sysctlConfig: 'Kernel Parameters',
             sysctlConfigHint: 'Custom sysctl config, leave empty for defaults',
             resetSysctl: 'Reset to Default',
             enableBBR: 'Enable BBR',
             bbrEnabled: 'BBR Enabled',
-            // Install script
             installScript: 'Install Script',
             runOnHost: 'Run the following command on the host with root privileges:',
             copyCommand: 'Copy Command',
@@ -3869,7 +3750,6 @@ export default {
             waitingInstall: 'Waiting for installation...',
             installSuccess: 'Installation successful!',
             tokenExpired: 'Token expired, please recreate the host',
-            // Detail page
             tabInfo: 'Info',
             tabConfig: 'Config',
             tabInstances: 'Instances',
@@ -4049,7 +3929,6 @@ export default {
             deleteNameMismatch: 'Name does not match',
             hasInstances: 'This host still has {count} instance(s), please delete or migrate them first',
             checkFailed: 'Check failed',
-            // Batch extend
             batchExtend: 'Gift Time',
             extendHint: '{count} paid instance(s) on this host will be extended',
             extendDaysLabel: 'Days to extend',
@@ -4058,7 +3937,6 @@ export default {
             confirmExtendBtn: 'Confirm',
             extendSuccess: 'Successfully extended {count} paid instance(s) by {days} days',
             extendFailed: 'Batch extend failed',
-            // Batch delete instances
             selectedCount: '{count} instance(s) selected',
             noInstanceSelected: 'Select instances to use batch actions',
             batchDelete: 'Batch Delete',
@@ -4080,14 +3958,12 @@ export default {
             instanceName: 'Instance Name',
             instanceUser: 'Owner',
             refundAmount: 'Refund Amount',
-            // Batch sync instance status
             batchSyncStatus: 'Sync Status',
             batchSyncSuccess: 'Successfully synced {synced} instance(s), {changed} status updated',
             batchSyncWithIpv4: 'Successfully synced {synced} instance(s), {changed} status updated, {ipv4Changed} internal IP updated',
             batchSyncPartial: 'Synced {synced}, updated {changed}, failed {failed}',
             batchSyncNoChange: 'Successfully synced {synced} instance(s), no status change',
             batchSyncFailed: 'Sync status failed',
-            // Batch suspend instances
             batchSuspend: 'Batch Suspend',
             batchSuspendTitle: 'Batch Suspend Instances',
             batchSuspendWarning: 'After suspension, instance owners will not be able to perform any operations until unsuspended.',
@@ -4106,7 +3982,6 @@ export default {
             deleteReason: 'Deletion Reason (Optional)',
             deleteReasonPlaceholder: 'Enter the reason for deletion, users will be notified via inbox and notification channels...',
             deleteReasonHint: 'If a reason is provided, the instance owner will receive a notification',
-            // Instance traffic
             trafficUsage: 'Traffic Usage',
             trafficUnlimited: 'Unlimited',
             resetTraffic: 'Reset Traffic',
@@ -4115,11 +3990,9 @@ export default {
             resetTrafficTitle: 'Reset Instance Traffic',
             resetTrafficWarning: 'If the instance has exceeded its quota, resetting traffic will not automatically restore the bandwidth throttling (1Mbps). Please manually restore the bandwidth rate for this instance.',
             resetTrafficDesc: 'Are you sure you want to reset traffic for instance "{instance}"?',
-            // Host traffic statistics
             trafficStats: 'Traffic Statistics',
             monthlyUsed: 'Monthly Used',
             hostTotalLimit: 'Host Total Limit',
-            // Host status
             agentStatusTitle: 'Host Status',
             agentStatusDesc: 'Agent reports live host resources and runtime status every {seconds} seconds',
             agentStatusRefreshSuccess: 'Host status refreshed',
@@ -4165,7 +4038,6 @@ export default {
             agentLoadAverage: 'Load Average',
             agentLoadAverageHint: '1 / 5 / 15 minutes',
             agentProcessCount: 'Process Count',
-            // Storage pool management
             storage: {
                 title: 'Storage Pools',
                 subtitle: 'Manage Incus storage pools on this host',
@@ -4195,29 +4067,22 @@ export default {
                 size: 'Size',
                 usedBy: 'Used by',
                 volumes: 'volumes',
-                // Driver descriptions
                 zfsDesc: 'Recommended: Full features (snapshots, clones, compression, quotas), excellent performance',
                 lvmDesc: 'Linux standard, very stable, thin provisioning recommended',
                 btrfsDesc: 'Similar to ZFS features, suitable for single disk or RAID1/10',
                 dirDesc: 'Directory storage, lowest performance, for testing only',
-                // Common
                 useLoop: 'Use loop file',
                 loopSizeHint: 'Will create image file in /var/lib/incus/',
-                // ZFS
                 zfsSourceHint: 'Physical disk or partition path, e.g. /dev/disk/by-id/nvme-xxx',
                 zfsPoolName: 'ZFS Pool Name',
                 zfsPoolNameHint: 'Optional, defaults to storage pool name',
-                // LVM
                 lvmSourceHint: 'Physical disk path, e.g. /dev/sdb',
                 lvmVgName: 'Volume Group Name',
                 lvmUseThinpool: 'Enable Thin Provisioning',
                 lvmThinpoolHint: 'Strongly recommended, otherwise snapshot performance is poor',
-                // Btrfs
                 btrfsSourceHint: 'Physical disk path, e.g. /dev/sdb',
-                // DIR
                 dirPath: 'Directory Path',
                 dirPathHint: 'Specify an existing directory, e.g. /mnt/data/incus-storage',
-                // Storage purpose
                 purpose: 'Storage Purpose',
                 forInstances: 'For instance system disk',
                 forInstancesHint: 'Used as default storage when creating instances',
@@ -4225,7 +4090,6 @@ export default {
                 forVolumesHint: 'Can be manually mounted to instances',
                 purposeSystemDisk: 'System',
                 purposeStorageDisk: 'Storage',
-                // Mode switch
                 modeCreate: 'Create New Pool',
                 modeExisting: 'Link Existing Pool',
                 modeImport: 'Import Existing Storage',
@@ -4234,7 +4098,6 @@ export default {
                 modeImportHint: 'Import storage that exists at OS level but Incus does not know about (e.g. manually created ZFS pool, LVM VG)',
                 linkSuccess: 'Storage pool linked successfully',
                 importSuccess: 'Storage pool imported successfully',
-                // Import storage pool
                 importZfsSource: 'ZFS Pool Name',
                 importLvmSource: 'LVM Volume Group Name',
                 importBtrfsSource: 'Btrfs Device or Subvolume Path',
@@ -4246,7 +4109,6 @@ export default {
                 importSourceRequired: 'Btrfs and DIR types require storage source path',
             },
         },
-        // Image management
         images: {
             title: 'Image Management',
             description: 'Manage system images for users to select when creating instances',
@@ -4300,11 +4162,9 @@ export default {
                 sortOrder: 'Lower values appear first',
                 instanceType: 'Specify whether this image is for containers, VMs, or both',
             },
-            // Instance types
             typeContainer: 'Container',
             typeVm: 'Virtual Machine',
             typeBoth: 'Both',
-            // Sync status
             syncStatusDesc: 'View sync status of images on each host, click cells to sync or delete',
             refresh: 'Refresh',
             addToLibraryFirst: 'Please add images to the library first',
@@ -4324,7 +4184,6 @@ export default {
             syncFailed: 'Sync failed',
             loadStatusFailed: 'Failed to load image status',
             loadHostsFailed: 'Failed to load hosts',
-            // Form
             imageName: 'Name',
             osType: 'OS Type',
             remoteAlias: 'Remote Alias',
@@ -4335,7 +4194,6 @@ export default {
             imageAdded: 'Image added',
             imageCreated: 'Image created',
             imageUpdated: 'Image updated',
-            // Image form modal
             selectDistro: 'Select Distribution',
             selectVersion: 'Select Version',
             configureInfo: 'Configure Info',
@@ -4352,12 +4210,10 @@ export default {
             deselectAll: 'Deselect All',
             editSyncHint: 'Deselected hosts will have the image removed on save, newly selected hosts will start syncing',
             createSyncHint: 'Selected hosts will start syncing after save',
-            // Sync modal
             selectTargetHosts: 'Select Target Hosts',
             syncWarning: 'Image sync may take several minutes depending on image size and network speed',
             startSync: 'Start Sync',
         },
-        // Package management
         packages: {
             title: 'Package Management',
             description: 'Configure instance specification templates',
@@ -4388,7 +4244,6 @@ export default {
             packageDisabled: 'Package disabled',
             deleteFailed: 'Delete failed',
             operationFailed: 'Operation failed',
-            // Form
             createPackage: 'Create Package',
             editPackage: 'Edit Package',
             basicInfo: 'Basic Info',
@@ -4425,7 +4280,6 @@ export default {
             confirmSyncTraffic: 'Sync all package traffic limits to their instances?',
             syncTrafficSuccess: 'Synced traffic limits for {count} instances',
             syncTrafficFailed: 'Sync failed',
-            // Package list
             traffic: 'Monthly Traffic',
             unlimited: 'Unlimited',
             unlimitedPlaceholder: 'Leave empty for unlimited',
@@ -4437,7 +4291,6 @@ export default {
             loadFailed: 'Failed to load package',
             instanceMaxLimit: 'Instance max limit',
         },
-        // Help management
         helpManage: {
             title: 'Help Documentation',
             description: 'Create and manage help documents',
@@ -4449,10 +4302,8 @@ export default {
             confirmDelete: 'Are you sure to delete article "{title}"?',
             articleDeleted: 'Article deleted',
             deleteFailed: 'Delete failed',
-            // Tabs
             articlesTab: 'Articles',
             categoriesTab: 'Category Management',
-            // Categories
             addCategory: 'Add Category',
             noCategories: 'No categories, click "Add Category" to create',
             categoryId: 'Category ID',
@@ -4467,7 +4318,6 @@ export default {
             duplicateCategoryId: 'This category ID already exists',
             invalidCategoryId: 'Category ID can only contain lowercase letters, numbers and hyphens',
             fillCategoryIdAndName: 'Please fill in category ID and name',
-            // Articles table
             articleTitleCol: 'Title',
             categoryCol: 'Category',
             statusCol: 'Status',
@@ -4480,7 +4330,6 @@ export default {
             publish: 'Publish',
             articleHidden: 'Article hidden',
             articlePublished: 'Article published',
-            // Form
             createArticle: 'New Article',
             editArticle: 'Edit Article',
             articleTitle: 'Title',
@@ -4506,7 +4355,6 @@ export default {
             fillRequired: 'Please fill in title, URL slug and content',
             invalidSlug: 'URL slug can only contain lowercase letters, numbers and hyphens',
             noTitle: 'No title',
-            // Markdown help
             showMarkdownHelp: 'Show syntax help',
             hideMarkdownHelp: 'Hide syntax help',
             markdownHeading1: 'Heading 1',
@@ -4528,7 +4376,6 @@ export default {
             alertDanger: 'Danger alert',
             alertNote: 'Note alert',
         },
-        // OAuth config
         oauth: {
             title: 'OAuth Config',
             description: 'Configure third-party login methods',
@@ -4562,7 +4409,6 @@ export default {
             enableLogin: 'Enable this login method',
             enableLoginHint: 'Users can use this method for quick login when enabled',
         },
-        // Payment Providers Management
         paymentProviders: {
             title: 'Payment Providers',
             description: 'Configure and manage payment providers',
@@ -4664,13 +4510,12 @@ export default {
                 yipayFeeFieldHint: 'Set Yipay fees per payment method above.',
                 rechargeCardFeeFieldHint: 'Recharge card credits use the amount stored on each generated card. Fee fields are not used.',
                 heleketMethods: 'Common Currency Display',
-                heleketMethodsPlaceholder: "USDT{'@'}TRON\nUSDT{'@'}BSC\nBTC\nETH",
+                heleketMethodsPlaceholder: 'USDT{\'@\'}TRON\nUSDT{\'@\'}BSC\nBTC\nETH',
                 heleketMethodsHint: 'Used only as an admin-side display/reference list. It does not restrict the final currency or network chosen on the Heleket payment page.',
                 instructions: 'Recharge Instructions',
                 instructionsPlaceholder: 'Enter instructions shown to users when recharging...',
             },
         },
-        // Billing Management (legacy key name)
         billingManage: {
             title: 'Billing Management',
             description: 'Manage paid instances and billing records',
@@ -4733,14 +4578,12 @@ export default {
             giftSuccess: 'Balance gifted successfully',
             operationFailed: 'Operation failed',
         },
-        // Billing Management (new key name, matching component)
         billing: {
             title: 'Billing Management',
             description: 'Manage paid instances and billing records',
             loadFailed: 'Failed to load billing data',
             loadInstancesFailed: 'Failed to load instances',
             loadRecordsFailed: 'Failed to load billing records',
-            // Tab labels
             tabs: {
                 overview: 'Overview',
                 instances: 'Paid Instances',
@@ -4751,7 +4594,6 @@ export default {
                 officialCoupons: 'Official Coupons',
                 paymentProviders: 'Payment Providers',
             },
-            // Overview statistics
             totalRevenue: 'Total Revenue',
             thisMonthRevenue: 'This Month',
             todayRevenue: 'Today',
@@ -4775,7 +4617,6 @@ export default {
                 thisMonth: 'This Month',
                 today: 'Today',
             },
-            // Instance list
             allStatus: 'All Status',
             allHosts: 'All Hosts',
             showExpiring: 'Show expiring only',
@@ -4797,7 +4638,6 @@ export default {
             noInstances: 'No paid instances',
             viewInstance: 'View',
             autoRenew: 'Auto Renew',
-            // Hosting type
             hostingType: 'Hosting',
             direct: 'Direct',
             hosted: 'Hosted',
@@ -4805,13 +4645,11 @@ export default {
             cycleMonths: '{months} month(s)',
             perPage: 'Per page',
             totalCount: '{count} items',
-            // Actions
             suspend: 'Suspend',
             unsuspend: 'Unsuspend',
             extend: 'Extend',
             refund: 'Refund',
             deleteRefund: 'Delete & Refund',
-            // Action modals
             suspendTitle: 'Suspend Instance',
             unsuspendTitle: 'Unsuspend Instance',
             extendTitle: 'Extend Instance',
@@ -4825,7 +4663,6 @@ export default {
             refundAmount: 'Refund Amount',
             refundReasonPlaceholder: 'Enter refund reason...',
             refundReasonRequired: 'Please enter refund reason',
-            // Delete and refund related
             deleteRefundWarning: 'Warning: This operation will permanently delete the instance and all its data (snapshots, backups, port mappings, etc.). This action cannot be undone!',
             refundTypeLabel: 'Refund Type',
             refundTypeRemaining: 'Refund by remaining value (calculated by remaining days)',
@@ -4835,7 +4672,6 @@ export default {
             deleteRefundSuccess: 'Instance deleted and refunded',
             databaseOnlyDelete: 'Panel-only delete (Free Only)',
             deleteRefundDatabaseOnlySuccess: 'Free instance removed from the panel',
-            // Apply discount
             applyDiscount: 'Apply Discount',
             applyDiscountTitle: 'Apply Renewal Discount',
             applyDiscountHint: 'After entering the AFF code, this instance will automatically receive a 5% discount on future renewals, and the code creator will also receive renewal commissions.',
@@ -4843,23 +4679,21 @@ export default {
             affCodePlaceholder: 'Enter AFF code...',
             affCodeRequired: 'Please enter AFF code',
             applyDiscountSuccess: 'Renewal discount applied successfully',
-                        // Update price
-                        updatePrice: 'Update Price',
-                        owner: 'Owner',
-                        currentPrice: 'Current Price',
-                        newPrice: 'New Price',
-                        enterNewPrice: 'Enter new price',
-                        priceHint: 'This is the price per billing cycle, changes will affect renewal fees',
-                        settleBalance: 'Settle balance (charge/refund based on remaining days)',
-                        needPay: 'Need to pay',
-                        willRefund: 'Will refund',
-                        priceDiffHint: 'Calculated based on {days} remaining days, will automatically process user balance',
-                        noSettleHint: 'Without balance settlement, only future renewal price will change, current cycle unaffected',
-                        affDiscount: 'AFF Discount',
-                        actualRenewPrice: 'Actual Renew Price',
-                        affAppliedHint: 'This instance has a promo code applied, {discount}% discount on renewal. Price difference is calculated based on discounted price.',
-                        newActualPrice: 'New Actual Price',
-            // Upgrade plan
+            updatePrice: 'Update Price',
+            owner: 'Owner',
+            currentPrice: 'Current Price',
+            newPrice: 'New Price',
+            enterNewPrice: 'Enter new price',
+            priceHint: 'This is the price per billing cycle, changes will affect renewal fees',
+            settleBalance: 'Settle balance (charge/refund based on remaining days)',
+            needPay: 'Need to pay',
+            willRefund: 'Will refund',
+            priceDiffHint: 'Calculated based on {days} remaining days, will automatically process user balance',
+            noSettleHint: 'Without balance settlement, only future renewal price will change, current cycle unaffected',
+            affDiscount: 'AFF Discount',
+            actualRenewPrice: 'Actual Renew Price',
+            affAppliedHint: 'This instance has a promo code applied, {discount}% discount on renewal. Price difference is calculated based on discounted price.',
+            newActualPrice: 'New Actual Price',
             upgradePlan: 'Upgrade',
             upgradePlanTitle: 'Upgrade Plan',
             currentPlan: 'Current Plan',
@@ -4880,7 +4714,6 @@ export default {
             yearly: 'Yearly',
             month: 'month',
             months: 'months',
-            // Action results
             suspendSuccess: 'Instance suspended',
             unsuspendSuccess: 'Instance unsuspended',
             extendSuccess: 'Instance extended',
@@ -4905,7 +4738,6 @@ export default {
             batchPriceStatusUnchanged: 'No change',
             batchPriceStatusFailed: 'Failed',
             result: 'Result',
-            // Billing records
             recordType: 'Type',
             recordTypes: {
                 newPurchase: 'Purchase',
@@ -4920,17 +4752,14 @@ export default {
             remark: 'Remark',
             time: 'Time',
             noRecords: 'No billing records',
-            // Recharge statistics
             totalRecharge: 'Total Recharge',
             thisMonthRecharge: 'This Month Recharge',
             todayRecharge: 'Today Recharge',
             orders: 'orders',
-            // AFF commission statistics
             totalAffCommission: 'Total AFF Commission',
             thisMonthAff: 'This Month AFF',
             affConverted: 'Converted Amount',
             affPendingConvert: 'Pending Convert',
-            // Recharge records
             loadRechargeRecordsFailed: 'Failed to load recharge records',
             noRechargeRecords: 'No recharge records',
             rechargeOrderNo: 'Order No.',
@@ -4952,7 +4781,6 @@ export default {
                 failed: 'Failed',
             },
         },
-        // Official coupons (discount borne by the platform, no AFF commission)
         officialCoupons: {
             title: 'Official Coupons',
             description: 'Platform-issued coupons: users pay the discounted price, the platform covers the discount, host owners are still settled at the original price, and no AFF commission is generated.',
@@ -5040,7 +4868,6 @@ export default {
                 chargeLimitRequired: 'A positive integer is required for limited discounted months',
             },
         },
-
         rechargeCards: {
             title: 'Recharge Card Management',
             description: 'Generate, filter, export, and audit balance recharge cards',
@@ -5103,8 +4930,6 @@ export default {
             },
         },
     },
-
-    // Error pages
     error: {
         notFound: 'Page Not Found',
         notFoundDesc: 'Sorry, the page you visited does not exist',
@@ -5112,8 +4937,6 @@ export default {
         serverError: 'Server Error',
         networkError: 'Network Error',
     },
-
-    // Logs
     logs: {
         title: 'System Logs',
         module: 'Module',
@@ -5137,8 +4960,6 @@ export default {
         expand: 'Expand',
         collapse: 'Collapse',
     },
-
-    // Help
     help: {
         title: 'Help Center',
         search: 'Search help...',
@@ -5159,440 +4980,47 @@ export default {
             description: 'Covers buying a hosted product, node admission, Agent connection, plan publication, after-sales support, and earnings.',
             summary: 'The buyer flow plus the complete node-owner flow: create and verify a node, publish plans, support customers, and withdraw earnings.',
             read: 'Read the guide',
-            content: `## Understand the hosting flow
-
-Hosted products are supplied by third-party node owners. The platform provides public listing, provisioning, billing, and instance-management entry points; the owner operates the Incus host, maintains capacity, and handles customer support. The home page / and catalog /market can show public products without sign-in. Whether the hosted-market entry is visible is controlled by the hosting setting.
-
-## A. Buy a hosted product
-
-1. On /market, switch to the Hosted source and use the region filter and search. Open a product card to review LXC/KVM type, network mode, traffic, plans, resource ranges, and owner information; switch to Official to compare.
-2. A paid product requires an available plan selected in the right-hand panel. The plan shows billing cycle, price, monthly equivalent, CPU, memory, disk, and traffic. A free product has no paid plan, but the CPU, memory, and disk controls on the create page still obey product limits and account quota.
-3. Select “Provision now” or, while signed out, “Sign in to order”. A signed-out user is sent to /login with the return address preserved; after login, the flow returns to /instances/create with source=market, package, and plan parameters. Both /instances and /instances/create require sign-in.
-4. The create page loads the region, product, plan, available host, system image, and SSH keys. The create button is disabled without an SSH public key, an available image, or an available host; add a key first in the signed-in /profile page. Paid-plan resources are fixed, hosted products do not show the official referral-code field, prerequisite products must already be satisfied, and an owner cannot provision their own paid product.
-5. Enter the instance name, host, image, and SSH key, then click “Create”. Success takes you to /instances; select the instance to open /instances/:id. A new instance may be creating until deployment finishes; start, stop, restart, terminal, and networking actions become available according to its current status.
-
-## B. Node-owner admission and node creation
-
-1. Sign in, open My Nodes at /resources/hosts, and click “Create node / Add”. Regular users go through the hosting-access check: currently they must have owned at least one instance, and hosting must be enabled; administrators can enter directly. A failed check shows the admission reason and hint in the page, and the backend checks it again.
-2. In /resources/hosts/create, enter the node name, host address, API port, country/region, instance type, and network mode. A regular user's name must start with PEER + your user ID + -; the API port defaults to 8443. Modes include NAT, NAT+IPv6, and IPv6-only; when IPv6 data is supplied, the subnet and parent interface must be supplied together. NAT settings include public and bind IPs plus a port range, defaulting to 10000–65000. CPU, memory limits, and container/VM support are configured here too.
-3. After clicking “Create node”, the page opens the generated install-command dialog. The host initialization token expires after 24 hours; if it expires, open /resources/hosts/:id and click “Reinstall” to generate a new command. A node cannot be deleted while it still has instances.
-
-## C. Install the Agent, verify the connection, and inspect status
-
-1. On your Incus host, run the generated command as root; use “Copy command” in the dialog to copy it. The script installs/initializes Incus, imports the panel certificate, and installs and starts the host Agent using the injected token. It supports Ubuntu, Debian, Rocky Linux 9/10, and Alpine 3.20+; Ubuntu versions below 22 show a prompt, while Debian below 11 and Alpine below 3.20 are rejected.
-2. Return to the dialog and click “Verify and connect”, or use the same button for an unverified node in its detail page. Success changes the node to online and makes it usable by products. For failures, check connection-refused, timeout, or certificate errors and verify the host API, HTTPS, network, and command execution.
-3. The node detail Info tab shows online/offline/maintenance, CPU/memory/disk usage, and Agent status. In the Agent card, “Agent install command” generates a one-time install/update command and “Refresh” reloads the status; its token lasts about 30 minutes and is single-use. Heartbeats default to 30 seconds and allow 5–3600 seconds. The status can be not installed, online, offline, disabled, or outdated.
-
-## D. Create products and plans, then publish
-
-1. While signed in, open My Products at /resources/packages and click “Create product” to open /resources/packages/create. Regular users can select only their own nodes, and at least one node must be bound. Enter the name, description, container/VM type, network mode, resource and traffic/port/snapshot limits; storage pools, boot settings, a prerequisite product, and per-host traffic multipliers are also available.
-2. A free product can define resources at product level. For a paid product, open /resources/packages/:id, switch to the Plans tab, and click “Add plan”. Configure name, CPU (15–10000%), memory (128–62144 MB), disk (512–104857600 MB), traffic (1–100000 GB), speed (1–10000 Mbps), port/snapshot quotas, price, and SLA. Plans on hosted nodes support monthly billing only. Plan status can be Active, Sold out, or Inactive.
-3. “Publish” is not a separate button: check “Active” and “Public access” in the product form and save; a paid product also needs an active, available plan. /resources/packages shows the active/inactive and public badges. A public product is listed in the Hosted source on /market only when it has an online host and capacity. An offline or maintenance node, insufficient capacity, or all plans sold out makes the product unavailable. The Config and Plans tabs in the detail page are shown only to the owner or an administrator.
-
-## E. After-sales support, earnings, and withdrawals
-
-1. On /tickets (sign-in required and tickets must be enabled), a buyer clicks “Create ticket”, selects the hosted instance, and enters the subject, category, priority, and content; images can be attached. Statuses are open, in_progress, resolved, and closed. The creator can reply or close; the node owner sees tickets for their nodes in the received-tickets tab and can reply, mark them in progress/resolved, or close them.
-2. When a customer purchases, renews, or upgrades an instance on your node, income is added to the node owner's hosting balance, but new income is frozen for about 30 days. The scheduler unfreezes due records hourly and also catches up shortly after service startup. Hosted-instance renewals are limited to one month and are normally allowed only within seven days of expiry; free instances do not renew, and upgrades can only move to a higher-priced plan in the same product while the instance is running or stopped. Destruction/refund flows may deduct the related frozen income before available hosting balance, so frozen funds are not immediately withdrawable.
-3. Open Hosting Wallet at /hosting-wallet (sign-in required). Overview shows available and frozen amounts, monthly and total income, customers, and node/instance counts; Logs can filter purchases, renewals, upgrades, and destruction; Withdrawals shows withdrawal status. The “Withdraw” button is enabled only when available balance reaches the current minimum. The default minimum is ¥10, but the page setting is authoritative. Withdrawals target the platform balance and apply the current 5% fee; the confirmation dialog shows the fee and net amount.
-
-## Before publishing
-
-- Confirm the node is online, the Agent is sending heartbeats, capacity and storage pools are healthy, and NAT/IPv6, port ranges, and product limits are correct.
-- Check /market from the public view to confirm the hosted product is visible; “Active” alone does not guarantee inventory.
-- The owner handles support for customers on their node. Renewals, upgrades, destruction, refunds, frozen income, and withdrawals follow the page state at submission time and the platform rules.`
+            content: '## Understand the hosting flow\n\nHosted products are supplied by third-party node owners. The platform provides public listing, provisioning, billing, and instance-management entry points; the owner operates the Incus host, maintains capacity, and handles customer support. The home page / and catalog /market can show public products without sign-in. Whether the hosted-market entry is visible is controlled by the hosting setting.\n\n## A. Buy a hosted product\n\n1. On /market, switch to the Hosted source and use the region filter and search. Open a product card to review LXC/KVM type, network mode, traffic, plans, resource ranges, and owner information; switch to Official to compare.\n2. A paid product requires an available plan selected in the right-hand panel. The plan shows billing cycle, price, monthly equivalent, CPU, memory, disk, and traffic. A free product has no paid plan, but the CPU, memory, and disk controls on the create page still obey product limits and account quota.\n3. Select “Provision now” or, while signed out, “Sign in to order”. A signed-out user is sent to /login with the return address preserved; after login, the flow returns to /instances/create with source=market, package, and plan parameters. Both /instances and /instances/create require sign-in.\n4. The create page loads the region, product, plan, available host, system image, and SSH keys. The create button is disabled without an SSH public key, an available image, or an available host; add a key first in the signed-in /profile page. Paid-plan resources are fixed, hosted products do not show the official referral-code field, prerequisite products must already be satisfied, and an owner cannot provision their own paid product.\n5. Enter the instance name, host, image, and SSH key, then click “Create”. Success takes you to /instances; select the instance to open /instances/:id. A new instance may be creating until deployment finishes; start, stop, restart, terminal, and networking actions become available according to its current status.\n\n## B. Node-owner admission and node creation\n\n1. Sign in, open My Nodes at /resources/hosts, and click “Create node / Add”. Regular users go through the hosting-access check: currently they must have owned at least one instance, and hosting must be enabled; administrators can enter directly. A failed check shows the admission reason and hint in the page, and the backend checks it again.\n2. In /resources/hosts/create, enter the node name, host address, API port, country/region, instance type, and network mode. A regular user\'s name must start with PEER + your user ID + -; the API port defaults to 8443. Modes include NAT, NAT+IPv6, and IPv6-only; when IPv6 data is supplied, the subnet and parent interface must be supplied together. NAT settings include public and bind IPs plus a port range, defaulting to 10000–65000. CPU, memory limits, and container/VM support are configured here too.\n3. After clicking “Create node”, the page opens the generated install-command dialog. The host initialization token expires after 24 hours; if it expires, open /resources/hosts/:id and click “Reinstall” to generate a new command. A node cannot be deleted while it still has instances.\n\n## C. Install the Agent, verify the connection, and inspect status\n\n1. On your Incus host, run the generated command as root; use “Copy command” in the dialog to copy it. The script installs/initializes Incus, imports the panel certificate, and installs and starts the host Agent using the injected token. It supports Ubuntu, Debian, Rocky Linux 9/10, and Alpine 3.20+; Ubuntu versions below 22 show a prompt, while Debian below 11 and Alpine below 3.20 are rejected.\n2. Return to the dialog and click “Verify and connect”, or use the same button for an unverified node in its detail page. Success changes the node to online and makes it usable by products. For failures, check connection-refused, timeout, or certificate errors and verify the host API, HTTPS, network, and command execution.\n3. The node detail Info tab shows online/offline/maintenance, CPU/memory/disk usage, and Agent status. In the Agent card, “Agent install command” generates a one-time install/update command and “Refresh” reloads the status; its token lasts about 30 minutes and is single-use. Heartbeats default to 30 seconds and allow 5–3600 seconds. The status can be not installed, online, offline, disabled, or outdated.\n\n## D. Create products and plans, then publish\n\n1. While signed in, open My Products at /resources/packages and click “Create product” to open /resources/packages/create. Regular users can select only their own nodes, and at least one node must be bound. Enter the name, description, container/VM type, network mode, resource and traffic/port/snapshot limits; storage pools, boot settings, a prerequisite product, and per-host traffic multipliers are also available.\n2. A free product can define resources at product level. For a paid product, open /resources/packages/:id, switch to the Plans tab, and click “Add plan”. Configure name, CPU (15–10000%), memory (128–62144 MB), disk (512–104857600 MB), traffic (1–100000 GB), speed (1–10000 Mbps), port/snapshot quotas, price, and SLA. Plans on hosted nodes support monthly billing only. Plan status can be Active, Sold out, or Inactive.\n3. “Publish” is not a separate button: check “Active” and “Public access” in the product form and save; a paid product also needs an active, available plan. /resources/packages shows the active/inactive and public badges. A public product is listed in the Hosted source on /market only when it has an online host and capacity. An offline or maintenance node, insufficient capacity, or all plans sold out makes the product unavailable. The Config and Plans tabs in the detail page are shown only to the owner or an administrator.\n\n## E. After-sales support, earnings, and withdrawals\n\n1. On /tickets (sign-in required and tickets must be enabled), a buyer clicks “Create ticket”, selects the hosted instance, and enters the subject, category, priority, and content; images can be attached. Statuses are open, in_progress, resolved, and closed. The creator can reply or close; the node owner sees tickets for their nodes in the received-tickets tab and can reply, mark them in progress/resolved, or close them.\n2. When a customer purchases, renews, or upgrades an instance on your node, income is added to the node owner\'s hosting balance, but new income is frozen for about 30 days. The scheduler unfreezes due records hourly and also catches up shortly after service startup. Hosted-instance renewals are limited to one month and are normally allowed only within seven days of expiry; free instances do not renew, and upgrades can only move to a higher-priced plan in the same product while the instance is running or stopped. Destruction/refund flows may deduct the related frozen income before available hosting balance, so frozen funds are not immediately withdrawable.\n3. Open Hosting Wallet at /hosting-wallet (sign-in required). Overview shows available and frozen amounts, monthly and total income, customers, and node/instance counts; Logs can filter purchases, renewals, upgrades, and destruction; Withdrawals shows withdrawal status. The “Withdraw” button is enabled only when available balance reaches the current minimum. The default minimum is ¥10, but the page setting is authoritative. Withdrawals target the platform balance and apply the current 5% fee; the confirmation dialog shows the fee and net amount.\n\n## Before publishing\n\n- Confirm the node is online, the Agent is sending heartbeats, capacity and storage pools are healthy, and NAT/IPv6, port ranges, and product limits are correct.\n- Check /market from the public view to confirm the hosted product is visible; “Active” alone does not guarantee inventory.\n- The owner handles support for customers on their node. Renewals, upgrades, destruction, refunds, frozen income, and withdrawals follow the page state at submission time and the platform rules.',
         },
         platformOverview: {
             title: 'Platform overview',
             summary: 'Compare products in the public preview, sign in to provision, then manage instances from the list and detail pages.',
-            content: `## 1. Start with the public preview
-
-1. Open the home page /. It loads the public products and regions without requiring sign-in; select “Browse products” or “View catalog” to open /market.
-2. On the catalog page, switch between the Official and Hosted sources, then use the region filter or search when needed. Select a product card to see its network mode, traffic, plans, and resources.
-3. A paid product requires an available plan. The provisioning button is disabled for sold-out products or plans; free products do not require a plan.
-
-## 2. Understand official and hosted products
-
-- Official nodes are operated by the platform and are labeled “Official”.
-- Hosted products are provided by independent node owners and are labeled “Hosted” in the marketplace. You can open the owner information before provisioning. Stability, routing, availability, and support may differ from official nodes, so read the product description and hosted notice first.
-- Whether the hosted-market entry is shown is controlled by a platform setting. If it is not visible, follow the sources currently shown in the page.
-
-## 3. Sign in and open provisioning
-
-4. After choosing a product and plan, select “Provision now” or “Sign in to provision”. If you are not signed in, the app sends you to /login with a return address; after login it returns to /instances/create with the selected source, product, and plan. Opening a protected page such as /instances or /instances/create directly also redirects to login.
-5. The provisioning page loads your quota, SSH keys, available hosts, images, and product data. Before starting, open Profile ( /profile ) and create at least one SSH public key. The Create button is disabled when no SSH key is available.
-
-## 4. Complete and submit provisioning
-
-6. Select a region if available, product, plan for a paid product, resources for a free product, an available host, and a system image; then enter an instance name. A host and image must both be available. You cannot submit when the product has no bound host, no host has capacity, or no image is available.
-7. Before submitting, check the displayed price, billing cycle, resources, and network conditions. A paid product uses the selected plan’s fixed CPU, memory, and disk configuration. You cannot provision your own paid product. If affiliate codes are enabled by the platform, they can be validated for official paid products; the field is not available for hosted products.
-8. Confirm the instance name, SSH key, and plan, then select “Create”. The app calls the instance creation API; after success it shows a confirmation and navigates to /instances. If the product requires an instance from another product first, satisfy that prerequisite before submitting. Quota shortages, sold-out products, and invalid resource selections also prevent submission.
-
-## 5. Open details from the instance list
-
-9. /instances requires sign-in, lists your instances, and refreshes their status periodically. If a new instance is still provisioning, wait for its status to update; select its card or row to open /instances/:id.
-10. The detail page opens on the Info tab. Depending on permissions and instance quotas, you can switch to Network, Sites, Traffic, Snapshots, Quota, Config, and Logs. Info shows status, resources, and connection data; Network manages port mappings, while terminal access and start, stop, and restart actions are also available from the detail page. Back up data and review the confirmation text before destructive actions such as rebuild, destroy, or snapshot restore.`
+            content: '## 1. Start with the public preview\n\n1. Open the home page /. It loads the public products and regions without requiring sign-in; select “Browse products” or “View catalog” to open /market.\n2. On the catalog page, switch between the Official and Hosted sources, then use the region filter or search when needed. Select a product card to see its network mode, traffic, plans, and resources.\n3. A paid product requires an available plan. The provisioning button is disabled for sold-out products or plans; free products do not require a plan.\n\n## 2. Understand official and hosted products\n\n- Official nodes are operated by the platform and are labeled “Official”.\n- Hosted products are provided by independent node owners and are labeled “Hosted” in the marketplace. You can open the owner information before provisioning. Stability, routing, availability, and support may differ from official nodes, so read the product description and hosted notice first.\n- Whether the hosted-market entry is shown is controlled by a platform setting. If it is not visible, follow the sources currently shown in the page.\n\n## 3. Sign in and open provisioning\n\n4. After choosing a product and plan, select “Provision now” or “Sign in to provision”. If you are not signed in, the app sends you to /login with a return address; after login it returns to /instances/create with the selected source, product, and plan. Opening a protected page such as /instances or /instances/create directly also redirects to login.\n5. The provisioning page loads your quota, SSH keys, available hosts, images, and product data. Before starting, open Profile ( /profile ) and create at least one SSH public key. The Create button is disabled when no SSH key is available.\n\n## 4. Complete and submit provisioning\n\n6. Select a region if available, product, plan for a paid product, resources for a free product, an available host, and a system image; then enter an instance name. A host and image must both be available. You cannot submit when the product has no bound host, no host has capacity, or no image is available.\n7. Before submitting, check the displayed price, billing cycle, resources, and network conditions. A paid product uses the selected plan’s fixed CPU, memory, and disk configuration. You cannot provision your own paid product. If affiliate codes are enabled by the platform, they can be validated for official paid products; the field is not available for hosted products.\n8. Confirm the instance name, SSH key, and plan, then select “Create”. The app calls the instance creation API; after success it shows a confirmation and navigates to /instances. If the product requires an instance from another product first, satisfy that prerequisite before submitting. Quota shortages, sold-out products, and invalid resource selections also prevent submission.\n\n## 5. Open details from the instance list\n\n9. /instances requires sign-in, lists your instances, and refreshes their status periodically. If a new instance is still provisioning, wait for its status to update; select its card or row to open /instances/:id.\n10. The detail page opens on the Info tab. Depending on permissions and instance quotas, you can switch to Network, Sites, Traffic, Snapshots, Quota, Config, and Logs. Info shows status, resources, and connection data; Network manages port mappings, while terminal access and start, stop, and restart actions are also available from the detail page. Back up data and review the confirmation text before destructive actions such as rebuild, destroy, or snapshot restore.',
         },
         gettingStarted: {
             title: 'Getting started: create your first instance',
             summary: 'Follow the public catalog, sign-in, creation form, connection, and initialization checks to create your first instance.',
-            content: `## 1. Choose a product and plan in the public catalog
-
-1. Open /market. This catalog is available before sign-in; switch between the Official and Market sources, then use the search box or region filter to narrow the list.
-2. Select a product card to review its LXC/KVM type, description, traffic, network mode, and sold-out state. For a paid product, choose an available plan in the detail panel and check its billing cycle, price, monthly equivalent, CPU, memory, disk, and traffic. A free product has no paid plan; its resources are adjusted on the creation page.
-3. After confirming the product and plan, select “Create” or “Provision now”. The catalog carries the source, product, and plan into the creation flow. The button is unavailable for a sold-out product or for a paid product without an available plan selected.
-
-## 2. Sign in and prepare an SSH key
-
-4. If you are signed in, the app opens /instances/create. Otherwise it first opens /login, then returns to /instances/create with the source, product, and plan parameters in the saved return address.
-5. The creation page loads your account quota, SSH keys, products, regions, available hosts, and images. At least one SSH key is required before creation; if none exists, open Profile at /profile, find the SSH public-key section, select “Add”, and save a key name and public key. You can also select “Generate” to create a key pair. When the private key appears in the dialog, copy or download it and store it safely before choosing the corresponding key on the creation page.
-
-## 3. Complete the instance creation form
-
-6. If a region selector is shown, choose a region or “All regions”. The region filters the available products; changing the source or region resets the previous product, plan, host, and image selections.
-7. Choose a product. For a paid product, select a plan next; the plan fixes CPU, memory, and disk, and the page also shows its billing cycle, price, traffic, port limit, and snapshot limit. For a free product, use the resource controls to adjust CPU, memory, and disk within the product limits, quota, and minimum values.
-8. Choose an available host. Hosts are loaded using the product, plan when applicable, and the requested CPU, memory, and disk; when only one host is available, the page may select it automatically. Creation cannot continue when the product has no bound host or no host has capacity.
-9. Choose a system image. The image list is loaded for the instance type, memory, and selected host, and appears only after a host is selected. Submission is unavailable when no image is available. After choosing an image, the page may show optional custom initialization commands.
-10. Review the network conditions. The creation form has no separate network-mode control; the network mode comes from the product’s network_mode. Check it in the catalog first, then verify it on the instance Info page after creation. Finally enter the required instance name. An affiliate-code field appears only for official paid products when enabled by the platform; hosted Market products do not provide that field.
-11. Confirm the SSH key, product/plan, host, image, resources, and price, then select “Create”. The request submits name, packageId, planId for a paid product, hostId, image, cpu, memory, disk, sshKeyId, and optional custom initialization commands. Sold-out products, insufficient quota, unmet product prerequisites, and your own paid product keep submission disabled.
-
-## 4. Find the instance and get connection details
-
-12. After creation succeeds, the app shows a success message and navigates to /instances. Use the search box to find the instance by name, or filter by country/region; the page refreshes its data periodically while visible. Select the instance card or row to open /instances/:id.
-13. The Info tab shows the instance status, image, instance type, network mode, host, IPv4/IPv6, SSH port when present, and Root password; the password is hidden until you select “Show”, which loads it. The Network tab shows public/private addresses and port mappings.
-14. For an IPv4 NAT connection, open the Network tab and add a mapping for internal port 22, then connect with the public IPv4 address and mapped public port. For the IPv6 direct-connection mode shown by the page, use the public IPv6 address and port 22 without a mapping. Follow the network mode and addresses displayed for the instance. When the instance is running, the detail page also provides a terminal entry.
-
-## 5. Check provisioning and initialization
-
-15. If the /instances list shows creating after submission, provisioning is still in progress; wait for the list to refresh. On the detail page, an active task with PENDING or PROCESSING status appears as a task indicator beside the title; the page reloads the instance when that task completes or fails.
-16. Once the instance is running, the detail page checks Cloud-init initialization. When the check returns ready=false, an amber initialization indicator appears in the header; it can mean initializing, stalled, or unknown status, and selecting it runs another check. While it is not ready, the page retries automatically every 10 seconds, up to 12 attempts.
-17. When the initialization check returns ready=true, the initialization indicator disappears; the returned state can be done, done_with_errors, disabled, unsupported, or manual. If the state is agent_unavailable or unknown, only users with the relevant permission see “Complete manually”. Before connecting, confirm that the instance is running and no initialization indicator still reports that it is not ready.`
+            content: '## 1. Choose a product and plan in the public catalog\n\n1. Open /market. This catalog is available before sign-in; switch between the Official and Market sources, then use the search box or region filter to narrow the list.\n2. Select a product card to review its LXC/KVM type, description, traffic, network mode, and sold-out state. For a paid product, choose an available plan in the detail panel and check its billing cycle, price, monthly equivalent, CPU, memory, disk, and traffic. A free product has no paid plan; its resources are adjusted on the creation page.\n3. After confirming the product and plan, select “Create” or “Provision now”. The catalog carries the source, product, and plan into the creation flow. The button is unavailable for a sold-out product or for a paid product without an available plan selected.\n\n## 2. Sign in and prepare an SSH key\n\n4. If you are signed in, the app opens /instances/create. Otherwise it first opens /login, then returns to /instances/create with the source, product, and plan parameters in the saved return address.\n5. The creation page loads your account quota, SSH keys, products, regions, available hosts, and images. At least one SSH key is required before creation; if none exists, open Profile at /profile, find the SSH public-key section, select “Add”, and save a key name and public key. You can also select “Generate” to create a key pair. When the private key appears in the dialog, copy or download it and store it safely before choosing the corresponding key on the creation page.\n\n## 3. Complete the instance creation form\n\n6. If a region selector is shown, choose a region or “All regions”. The region filters the available products; changing the source or region resets the previous product, plan, host, and image selections.\n7. Choose a product. For a paid product, select a plan next; the plan fixes CPU, memory, and disk, and the page also shows its billing cycle, price, traffic, port limit, and snapshot limit. For a free product, use the resource controls to adjust CPU, memory, and disk within the product limits, quota, and minimum values.\n8. Choose an available host. Hosts are loaded using the product, plan when applicable, and the requested CPU, memory, and disk; when only one host is available, the page may select it automatically. Creation cannot continue when the product has no bound host or no host has capacity.\n9. Choose a system image. The image list is loaded for the instance type, memory, and selected host, and appears only after a host is selected. Submission is unavailable when no image is available. After choosing an image, the page may show optional custom initialization commands.\n10. Review the network conditions. The creation form has no separate network-mode control; the network mode comes from the product’s network_mode. Check it in the catalog first, then verify it on the instance Info page after creation. Finally enter the required instance name. An affiliate-code field appears only for official paid products when enabled by the platform; hosted Market products do not provide that field.\n11. Confirm the SSH key, product/plan, host, image, resources, and price, then select “Create”. The request submits name, packageId, planId for a paid product, hostId, image, cpu, memory, disk, sshKeyId, and optional custom initialization commands. Sold-out products, insufficient quota, unmet product prerequisites, and your own paid product keep submission disabled.\n\n## 4. Find the instance and get connection details\n\n12. After creation succeeds, the app shows a success message and navigates to /instances. Use the search box to find the instance by name, or filter by country/region; the page refreshes its data periodically while visible. Select the instance card or row to open /instances/:id.\n13. The Info tab shows the instance status, image, instance type, network mode, host, IPv4/IPv6, SSH port when present, and Root password; the password is hidden until you select “Show”, which loads it. The Network tab shows public/private addresses and port mappings.\n14. For an IPv4 NAT connection, open the Network tab and add a mapping for internal port 22, then connect with the public IPv4 address and mapped public port. For the IPv6 direct-connection mode shown by the page, use the public IPv6 address and port 22 without a mapping. Follow the network mode and addresses displayed for the instance. When the instance is running, the detail page also provides a terminal entry.\n\n## 5. Check provisioning and initialization\n\n15. If the /instances list shows creating after submission, provisioning is still in progress; wait for the list to refresh. On the detail page, an active task with PENDING or PROCESSING status appears as a task indicator beside the title; the page reloads the instance when that task completes or fails.\n16. Once the instance is running, the detail page checks Cloud-init initialization. When the check returns ready=false, an amber initialization indicator appears in the header; it can mean initializing, stalled, or unknown status, and selecting it runs another check. While it is not ready, the page retries automatically every 10 seconds, up to 12 attempts.\n17. When the initialization check returns ready=true, the initialization indicator disappears; the returned state can be done, done_with_errors, disabled, unsupported, or manual. If the state is agent_unavailable or unknown, only users with the relevant permission see “Complete manually”. Before connecting, confirm that the instance is running and no initialization indicator still reports that it is not ready.',
         },
         instanceManagement: {
             title: 'Instance management: power, rebuilds, snapshots, and backups',
             summary: 'Follow the page controls to power instances on or off, track async tasks, rebuild systems, and protect data.',
-            content: `## Find the instance
-1. After signing in, open the Instances list (/instances). The list refreshes status periodically; click an instance card or row to open its details (/instances/:id).
-2. Detail-page controls appear or become disabled based on status, permissions, quota, and active tasks. Save databases, configuration files, and important files elsewhere before destructive operations.
-
-## Daily power operations
-
-### One instance
-
-1. In the list, click Start when the status is stopped. When it is running, click Stop or Restart.
-2. The detail page exposes the same controls for the current status. Start, Stop, and Restart do not show a confirmation dialog first; they submit a task. A “task queued” message does not mean the operation has finished.
-3. Do not submit another operation repeatedly while one is running. The detail page reloads the instance after the task completes or fails.
-
-### Batch power operations
-
-1. Select instances in the list and choose Start, Stop, or Restart from the batch action bar.
-2. Batch Start only targets stopped instances. Batch Stop and Restart only target running instances. Selected instances in any other state are skipped.
-3. Up to 5 requests run concurrently. When the batch finishes, the list refreshes and a partial result reports the successful, failed, and skipped counts.
-
-## Async tasks and queueing
-
-- The start, stop, restart, rebuild, and recreate APIs return a taskId and task status; the backend queues the work. The detail page polls the active task every 2 seconds. Its task indicator may show PENDING or PROCESSING, then polling stops and the instance reloads when the task completes or fails.
-- If the API reports TASK_IN_PROGRESS, the page attaches to the existing task instead of submitting another one. Wait for it. An active task, a pending transfer, or a suspended instance disables other controls (the page determines which node-owner controls remain available).
-- If a task has made no progress for a long time, the detail page can offer Recover Task when eligible. A regular user must wait at least 15 minutes; an administrator can run it directly. The button asks for confirmation. If recovery also fails, keep the task error for support.
-- An instance in error state can use Retry Provisioning / Retry. This calls retryProvision, changes the status back to creating, and returns to the list. The backend accepts it only while the status is error, the original package still exists, and the original host is online.
-
-## Rebuild versus recreate
-
-### Rebuild the system (rebuild)
-
-1. First make the instance stopped. Clicking Rebuild System while it is running only shows a stop-required message and does not open the submit flow.
-2. Choose an image currently allowed by the host and compatible with the instance type and memory, then choose one of your SSH keys. You can also choose custom initialization commands.
-3. Click Confirm Rebuild to create the async task. Rebuild erases data inside the instance and all snapshots, but preserves port mappings; it generates a new root password that can be viewed on the detail page. The rebuild dialog also says the instance must be started manually after completion, so use the final instance status as the source of truth.
-
-### Recreate the instance (recreate)
-
-- Recreate does not require the instance to be stopped. It creates a brand-new instance to replace the old one and preserves only billing status and quotas. It removes instance data, snapshots, port mappings, backup records and policies, proxy sites, and snapshot policies, so make an external backup first.
-- Recreate also requires an image, an SSH key, and optional custom initialization commands; track it with the returned taskId. It is not the same operation as rebuild: rebuild changes the system on the stopped original instance, while recreate replaces it with a new instance.
-- The current InstanceDetailView actually binds the Rebuild System button. Although the source defines RecreateModal and the recreate API, this page has no button wired to open that modal. If Recreate Instance is not visible, do not treat Rebuild System as a recreate operation.
-
-## Snapshots: create, restore, and delete
-
-1. Open the Snapshots tab in instance details. The tab is hidden when the snapshot quota is 0; Create is disabled when there is no quota or the quota is full. Quota can be viewed in the Quota tab or adjusted by a user with permission.
-2. Click Create, enter the required name, optionally add a description, and submit. The list reloads after success; creation does not ask for a separate confirmation.
-3. Stop the instance before restoring because only the stopped state can restore a snapshot. Clicking Restore while running shows a stop-first message. Once stopped, click Restore beside the snapshot and confirm its name before the restore API is called.
-4. To remove a snapshot, click Delete and confirm the snapshot name. If deletion fails, the page reloads the list.
-5. Auto Snapshot Settings can enable a policy with intervals of 10 minutes, 1 hour, 6 hours, or 24 hours. When the quota is full, the policy notice explains that the oldest automatic snapshot is handled by the policy.
-
-## Backups: create, export, remote upload, and restore
-
-The current InstanceDetailView mounts the snapshot manager. The backup API and BackupManager component define the following controls, but you will only see them where the Backup management area is mounted.
-1. **Create**: Confirm that a backup quota exists and is not full; otherwise Create is disabled. Click Create, enter the required name and optional description, and submit. A backup starts as creating and becomes ready when complete; creation may take several minutes.
-2. **Export / download**: Only a ready backup can be exported. Click Export to create an export task, then obtain a one-time download token so the browser can start the download. The button is disabled while preparing or downloading; an error changes it to Retry. A node owner cannot download when canManageBackups=false.
-3. **Upload to remote storage**: Click Upload beside a ready backup and choose a storage configuration in the dialog; the default configuration is selected first. If none exists, use the dialog link to open Profile and configure storage. After submission, the task shows PENDING or PROCESSING, queue position, and duration; the page polls every 3 seconds and reloads an active upload task after a refresh. Node owners cannot upload.
-4. **Restore**: Click Restore beside a ready backup and confirm in the dangerous-operation dialog. Restore stops the current instance and replaces it with the backup. All other backups and all snapshots for that instance are permanently deleted, and the name becomes “original instance name | restored:backup name”. The restore task shows status and queue position; another restore cannot be submitted while one is active.
-5. If restore fails while the original instance can still be recovered, the backup row offers Rollback. Click it to call the rollback API and restore the original instance. The page reloads after a successful restore; check SSH, IP, and port mappings again.
-6. **Delete a backup**: Click Delete and confirm the backup name. A backup in creating status or being restored cannot be deleted. Deleting a backup is not the same as deleting the instance and does not replace remote upload.
-
-## Deletion and refund details
-
-- The list’s Delete control appears only for an error instance or an instance without a package-plan billing ID. It first asks for confirmation using the instance name, then calls instances.delete. Direct deletion on the detail page also follows permissions and package settings; a paid instance normally uses the Destroy flow, not Delete-as-refund.
-- Destroy first loads eligibility and a refund preview. A paid instance must have less than 5 GB used in the current traffic cycle. The first destroy is fee-free; later fee rate, remaining value, refund cap, and actual refund are shown by the dialog at that moment. A free instance can be destroyed without a refund and does not count toward the destroy count.
-- Destroy requires more than one click: review the instance and refund information, type the full instance name, then click Confirm Destroy. On success the instance and its data—including snapshots, backups, and port mappings—are permanently deleted; a paid-instance success message shows the refund. If traffic or another condition blocks destruction, follow the reason shown in the dialog.
-- The error-state banner also provides Retry Provisioning and Destroy Now. Destroy Now asks for confirmation and uses the error fee-waiver path. Before any deletion, rebuild, recreate, or backup restore, confirm that no data still needs to be kept.`
+            content: '## Find the instance\n1. After signing in, open the Instances list (/instances). The list refreshes status periodically; click an instance card or row to open its details (/instances/:id).\n2. Detail-page controls appear or become disabled based on status, permissions, quota, and active tasks. Save databases, configuration files, and important files elsewhere before destructive operations.\n\n## Daily power operations\n\n### One instance\n\n1. In the list, click Start when the status is stopped. When it is running, click Stop or Restart.\n2. The detail page exposes the same controls for the current status. Start, Stop, and Restart do not show a confirmation dialog first; they submit a task. A “task queued” message does not mean the operation has finished.\n3. Do not submit another operation repeatedly while one is running. The detail page reloads the instance after the task completes or fails.\n\n### Batch power operations\n\n1. Select instances in the list and choose Start, Stop, or Restart from the batch action bar.\n2. Batch Start only targets stopped instances. Batch Stop and Restart only target running instances. Selected instances in any other state are skipped.\n3. Up to 5 requests run concurrently. When the batch finishes, the list refreshes and a partial result reports the successful, failed, and skipped counts.\n\n## Async tasks and queueing\n\n- The start, stop, restart, rebuild, and recreate APIs return a taskId and task status; the backend queues the work. The detail page polls the active task every 2 seconds. Its task indicator may show PENDING or PROCESSING, then polling stops and the instance reloads when the task completes or fails.\n- If the API reports TASK_IN_PROGRESS, the page attaches to the existing task instead of submitting another one. Wait for it. An active task, a pending transfer, or a suspended instance disables other controls (the page determines which node-owner controls remain available).\n- If a task has made no progress for a long time, the detail page can offer Recover Task when eligible. A regular user must wait at least 15 minutes; an administrator can run it directly. The button asks for confirmation. If recovery also fails, keep the task error for support.\n- An instance in error state can use Retry Provisioning / Retry. This calls retryProvision, changes the status back to creating, and returns to the list. The backend accepts it only while the status is error, the original package still exists, and the original host is online.\n\n## Rebuild versus recreate\n\n### Rebuild the system (rebuild)\n\n1. First make the instance stopped. Clicking Rebuild System while it is running only shows a stop-required message and does not open the submit flow.\n2. Choose an image currently allowed by the host and compatible with the instance type and memory, then choose one of your SSH keys. You can also choose custom initialization commands.\n3. Click Confirm Rebuild to create the async task. Rebuild erases data inside the instance and all snapshots, but preserves port mappings; it generates a new root password that can be viewed on the detail page. The rebuild dialog also says the instance must be started manually after completion, so use the final instance status as the source of truth.\n\n### Recreate the instance (recreate)\n\n- Recreate does not require the instance to be stopped. It creates a brand-new instance to replace the old one and preserves only billing status and quotas. It removes instance data, snapshots, port mappings, backup records and policies, proxy sites, and snapshot policies, so make an external backup first.\n- Recreate also requires an image, an SSH key, and optional custom initialization commands; track it with the returned taskId. It is not the same operation as rebuild: rebuild changes the system on the stopped original instance, while recreate replaces it with a new instance.\n- The current InstanceDetailView actually binds the Rebuild System button. Although the source defines RecreateModal and the recreate API, this page has no button wired to open that modal. If Recreate Instance is not visible, do not treat Rebuild System as a recreate operation.\n\n## Snapshots: create, restore, and delete\n\n1. Open the Snapshots tab in instance details. The tab is hidden when the snapshot quota is 0; Create is disabled when there is no quota or the quota is full. Quota can be viewed in the Quota tab or adjusted by a user with permission.\n2. Click Create, enter the required name, optionally add a description, and submit. The list reloads after success; creation does not ask for a separate confirmation.\n3. Stop the instance before restoring because only the stopped state can restore a snapshot. Clicking Restore while running shows a stop-first message. Once stopped, click Restore beside the snapshot and confirm its name before the restore API is called.\n4. To remove a snapshot, click Delete and confirm the snapshot name. If deletion fails, the page reloads the list.\n5. Auto Snapshot Settings can enable a policy with intervals of 10 minutes, 1 hour, 6 hours, or 24 hours. When the quota is full, the policy notice explains that the oldest automatic snapshot is handled by the policy.\n\n## Backups: create, export, remote upload, and restore\n\nThe current InstanceDetailView mounts the snapshot manager. The backup API and BackupManager component define the following controls, but you will only see them where the Backup management area is mounted.\n1. **Create**: Confirm that a backup quota exists and is not full; otherwise Create is disabled. Click Create, enter the required name and optional description, and submit. A backup starts as creating and becomes ready when complete; creation may take several minutes.\n2. **Export / download**: Only a ready backup can be exported. Click Export to create an export task, then obtain a one-time download token so the browser can start the download. The button is disabled while preparing or downloading; an error changes it to Retry. A node owner cannot download when canManageBackups=false.\n3. **Upload to remote storage**: Click Upload beside a ready backup and choose a storage configuration in the dialog; the default configuration is selected first. If none exists, use the dialog link to open Profile and configure storage. After submission, the task shows PENDING or PROCESSING, queue position, and duration; the page polls every 3 seconds and reloads an active upload task after a refresh. Node owners cannot upload.\n4. **Restore**: Click Restore beside a ready backup and confirm in the dangerous-operation dialog. Restore stops the current instance and replaces it with the backup. All other backups and all snapshots for that instance are permanently deleted, and the name becomes “original instance name | restored:backup name”. The restore task shows status and queue position; another restore cannot be submitted while one is active.\n5. If restore fails while the original instance can still be recovered, the backup row offers Rollback. Click it to call the rollback API and restore the original instance. The page reloads after a successful restore; check SSH, IP, and port mappings again.\n6. **Delete a backup**: Click Delete and confirm the backup name. A backup in creating status or being restored cannot be deleted. Deleting a backup is not the same as deleting the instance and does not replace remote upload.\n\n## Deletion and refund details\n\n- The list’s Delete control appears only for an error instance or an instance without a package-plan billing ID. It first asks for confirmation using the instance name, then calls instances.delete. Direct deletion on the detail page also follows permissions and package settings; a paid instance normally uses the Destroy flow, not Delete-as-refund.\n- Destroy first loads eligibility and a refund preview. A paid instance must have less than 5 GB used in the current traffic cycle. The first destroy is fee-free; later fee rate, remaining value, refund cap, and actual refund are shown by the dialog at that moment. A free instance can be destroyed without a refund and does not count toward the destroy count.\n- Destroy requires more than one click: review the instance and refund information, type the full instance name, then click Confirm Destroy. On success the instance and its data—including snapshots, backups, and port mappings—are permanently deleted; a paid-instance success message shows the refund. If traffic or another condition blocks destruction, follow the reason shown in the dialog.\n- The error-state banner also provides Retry Provisioning and Destroy Now. Destroy Now asks for confirmation and uses the error fee-waiver path. Before any deletion, rebuild, recreate, or backup restore, confirm that no data still needs to be kept.',
         },
-
         networkingBasics: {
             title: 'Networking: NAT and Port Mapping Guide',
             summary: 'Check the network mode first, then create TCP/UDP mappings for one port or a contiguous range, test externally, and resolve conflicts.',
-            content: `## Identify the network mode first
-
-1. Open the instance details, check Network Mode on the Info tab, then open the Network tab to see the private IPv4, public IPv4, public IPv6, and port mappings.
-2. Choose the test address according to the mode:
-   - IPv4 NAT (nat): access instance services through the node public IPv4 and a port mapping.
-   - IPv4 NAT & IPv6 (nat_ipv6): IPv4 still uses port mappings; the instance has an independent public IPv6 that can be used directly.
-   - IPv4 NAT & IPv6 NAT (nat_ipv6_nat): IPv4 uses port mappings; when the node has a public IPv6, the mapping also uses the same external port on the node's shared IPv6.
-   - IPv6 NAT (ipv6_nat): port mappings use the node public IPv6; do not assume this mode has a public IPv4 endpoint.
-   - IPv6 Only (ipv6_only): port mappings are not supported. Use the instance public IPv6 directly; the Network tab does not offer Add Mapping.
-
-## Confirm the service inside the instance
-
-The service must listen on the internal port you plan to map, and the protocol must match: a TCP service needs a TCP mapping, and a UDP service needs a UDP mapping. Check the service inside the instance first, then test from outside; success from inside alone does not prove that the mapping is reachable externally.
-
-## Create one mapping
-
-1. In the instance details, open Network and select Add under Port Mappings. For an IPv6 Only instance, use the public IPv6 directly instead of adding a mapping.
-2. Keep Single Port selected and choose TCP, UDP, or Both. Both creates two mappings, TCP and UDP, on the same external port and uses two port-quota slots.
-3. Enter the required Private Port. You can enter one port, such as 80 or 22, or a contiguous range, such as 80-85.
-4. Public Port is optional. Leave it empty to let the system allocate an available port from the node port pool. If you specify one, use an available port within the allowed range shown by the page. If you enter a range, the private and public ranges must contain the same number of ports.
-5. Add an optional remark and select Add. After success, the list shows the protocol, external port, and internal port; use the listed external port as the client endpoint.
-
-## Create a batch mapping
-
-1. In Add Port Mapping, switch to Port Range.
-2. Choose TCP, UDP, or Both, then enter the external start/end ports and internal start/end ports. The ranges must contain the same number of ports and are paired in order; for example, external 20000-20005 maps to internal 80-85.
-3. A batch can contain at most 100 consecutive internal ports. Both creates TCP and UDP mappings for every internal port, so each port uses two quota slots.
-4. To let the system allocate an entire external range, enter an internal range in Single Port mode and leave Public Port empty; submission then uses the batch creation flow with automatic allocation.
-5. Add an optional remark and submit. Use the success count in the notification to confirm how many mappings were created.
-
-## Test SSH, HTTP, and other services
-
-- SSH: for IPv4, map internal port 22 to an available external port, then connect with the public IPv4 and that external port. For direct IPv6 access, connect to the public IPv6 on port 22 without a mapping. Use brackets around an IPv6 address in a URL.
-- HTTP: confirm the Web service's actual internal TCP port, then open the public IPv4 or public IPv6 with the external port from outside. Do not use the internal port as the external port unless you explicitly mapped it that way.
-- Other TCP/UDP services: the client must use the same protocol and external port as the mapping. If the service is not listening on the internal port, or TCP and UDP are mismatched, the external test will fail.
-
-## Handle port conflicts
-
-- If the specified public port for a single mapping is already in use, submission fails. Choose another external port within the allowed range, or clear the field for automatic allocation.
-- When a specified public range contains occupied ports, the page opens the conflict dialog. Select Use All Suggestions or enter a new external port for each conflict, then confirm the changes.
-- Each replacement external port must be within the allowed range, between 1 and 65535, and unique among the conflict entries. Both also needs the port to be available for both TCP and UDP. If the resubmission still conflicts, choose different ports.
-- If there are not enough available ports, reduce the batch range or choose other available ports. If the quota is insufficient, allocate enough port quota on the Quota tab first.
-
-## Delete mappings and understand common limits
-
-1. Find the mapping in the Port Mappings list, select its trash icon, and confirm. Deletion removes the mapping's underlying proxy devices and record, releasing its quota.
-2. You can also select multiple mappings on the current list page, choose Batch Delete, and confirm. The client deletes them one by one; if some fail, the notification reports the success/failure counts and reloads the list.
-3. Adding and deleting mappings requires instance-owner permission. Operations are also rejected while the instance is suspended or transfer-locked. If the button is missing or you receive a permission error, verify the signed-in account owns the instance.
-
-## Troubleshooting order
-
-First verify the network mode and the public address you are actually using. Then verify the mapping protocol, external port, and internal port, and finally confirm inside the instance that the service is still listening. A missing public IPv4 in IPv4 NAT, a missing public IPv6 in IPv6 NAT/IPv6 Only, or a service listening on the wrong protocol/port prevents an external connection. `
+            content: '## Identify the network mode first\n\n1. Open the instance details, check Network Mode on the Info tab, then open the Network tab to see the private IPv4, public IPv4, public IPv6, and port mappings.\n2. Choose the test address according to the mode:\n   - IPv4 NAT (nat): access instance services through the node public IPv4 and a port mapping.\n   - IPv4 NAT & IPv6 (nat_ipv6): IPv4 still uses port mappings; the instance has an independent public IPv6 that can be used directly.\n   - IPv4 NAT & IPv6 NAT (nat_ipv6_nat): IPv4 uses port mappings; when the node has a public IPv6, the mapping also uses the same external port on the node\'s shared IPv6.\n   - IPv6 NAT (ipv6_nat): port mappings use the node public IPv6; do not assume this mode has a public IPv4 endpoint.\n   - IPv6 Only (ipv6_only): port mappings are not supported. Use the instance public IPv6 directly; the Network tab does not offer Add Mapping.\n\n## Confirm the service inside the instance\n\nThe service must listen on the internal port you plan to map, and the protocol must match: a TCP service needs a TCP mapping, and a UDP service needs a UDP mapping. Check the service inside the instance first, then test from outside; success from inside alone does not prove that the mapping is reachable externally.\n\n## Create one mapping\n\n1. In the instance details, open Network and select Add under Port Mappings. For an IPv6 Only instance, use the public IPv6 directly instead of adding a mapping.\n2. Keep Single Port selected and choose TCP, UDP, or Both. Both creates two mappings, TCP and UDP, on the same external port and uses two port-quota slots.\n3. Enter the required Private Port. You can enter one port, such as 80 or 22, or a contiguous range, such as 80-85.\n4. Public Port is optional. Leave it empty to let the system allocate an available port from the node port pool. If you specify one, use an available port within the allowed range shown by the page. If you enter a range, the private and public ranges must contain the same number of ports.\n5. Add an optional remark and select Add. After success, the list shows the protocol, external port, and internal port; use the listed external port as the client endpoint.\n\n## Create a batch mapping\n\n1. In Add Port Mapping, switch to Port Range.\n2. Choose TCP, UDP, or Both, then enter the external start/end ports and internal start/end ports. The ranges must contain the same number of ports and are paired in order; for example, external 20000-20005 maps to internal 80-85.\n3. A batch can contain at most 100 consecutive internal ports. Both creates TCP and UDP mappings for every internal port, so each port uses two quota slots.\n4. To let the system allocate an entire external range, enter an internal range in Single Port mode and leave Public Port empty; submission then uses the batch creation flow with automatic allocation.\n5. Add an optional remark and submit. Use the success count in the notification to confirm how many mappings were created.\n\n## Test SSH, HTTP, and other services\n\n- SSH: for IPv4, map internal port 22 to an available external port, then connect with the public IPv4 and that external port. For direct IPv6 access, connect to the public IPv6 on port 22 without a mapping. Use brackets around an IPv6 address in a URL.\n- HTTP: confirm the Web service\'s actual internal TCP port, then open the public IPv4 or public IPv6 with the external port from outside. Do not use the internal port as the external port unless you explicitly mapped it that way.\n- Other TCP/UDP services: the client must use the same protocol and external port as the mapping. If the service is not listening on the internal port, or TCP and UDP are mismatched, the external test will fail.\n\n## Handle port conflicts\n\n- If the specified public port for a single mapping is already in use, submission fails. Choose another external port within the allowed range, or clear the field for automatic allocation.\n- When a specified public range contains occupied ports, the page opens the conflict dialog. Select Use All Suggestions or enter a new external port for each conflict, then confirm the changes.\n- Each replacement external port must be within the allowed range, between 1 and 65535, and unique among the conflict entries. Both also needs the port to be available for both TCP and UDP. If the resubmission still conflicts, choose different ports.\n- If there are not enough available ports, reduce the batch range or choose other available ports. If the quota is insufficient, allocate enough port quota on the Quota tab first.\n\n## Delete mappings and understand common limits\n\n1. Find the mapping in the Port Mappings list, select its trash icon, and confirm. Deletion removes the mapping\'s underlying proxy devices and record, releasing its quota.\n2. You can also select multiple mappings on the current list page, choose Batch Delete, and confirm. The client deletes them one by one; if some fail, the notification reports the success/failure counts and reloads the list.\n3. Adding and deleting mappings requires instance-owner permission. Operations are also rejected while the instance is suspended or transfer-locked. If the button is missing or you receive a permission error, verify the signed-in account owns the instance.\n\n## Troubleshooting order\n\nFirst verify the network mode and the public address you are actually using. Then verify the mapping protocol, external port, and internal port, and finally confirm inside the instance that the service is still listening. A missing public IPv4 in IPv4 NAT, a missing public IPv6 in IPv6 NAT/IPv6 Only, or a service listening on the wrong protocol/port prevents an external connection. ',
         },
         hostingPublish: {
             title: 'Hosting guide: create a node and publish a package',
             summary: 'A source-aligned walkthrough from hosting eligibility and Agent connection to package plans and public sales.',
-            content: `## Understand the three terms
-
-- **Node**: the Incus host you provide. Create it in “My Nodes”; the panel connects to Incus with host credentials while the Agent reports host state.
-- **Package**: the resource and network policy shown to users. It must bind at least one node and defines network mode, instance type, quotas, and public visibility.
-- **Plan**: a purchasable version inside a package. It defines price, billing cycle, CPU, memory, disk, traffic, speed, and sales status. A free package uses its package-level fields directly; a paid package defines these sales versions in the “Plans” tab.
-
-## 1. Check hosting eligibility
-
-In “My Nodes”, click “Add Node”. Normally, a regular user must own at least one instance; free or paid, official or hosted instances all count. If the system has disabled hosting, a user who has created a node before can still pass, while a user who has never created one is denied. Admins bypass this eligibility check, but their node fields are still validated. The create-node API checks eligibility again, so a visible button is not an authorization bypass.
-
-**Common errors:** If the page reports that hosting eligibility is not met or hosting is not yet available, confirm that the account owns at least one instance. If the button is visible but submission is rejected, the backend eligibility check failed.
-
-## 2. Fill in “Add Node”
-
-1. **Node name**: regular users enter a suffix and the panel adds PEER + user ID + -; admins can enter the complete name. It must be 2–64 characters, using only letters, numbers, underscores, and hyphens, and must be unique for that user.
-2. **Description/location and country/region**: location is limited to 100 characters and is used to identify the node.
-3. **Host address and API port**: use an IPv4 address, a raw IPv6 address, or a domain name. The API port defaults to 8443 and must be 1–65535. This is the address used by the panel to connect to Incus, not a service port exposed by an instance.
-4. **Network mode**: choose NAT, NAT + IPv6, NAT + IPv6 NAT, or IPv6 Only according to the host. Routed IPv6 modes require both an IPv6 subnet (including a slash) and an IPv6 parent interface; you may leave both blank initially and fill them in under “Settings” after running the script.
-5. **NAT settings**: for modes other than IPv6 Only, you can provide public and listening IPv4/IPv6 addresses and a port range. An IPv6 value must contain a colon, and the end port cannot be below the start port.
-6. **Resource limits**: the CPU allowance is a total CPU time-slice cap; 0 means no cap. Memory is entered in MB and, when non-zero, must be at least 256 MB. Choose Container, VM, or Both as the supported instance type.
-
-The page lists Ubuntu 22.04+, Debian 11+, Rocky Linux 10, and Alpine Linux 3.20+ as supported operating systems. After creation, use the node detail’s “Storage” tab to create a storage pool.
-
-**Common errors:** Invalid address syntax, only one of the IPv6 subnet/parent interface fields filled, a reversed NAT port range, memory below 256 MB, a duplicate name, or unsupported name characters will be rejected.
-
-## 3. Install and verify the node connection
-
-After creation, the “Install Script” dialog opens. In step 1, “Run Installation Script”, click “Copy Command” and run it on the Incus host as root or as a user with sudo. The script configures the host connection data; the initial host installation session is valid for 24 hours.
-
-After the script finishes, use step 2, “Verify and Connect”. The panel calls Incus resource and version endpoints; on success the node becomes installed and shows “Online”. If the command has expired, open the node details, click “Reinstall”, run the new command, and click “Verify and Connect” again. A node with credentials can use “Test” to check the connection; a node without credentials must be verified first.
-
-**Agent and node connectivity are separate:** In the node detail’s “Info” tab, the “Host Status” card has “Install/Reinstall Agent” and “Copy Command”. Run the one-time Agent command on the host. The Agent command requires an HTTPS panel URL; its token is valid for 30 minutes and can be used once. Reinstalling rotates credentials, so the old Agent can no longer report. “Online”, “Offline”, “Not installed”, and “Disabled” in this card describe the Agent; clicking an outdated version can request an upgrade, delivered on the next heartbeat.
-
-**Common errors:** “Verify and Connect” usually fails because the host address, API port, Incus API, or script configuration is wrong. Agent installation commonly fails when the panel URL is not HTTPS or the one-time token is expired or already used. A node can be “Online” while its Agent is not; a stale heartbeat eventually changes the Agent status to “Offline”.
-
-## 4. Review and manage the node
-
-Open the node from “My Nodes” and confirm the header status is “Online”. Use “Info” for host and Agent reports, “Settings” for address, limits, network, and notifications, and “Storage” for storage pools. A node can also be “Offline” or “Maintenance”; resolve connection and capacity issues before selling it. Only the node owner or an admin can manage it. The node must have no instances before deletion; both the UI precheck and the backend enforce this.
-
-## 5. Create a package in “My Packages”
-
-Click “Create Package” to open the package form. The package is the resource policy, not the node and not an individual plan:
-
-- With **Free Instance Package**, CPU, memory, disk, traffic, network, quotas, I/O, and boot settings come directly from the package; no separate sales plan is required.
-- With **Paid Instance Package**, the package supplies shared network and management settings, while price and sales specifications are created in the “Plans” tab. A package that already has plans cannot be switched back to free mode until all plans are deleted.
-- A package must bind at least one node. Regular users can select only their own nodes; admins can select nodes in the official or hosted scopes available to them. Each binding can specify a system-disk storage pool (blank means automatic) and a traffic multiplier from 0.001 to 100.
-
-Enter a package name (2–64 characters), description (up to 500), network mode, Container or VM, CPU/memory/disk, traffic and port/snapshot/site quotas, I/O and network limits, process count, CPU priority, and boot policy. If public access is enabled, the public package’s maximum instance count must be 1–5. Select a prerequisite package when needed. To appear publicly, the package must also be active and have public access enabled; the detail page provides “Copy Share Link”.
-
-**Common errors:** No bound node, selecting another user’s node, a public maximum outside 1–5, a duplicate or invalid name, a VM paired with an unsupported network mode, or editing as a non-owner will be rejected. Package creation itself requires login and at least one bound node; do not confuse that with the separate eligibility check for creating a hosted node.
-
-## 6. Create and publish a sales plan
-
-In the package detail, open “Plans” and click “Add Plan”. A plan is the price and specification variant inside one package. Set its name, description, price, billing cycle, CPU 15–10000%, memory 128–62144 MB, disk 512–104857600 MB, traffic 1–100000 GB, speed 1–10000 Mbps, plus port, snapshot, swap, site, sort order, and optional SLA limits. A traffic reset can have a separate reset price. Price is capped at 999999.99 with two decimal places. Regular hosted users can select monthly billing only; admins can also use quarterly, half-yearly, or yearly billing. Click “Save”.
-
-Plan status is different from node status:
-
-- **Available**: visible in the package and selectable for a new instance.
-- **Sold out**: still visible, but new instance creation and plan switching are blocked.
-- **Inactive**: hidden from the opening flow and not selectable.
-
-Use “Edit” or “Delete” on a plan card. A plan in use cannot be deleted. Updating plan quotas also checks existing instances, so do not reduce a limit below current usage.
-
-**How to publish or unpublish:** There is no standalone “Publish” button. At package level, both “Active” and public access must remain enabled for the package to be public; a paid package also needs an “Available” plan. To unpublish the package, turn off “Active” or public access. To pause one sales version, switch it to “Sold out” or “Inactive”.
-
-## 7. Final checks and permissions
-
-Confirm the node passed “Verify and Connect”, the Agent keeps heartbeating in “Host Status”, and “Settings”/“Storage” show enough CPU, memory, storage, and traffic headroom. Confirm that the package has a usable node binding, the public settings are intentional, and a paid package has an available plan. Package and plan changes or deletion are limited to the package owner or an admin; node operations are limited to the node owner or an admin. Hidden frontend controls are not permission boundaries: the backend rechecks ownership, limits, package dependencies, and existing instance usage.`
+            content: '## Understand the three terms\n\n- **Node**: the Incus host you provide. Create it in “My Nodes”; the panel connects to Incus with host credentials while the Agent reports host state.\n- **Package**: the resource and network policy shown to users. It must bind at least one node and defines network mode, instance type, quotas, and public visibility.\n- **Plan**: a purchasable version inside a package. It defines price, billing cycle, CPU, memory, disk, traffic, speed, and sales status. A free package uses its package-level fields directly; a paid package defines these sales versions in the “Plans” tab.\n\n## 1. Check hosting eligibility\n\nIn “My Nodes”, click “Add Node”. Normally, a regular user must own at least one instance; free or paid, official or hosted instances all count. If the system has disabled hosting, a user who has created a node before can still pass, while a user who has never created one is denied. Admins bypass this eligibility check, but their node fields are still validated. The create-node API checks eligibility again, so a visible button is not an authorization bypass.\n\n**Common errors:** If the page reports that hosting eligibility is not met or hosting is not yet available, confirm that the account owns at least one instance. If the button is visible but submission is rejected, the backend eligibility check failed.\n\n## 2. Fill in “Add Node”\n\n1. **Node name**: regular users enter a suffix and the panel adds PEER + user ID + -; admins can enter the complete name. It must be 2–64 characters, using only letters, numbers, underscores, and hyphens, and must be unique for that user.\n2. **Description/location and country/region**: location is limited to 100 characters and is used to identify the node.\n3. **Host address and API port**: use an IPv4 address, a raw IPv6 address, or a domain name. The API port defaults to 8443 and must be 1–65535. This is the address used by the panel to connect to Incus, not a service port exposed by an instance.\n4. **Network mode**: choose NAT, NAT + IPv6, NAT + IPv6 NAT, or IPv6 Only according to the host. Routed IPv6 modes require both an IPv6 subnet (including a slash) and an IPv6 parent interface; you may leave both blank initially and fill them in under “Settings” after running the script.\n5. **NAT settings**: for modes other than IPv6 Only, you can provide public and listening IPv4/IPv6 addresses and a port range. An IPv6 value must contain a colon, and the end port cannot be below the start port.\n6. **Resource limits**: the CPU allowance is a total CPU time-slice cap; 0 means no cap. Memory is entered in MB and, when non-zero, must be at least 256 MB. Choose Container, VM, or Both as the supported instance type.\n\nThe page lists Ubuntu 22.04+, Debian 11+, Rocky Linux 10, and Alpine Linux 3.20+ as supported operating systems. After creation, use the node detail’s “Storage” tab to create a storage pool.\n\n**Common errors:** Invalid address syntax, only one of the IPv6 subnet/parent interface fields filled, a reversed NAT port range, memory below 256 MB, a duplicate name, or unsupported name characters will be rejected.\n\n## 3. Install and verify the node connection\n\nAfter creation, the “Install Script” dialog opens. In step 1, “Run Installation Script”, click “Copy Command” and run it on the Incus host as root or as a user with sudo. The script configures the host connection data; the initial host installation session is valid for 24 hours.\n\nAfter the script finishes, use step 2, “Verify and Connect”. The panel calls Incus resource and version endpoints; on success the node becomes installed and shows “Online”. If the command has expired, open the node details, click “Reinstall”, run the new command, and click “Verify and Connect” again. A node with credentials can use “Test” to check the connection; a node without credentials must be verified first.\n\n**Agent and node connectivity are separate:** In the node detail’s “Info” tab, the “Host Status” card has “Install/Reinstall Agent” and “Copy Command”. Run the one-time Agent command on the host. The Agent command requires an HTTPS panel URL; its token is valid for 30 minutes and can be used once. Reinstalling rotates credentials, so the old Agent can no longer report. “Online”, “Offline”, “Not installed”, and “Disabled” in this card describe the Agent; clicking an outdated version can request an upgrade, delivered on the next heartbeat.\n\n**Common errors:** “Verify and Connect” usually fails because the host address, API port, Incus API, or script configuration is wrong. Agent installation commonly fails when the panel URL is not HTTPS or the one-time token is expired or already used. A node can be “Online” while its Agent is not; a stale heartbeat eventually changes the Agent status to “Offline”.\n\n## 4. Review and manage the node\n\nOpen the node from “My Nodes” and confirm the header status is “Online”. Use “Info” for host and Agent reports, “Settings” for address, limits, network, and notifications, and “Storage” for storage pools. A node can also be “Offline” or “Maintenance”; resolve connection and capacity issues before selling it. Only the node owner or an admin can manage it. The node must have no instances before deletion; both the UI precheck and the backend enforce this.\n\n## 5. Create a package in “My Packages”\n\nClick “Create Package” to open the package form. The package is the resource policy, not the node and not an individual plan:\n\n- With **Free Instance Package**, CPU, memory, disk, traffic, network, quotas, I/O, and boot settings come directly from the package; no separate sales plan is required.\n- With **Paid Instance Package**, the package supplies shared network and management settings, while price and sales specifications are created in the “Plans” tab. A package that already has plans cannot be switched back to free mode until all plans are deleted.\n- A package must bind at least one node. Regular users can select only their own nodes; admins can select nodes in the official or hosted scopes available to them. Each binding can specify a system-disk storage pool (blank means automatic) and a traffic multiplier from 0.001 to 100.\n\nEnter a package name (2–64 characters), description (up to 500), network mode, Container or VM, CPU/memory/disk, traffic and port/snapshot/site quotas, I/O and network limits, process count, CPU priority, and boot policy. If public access is enabled, the public package’s maximum instance count must be 1–5. Select a prerequisite package when needed. To appear publicly, the package must also be active and have public access enabled; the detail page provides “Copy Share Link”.\n\n**Common errors:** No bound node, selecting another user’s node, a public maximum outside 1–5, a duplicate or invalid name, a VM paired with an unsupported network mode, or editing as a non-owner will be rejected. Package creation itself requires login and at least one bound node; do not confuse that with the separate eligibility check for creating a hosted node.\n\n## 6. Create and publish a sales plan\n\nIn the package detail, open “Plans” and click “Add Plan”. A plan is the price and specification variant inside one package. Set its name, description, price, billing cycle, CPU 15–10000%, memory 128–62144 MB, disk 512–104857600 MB, traffic 1–100000 GB, speed 1–10000 Mbps, plus port, snapshot, swap, site, sort order, and optional SLA limits. A traffic reset can have a separate reset price. Price is capped at 999999.99 with two decimal places. Regular hosted users can select monthly billing only; admins can also use quarterly, half-yearly, or yearly billing. Click “Save”.\n\nPlan status is different from node status:\n\n- **Available**: visible in the package and selectable for a new instance.\n- **Sold out**: still visible, but new instance creation and plan switching are blocked.\n- **Inactive**: hidden from the opening flow and not selectable.\n\nUse “Edit” or “Delete” on a plan card. A plan in use cannot be deleted. Updating plan quotas also checks existing instances, so do not reduce a limit below current usage.\n\n**How to publish or unpublish:** There is no standalone “Publish” button. At package level, both “Active” and public access must remain enabled for the package to be public; a paid package also needs an “Available” plan. To unpublish the package, turn off “Active” or public access. To pause one sales version, switch it to “Sold out” or “Inactive”.\n\n## 7. Final checks and permissions\n\nConfirm the node passed “Verify and Connect”, the Agent keeps heartbeating in “Host Status”, and “Settings”/“Storage” show enough CPU, memory, storage, and traffic headroom. Confirm that the package has a usable node binding, the public settings are intentional, and a paid package has an available plan. Package and plan changes or deletion are limited to the package owner or an admin; node operations are limited to the node owner or an admin. Hidden frontend controls are not permission boundaries: the backend rechecks ownership, limits, package dependencies, and existing instance usage.',
         },
         hostingEarnings: {
             title: 'Hosting earnings: settlement and withdrawals',
             summary: 'Reconcile income types, frozen and available balances, withdrawals, and refund deductions step by step.',
-            content: `## 1. Confirm where earnings come from
-
-1. Open Hosting Wallet. Hosting income is created only when a non-admin user owns the node and a user opens, renews, or upgrades a paid instance on that node.
-2. In Transactions, income action types are Purchase, Renew, and Upgrade. You may also see Destroy deductions, Withdrawals, and Admin Adjustments. The data categories also include income, unfreeze, withdrawal, and deduction; the current automatic release changes the original income record to Unfrozen instead of creating a separate unfreeze entry. Total income counts income records only; do not treat withdrawals, deductions, or AFF commissions as hosting income.
-3. A purchase credits the actual amount charged; a renewal credits the final amount after any discount; an upgrade credits only the additional price difference.
-
-## 2. Read balances and the freeze
-
-1. Available Balance is the hosting balance that can be withdrawn. Frozen is the total of income records that have not been released; frozen income is not included in Available Balance.
-2. Each purchase, renewal, or upgrade income record is frozen when created. Its release time is calculated as “now + 1 month”; the page describes this as 30 days. The server runs the release job at the start of every hour and also runs a catch-up pass about 5 seconds after startup. Once a record becomes Unfrozen, its amount enters Available Balance.
-3. The transaction list shows action type, amount, frozen status, buyer, instance, host, and time. The API data also includes the release time, related ID, and remark; if an instance was deleted, saved snapshot names and other context are used instead.
-
-## 3. Withdraw to panel balance
-
-1. Confirm that Available Balance is at least the current minimum withdrawal amount: **¥10**. The button is disabled below the threshold, and a smaller submission returns “Minimum withdrawal is ¥10”.
-2. Click Request Withdrawal and enter only the Withdrawal Amount. The current self-service endpoint supports only the Panel Balance target, so the form has no target selector. The amount cannot exceed Available Balance; otherwise the request fails with an insufficient hosting balance error.
-3. Review the amount, fee, and actual amount. The panel-balance fee is **5%**. The fee is calculated as 5% of the requested amount and rounded to two decimal places; Actual Amount equals the requested amount minus that fee.
-4. Click Confirm Withdrawal. The requested amount is deducted from Available Balance, Actual Amount is added to panel balance, and a negative Withdrawal transaction is recorded. This self-service flow completes in one transaction: a successful record is created with Completed status and a processing time, so it does not wait for manual review.
-5. For the other specified method mentioned on the page, follow the ticket instructions. The page copy states a **10%** fee for that method, and the self-service form cannot select it. Withdrawal records contain amount, actual amount, target, status, request time, and an optional rejection reason shown below the status. The status vocabulary is Pending, Approved, Rejected, or Completed; the current self-service panel-balance route creates Completed records directly.
-
-## 4. How refunds, destruction, and failed provisioning affect earnings
-
-1. If a user destroys a paid hosted instance, or a node owner deletes another user’s paid instance and a refund is due, the hosting balance is deducted by the actual refund amount. Any destruction fee taken from the buyer’s refund is not added again to the hosting deduction.
-2. The deduction order is: remove or reduce the instance’s related frozen income first, then deduct Available Balance, and finally use the node owner’s panel balance if the hosting balance is insufficient. A negative Destroy deduction record is created, so a refund can reduce frozen income, available hosting balance, and even panel balance.
-3. If provisioning fails and an automatic full refund is issued, the recorded hosting income is deducted in the same settlement. If the actual refund is zero, no hosting deduction is created.
-
-## 5. Troubleshooting
-
-- Minimum amount error: raise the amount to at least ¥10.
-- Insufficient available balance: only available income can be withdrawn; frozen income must be released first.
-- “Hosting balance is being processed, please try again later”: wait for the previous release, deduction, or withdrawal transaction to finish; the withdrawal endpoint accepts at most 5 requests per minute.
-- If the withdrawal succeeds but the page is stale, refresh Hosting Wallet and reconcile Available Balance, panel balance, and both transaction lists.`
+            content: '## 1. Confirm where earnings come from\n\n1. Open Hosting Wallet. Hosting income is created only when a non-admin user owns the node and a user opens, renews, or upgrades a paid instance on that node.\n2. In Transactions, income action types are Purchase, Renew, and Upgrade. You may also see Destroy deductions, Withdrawals, and Admin Adjustments. The data categories also include income, unfreeze, withdrawal, and deduction; the current automatic release changes the original income record to Unfrozen instead of creating a separate unfreeze entry. Total income counts income records only; do not treat withdrawals, deductions, or AFF commissions as hosting income.\n3. A purchase credits the actual amount charged; a renewal credits the final amount after any discount; an upgrade credits only the additional price difference.\n\n## 2. Read balances and the freeze\n\n1. Available Balance is the hosting balance that can be withdrawn. Frozen is the total of income records that have not been released; frozen income is not included in Available Balance.\n2. Each purchase, renewal, or upgrade income record is frozen when created. Its release time is calculated as “now + 1 month”; the page describes this as 30 days. The server runs the release job at the start of every hour and also runs a catch-up pass about 5 seconds after startup. Once a record becomes Unfrozen, its amount enters Available Balance.\n3. The transaction list shows action type, amount, frozen status, buyer, instance, host, and time. The API data also includes the release time, related ID, and remark; if an instance was deleted, saved snapshot names and other context are used instead.\n\n## 3. Withdraw to panel balance\n\n1. Confirm that Available Balance is at least the current minimum withdrawal amount: **¥10**. The button is disabled below the threshold, and a smaller submission returns “Minimum withdrawal is ¥10”.\n2. Click Request Withdrawal and enter only the Withdrawal Amount. The current self-service endpoint supports only the Panel Balance target, so the form has no target selector. The amount cannot exceed Available Balance; otherwise the request fails with an insufficient hosting balance error.\n3. Review the amount, fee, and actual amount. The panel-balance fee is **5%**. The fee is calculated as 5% of the requested amount and rounded to two decimal places; Actual Amount equals the requested amount minus that fee.\n4. Click Confirm Withdrawal. The requested amount is deducted from Available Balance, Actual Amount is added to panel balance, and a negative Withdrawal transaction is recorded. This self-service flow completes in one transaction: a successful record is created with Completed status and a processing time, so it does not wait for manual review.\n5. For the other specified method mentioned on the page, follow the ticket instructions. The page copy states a **10%** fee for that method, and the self-service form cannot select it. Withdrawal records contain amount, actual amount, target, status, request time, and an optional rejection reason shown below the status. The status vocabulary is Pending, Approved, Rejected, or Completed; the current self-service panel-balance route creates Completed records directly.\n\n## 4. How refunds, destruction, and failed provisioning affect earnings\n\n1. If a user destroys a paid hosted instance, or a node owner deletes another user’s paid instance and a refund is due, the hosting balance is deducted by the actual refund amount. Any destruction fee taken from the buyer’s refund is not added again to the hosting deduction.\n2. The deduction order is: remove or reduce the instance’s related frozen income first, then deduct Available Balance, and finally use the node owner’s panel balance if the hosting balance is insufficient. A negative Destroy deduction record is created, so a refund can reduce frozen income, available hosting balance, and even panel balance.\n3. If provisioning fails and an automatic full refund is issued, the recorded hosting income is deducted in the same settlement. If the actual refund is zero, no hosting deduction is created.\n\n## 5. Troubleshooting\n\n- Minimum amount error: raise the amount to at least ¥10.\n- Insufficient available balance: only available income can be withdrawn; frozen income must be released first.\n- “Hosting balance is being processed, please try again later”: wait for the previous release, deduction, or withdrawal transaction to finish; the withdrawal endpoint accepts at most 5 requests per minute.\n- If the withdrawal succeeds but the page is stale, refresh Hosting Wallet and reconcile Available Balance, panel balance, and both transaction lists.',
         },
         billingBasics: {
             title: 'Billing and renewals',
             summary: 'Follow the steps for top-ups, provisioning, renewals, upgrades, and destroy refunds.',
-            content: `## 1. Top up your panel balance
-
-1. Sign in, open “Wallet”, and click “Recharge”.
-2. Under “Payment Channel”, choose a channel currently shown on the page. If it offers multiple choices, select one under “Select Payment Method”. If the currency and network are selected on the payment page, follow that page (the Heleket type lets you choose there).
-3. For a normal top-up, click ¥10, ¥50, ¥100, or ¥200, or enter a custom amount; use the displayed amount range. If a fee is shown, check “Amount Due” and “Credited” before checking the no-original-refund notice, recharge notice, and Terms of Service, then click “Pay Now”.
-4. A channel with a payment URL opens its payment page. After paying, return to “Recharge Records” in Wallet; the page verifies the order, and only “Completed” means the balance is credited. If it remains “Pending”, wait and refresh. For an amount mismatch, failure, or cancellation, follow the order’s message.
-5. For “Manual Recharge”, read the channel instructions, enter payment details such as the payment method, transaction number, or payment time under “Payment Details / Transaction Information”, and create the order; this type has no normal Pay button. For “Recharge Card”, enter the card number and password and click “Redeem Card”; the balance is credited directly, with no amount field.
-
-An unexpired “Pending” record normally has “Pay” to obtain a payment URL again and “Void” to cancel it. An expired order cannot be repaid; create a new one. Recharges cannot be refunded to the original payment method. Instance-destroy refunds are separate and go back to panel balance.
-
-## 2. Provision a paid instance
-
-1. Open “Market”, choose a region, then choose a product and an available plan. Confirm the plan cycle, resources, and price, then click “Provision now”. If you are signed out, sign in and continue to the create flow.
-2. On the create page, enter the instance name and choose the host, image, and SSH key. A paid plan supplies fixed CPU, memory, and disk values. If available, enter an AFF promo code and wait for the page to validate it.
-3. In “Order Summary”, check the plan fee, discount, and final price, then click “Create”. The backend deducts the actual price from panel balance once and creates the billing record; if the balance is insufficient, provisioning does not start, so top up in Wallet first.
-4. After creation, the instance may show “creating”, which means deployment is still running; wait for the list or details page to update. If deployment fails, the failed-provision flow returns the amount already charged. Retrying charges the previous paid amount again.
-
-## 3. Manual and automatic renewal
-
-1. From the “Instances” list, open the instance details and click “Renew” in the billing card. Free instances do not need renewal.
-2. Select one of the displayed renewal periods. Check the original price (if shown), AFF discount, amount due, new expiry date, current balance, and balance after renewal, then confirm. The fee is deducted from panel balance; if it is insufficient, click “Go to Recharge”, top up, and reopen the renewal window.
-3. Hosted instances support monthly renewal only, and only during the 7 days before expiry; the dialog prevents submission when it is too early or another period is selected. A paid instance suspended because it expired returns to stopped after successful renewal; a manually suspended instance cannot be renewed by the user.
-4. To let the system renew automatically, click “Auto Renew” in the billing card and then “Enable Auto-renew”. The system deducts the original billing-cycle amount 24 hours before expiry; keep enough balance available. Insufficient balance generates a notification and a failed record, and repeated unsuccessful attempts may disable auto-renew.
-
-If renewal still has not succeeded at expiry, the system suspends the instance; an instance suspended for expiry for more than 3 days is automatically deleted by the scheduler. This is not the manual destroy-refund flow.
-
-## 4. Upgrade a plan
-
-1. In a paid instance’s details, click “Change Plan” and choose a higher plan shown for the same package. Free instances, inactive plans, and sold-out plans cannot be changed, and downgrades are not supported.
-2. After selecting a plan, wait for the preview and check remaining days, old and new daily rates, remaining value, new-plan cost, discount, price difference to pay, new expiry date, and new configuration. An upgrade requires at least 15 days remaining and the instance must be running or stopped; the expiry date does not change.
-3. Confirm that panel balance covers the difference, then click “Upgrade”. Only the difference is deducted. If the balance is insufficient, click “Go to Recharge”, top up, and preview again. LXC configuration is normally applied immediately; KVM requires a restart, so follow any restart prompt shown.
-
-## 5. Destroy and refund
-
-1. Back up anything you need, then click “Destroy” in the instance details. The dialog loads a preview; expand “Destroy Rules” and check the instance name, remaining days, remaining value, fee, refund amount, and refund cap.
-2. A paid instance cannot be destroyed when its current monthly traffic-cycle usage reaches the package-defined refund destroy limit (the backend decides the exception for an expired-suspended instance that meets its conditions). The first paid-instance destroy is fee-free; later destroys charge 10% of the refundable value. A free instance can be destroyed but has no refund and does not count toward paid destroy history.
-3. When everything is correct, type the exact instance name requested in the input and click the destroy confirmation. This permanently removes the instance, snapshots, backups, port mappings, and related data. The paid refund is returned to panel balance according to the preview; it is not sent back to the original payment method.
-
-## 6. If a top-up or deduction looks wrong
-
-- Provisioning, renewal, and upgrade all use panel balance. When “Insufficient balance” appears, top up first instead of repeatedly clicking the deduction button.
-- If a top-up still shows “Pending”, check its order number and status in “Recharge Records”; the payment callback may not have arrived. For “Payment amount does not match” or “Failed”, keep the order number and payment details when contacting an administrator.
-- In “Recharge Records”, reconcile Amount Due, Credited, channel, status, and completion time. Then use balance logs to check the debit or credit for provisioning, renewal, upgrade, or refund.`
+            content: '## 1. Top up your panel balance\n\n1. Sign in, open “Wallet”, and click “Recharge”.\n2. Under “Payment Channel”, choose a channel currently shown on the page. If it offers multiple choices, select one under “Select Payment Method”. If the currency and network are selected on the payment page, follow that page (the Heleket type lets you choose there).\n3. For a normal top-up, click ¥10, ¥50, ¥100, or ¥200, or enter a custom amount; use the displayed amount range. If a fee is shown, check “Amount Due” and “Credited” before checking the no-original-refund notice, recharge notice, and Terms of Service, then click “Pay Now”.\n4. A channel with a payment URL opens its payment page. After paying, return to “Recharge Records” in Wallet; the page verifies the order, and only “Completed” means the balance is credited. If it remains “Pending”, wait and refresh. For an amount mismatch, failure, or cancellation, follow the order’s message.\n5. For “Manual Recharge”, read the channel instructions, enter payment details such as the payment method, transaction number, or payment time under “Payment Details / Transaction Information”, and create the order; this type has no normal Pay button. For “Recharge Card”, enter the card number and password and click “Redeem Card”; the balance is credited directly, with no amount field.\n\nAn unexpired “Pending” record normally has “Pay” to obtain a payment URL again and “Void” to cancel it. An expired order cannot be repaid; create a new one. Recharges cannot be refunded to the original payment method. Instance-destroy refunds are separate and go back to panel balance.\n\n## 2. Provision a paid instance\n\n1. Open “Market”, choose a region, then choose a product and an available plan. Confirm the plan cycle, resources, and price, then click “Provision now”. If you are signed out, sign in and continue to the create flow.\n2. On the create page, enter the instance name and choose the host, image, and SSH key. A paid plan supplies fixed CPU, memory, and disk values. If available, enter an AFF promo code and wait for the page to validate it.\n3. In “Order Summary”, check the plan fee, discount, and final price, then click “Create”. The backend deducts the actual price from panel balance once and creates the billing record; if the balance is insufficient, provisioning does not start, so top up in Wallet first.\n4. After creation, the instance may show “creating”, which means deployment is still running; wait for the list or details page to update. If deployment fails, the failed-provision flow returns the amount already charged. Retrying charges the previous paid amount again.\n\n## 3. Manual and automatic renewal\n\n1. From the “Instances” list, open the instance details and click “Renew” in the billing card. Free instances do not need renewal.\n2. Select one of the displayed renewal periods. Check the original price (if shown), AFF discount, amount due, new expiry date, current balance, and balance after renewal, then confirm. The fee is deducted from panel balance; if it is insufficient, click “Go to Recharge”, top up, and reopen the renewal window.\n3. Hosted instances support monthly renewal only, and only during the 7 days before expiry; the dialog prevents submission when it is too early or another period is selected. A paid instance suspended because it expired returns to stopped after successful renewal; a manually suspended instance cannot be renewed by the user.\n4. To let the system renew automatically, click “Auto Renew” in the billing card and then “Enable Auto-renew”. The system deducts the original billing-cycle amount 24 hours before expiry; keep enough balance available. Insufficient balance generates a notification and a failed record, and repeated unsuccessful attempts may disable auto-renew.\n\nIf renewal still has not succeeded at expiry, the system suspends the instance; an instance suspended for expiry for more than 3 days is automatically deleted by the scheduler. This is not the manual destroy-refund flow.\n\n## 4. Upgrade a plan\n\n1. In a paid instance’s details, click “Change Plan” and choose a higher plan shown for the same package. Free instances, inactive plans, and sold-out plans cannot be changed, and downgrades are not supported.\n2. After selecting a plan, wait for the preview and check remaining days, old and new daily rates, remaining value, new-plan cost, discount, price difference to pay, new expiry date, and new configuration. An upgrade requires at least 15 days remaining and the instance must be running or stopped; the expiry date does not change.\n3. Confirm that panel balance covers the difference, then click “Upgrade”. Only the difference is deducted. If the balance is insufficient, click “Go to Recharge”, top up, and preview again. LXC configuration is normally applied immediately; KVM requires a restart, so follow any restart prompt shown.\n\n## 5. Destroy and refund\n\n1. Back up anything you need, then click “Destroy” in the instance details. The dialog loads a preview; expand “Destroy Rules” and check the instance name, remaining days, remaining value, fee, refund amount, and refund cap.\n2. A paid instance cannot be destroyed when its current monthly traffic-cycle usage reaches the package-defined refund destroy limit (the backend decides the exception for an expired-suspended instance that meets its conditions). The first paid-instance destroy is fee-free; later destroys charge 10% of the refundable value. A free instance can be destroyed but has no refund and does not count toward paid destroy history.\n3. When everything is correct, type the exact instance name requested in the input and click the destroy confirmation. This permanently removes the instance, snapshots, backups, port mappings, and related data. The paid refund is returned to panel balance according to the preview; it is not sent back to the original payment method.\n\n## 6. If a top-up or deduction looks wrong\n\n- Provisioning, renewal, and upgrade all use panel balance. When “Insufficient balance” appears, top up first instead of repeatedly clicking the deduction button.\n- If a top-up still shows “Pending”, check its order number and status in “Recharge Records”; the payment callback may not have arrived. For “Payment amount does not match” or “Failed”, keep the order number and payment details when contacting an administrator.\n- In “Recharge Records”, reconcile Amount Due, Credited, channel, status, and completion time. Then use balance logs to check the debit or credit for provisioning, renewal, upgrade, or refund.',
         },
         commonIssues: {
             title: 'Common issues and troubleshooting',
             summary: 'Follow the instance, Agent, network, task, and billing states to locate the issue step by step.',
-            content: `## 1. Check the instance and provisioning state first
-
-1. Open the “Instances” list. \`creating\` means provisioning is still in progress; wait for the list state to update or re-enter the list, and do not create a duplicate instance.
-2. If the state is \`error\`, click “Retry”. Only a failed creation can be retried. If the message says the host is unavailable or the balance is insufficient, use the “Agent / host” or “Balance and expiry” section. The detail page also provides “Retry”; click “Destroy now” only when you no longer need the failed instance.
-3. If the detail page shows a \`PENDING\` or \`PROCESSING\` task, record its type, progress, error, and queue position first. Use “Release stuck task” only when that button is shown and you have confirmed that the original host operation has stopped; for regular users, the task must be older than 15 minutes. This only releases the task lock; it does not delete or modify the instance.
-4. If the create page has no available host or image, confirm the selected package, region, resources, and SSH public key. If you have no SSH public key, add one in “Profile” and return to the create page.
-
-## 2. Agent or host offline
-
-1. Open “Resources” → “My hosts”, then the “Info” tab. The host and Agent cards show whether the Agent is installed or disabled, \`online\`／\`offline\`／\`unknown\`, the last report, heartbeat IP, Incus state, and version.
-2. Click “Refresh” on the Agent card. If it is not installed, click “Install/Reinstall Agent” and copy the command generated by the page; when reinstalling is needed, click the same button to generate a new command.
-3. After the host is set up, use the page’s “Verify & Connect” or “Test Connection” action. Request an Agent upgrade only when the Agent is online and its version is outdated; restore the heartbeat first when it is offline.
-
-## 3. SSH or terminal cannot connect
-
-1. The detail-page “Terminal” is available only while the instance is \`running\`; if it is \`stopped\`, click “Start”. If the Cloud-init prompt says initialization is incomplete, click “Retry”. When the state is \`unknown\` or \`agent_unavailable\` and the page permits it, click “Mark Complete”, or click “Ignore and connect” in the terminal prompt.
-2. If the terminal shows \`disconnected\` or \`error\`, click “Reconnect”. While connecting, it shows \`connecting\`／\`reconnecting\`; check the final state and error text.
-3. For IPv4, open the “Network” tab and add a mapping for private port \`22\`, then connect with the public IPv4 address and mapped public port. In \`nat_ipv6\` mode, connect directly to the public IPv6 address on port \`22\` without a mapping.
-4. The “Info” tab shows the SSH port. The root password must be fetched with “Show” before it can be copied with “Copy”.
-
-## 4. Port-mapping conflicts
-
-1. In the detail page’s “Network” tab, check the network mode, port quota, and existing mappings. Only NAT modes can add mappings; IPv6-only instances do not need them; a host owner viewing an instance cannot manage its mappings.
-2. When adding a mapping, \`PORT_IN_USE\` means the public port is already used, \`PORT_RANGE_INVALID\` means it is outside the host range, and \`PORT_NO_AVAILABLE\` means no port is available. Adjust the public port or address the quota according to the message. If a batch request returns \`PORT_CONFLICT\`, review the suggested ports in the conflict dialog and submit the suggested resolution.
-3. If the quota is full, select mappings in the list and click “Delete”, or use batch delete, before adding the required mapping.
-
-## 5. Snapshots, backups, and queued tasks
-
-1. In “Snapshots”, creating a snapshot requires a name and remaining snapshot quota; stop the instance before restoring a snapshot. Automatic snapshots offer only 10 minutes, 1 hour, 6 hours, or 24 hours; enable the policy and save it from the policy control.
-2. If the page shows backup management, creating a backup also requires a name and backup quota. A backup must be \`ready\` before it can be exported, uploaded, or restored. Select remote storage before uploading; if none is configured, use the page’s “Go to settings” action.
-3. Backup restore displays \`PENDING\`／\`PROCESSING\`, queue position, duration, and error. Do not submit another restore while the instance already has one. When a \`FAILED\` task provides “Rollback”, save the error text first and then click it; for export or upload failures, use the displayed task state and error.
-
-## 6. Balance, package, and expiry
-
-1. Check the package, expiry time, remaining days, and auto-renew status in the instance list or detail page. For a paid instance, click “Renew” on the detail page; the dialog loads available periods, prices, and balance. Select one of the offered periods and submit. Do not resubmit when the balance is insufficient or no option is available.
-2. Open “Auto-renew” on the detail page and use the dialog’s “Enable” or “Disable” action. Hosted instances expose renewal options only within the pre-expiry window returned by billing; if the page shows a reason that renewal is unavailable, follow that reason.
-3. When the instance is \`suspended\` or suspended for expiry, many instance actions are disabled. Check the expiry time and suspension reason, renew if applicable, and reload the detail page. If it still cannot be restored, open a ticket with the state and reason.
-
-## 7. Hosted after-sales support and ticket details
-
-1. Create a ticket from “Tickets”. For a hosted instance, select the exact instance in the “Instance” field; the ticket is then routed to the node owner. Do not invent an instance for a general issue; a ticket without an instance follows the administrator notification path.
-2. Fill in the subject (2–200 characters), category, priority, and content. Without image attachments, content must be at least 10 characters and may be up to 5,000. “Add Images” accepts up to 6 JPG, PNG, WebP, GIF, or AVIF images, up to 50 MB each.
-3. Include the instance ID/name, host or node, current state, complete error text, time, and reproduction steps. If shown on screen, also include the task ID/type/progress/queue position, network mode, protocol, public-to-private mapping, and SSH port.
-4. After creation, ticket details show the ticket ID, state, category, priority, host, and instance; closed tickets cannot receive replies. Never paste an SSH private key, password, or Agent secret into the content or attachments.`
+            content: '## 1. Check the instance and provisioning state first\n\n1. Open the “Instances” list. `creating` means provisioning is still in progress; wait for the list state to update or re-enter the list, and do not create a duplicate instance.\n2. If the state is `error`, click “Retry”. Only a failed creation can be retried. If the message says the host is unavailable or the balance is insufficient, use the “Agent / host” or “Balance and expiry” section. The detail page also provides “Retry”; click “Destroy now” only when you no longer need the failed instance.\n3. If the detail page shows a `PENDING` or `PROCESSING` task, record its type, progress, error, and queue position first. Use “Release stuck task” only when that button is shown and you have confirmed that the original host operation has stopped; for regular users, the task must be older than 15 minutes. This only releases the task lock; it does not delete or modify the instance.\n4. If the create page has no available host or image, confirm the selected package, region, resources, and SSH public key. If you have no SSH public key, add one in “Profile” and return to the create page.\n\n## 2. Agent or host offline\n\n1. Open “Resources” → “My hosts”, then the “Info” tab. The host and Agent cards show whether the Agent is installed or disabled, `online`／`offline`／`unknown`, the last report, heartbeat IP, Incus state, and version.\n2. Click “Refresh” on the Agent card. If it is not installed, click “Install/Reinstall Agent” and copy the command generated by the page; when reinstalling is needed, click the same button to generate a new command.\n3. After the host is set up, use the page’s “Verify & Connect” or “Test Connection” action. Request an Agent upgrade only when the Agent is online and its version is outdated; restore the heartbeat first when it is offline.\n\n## 3. SSH or terminal cannot connect\n\n1. The detail-page “Terminal” is available only while the instance is `running`; if it is `stopped`, click “Start”. If the Cloud-init prompt says initialization is incomplete, click “Retry”. When the state is `unknown` or `agent_unavailable` and the page permits it, click “Mark Complete”, or click “Ignore and connect” in the terminal prompt.\n2. If the terminal shows `disconnected` or `error`, click “Reconnect”. While connecting, it shows `connecting`／`reconnecting`; check the final state and error text.\n3. For IPv4, open the “Network” tab and add a mapping for private port `22`, then connect with the public IPv4 address and mapped public port. In `nat_ipv6` mode, connect directly to the public IPv6 address on port `22` without a mapping.\n4. The “Info” tab shows the SSH port. The root password must be fetched with “Show” before it can be copied with “Copy”.\n\n## 4. Port-mapping conflicts\n\n1. In the detail page’s “Network” tab, check the network mode, port quota, and existing mappings. Only NAT modes can add mappings; IPv6-only instances do not need them; a host owner viewing an instance cannot manage its mappings.\n2. When adding a mapping, `PORT_IN_USE` means the public port is already used, `PORT_RANGE_INVALID` means it is outside the host range, and `PORT_NO_AVAILABLE` means no port is available. Adjust the public port or address the quota according to the message. If a batch request returns `PORT_CONFLICT`, review the suggested ports in the conflict dialog and submit the suggested resolution.\n3. If the quota is full, select mappings in the list and click “Delete”, or use batch delete, before adding the required mapping.\n\n## 5. Snapshots, backups, and queued tasks\n\n1. In “Snapshots”, creating a snapshot requires a name and remaining snapshot quota; stop the instance before restoring a snapshot. Automatic snapshots offer only 10 minutes, 1 hour, 6 hours, or 24 hours; enable the policy and save it from the policy control.\n2. If the page shows backup management, creating a backup also requires a name and backup quota. A backup must be `ready` before it can be exported, uploaded, or restored. Select remote storage before uploading; if none is configured, use the page’s “Go to settings” action.\n3. Backup restore displays `PENDING`／`PROCESSING`, queue position, duration, and error. Do not submit another restore while the instance already has one. When a `FAILED` task provides “Rollback”, save the error text first and then click it; for export or upload failures, use the displayed task state and error.\n\n## 6. Balance, package, and expiry\n\n1. Check the package, expiry time, remaining days, and auto-renew status in the instance list or detail page. For a paid instance, click “Renew” on the detail page; the dialog loads available periods, prices, and balance. Select one of the offered periods and submit. Do not resubmit when the balance is insufficient or no option is available.\n2. Open “Auto-renew” on the detail page and use the dialog’s “Enable” or “Disable” action. Hosted instances expose renewal options only within the pre-expiry window returned by billing; if the page shows a reason that renewal is unavailable, follow that reason.\n3. When the instance is `suspended` or suspended for expiry, many instance actions are disabled. Check the expiry time and suspension reason, renew if applicable, and reload the detail page. If it still cannot be restored, open a ticket with the state and reason.\n\n## 7. Hosted after-sales support and ticket details\n\n1. Create a ticket from “Tickets”. For a hosted instance, select the exact instance in the “Instance” field; the ticket is then routed to the node owner. Do not invent an instance for a general issue; a ticket without an instance follows the administrator notification path.\n2. Fill in the subject (2–200 characters), category, priority, and content. Without image attachments, content must be at least 10 characters and may be up to 5,000. “Add Images” accepts up to 6 JPG, PNG, WebP, GIF, or AVIF images, up to 50 MB each.\n3. Include the instance ID/name, host or node, current state, complete error text, time, and reproduction steps. If shown on screen, also include the task ID/type/progress/queue position, network mode, protocol, public-to-private mapping, and SSH port.\n4. After creation, ticket details show the ticket ID, state, category, priority, host, and instance; closed tickets cannot receive replies. Never paste an SSH private key, password, or Agent secret into the content or attachments.',
         },
         categories: {
             general: 'General',
@@ -5604,8 +5032,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             faq: 'FAQ',
         },
     },
-
-    // Log modules translation
     logModules: {
         security: 'Security',
         instance: 'Instance',
@@ -5621,139 +5047,109 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         system: 'System',
         auth: 'Auth',
         storage: 'Storage',
-        // Legacy Chinese module names compatibility
-        '登录操作': 'Login',
-        '安全事件': 'Security',
-        '实例操作': 'Instance',
-        '快照操作': 'Snapshot',
-        '备份操作': 'Backup',
-        '镜像操作': 'Image',
-        '节点操作': 'Host',
-        '节点组操作': 'Node Group',
-        '套餐操作': 'Package',
-        '用户管理': 'User',
-        '个人设置': 'Personal',
-        '通知设置': 'Notification',
-        '系统配置': 'System',
-        '认证操作': 'Auth',
-        '远程存储': 'Storage',
+        "登录操作": 'Login',
+        "安全事件": 'Security',
+        "实例操作": 'Instance',
+        "快照操作": 'Snapshot',
+        "备份操作": 'Backup',
+        "镜像操作": 'Image',
+        "节点操作": 'Host',
+        "节点组操作": 'Node Group',
+        "套餐操作": 'Package',
+        "用户管理": 'User',
+        "个人设置": 'Personal',
+        "通知设置": 'Notification',
+        "系统配置": 'System',
+        "认证操作": 'Auth',
+        "远程存储": 'Storage',
     },
-
-    // Log actions translation
     logActions: {
-        // Security events
-        'login_success': 'Login Success',
-        'login_failed': 'Login Failed',
-        'logout': 'Logout',
-        'register_success': 'Register Success',
-        'rate_limit_exceeded': 'Rate Limit Exceeded',
-        'invalid_invite_code': 'Invalid Invite Code',
-        'suspicious_activity': 'Suspicious Activity',
-        'permission_denied': 'Permission Denied',
-        'unauthorized_access': 'Unauthorized Access',
-        'admin_action': 'Admin Action',
-        // Instance operations
-        'instance.create': 'Create Instance',
-        'instance.delete': 'Delete Instance',
-        'instance.start': 'Start Instance',
-        'instance.stop': 'Stop Instance',
-        'instance.restart': 'Restart Instance',
-        'instance.rebuild': 'Rebuild System',
-        'instance.recreate': 'Recreate Instance',
-        'instance.change_host': 'Change Host',
-        'instance.cloud_init_manual_complete': 'Manually Complete Init Check',
-        'instance.update_quota': 'Update Instance Quota',
-        'instance.rename': 'Rename Instance',
-        // Port mapping
-        'port.add': 'Add Port Mapping',
-        'port.delete': 'Delete Port Mapping',
-        // Snapshot operations
-        'snapshot.create': 'Create Snapshot',
-        'snapshot.delete': 'Delete Snapshot',
-        'snapshot.restore': 'Restore Snapshot',
-        // Backup operations
-        'backup.create': 'Create Backup',
-        'backup.delete': 'Delete Backup',
-        'backup.export': 'Export Backup',
-        // Image operations
-        'image.sync': 'Sync Image',
-        'image.delete': 'Delete Image',
-        'image.create': 'Create Image',
-        'image.update': 'Update Image',
-        // Host operations
-        'host.create': 'Add Host',
-        'host.update': 'Update Host',
-        'host.delete': 'Delete Host',
-        'host.test': 'Test Host',
-        // Node group operations
-        // Package operations
-        'package.create': 'Create Package',
-        'package.update': 'Update Package',
-        'package.delete': 'Delete Package',
-        // User management
-        'user.ban': 'Ban User',
-        'user.unban': 'Unban User',
-        'user.delete': 'Delete User',
-        'user.update_quota': 'Update User Quota',
-        'user.revoke_sessions': 'Revoke User Sessions',
-        // Personal settings
-        'profile.update': 'Update Profile',
-        'password.change': 'Change Password',
-        // SSH key
-        'ssh_key.add': 'Add SSH Key',
-        'ssh_key.delete': 'Delete SSH Key',
-        // Notification settings
-        'notification.add': 'Add Notification Channel',
-        'notification.delete': 'Delete Notification Channel',
-        // Security settings
-        '2fa.setup': 'Setup 2FA',
-        '2fa.enable': 'Enable 2FA',
-        '2fa.disable': 'Disable 2FA',
-        '2fa.recovery_reset': 'Reset Recovery Codes',
-        // Auth operations
-        'session.revoke': 'Revoke Session',
-        'session.revoke_all': 'Revoke All Sessions',
-        // System config
-        'system.config_update': 'Update System Config',
-        // Help articles
-        'help.create': 'Create Help Article',
-        'help.update': 'Update Help Article',
-        'help.delete': 'Delete Help Article',
-        // Backup upload operations
-        'backup.upload': 'Upload Backup',
-        'backup.upload.queue': 'Queue Backup Upload',
-        'backup.upload.cancel': 'Cancel Backup Upload',
-        // Backup restore operations
-        'backup.restore': 'Restore Backup',
-        'backup.restore.rollback': 'Rollback Restore',
-        'backup.restore.cancel': 'Cancel Restore',
-        // Storage config operations
-        'storage.create': 'Create Storage Config',
-        'storage.update': 'Update Storage Config',
-        'storage.delete': 'Delete Storage Config',
-        // AFF Referral Program
-        'aff.create_code': 'Create Promo Code',
-        'aff.convert_request': 'Request AFF Conversion',
-        'aff.approve_convert': 'Approve AFF Conversion',
-        'aff.reject_convert': 'Reject AFF Conversion',
+        login_success: 'Login Success',
+        login_failed: 'Login Failed',
+        logout: 'Logout',
+        register_success: 'Register Success',
+        rate_limit_exceeded: 'Rate Limit Exceeded',
+        invalid_invite_code: 'Invalid Invite Code',
+        suspicious_activity: 'Suspicious Activity',
+        permission_denied: 'Permission Denied',
+        unauthorized_access: 'Unauthorized Access',
+        admin_action: 'Admin Action',
+        "instance.create": 'Create Instance',
+        "instance.delete": 'Delete Instance',
+        "instance.start": 'Start Instance',
+        "instance.stop": 'Stop Instance',
+        "instance.restart": 'Restart Instance',
+        "instance.rebuild": 'Rebuild System',
+        "instance.recreate": 'Recreate Instance',
+        "instance.change_host": 'Change Host',
+        "instance.cloud_init_manual_complete": 'Manually Complete Init Check',
+        "instance.update_quota": 'Update Instance Quota',
+        "instance.rename": 'Rename Instance',
+        "port.add": 'Add Port Mapping',
+        "port.delete": 'Delete Port Mapping',
+        "snapshot.create": 'Create Snapshot',
+        "snapshot.delete": 'Delete Snapshot',
+        "snapshot.restore": 'Restore Snapshot',
+        "backup.create": 'Create Backup',
+        "backup.delete": 'Delete Backup',
+        "backup.export": 'Export Backup',
+        "image.sync": 'Sync Image',
+        "image.delete": 'Delete Image',
+        "image.create": 'Create Image',
+        "image.update": 'Update Image',
+        "host.create": 'Add Host',
+        "host.update": 'Update Host',
+        "host.delete": 'Delete Host',
+        "host.test": 'Test Host',
+        "package.create": 'Create Package',
+        "package.update": 'Update Package',
+        "package.delete": 'Delete Package',
+        "user.ban": 'Ban User',
+        "user.unban": 'Unban User',
+        "user.delete": 'Delete User',
+        "user.update_quota": 'Update User Quota',
+        "user.revoke_sessions": 'Revoke User Sessions',
+        "profile.update": 'Update Profile',
+        "password.change": 'Change Password',
+        "ssh_key.add": 'Add SSH Key',
+        "ssh_key.delete": 'Delete SSH Key',
+        "notification.add": 'Add Notification Channel',
+        "notification.delete": 'Delete Notification Channel',
+        "2fa.setup": 'Setup 2FA',
+        "2fa.enable": 'Enable 2FA',
+        "2fa.disable": 'Disable 2FA',
+        "2fa.recovery_reset": 'Reset Recovery Codes',
+        "session.revoke": 'Revoke Session',
+        "session.revoke_all": 'Revoke All Sessions',
+        "system.config_update": 'Update System Config',
+        "help.create": 'Create Help Article',
+        "help.update": 'Update Help Article',
+        "help.delete": 'Delete Help Article',
+        "backup.upload": 'Upload Backup',
+        "backup.upload.queue": 'Queue Backup Upload',
+        "backup.upload.cancel": 'Cancel Backup Upload',
+        "backup.restore": 'Restore Backup',
+        "backup.restore.rollback": 'Rollback Restore',
+        "backup.restore.cancel": 'Cancel Restore',
+        "storage.create": 'Create Storage Config',
+        "storage.update": 'Update Storage Config',
+        "storage.delete": 'Delete Storage Config',
+        "aff.create_code": 'Create Promo Code',
+        "aff.convert_request": 'Request AFF Conversion',
+        "aff.approve_convert": 'Approve AFF Conversion',
+        "aff.reject_convert": 'Reject AFF Conversion',
     },
-
-    // Log results translation
     logResults: {
         success: 'Success',
         failed: 'Failed',
         warning: 'Warning',
     },
-
-    // API error codes translation
     errors: {
-        // Common errors
         INVALID_ID: 'Invalid ID',
         NOT_FOUND: 'Resource not found',
         UNAUTHORIZED: 'Unauthorized',
         FORBIDDEN: 'Access denied',
         ADMIN_REQUIRED: 'Admin privileges required',
-        // User errors
         USER_NOT_FOUND: 'User not found',
         USER_EXISTS: 'Username already exists',
         CANNOT_MODIFY_SELF: 'Cannot modify your own status',
@@ -5761,7 +5157,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         CANNOT_BAN_ADMIN: 'Cannot ban admin account',
         CANNOT_DELETE_ADMIN: 'Cannot delete admin account',
         USER_HAS_INSTANCES: 'User has instances, please delete them first',
-        // Auth errors
         INVALID_CREDENTIALS: 'Invalid username or password',
         ACCOUNT_BANNED: 'Account has been disabled',
         TOO_MANY_ATTEMPTS: 'Too many login attempts, please try again later',
@@ -5779,7 +5174,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         REFRESH_TOKEN_MISSING: 'Refresh token missing',
         REFRESH_TOKEN_INVALID: 'Refresh token invalid or expired',
         SESSION_NOT_FOUND: 'Session not found',
-        // Validation errors
         INVALID_EMAIL: 'Please enter a valid email address',
         EMAIL_CONTAINS_ILLEGAL: 'Email contains illegal characters',
         USERNAME_CONTAINS_ILLEGAL: 'Username contains illegal characters',
@@ -5787,7 +5181,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         INVALID_SSH_KEY: 'Invalid SSH public key format',
         SSH_KEY_EXISTS: 'This SSH key has already been added',
         INVALID_NAME: 'Invalid name format',
-        // Instance errors
         INSTANCE_NOT_FOUND: 'Instance not found',
         INSTANCE_ALREADY_RUNNING: 'Instance is already running',
         INSTANCE_ALREADY_STOPPED: 'Instance is already stopped',
@@ -5796,21 +5189,17 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         INSTANCE_NOT_SUSPENDED: 'Instance is not in suspended status',
         INSTANCE_SUSPENDED_EXPIRED: 'Instance is suspended due to expiration, please renew to unsuspend',
         INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED: 'Destroy is unavailable because current-cycle usage has reached the package limit',
-        // Host errors
         HOST_NOT_FOUND: 'Host not found',
         HOST_OFFLINE: 'Host is offline',
         HOST_HAS_INSTANCES: 'Host has instances, please delete them first',
         HOST_ALREADY_OFFICIAL: 'Host is already official',
         HOST_TAKEOVER_PACKAGE_BINDING_CONFLICT: 'Takeover blocked because some packages would lose all bound hosts',
         NO_AVAILABLE_HOSTS: 'No available hosts',
-        // Image errors
         IMAGE_NOT_FOUND: 'Image not found',
         IMAGE_SYNCED_ON_HOSTS: 'Image is synced on hosts, please delete from hosts first',
         IMAGE_TYPE_MISMATCH: 'Selected image is not compatible with package instance type',
-        // Package errors
         PACKAGE_NOT_FOUND: 'Package not found',
         PACKAGE_IN_USE: 'Package is in use by instances',
-        // Quota errors
         QUOTA_EXCEEDED: 'Quota exceeded',
         QUOTA_CPU_EXCEEDED: 'CPU quota exceeded',
         QUOTA_MEMORY_EXCEEDED: 'Memory quota exceeded',
@@ -5820,43 +5209,32 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         QUOTA_SNAPSHOT_EXCEEDED: 'Snapshot quota exceeded',
         QUOTA_BACKUP_EXCEEDED: 'Backup quota exceeded',
         QUOTA_NOT_ALLOCATED: 'Quota not allocated',
-        // Snapshot errors
         SNAPSHOT_NOT_FOUND: 'Snapshot not found',
         SNAPSHOT_RESTORE_REQUIRES_STOP: 'Please stop the instance before restoring snapshot',
-        // Backup errors
         BACKUP_NOT_FOUND: 'Backup not found',
         BACKUP_NOT_READY: 'Backup is not ready for export',
         EXPORT_TASK_NOT_FOUND: 'Export task not found or expired',
         EXPORT_TASK_EXPIRED: 'Export task has expired',
-        // Port mapping errors
         PORT_IN_USE: 'Port is already in use',
         PORT_OUT_OF_RANGE: 'Port is out of allowed range',
         PORT_MAPPING_NOT_FOUND: 'Port mapping not found',
-        // Node group errors
         NODE_GROUP_NOT_FOUND: 'Node group not found',
         NODE_GROUP_HAS_HOSTS: 'Node group has hosts, please remove them first',
         NODE_GROUP_HAS_PACKAGES: 'Node group is used by packages',
-        // Notification errors
         NOTIFICATION_CHANNEL_NOT_FOUND: 'Notification channel not found',
-        // Help errors
         ARTICLE_NOT_FOUND: 'Article not found',
         SLUG_EXISTS: 'Slug already exists',
-        // Invite code errors
         INVITE_CODE_USED: 'Invite code has been used',
         INVITE_CODE_NOT_FOUND: 'Invite code not found',
-        // OAuth errors
         OAUTH_PROVIDER_DISABLED: 'This login method has been disabled',
         OAUTH_ALREADY_BOUND: 'This account is already bound to another user',
         OAUTH_NOT_BOUND: 'Account not bound',
         OAUTH_TOKEN_ERROR: 'Failed to get authorization',
-        // SSH Key errors
         SSH_KEY_NOT_FOUND: 'SSH key not found',
         SSH_KEY_REQUIRED: 'SSH key is required, please add one in settings first',
         SSH_KEY_NOT_OWNED: 'SSH key not found or does not belong to this user',
-        // Package errors (additional)
         PACKAGE_UNAVAILABLE: 'Package is unavailable or discontinued',
         CANNOT_CREATE_OWN_PAID_PACKAGE: 'Cannot create instance with your own paid package',
-        // Host resource errors
         HOST_UNAVAILABLE: 'Selected host is unavailable or has insufficient resources',
         HOST_NO_ONLINE: 'No online hosts available, please test connection in node management',
         HOST_RESOURCES_NOT_SYNCED: 'Host resources not synced, please click "Test Connection" in node management',
@@ -5872,7 +5250,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         HOST_IPV6_ROUTE_REQUIRES_CONFIG: 'IPv6 route mode requires subnet and parent interface configuration',
         HOST_CPU_BELOW_USED: 'CPU max allowance cannot be less than current usage by instances',
         HOST_MEMORY_BELOW_USED: 'Memory max cannot be less than current usage by instances',
-        // Instance operation errors
         INSTANCE_STOP_REQUIRED: 'Please stop the instance first',
         INSTANCE_IMAGE_REQUIRED: 'Please specify an image',
         INSTANCE_IMAGE_UNAVAILABLE: 'Selected image is not available on this host',
@@ -5883,33 +5260,25 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         HOST_NO_IPV6_SUBNET: 'Host has no IPv6 subnet configured',
         IPV6_POOL_EXHAUSTED: 'IPv6 address pool exhausted, please try again later',
         IPV6_REASSIGN_COOLDOWN: 'IPv6 can only be reassigned once per day, please try again later',
-        // Port mapping errors (additional)
         PORT_MAPPING_NAT_ONLY: 'Port mapping is only supported in NAT or dual-stack mode',
         PORT_NO_AVAILABLE: 'No available ports, please contact administrator',
         PORT_CONFLICT: 'Port is already in use, please use another port',
         PORT_MAPPING_INVALID_ID: 'Invalid instance or port mapping ID',
-        // Image errors (additional)
         IMAGE_CREATE_FAILED: 'Image creation failed',
         IMAGE_UPDATE_FAILED: 'Image update failed',
         IMAGE_INVALID_HOST_ID: 'Invalid image or host ID',
-        // Backup errors (additional)
         BACKUP_CREATE_FAILED: 'Backup creation failed',
         BACKUP_DELETE_FAILED: 'Backup deletion failed',
         BACKUP_EXPORT_FAILED: 'Backup export failed',
         BACKUP_QUOTA_NOT_SET: 'Please set backup quota for this instance first',
         BACKUP_EXPORT_STATUS_INVALID: 'Export task status is invalid',
-        // Config errors
         CONFIG_INVALID_KEY: 'Invalid configuration key',
         CONFIG_INVALID_VALUE: 'Configuration value must be a non-negative integer',
-        // Snapshot errors (additional)
         SNAPSHOT_QUOTA_NOT_SET: 'Please set snapshot quota for this instance first',
-        // Package errors (additional)
         PACKAGE_HAS_INSTANCES: 'Package is in use by instances and cannot be deleted',
-        // Resource limit errors
         RESOURCE_CPU_EXCEEDS_PACKAGE: 'CPU configuration exceeds package limit',
         RESOURCE_MEMORY_EXCEEDS_PACKAGE: 'Memory configuration exceeds package limit',
         RESOURCE_DISK_EXCEEDS_PACKAGE: 'Disk configuration exceeds package limit',
-        // User quota errors (detailed)
         QUOTA_CPU_INSUFFICIENT: 'CPU quota insufficient',
         QUOTA_MEMORY_INSUFFICIENT: 'Memory quota insufficient',
         QUOTA_DISK_INSUFFICIENT: 'Disk quota insufficient',
@@ -5922,23 +5291,16 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         QUOTA_PORT_TOTAL_EXCEEDED: 'Total port quota exceeds user limit',
         QUOTA_SNAPSHOT_TOTAL_EXCEEDED: 'Total snapshot quota exceeds user limit',
         QUOTA_BACKUP_TOTAL_EXCEEDED: 'Total backup quota exceeds user limit',
-        // Image errors (additional)
         IMAGE_NOT_SYNCED: 'Image not synced to selected host',
         IMAGE_SYNCING_CANNOT_DELETE: 'Image is syncing on hosts and cannot be deleted',
         IMAGE_NO_HOSTS: 'No available hosts, please add hosts first',
-        // Port errors (additional)
         PORT_RANGE_INVALID: 'Port must be within allowed range',
-        // Snapshot policy errors
         SNAPSHOT_MANUAL_FULL: 'Manual snapshots have reached instance quota, cannot enable auto snapshot',
         SNAPSHOT_RETENTION_EXCEEDS: 'Retention count exceeds available quota',
-        // Backup policy errors
         BACKUP_MANUAL_FULL: 'Manual backups have reached instance quota, cannot enable auto backup',
         BACKUP_RETENTION_EXCEEDS: 'Retention count exceeds available quota',
-        // OAuth errors (additional)
         OAUTH_NOT_ENABLED: 'This OAuth provider is not enabled',
-        // Storage pool errors
         STORAGE_POOL_NOT_CONFIGURED: 'No system disk storage pool configured on host, cannot create instance',
-        // Friends system errors
         CANNOT_ADD_SELF: 'Cannot add yourself as a friend',
         ALREADY_FRIENDS: 'You are already friends',
         FRIEND_REQUEST_PENDING: 'Friend request is already pending',
@@ -5946,7 +5308,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         FRIEND_REQUEST_NOT_PENDING: 'Request has already been processed',
         FRIENDSHIP_NOT_FOUND: 'Friendship not found',
         TARGET_FRIEND_QUOTA_FULL: 'Target user friend quota is full, cannot add',
-        // Package share errors
         CANNOT_SHARE_TO_SELF: 'Cannot share to yourself',
         PACKAGE_ALREADY_SHARED: 'Package is already shared to this user',
         SHARE_NOT_FOUND: 'Share record not found',
@@ -5954,7 +5315,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         SHARE_QUOTA_CPU_EXCEEDED: 'Shared package CPU quota exceeded',
         SHARE_QUOTA_MEMORY_EXCEEDED: 'Shared package memory quota exceeded',
         SHARE_QUOTA_INSTANCES_EXCEEDED: 'Shared package instance limit exceeded',
-        // Email verification errors
         EMAIL_VERIFICATION_DISABLED: 'Email verification is not enabled',
         EMAIL_CODE_REQUIRED: 'Email verification code is required',
         INVALID_EMAIL_CODE: 'Invalid or expired verification code',
@@ -5962,7 +5322,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         EMAIL_SEND_FAILED: 'Failed to send verification email, please try again later',
         EMAIL_ALREADY_REGISTERED: 'This email address is already in use',
         EMAIL_DOMAIN_NOT_ALLOWED: 'This email domain is not allowed for registration, please use another email',
-        // Transfer errors
         TRANSFER_NOT_FOUND: 'Transfer request not found',
         TRANSFER_TO_SELF: 'Cannot transfer to yourself',
         TRANSFER_TO_BANNED: 'Cannot transfer to a banned user',
@@ -5974,17 +5333,14 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         TRANSFER_INSTANCE_LOCKED: 'Instance is locked due to pending transfer',
         TRANSFER_HOST_DISABLED: 'Transfer is disabled for this host',
         TRANSFER_INSUFFICIENT_BALANCE: 'Insufficient balance for transfer fee',
-        // Transfer process errors
         INSTANCE_MUST_BE_STOPPED: 'Instance must be stopped before transfer',
         INCUS_RENAME_FAILED: 'Failed to rename instance on host',
         DATABASE_ERROR: 'Database operation failed, please try again',
-        // Sensitive operation verification errors
         VERIFICATION_REQUIRED: 'This operation requires verification',
         INVALID_CODE: 'Verification code is invalid or expired',
         NO_NOTIFICATION_CHANNEL: 'No notification channel configured',
         EMAIL_NOT_CONFIGURED: 'Email not configured, cannot send verification code',
         SEND_FAILED: 'Failed to send verification code',
-        // Checkin errors
         CHECKIN_NO_INSTANCE: 'You need at least one instance to check in',
         CHECKIN_ALREADY_TODAY: 'You have already checked in today',
         REDEEM_ALREADY_TODAY: 'You have already redeemed a code today',
@@ -6001,7 +5357,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         REDEEM_EXCEEDS_PACKAGE_QUOTA: 'Redeeming would exceed instance package quota',
         REDEEM_ALREADY_AT_LIMIT: 'Instance resource is already at package limit',
         CHECKIN_CODE_PAID_INSTANCE: 'Check-in redeem codes can only be used on free instances',
-        // Official coupon errors
         COUPON_NOT_FOUND: 'Official coupon not found',
         COUPON_DISABLED: 'This official coupon has been disabled',
         COUPON_NOT_STARTED: 'This official coupon is not active yet',
@@ -6014,7 +5369,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         COUPON_INVALID_DISCOUNT: 'Discount rate must be between 0 and 1',
         PAID_INSTANCE_DELETION_NOT_ALLOWED: 'Paid instances cannot be deleted',
         INSTANCE_DELETION_NOT_ALLOWED: 'This package does not allow user-initiated deletion or refunds',
-        // Balance errors
         BALANCE_INSUFFICIENT: 'Insufficient balance, please top up first',
         BALANCE_TRANSFER_DISABLED: 'Balance transfers are disabled',
         BALANCE_TRANSFER_TO_SELF: 'Cannot transfer balance to yourself',
@@ -6027,8 +5381,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         INSUFFICIENT_BALANCE: 'Insufficient balance, please top up first',
         INTERNAL_ERROR: 'Internal server error',
     },
-
-    // Traffic Statistics
     traffic: {
         title: 'Traffic Statistics',
         monthlyUsage: 'Monthly Traffic',
@@ -6066,8 +5418,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         resetSuccess: 'Traffic reset successfully',
         resetFailed: 'Failed to reset traffic',
     },
-
-    // Instance Transfer
     transfer: {
         title: 'Instance Transfer',
         sentTab: 'Sent',
@@ -6076,7 +5426,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         noTransfers: 'No transfer records',
         noPendingTransfers: 'No pending transfers',
         searchPlaceholder: 'Search by instance name, username, or remark...',
-        // Status
         status: {
             pending: 'Pending',
             processing: 'Processing',
@@ -6084,7 +5433,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             rejected: 'Rejected',
             cancelled: 'Cancelled',
         },
-        // Actions
         actions: {
             transfer: 'Transfer',
             accept: 'Accept',
@@ -6092,11 +5440,9 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             cancel: 'Cancel',
             push: 'Push',
         },
-        // Completion times
         completedAt: 'Completed at',
         rejectedAt: 'Rejected at',
         cancelledAt: 'Cancelled at',
-        // Transfer Modal
         modal: {
             title: 'Transfer Instance',
             targetUser: 'Target Username',
@@ -6120,13 +5466,11 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             insufficientBalance: 'Insufficient balance, please top up first',
             feeRefundHint: 'Fee will be charged upon confirmation. Automatically refunded if the recipient rejects',
         },
-        // Reject Modal
         rejectModal: {
             title: 'Reject Transfer',
             reason: 'Reason (optional)',
             reasonPlaceholder: 'Enter rejection reason',
         },
-        // Config Detail Modal
         configModal: {
             title: 'Configuration at Transfer',
             instanceName: 'Instance Name',
@@ -6138,7 +5482,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             package: 'Package',
         },
         hasRemark: 'Has remark',
-        // Detail
         detail: {
             fromUser: 'From',
             toUser: 'To',
@@ -6159,7 +5502,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             rejectedAt: 'Rejected At',
             cancelledAt: 'Cancelled At',
         },
-        // Messages
         messages: {
             transferSuccess: 'Transfer request sent',
             transferComplete: 'Transfer completed',
@@ -6169,7 +5511,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             pushSuccess: 'Instance pushed successfully',
             instanceLocked: 'This instance is being transferred and cannot be operated',
         },
-        // Errors
         errors: {
             TRANSFER_NOT_FOUND: 'Transfer request not found',
             TRANSFER_TO_SELF: 'Cannot transfer to yourself',
@@ -6185,8 +5526,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             PUSH_NOT_HOST_OWNER: 'Only host owner can push transfer directly',
         },
     },
-
-    // Friends System
     friends: {
         title: 'Friends',
         description: 'Manage your friends list. Friends can share resources with each other',
@@ -6227,7 +5566,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         filterRejected: 'Rejected',
         hosts: 'Hosts',
         instances: 'Instances',
-        // Invite codes
         invites: 'Invite Codes',
         generateInvite: 'Generate Invite',
         generateInviteTitle: 'Generate Invite Code',
@@ -6263,7 +5601,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         requestAlreadyPending: 'Friend request is already pending',
         requestNotFound: 'Request not found or already processed',
         friendshipNotFound: 'Friendship not found',
-        // Package sharing
         selectFriendHint: 'Select a friend',
         selectFriendDesc: 'Click a friend card on the left to manage package sharing',
         sharedPackages: 'Shared Packages',
@@ -6295,8 +5632,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         createPackageFirst: 'Please create a package in "My Packages" first',
         noPackageSearchResult: 'No matching packages found',
     },
-
-    // Package labels
     package: {
         shared: 'Friend',
         globalShared: 'Available',
@@ -6304,8 +5639,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         myPackage: 'My Package',
         soldOut: 'Sold Out',
     },
-
-    // User Resources Management
     resources: {
         hosts: {
             title: 'My Hosts',
@@ -6332,7 +5665,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             calibrateAllNoChange: 'Synced {total} hosts, no differences',
             nameHint: 'Node name is prefixed with PEER + your user ID, followed by custom suffix',
             nameSuffixRequired: 'Please enter the node name suffix',
-            // Admin only: Host scope toggle
             mine: 'My Hosts',
             official: 'Official Hosts',
             hosted: 'Hosted',
@@ -6370,7 +5702,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             searchFriend: 'Search friends...',
             noAvailableFriends: 'All friends have been shared this package',
             selectToShare: 'Select a friend to share',
-            // Quota limits
             quotaSettings: 'Quota Limits',
             quotaMultiplier: 'Resource Quota Multiplier',
             quotaMultiplierHint: 'Limit CPU/Memory as a fraction of package quota',
@@ -6383,7 +5714,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             updateQuota: 'Update Quota',
             updateQuotaSuccess: 'Quota updated',
             updateQuotaFailed: 'Failed to update quota',
-            // Enhanced modal additions
             shareToFriend: 'Share Package to Friend',
             noFriendsHint: 'Add friends first to share packages',
             allFriendsShared: 'All Shared',
@@ -6409,14 +5739,11 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             searchPlaceholder: 'Search name, host, description...',
             noSearchResults: 'No matching packages found',
             clearSearch: 'Clear search',
-            // Notification channel settings
             notifyChannel: 'Notification Channel',
             notifyChannelTitle: 'Resource Release Notification Channel',
             notifyChannelDesc: 'System will send notifications via this channel when users delete instances or when quota is released',
-            // Share link
             copyShareLink: 'Copy Share Link',
             shareLinkCopied: 'Purchase link copied. Users can preview the package before continuing to checkout.',
-            // Admin only: Package scope toggle
             mine: 'My Packages',
             hosted: 'Hosted',
             owner: 'Owner',
@@ -6445,7 +5772,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
                 },
             },
         },
-        // Package plans management
         plans: {
             title: 'Plan Management',
             manage: 'Manage Plans',
@@ -6560,8 +5886,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             noImagesHint: 'Add images to use when creating instances',
         },
     },
-
-    // Instance config tab
     instanceConfig: {
         title: 'Advanced Configuration',
         sections: {
@@ -6631,8 +5955,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             failed: 'Failed to boost process limit',
         },
     },
-
-    // Package form page
     packageForm: {
         createTitle: 'Create Package',
         editTitle: 'Edit Package',
@@ -6750,8 +6072,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             vmWindows: 'Can run Windows and other non-Linux OS',
         },
     },
-
-    // Sensitive operation verification
     sensitiveVerification: {
         title: 'Sensitive Operation Verification',
         description: 'This operation requires verification to ensure account security',
@@ -6790,8 +6110,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             webhook: 'Webhook',
         },
     },
-
-    // Host Caddy management
     host: {
         caddy: {
             title: 'Caddy Proxy',
@@ -6824,7 +6142,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             step1: 'Copy the command above and run it as root on your host',
             step2: 'Wait for installation to complete, you should see "Caddy Reverse Proxy Ready"',
             step3: 'Return to this page and click "Confirm Installed" button',
-            // Sites list
             sitesList: 'Proxy Sites',
             sitesTotalCount: '{count} sites in total',
             loadSitesFailed: 'Failed to load sites',
@@ -6839,7 +6156,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             nextPage: 'Next',
             pageInfo: 'Page {current}/{total}, {count} total',
         },
-        // Host create instance
         createInstance: {
             title: 'Create Instance',
             selfMode: 'Create for Myself',
@@ -6864,7 +6180,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             userInactive: 'This user is not active',
             cannotGiftToSelf: 'Use the self-create mode if you want to create an instance for yourself',
         },
-        // Host owner notifies instance users
         notify: {
             title: 'Send Notification',
             sendToUsers: 'Notify Users',
@@ -6887,13 +6202,11 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             emailSkipped: '{count} user(s) skipped because no email address is set',
             emailFailed: '{count} email(s) failed to send or queue',
             sendFailed: 'Failed to send',
-            // Send to single instance user
             sendToUser: 'Send Message',
             sendToUserTitle: 'Send Message to {username}',
             sendToUserHint: 'Message will be sent to the owner of instance "{instance}"',
             sendToUserSuccess: 'Message sent',
         },
-        // Renewal Price
         price: {
             editPrice: 'Edit Renewal Price',
             modalTitle: 'Edit Renewal Price',
@@ -6907,14 +6220,12 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             updateSuccess: 'Renewal price updated, user notified',
             updateFailed: 'Update failed',
         },
-        // Batch Configuration
         batchConfig: {
             title: 'Batch Config',
             button: 'Batch Config',
             targetAll: 'Apply to: All {count} instances on host',
             targetSelected: 'Apply to: {count} selected instances',
             enableFieldHint: 'Check the box to enable modification for the field',
-            // Sections
             section: {
                 resources: 'Resources',
                 quota: 'Quota Limits',
@@ -6925,7 +6236,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
                 process: 'Process & Scheduling',
                 boot: 'Boot Settings',
             },
-            // Fields
             cpu: 'CPU Cores',
             memory: 'Memory',
             disk: 'Disk',
@@ -6948,7 +6258,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             bootAutostart: 'Auto Start',
             bootDelay: 'Boot Delay',
             shutdownTimeout: 'Shutdown Timeout',
-            // Placeholders
             placeholder: {
                 cpu: 'e.g. 1, 2, 4',
                 memory: 'e.g. 512, 1024, 2048',
@@ -6961,10 +6270,8 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
                 processLimit: 'e.g. 500, 1000',
                 bootPriority: 'e.g. 0, 1, 2',
             },
-            // Status
             processing: 'Applying batch configuration...',
             processed: 'Processed {current} / {total}',
-            // Results
             success: 'Success',
             failed: 'Failed',
             successAll: 'Batch config applied successfully to {count} instances',
@@ -6980,13 +6287,11 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             errorReason: 'Error Reason',
             copyIncusIds: 'Copy Failed Incus IDs',
             copiedIncusIds: 'Copied {count} Incus IDs',
-            // Actions
             submit: 'Apply Config ({count})',
             close: 'Close',
             noFieldsEnabled: 'Please enable at least one config field',
             noChanges: 'No configuration changes',
         },
-        // Batch migrate instances
         migrate: {
             title: 'Migrate Instances to Another Node',
             button: 'Migrate',
@@ -7014,7 +6319,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             selectTargetRequired: 'Please select target node',
             noInstancesSelected: 'Please select instances to migrate first',
             failed: 'Migration failed',
-            // Paid instance plan selection
             targetPlan: 'Target Plan',
             selectPlan: 'Select target plan',
             selectPlanRequired: 'Please select target plan',
@@ -7022,7 +6326,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             noPlanAvailable: 'No plans available on target node',
             planHint: 'Paid instances will use the new plan\'s renewal price, keeping original expiry date and coupon',
         },
-        // Gift Days
         giftDays: {
             title: 'Gift Days',
             button: 'Gift Days',
@@ -7038,8 +6341,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             noPaidInstances: 'Please select paid instances',
         },
     },
-
-    // Inbox (Notifications)
     inbox: {
         title: 'Notification Center',
         description: 'View all your system notifications',
@@ -7065,7 +6366,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         markedRead: 'Marked as read',
         markedAllRead: 'All marked as read',
         currentPageFiltered: 'Filtered on this page: {count} items',
-        // Message categories
         categories: {
             instance: 'Instance',
             snapshot: 'Snapshot',
@@ -7079,8 +6379,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             system: 'System',
         },
     },
-
-    // Quota Release
     quotaRelease: {
         title: 'Release Quota',
         packageQuota: 'Package Quota',
@@ -7113,8 +6411,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         channelUpdated: 'Notification channel updated',
         channelUpdateFailed: 'Failed to update notification channel',
     },
-
-    // Web Terminal
     terminal: {
         title: 'Terminal',
         connecting: 'Connecting...',
@@ -7158,18 +6454,15 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         searchPrevious: 'Previous',
         restore: 'Restore Terminal',
         exportLog: 'Export Log',
-        // Multi-tab
         tab: 'Tab',
         newTab: 'New Tab',
         closeTab: 'Close Tab',
         maxTabsReached: 'Maximum tabs reached',
-        // Context menu
         contextMenu: {
             copy: 'Copy',
             paste: 'Paste',
             selectAll: 'Select All',
         },
-        // Cloud-init status
         cloudInitChecking: 'Checking instance initialization status...',
         cloudInitInProgress: 'Instance is initializing',
         cloudInitInProgressHint: 'Instance is running Cloud-init initialization, which may take 10-60 seconds. Please click "Retry" to try connecting again.',
@@ -7179,9 +6472,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         cloudInitSkip: 'Skip and Connect',
         cloudInitManualComplete: 'Mark Complete',
         cloudInitManualCompleteSuccess: 'This instance has been marked as cloud-init completed manually',
-        // Mobile hints
         mobileKeyboardHint: 'Please switch to English keyboard for best experience',
-        // Help
         help: 'Help',
         helpTitle: 'Terminal Help',
         helpShortcuts: 'Keyboard Shortcuts',
@@ -7201,7 +6492,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         helpTouchOps: 'Touch Operations',
         helpTouchPinchZoom: 'Pinch to zoom font size',
         helpTouchSwipeScroll: 'Swipe to scroll history',
-        // Settings panel
         settings: 'Settings',
         settingBell: 'Terminal Alert Sound',
         settingBellDesc: 'Play sound when program sends alert (e.g., command complete, error warning)',
@@ -7254,12 +6544,9 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             disconnectedHint: 'Connect the terminal before running a saved command',
             shellRequiredHint: 'Wait for the interactive shell before running a saved command',
         },
-        // Mobile accessory bar
         paste: 'Paste',
         hideKeyboard: 'Hide Keyboard',
     },
-
-    // Terminal management page
     terminalPage: {
         newConnection: 'New Connection',
         selectInstance: 'Select Instance',
@@ -7281,8 +6568,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         noMatchingInstances: 'No matching instances',
         noMatchingInstancesHint: 'Try another keyword or clear the search to see all running instances.',
     },
-
-    // Ticket System
     tickets: {
         title: 'Ticket Center',
         myTickets: 'My Tickets',
@@ -7300,28 +6585,24 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         noOfficialTicketsHint: 'There are no tickets from official hosts',
         noHostedTickets: 'No Hosted Tickets',
         noHostedTicketsHint: 'There are no tickets from hosted nodes',
-        // Ticket status
         status: {
             open: 'Open',
             in_progress: 'In Progress',
             resolved: 'Resolved',
             closed: 'Closed',
         },
-        // Ticket priority
         priority: {
             low: 'Low',
             normal: 'Normal',
             high: 'High',
             urgent: 'Urgent',
         },
-        // Ticket category
         category: {
             general: 'General Inquiry',
             billing: 'Billing Issue',
             technical: 'Technical Support',
             abuse: 'Abuse Report',
         },
-        // Form
         subject: 'Subject',
         subjectPlaceholder: 'Brief description of the issue',
         content: 'Content',
@@ -7330,10 +6611,9 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         selectInstanceHint: 'Select instance (optional)',
         noInstancesHint: 'You have no instances, you can submit ticket directly',
         hostedInstanceHint: 'For tickets related to hosted instances, please select the corresponding instance. The ticket will be sent to the node operator.',
-            hostedInstanceHintTitle: 'Hosted Instance Tips',
+        hostedInstanceHintTitle: 'Hosted Instance Tips',
         selectCategory: 'Select Category',
         selectPriority: 'Select Priority',
-        // Actions
         reply: 'Reply',
         replyPlaceholder: 'Enter your reply...',
         close: 'Close Ticket',
@@ -7341,10 +6621,8 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         updateStatus: 'Update Status',
         markResolved: 'Mark as Resolved',
         markInProgress: 'Mark as In Progress',
-        // Confirmation dialogs
         confirmClose: 'Close this ticket?',
         confirmCloseHint: 'You will not be able to reply after closing',
-        // Messages
         createSuccess: 'Ticket created successfully',
         replySuccess: 'Reply sent successfully',
         closeSuccess: 'Ticket closed',
@@ -7352,7 +6630,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         confirmDeleteMessage: 'Are you sure you want to delete this message? It will be invisible to everyone.',
         deleteMessageSuccess: 'Message deleted',
         statusUpdated: 'Status updated',
-        // Other
         host: 'Host',
         instance: 'Instance',
         from: 'From',
@@ -7408,14 +6685,11 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             resetZoom: 'Reset zoom',
         },
     },
-
-    // Checkin system
     checkin: {
         title: 'Daily Check-in',
         checkinTab: 'Check-in',
         redeemTab: 'Redeem',
         recordsTab: 'Records',
-        // Checkin status
         notCheckedIn: 'Not checked in today',
         alreadyCheckedIn: 'Already checked in today',
         checkinButton: 'Check-in',
@@ -7425,14 +6699,12 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         opening: 'Opening',
         revealing: 'Revealing reward',
         congratulations: 'Congratulations! You got',
-        // Redeem code
         redeemCode: 'Redeem Code',
         codeExpired: 'Expired',
         codeUsed: 'Used',
         expiresIn: 'Expires in',
         copyCode: 'Copy Code',
         codeCopied: 'Code copied',
-        // Resource types
         resourceType: 'Resource Type',
         resourceValue: 'Resource Value',
         cpu: 'CPU',
@@ -7440,7 +6712,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         disk: 'Disk',
         traffic: 'Traffic',
         points: 'Points',
-        // Redeem
         redeemTitle: 'Redeem Code',
         inputCode: 'Enter redeem code',
         selectInstance: 'Select Instance',
@@ -7451,37 +6722,32 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         redeemHint: 'Check-in codes can only be used on free instances',
         alreadyRedeemed: 'Check-in code already redeemed today',
         noInstancesForRedeem: 'No free instances available',
-        // Records
         checkinRecords: 'Check-in Records',
         redeemRecords: 'Redeem Records',
         noRecords: 'No records',
-                showingRecent: 'Showing {count} of {total}',
+        showingRecent: 'Showing {count} of {total}',
         usedBy: 'Used by',
         usedFor: 'Used for',
         self: 'Self',
         others: 'Others',
         unused: 'Unused',
-        // Share rules
         selfOnlyMode: 'Self-only',
         selfOnlyHint: 'Your codes have been used by others for 2 consecutive days. From today, only you can use your codes until you use one yourself',
-                // Rules
-                rulesTitle: 'Check-in Rules',
-                rulesCheckin: 'Check-in',
-                rulesCheckin1: 'Once daily, resets at midnight',
-                rulesCheckin2: 'Requires at least 1 instance',
-                rulesCheckin3: 'Randomly receive CPU / Memory / Disk / Traffic rewards',
-                rulesRedeem: 'Redemption',
-                rulesRedeem1: 'Redeem codes expire in 3 hours',
-                rulesRedeem2: 'Limit 1 redemption per person per day',
-                rulesRedeem3: 'Resources cannot exceed package limits',
-                rulesShare: 'Sharing',
-                rulesShare1: 'Redeem codes can be shared with friends',
-                rulesShare2: 'Used by others for 2 consecutive days will restrict to self-only until you use one yourself',
-        // Units
+        rulesTitle: 'Check-in Rules',
+        rulesCheckin: 'Check-in',
+        rulesCheckin1: 'Once daily, resets at midnight',
+        rulesCheckin2: 'Requires at least 1 instance',
+        rulesCheckin3: 'Randomly receive CPU / Memory / Disk / Traffic rewards',
+        rulesRedeem: 'Redemption',
+        rulesRedeem1: 'Redeem codes expire in 3 hours',
+        rulesRedeem2: 'Limit 1 redemption per person per day',
+        rulesRedeem3: 'Resources cannot exceed package limits',
+        rulesShare: 'Sharing',
+        rulesShare1: 'Redeem codes can be shared with friends',
+        rulesShare2: 'Used by others for 2 consecutive days will restrict to self-only until you use one yourself',
         percent: '%',
         mb: 'MB',
         gb: 'GB',
-        // Resource pool system
         tabCheckin: 'Check-in',
         tabRedeem: 'Redeem',
         tabPool: 'Resource Pool',
@@ -7519,8 +6785,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         actionApply: 'Apply',
         actionSystemRedeem: 'System Code',
     },
-
-    // Redeem codes management
     redeemCodes: {
         title: 'Redeem Codes',
         create: 'Create Code',
@@ -7592,8 +6856,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         valueOutOfRange: 'Value must be between {min} and {max}',
         valueMustBeInteger: 'Value must be an integer',
     },
-
-    // Extensions
     extensions: {
         title: 'Scripts',
         description: 'Manage extensions',
@@ -7637,11 +6899,9 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             loadDetailFailed: 'Failed to load command details',
             noContent: 'No content',
             lineCount: '{count} lines',
-            // Modal
             addTitle: 'Add Init Command',
             editTitle: 'Edit Init Command',
             modalDesc: 'Commands will be executed during instance initialization',
-            // Selector
             selectTitle: 'Init Commands',
             optional: '(optional)',
             noAvailable: 'No init commands available',
@@ -7650,7 +6910,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             selectedCount: '{count} selected',
             showAll: 'Show all {count}',
             collapse: 'Collapse',
-            // Distro names
             distroAll: 'All Distros',
             distroNames: {
                 all: 'All Distros',
@@ -7663,10 +6922,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             },
         },
     },
-
-    // Billing
     billing: {
-        // Common
         balance: 'Balance',
         frozen: 'Frozen',
         totalRecharge: 'Total Recharge',
@@ -7689,8 +6945,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             annual: 'Annual',
             months: 'months',
         },
-        
-        // Instance billing info
         billingInfo: 'Billing Info',
         currentPlan: 'Current Plan',
         expiresAt: 'Expires At',
@@ -7706,8 +6960,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         autoRenewHint: 'Will automatically deduct from balance 24 hours before expiration',
         autoRenewDesc: 'Once enabled, the instance will automatically renew per {cycle} cycle, costing ￥{price} each time',
         currentStatus: 'Current Status',
-        
-        // Renewal
         renew: 'Renew',
         renewInstance: 'Renew Instance',
         renewTitle: 'Renew Instance',
@@ -7734,8 +6986,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         renewFailed: 'Renewal Failed',
         freeInstanceNoRenew: 'Free instances do not need renewal',
         hostingRenewTooEarly: 'Hosted instances can only be renewed within 7 days before expiration (currently {days} days remaining)',
-        
-        // Plan change
         changePlan: 'Upgrade',
         changePlanTitle: 'Upgrade Instance Plan',
         upgrade: 'Upgrade',
@@ -7758,7 +7008,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         newConfig: 'New Configuration',
         freeInstanceNoChange: 'Free instances do not support upgrade',
         samePlan: 'Cannot change to the same plan',
-        // Change rules
         viewRules: 'View Rules',
         hideRules: 'Hide Rules',
         changePlanRulesTitle: 'Plan Upgrade Rules',
@@ -7766,27 +7015,21 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         changePlanRule2: 'Remaining days must be ≥ 15 to upgrade plan',
         changePlanRule3: 'Expiration date remains unchanged',
         changePlanRule4: 'Promo code discounts continue to apply',
-        // Highest plan
         alreadyHighestPlan: 'Already on the highest plan',
         contactForCustomPlan: 'Submit a ticket for custom higher configurations',
-        // KVM/LXC restart hints
         kvmRestartHint: 'KVM instances require a restart to apply new configuration; instances using reinstall scripts may need to expand partitions manually',
         lxcInstantHint: 'LXC instance configuration takes effect immediately after upgrade',
         kvmRestartRequired: 'KVM instance plan has been changed, please restart the instance to apply new configuration',
-        // Cannot change reasons
         cannotChange: 'Cannot Upgrade Now',
         cannotChangeRemainingDays: 'Less than {days} days remaining, cannot upgrade plan',
         cannotChangeInstanceStatus: 'Current instance status does not allow plan upgrade, only running or stopped instances can be modified',
         cannotChangeUnknown: 'Cannot upgrade plan at this time',
-        // Calculation details
         oldDailyPrice: 'Current Daily Rate',
         newDailyPrice: 'New Daily Rate',
         day: 'day',
         newPlanCostOriginal: 'New Plan Remaining Cost',
         newPlanCostFinal: 'New Plan Remaining Cost (After Discount)',
         discountAmount: 'Promo Discount',
-        
-        // Billing records
         records: 'Records',
         billingRecords: 'Billing Records',
         recordType: 'Type',
@@ -7800,8 +7043,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             downgrade: 'Downgrade',
             admin_extension: 'Admin Extension',
         },
-        
-        // Recharge
         recharge: 'Recharge',
         rechargeTitle: 'Account Recharge',
         rechargeAmount: 'Recharge Amount',
@@ -7826,13 +7067,9 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         orderStatus_cancelled: 'Cancelled',
         orderStatus_expired: 'Expired',
         orderStatus_refunded: 'Refunded',
-        
-        // Recharge records
         rechargeRecords: 'Recharge Records',
         noRecords: 'No Records',
         viewDetails: 'View Details',
-        
-        // Balance logs
         balanceLogs: 'Balance History',
         balanceLogTypes: {
             recharge: 'Recharge',
@@ -7843,8 +7080,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             refund: 'Refund',
             admin_adjust: 'Admin Adjustment',
         },
-        
-        // Package plans
         plan: 'Plan',
         planName: 'Plan Name',
         planPrice: 'Price',
@@ -7859,9 +7094,8 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         perMonth: '/mo',
         perQuarter: '/qtr',
         perYear: '/yr',
+        expired: 'Expired',
     },
-
-    // Hosting Access
     hosting: {
         accessDenied: {
             title: 'Hosting Requirements Not Met',
@@ -7874,8 +7108,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             featureHiddenHint: 'Contact an administrator to reopen hosting access, or try again when the feature is enabled again.',
         },
     },
-
-    // Hosting Wallet
     hostingWallet: {
         title: 'Hosting Earnings',
         description: 'View your node hosting earnings and withdrawal records',
@@ -8026,7 +7258,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             exceedBalance: 'Amount exceeds available balance',
         },
     },
-
     vipBenefits: {
         commonMember: 'Member',
         overviewLabel: 'VIP Benefits Hall',
@@ -8080,8 +7311,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             pending: 'Pending',
         },
     },
-
-    // Benefits System
     entertainment: {
         title: 'Benefits',
         description: 'Claim membership benefits and manage points and badges',
@@ -8110,7 +7339,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         checkinSection: {
             title: 'Daily Check-in',
         },
-        // Lottery
         spin: 'Spin',
         spinCost: 'Cost: {points} points',
         spinFailed: 'Lottery failed',
@@ -8120,7 +7348,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         prizeList: 'Prize List',
         probability: 'Probability',
         remaining: 'Remaining',
-        // Multi Draw
         multiDraw: 'Multi Draw x10',
         multiDrawAgain: 'Draw Again',
         multiDrawFailed: 'Multi draw failed',
@@ -8134,7 +7361,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         multiDrawBadgesTitle: 'Badges Won in This 10x Draw',
         multiDrawBadgesSubtitle: 'You obtained {count} badge rewards in this 10x draw. Review them before the full result list.',
         continueToMultiResults: 'Continue to 10x Results',
-        // Prize types
         prizeTypes: {
             nothing: 'Better Luck Next Time',
             points: 'Points',
@@ -8146,7 +7372,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             disk: 'Disk Resource',
             traffic: 'Traffic Resource',
         },
-        // Result
         congratulations: 'Congratulations!',
         betterLuckNextTime: 'Better Luck Next Time',
         wonPoints: 'Won {points} points',
@@ -8157,7 +7382,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         wonMemory: 'Won {value}MB memory, added to resource pool',
         wonDisk: 'Won {value}MB disk, added to resource pool',
         wonTraffic: 'Won {value}GB traffic, added to resource pool',
-        // Records
         lotteryName: 'Lottery Name',
         prize: 'Prize',
         prizeType: 'Prize Type',
@@ -8165,18 +7389,7 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         time: 'Time',
         noRecords: 'No lottery records',
         loadRecordsFailed: 'Failed to load lottery records',
-        recordStatus: 'Delivery status',
-        recordActions: 'Actions',
-        recordStatusPending: 'Pending',
-        recordStatusDelivered: 'Delivered',
-        recordStatusClaimed: 'Claimed',
-        deliverButton: 'Deliver instance',
-        deliverSuccess: 'Marked as delivered. Please make sure the instance has been provisioned for the winner',
-        deliverFailed: 'Deliver action failed',
-        invalidTicketId: 'Ticket ID must be a positive integer',
-        ticketIdPrompt: 'Deliver the instance prize to {username}. Enter the ticket ID handling this prize (optional):',
         loadLotteriesFailed: 'Failed to load lotteries',
-        // Points history
         pointsLogType: 'Type',
         pointsChange: 'Change',
         pointsAfter: 'Balance After',
@@ -8241,8 +7454,17 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             applyInstanceSuccess: 'Applied to instance icon',
             unapplySuccess: 'Application removed',
         },
-        // Admin
         admin: {
+            recordStatus: 'Delivery status',
+            recordActions: 'Actions',
+            recordStatusPending: 'Pending',
+            recordStatusDelivered: 'Delivered',
+            recordStatusClaimed: 'Claimed',
+            deliverButton: 'Deliver instance',
+            deliverSuccess: 'Marked as delivered. Please make sure the instance has been provisioned for the winner',
+            deliverFailed: 'Deliver action failed',
+            invalidTicketId: 'Ticket ID must be a positive integer',
+            ticketIdPrompt: 'Deliver the instance prize to {username}. Enter the ticket ID handling this prize (optional):',
             title: 'Entertainment Management',
             description: 'Manage lotteries, prizes, and user points',
             tabs: {
@@ -8275,7 +7497,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             status: 'Status',
             active: 'Active',
             inactive: 'Inactive',
-            // Prize management
             managePrizes: 'Manage Prizes',
             addPrize: 'Add Prize',
             prizeName: 'Prize Name',
@@ -8301,19 +7522,16 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
             invalidProbability: 'Weight must be greater than 0',
             savePrizesSuccess: 'Prizes saved successfully',
             savePrizesFailed: 'Failed to save prizes',
-            // Win records
             user: 'User',
             searchUser: 'Search username',
             noRecords: 'No win records',
             loadRecordsFailed: 'Failed to load win records',
-            // User points
             currentPoints: 'Current Points',
             totalEarned: 'Total Earned',
             totalSpent: 'Total Spent',
             lastConvertedAt: 'Last Converted',
             noUsers: 'No user points data',
             loadUsersFailed: 'Failed to load user points',
-            // Badge catalog
             badgeCatalog: {
                 loadFailed: 'Failed to load badge catalog',
                 fillSeriesRequired: 'Please fill in series ID, title, name, and description',
@@ -8383,7 +7601,6 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
                     previewLabel: 'Full Label',
                 },
             },
-            // Notification config
             notification: {
                 title: 'Win Notification',
                 enabled: 'Enable Notification',
@@ -8399,10 +7616,10 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
                 saveSuccess: 'Notification config saved',
                 saveFailed: 'Failed to save notification config',
             },
+            prize: 'Prize',
+            value: 'Value',
         },
     },
-
-    // Mail
     mail: {
         title: 'Mail',
         description: 'Manage your professional email service',
@@ -8493,9 +7710,9 @@ If renewal still has not succeeded at expiry, the system suspends the instance; 
         renewMonths: 'Renewal Period',
         monthlyPrice: 'Monthly Price',
         yearlyPrice: 'Yearly Price',
-                alreadyPurchased: 'You have already purchased email service in this region',
-                alreadyPurchasedDesc: 'Each user can only purchase one email plan per region. To change your plan, please manage it in "My Email".',
-                viewMySubscription: 'View My Subscription',
+        alreadyPurchased: 'You have already purchased email service in this region',
+        alreadyPurchasedDesc: 'Each user can only purchase one email plan per region. To change your plan, please manage it in "My Email".',
+        viewMySubscription: 'View My Subscription',
         renewDuration: 'Duration',
         months: 'months',
         renewSuccess: 'Renewal successful',

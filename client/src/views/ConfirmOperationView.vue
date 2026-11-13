@@ -29,19 +29,19 @@ onMounted(async (): Promise<void> => {
   const token = new URLSearchParams(window.location.search).get('token')
   if (!token) {
     status.value = 'error'
-    message.value = t('operationConfirm.missingToken')
+    message.value = t('auth.operationConfirm.missingToken')
     return
   }
 
   try {
     const res = await api.verification.confirm(token)
     status.value = 'success'
-    message.value = res.message || t('operationConfirm.success')
+    message.value = res.message || t('auth.operationConfirm.success')
     taskId.value = res.taskId
     apiKey.value = res.apiKey?.key || ''
   } catch (err: any) {
     status.value = 'error'
-    message.value = err?.message || t('operationConfirm.failed')
+    message.value = err?.message || t('auth.operationConfirm.failed')
   }
 })
 </script>

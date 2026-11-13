@@ -1,5 +1,4 @@
 export default {
-    // 通用
     common: {
         confirm: '确认',
         cancel: '取消',
@@ -71,9 +70,7 @@ export default {
         month: '月',
         totalRecords: '共 {count} 条记录',
         deleted: '已删除',
-        // 国家名称
         countries: {
-            // 亚洲
             cn: '中国',
             hk: '中国香港',
             mo: '中国澳门',
@@ -95,7 +92,6 @@ export default {
             sa: '沙特阿拉伯',
             il: '以色列',
             tr: '土耳其',
-            // 欧洲
             gb: '英国',
             de: '德国',
             fr: '法国',
@@ -120,26 +116,21 @@ export default {
             gr: '希腊',
             ua: '乌克兰',
             ru: '俄罗斯',
-            // 北美洲
             us: '美国',
             ca: '加拿大',
             mx: '墨西哥',
-            // 南美洲
             br: '巴西',
             ar: '阿根廷',
             cl: '智利',
             co: '哥伦比亚',
             pe: '秘鲁',
-            // 大洋洲
             au: '澳大利亚',
             nz: '新西兰',
-            // 非洲
             za: '南非',
             eg: '埃及',
             ng: '尼日利亚',
             ke: '肯尼亚',
         },
-        // 网络模式（统一定义）
         networkMode: {
             nat: 'IPv4 NAT',
             nat_ipv6: 'IPv4 NAT & IPv6',
@@ -147,19 +138,21 @@ export default {
             ipv6_only: 'IPv6 Only',
             ipv6_nat: 'IPv6 NAT',
         },
-        // 实例类型
         instanceType: {
             container: 'LXC',
             vm: 'KVM',
         },
-        // 启用/禁用状态
         enabled: '启用',
         disabled: '禁用',
         active: '已启用',
         inactive: '已停用',
         unlimited: '无限制',
+        noResults: '无匹配结果',
+        operationFailed: '操作失败',
+        prev: '上一页',
+        retry: '重试',
+        user: '用户',
     },
-
     validation: {
         fields: {
             name: '名称',
@@ -181,8 +174,6 @@ export default {
         ipAddressInvalid: '{field}格式不正确，请输入有效的 IPv4 或 IPv6 地址',
         ipv4Invalid: '{field}格式不正确，请输入有效的 IPv4 地址',
     },
-
-    // 导航
     nav: {
         main: '常用',
         dashboard: '概览',
@@ -243,7 +234,6 @@ export default {
         telegramSettings: 'Telegram 设置',
         adminCreateInstance: '管理员创建实例',
     },
-
     hourlyBilling: {
         badge: '按小时计费',
         createTitle: '按小时创建实例',
@@ -321,14 +311,11 @@ export default {
         balance: '余额',
         outstanding: '待补缴',
     },
-
-    // 主题
     theme: {
         dark: '深色模式',
         light: '浅色模式',
         system: '跟随系统',
     },
-
     freeSite: {
         billingCycleLabel: {
             monthly: '月付？月亮替你付了',
@@ -405,7 +392,6 @@ export default {
             mailBalanceRequired: '余额不余额的，白嫖站讲究先用再说。',
         },
     },
-
     publicSite: {
         brandTagline: '基于 Incus 的低价 NAT VPS',
         nav: {
@@ -528,8 +514,6 @@ export default {
             },
         },
     },
-
-    // 钱包
     wallet: {
         title: '钱包',
         description: '管理您的账户余额和充值',
@@ -584,13 +568,13 @@ export default {
         paymentUuid: 'UUID:',
         paymentTxid: 'TxID:',
         paymentMethods: {
-          alipay: '支付宝',
-          wxpay: '微信支付',
-          qqpay: 'QQ钱包',
-          bank: '网银支付',
-          jdpay: '京东支付',
-          usdt: 'USDT',
-          usdtTrc20: 'USDT (TRC20)',
+            alipay: '支付宝',
+            wxpay: '微信支付',
+            qqpay: 'QQ钱包',
+            bank: '网银支付',
+            jdpay: '京东支付',
+            usdt: 'USDT',
+            usdtTrc20: 'USDT (TRC20)',
         },
         noProviders: '暂无可用支付渠道',
         amountLabel: '充值金额',
@@ -653,8 +637,6 @@ export default {
         amountMismatch: '支付金额与订单金额不匹配，请联系客服',
         natDisclaimer: '我知道所售实例都是 NAT 属性，不保证 IP 在大陆的连通性，所有充值都无法退款。',
     },
-
-    // 官方优惠券（平台发放，折扣由平台承担，不产生 AFF 返利）
     officialCoupon: {
         label: '官方优惠券',
         valid: '官方优惠券有效，享受 {rate}% 折扣',
@@ -663,8 +645,6 @@ export default {
         benefit: '本单享受 {discount}% 折扣，折扣金额由平台承担',
         discountAmount: '官方优惠券折扣',
     },
-
-    // 推荐计划
     aff: {
         title: '推荐计划',
         description: '邀请好友使用您的优惠码，获取返利收益',
@@ -739,7 +719,6 @@ export default {
             empty: '暂无榜单数据',
             you: '就是你',
         },
-        // 实例创建页优惠码输入
         promoCode: '优惠码',
         promoCodeOptional: '优惠码（可选）',
         promoCodePlaceholder: '输入优惠码（可选）',
@@ -756,7 +735,6 @@ export default {
         usingPromoCode: '您正在使用优惠码',
         promoCodeBenefit: '您享受 {discount} 折扣，同时为分享者带来约 {commission}% 的返利',
         commissionEstimate: '预计为分享者带来 ¥{amount} 返利',
-        // 管理员审核
         adminTitle: 'AFF 转化审核',
         adminDescription: '审核用户的 AFF 余额转化申请',
         user: '用户',
@@ -775,7 +753,6 @@ export default {
         filterStatus: '状态筛选',
         all: '全部',
     },
-
     popupAnnouncement: {
         title: '站点公告',
         subtitle: '请留意这条最新通知',
@@ -787,14 +764,10 @@ export default {
         dismissToday: '今日不见',
         dismissForever: '再也不见',
     },
-
-    // 语言
     language: {
         zh: '中文',
         en: 'English',
     },
-
-    // 认证
     auth: {
         login: '登录',
         loginTo: '登录',
@@ -845,65 +818,38 @@ export default {
         verificationCodePlaceholder: '输入6位验证码',
         invalidCode: '请输入6位验证码',
         forgotPassword: {
-          title: '找回密码',
-          subtitle: '通过邮箱验证码重置您的密码',
-          sendCode: '发送验证码',
-          codeSent: '验证码已发送，请查收邮件',
-          codeHint: '请输入发送到您邮箱的6位验证码',
-          newPassword: '新密码',
-          newPasswordPlaceholder: '请输入新密码',
-          confirmPassword: '确认新密码',
-          confirmPasswordPlaceholder: '请再次输入新密码',
-          showPassword: '显示',
-          hidePassword: '隐藏',
-          passwordHint: '至少 8 位，需包含大写字母、小写字母和数字。密码不会通过邮件发送。',
-          newPasswordRequired: '请填写新密码并确认',
-          passwordMismatch: '两次输入的密码不一致',
-          resetPassword: '重置密码',
-          resetSuccess: '密码重置成功！请使用新密码登录。',
-          twoFactorDisabled: '您的双因素验证（2FA）已被自动禁用，建议重新启用以确保账户安全。'
-        },
-        apiKeys: {
-          title: 'API Key',
-          description: '创建 API Key 后，可通过面板 API 对本人已购实例执行受限控制（查询、开关机/重启、端口增删、更换 IPv6）。完整密钥仅在邮件确认落地页显示一次。',
-          name: '备注名（可选）',
-          namePlaceholder: '例如：服务器监控脚本',
-          create: '创建 API Key',
-          confirmEmailSent: '确认邮件已发送，请点击邮件中的链接完成创建（1 小时内有效）。完整密钥将在确认页显示一次，请立即保存。',
-          createFailed: '创建请求失败',
-          scopeHint: 'API Key 仅限本人已购实例的查询、开/关机/重启、端口增删与更换 IPv6，无法访问面板其他功能（钱包、工单、转移、重装等均被拒绝）。请求头示例：X-API-Key: incu_sk_…；实例列表请附带 ?mine=true。',
-          empty: '还没有 API Key',
-          nameCol: '备注名',
-          prefixLabel: '密钥前缀',
-          statusLabel: '状态',
-          lastUsed: '最近使用',
-          requests: '请求数',
-          actions: '操作',
-          defaultName: '未命名密钥',
-          statusActive: '启用中',
-          statusDisabled: '已停用',
-          never: '从未使用',
-          disable: '停用',
-          enable: '启用',
-          delete: '删除',
-          deleteConfirm: '确定删除密钥 {prefix}…？删除后使用该密钥的请求将立即失效。',
-          enabled: 'API Key 已启用',
-          disabled: 'API Key 已停用',
-          deleted: 'API Key 已删除',
-          loadFailed: '加载 API Key 失败'
+            title: '找回密码',
+            subtitle: '通过邮箱验证码重置您的密码',
+            sendCode: '发送验证码',
+            codeSent: '验证码已发送，请查收邮件',
+            codeHint: '请输入发送到您邮箱的6位验证码',
+            newPassword: '新密码',
+            newPasswordPlaceholder: '请输入新密码',
+            confirmPassword: '确认新密码',
+            confirmPasswordPlaceholder: '请再次输入新密码',
+            showPassword: '显示',
+            hidePassword: '隐藏',
+            passwordHint: '至少 8 位，需包含大写字母、小写字母和数字。密码不会通过邮件发送。',
+            newPasswordRequired: '请填写新密码并确认',
+            passwordMismatch: '两次输入的密码不一致',
+            resetPassword: '重置密码',
+            resetSuccess: '密码重置成功！请使用新密码登录。',
+            twoFactorDisabled: '您的双因素验证（2FA）已被自动禁用，建议重新启用以确保账户安全。',
         },
         operationConfirm: {
-          processing: '正在确认操作...',
-          successTitle: '操作已确认',
-          failedTitle: '确认失败',
-          success: '操作已成功执行',
-          failed: '确认失败',
-          missingToken: '链接缺少确认参数，请从邮件中重新打开',
-          taskQueued: '任务 #{id} 已加入队列',
-          canClosePage: '您可以关闭此页面',
-          backToPanel: '返回面板',
-          apiKeyOnceTitle: '⚠️ 请立即保存您的 API Key',
-          apiKeyOnceDesc: '完整密钥不会再次显示。请通过请求头 X-API-Key: <密钥> 调用面板 API（仅限本人实例的受限控制）。',
+            processing: '正在确认操作...',
+            successTitle: '操作已确认',
+            failedTitle: '确认失败',
+            success: '操作已成功执行',
+            failed: '确认失败',
+            missingToken: '链接缺少确认参数，请从邮件中重新打开',
+            taskQueued: '任务 #{id} 已加入队列',
+            canClosePage: '您可以关闭此页面',
+            backToPanel: '返回面板',
+            apiKeyOnceTitle: '⚠️ 请立即保存您的 API Key',
+            apiKeyOnceDesc: '完整密钥不会再次显示。请通过请求头 X-API-Key: <密钥> 调用面板 API（仅限本人实例的受限控制）。',
+            copied: '已复制',
+            copy: '复制',
         },
         oauthNotBound: '请先在个人设置中绑定 {provider} 账号后再使用快捷登录',
         oauthUserNotFound: '用户不存在',
@@ -930,7 +876,6 @@ export default {
         passwordNeedsNumber: '密码需要包含至少一个数字',
         turnstileRequired: '请完成人机验证',
         turnstileFailed: '人机验证失败，请重试',
-        // Email verification
         emailCode: '邮箱验证码',
         emailCodePlaceholder: '请输入6位验证码',
         emailCodeRequired: '请输入邮箱验证码',
@@ -946,7 +891,6 @@ export default {
         confirmEmail: '确认邮箱地址',
         confirmEmailMessage: '验证码将发送至以下邮箱，请确认地址是否正确：',
         confirmAndSend: '确认发送',
-        // Terms of Service
         tos: {
             title: '服务条款',
             agreePrefix: '我已阅读并同意',
@@ -955,24 +899,19 @@ export default {
             understood: '我已了解',
             loadFailed: '加载服务条款失败',
         },
+        enterEmailFirst: '请先输入邮箱地址',
     },
-
-    // 用户菜单
     userMenu: {
         profile: '个人设置',
         myInstances: '我的实例',
         logout: '退出登录',
     },
-
-    // 配额
     quota: {
         hosts: '宿主机',
         instances: '实例',
         friends: '好友',
         packages: '套餐',
     },
-
-    // 实例相关
     instance: {
         title: '实例管理',
         create: '创建实例',
@@ -992,7 +931,6 @@ export default {
         config: '配置',
         user: '用户',
         details: '详情',
-        // 资源配额（订单概览用）
         ports: '端口',
         snapshots: '快照',
         backups: '备份',
@@ -1034,6 +972,7 @@ export default {
             description: '实例异常，您可直接销毁（付费实例剩余价值退款不扣除手续费）',
             destroyNow: '立即销毁',
             confirmDestroy: '确定要销毁此异常实例吗？付费实例的剩余价值将退款至您的钱包（不扣除手续费）。',
+            retryNow: '立即重试',
         },
         actions: {
             start: '启动',
@@ -1048,6 +987,7 @@ export default {
             suspend: '封停',
             unsuspend: '解封',
             payTrafficDebt: '补缴流量费并解封',
+            retry: '重试',
         },
         renameModal: {
             title: '重命名实例',
@@ -1152,7 +1092,6 @@ export default {
             packagePrerequisiteRequired: '前置要求：您必须先拥有“{package}”套餐的正常实例，才能创建此套餐的实例。',
             destroyTrafficNotice: '销毁限制：实例本月已用流量低于 5 GB 时才可销毁。',
             firstPaidInstanceNotice: '销毁限制：实例本月已用流量低于 5 GB 时才可销毁。',
-            // 订单概览
             orderSummary: '订单概览',
             packageName: '套餐',
             planName: '方案',
@@ -1161,7 +1100,6 @@ export default {
             month: '月',
             resourceConfig: '资源配置',
             planFee: '方案费用',
-            // 套餐来源
             source: {
                 official: '亲儿子',
                 market: '野生大佬',
@@ -1183,7 +1121,6 @@ export default {
                 noImages: '暂时没有可投胎的系统',
                 selectSshKey: '交出通行令牌',
             },
-            // 托管免责提示
             hostedDisclaimer: {
                 title: '托管节点提示',
                 content: '此为用户托管节点，售后由托管者（UID:{uid}）负责。仅提供平台服务，不担保节点质量。若托管者失联，将处理其托管余额退还至受影响用户的面板余额。',
@@ -1257,7 +1194,6 @@ export default {
             destroyNotAllowed: '此套餐不支持用户自行删除及退款',
             destroyFailed: '销毁实例失败',
         },
-        // 移动端卡片
         mobileCard: {
             ipAddress: 'IP 地址',
             config: '配置',
@@ -1273,14 +1209,11 @@ export default {
             backups: '备份',
             sites: '反代',
         },
-        // 实例创建组件
         selector: {
-            // 地区选择
             selectRegion: '选择国家/地区',
             allRegions: '全部',
             noRegions: '暂无可用地区',
             packageCount: '{count} 个套餐',
-            // 套餐选择
             selectPackage: '选择套餐',
             selectPlan: '选择方案',
             planDesc: '选择适合您需求的付费方案',
@@ -1327,14 +1260,12 @@ export default {
             prevPage: '上一页',
             nextPage: '下一页',
             pageInfo: '第 {current}/{total} 页，共 {count} 条',
-            // 方案资源配额
             ports: '端口',
             snapshots: '快照',
             backups: '备份',
             sites: '站点',
             bandwidth: '带宽',
         },
-        // 付费订阅卡片
         subscription: {
             premium: '付费订阅',
             expiresAt: '到期日期',
@@ -1381,7 +1312,6 @@ export default {
             applyAffNoStackHint: '优惠码不叠加。',
             applyAffNextRenewalHint: '优惠码从下一笔未结算续费开始生效。',
             applyAffHistoryHint: '不会修改已经完成的续费账单。',
-            // 自动续费
             autoRenew: '自动续费',
             autoRenewOn: '已开启自动续费',
             autoRenewOff: '未开启自动续费',
@@ -1393,7 +1323,6 @@ export default {
             autoRenewDesc: '开启自动续费后，实例将在到期前自动按 {cycle} 周期续费，每次续费 ￥{price}',
             currentStatus: '当前状态',
         },
-        // 实例销毁
         destroy: {
             button: '销毁',
             title: '销毁实例',
@@ -1409,7 +1338,6 @@ export default {
             ruleTrafficThresholdDesc: '若当前月流量周期已用流量达到或超过 {limit}，则本次无法销毁付费实例',
             ruleFreeInstance: '免费实例可直接销毁',
             ruleFreeInstanceDesc: '免费实例销毁无退款，不计入销毁次数',
-            // 预览信息
             instanceInfo: '实例信息',
             instanceName: '实例名称',
             hostName: '所在节点',
@@ -1424,14 +1352,12 @@ export default {
             firstTimeFree: '首次免手续费',
             freeInstanceNoRefund: '免费实例无退款',
             days: '天',
-            // 确认
             confirmTitle: '确认销毁',
             confirmHint: '请输入实例名称 {name} 以确认销毁',
             confirmPlaceholder: '输入实例名称确认',
             confirmButton: '确认销毁',
             destroying: '销毁中...',
             cancel: '取消',
-            // 状态
             success: '实例已销毁',
             successWithRefund: '实例已销毁，已退款 ¥{amount}',
             successPending: '实例已删除；源节点失联，退款将在节点恢复在线并确认远端删除后自动到账',
@@ -1440,10 +1366,8 @@ export default {
             failed: '销毁失败',
             loadFailed: '加载销毁信息失败',
             forcePanelDeleteConfirm: '源节点无法连接。仅面板删除只允许处理免费实例，不会连接主机，也不会退款；付费或按小时实例必须确认远端已删除。确定继续吗？',
-            // 不可销毁原因
             cannotDestroy: '无法销毁',
         },
-        // 实例详情页
         detail: {
             invalidId: '无效的实例 ID',
             notExist: '实例不存在',
@@ -1552,7 +1476,6 @@ export default {
                 success: '已复制到剪贴板',
                 failed: '复制失败',
             },
-            // 信息标签页
             info: {
                 title: '基本信息',
                 instanceId: '实例 ID',
@@ -1598,7 +1521,6 @@ export default {
                 redeem: '兑换',
                 redeemTitle: '兑换资源',
             },
-            // Cloud-init 初始化状态
             cloudInit: {
                 initializing: '初始化中',
                 retry: '重新检查',
@@ -1616,7 +1538,6 @@ export default {
                 manualShort: '完成',
                 manualCompleteSuccess: '已手动标记实例初始化为完成',
             },
-            // 网络标签页
             network: {
                 title: '网络地址',
                 privateIpv4: '内网 IPv4',
@@ -1648,7 +1569,6 @@ export default {
                 ipDeleted: 'IPv6 地址已删除',
                 ipDeleteFailed: 'IPv6 地址删除失败',
                 confirmDeleteIp: '确定要删除这个 IPv6 地址吗？',
-                // IPv6 管理新增
                 primaryIpv6: '主 IPv6',
                 extraIpv6: '额外 IPv6',
                 ipv6Subnets: 'IPv6 网段',
@@ -1688,7 +1608,6 @@ export default {
                 ipv6AlreadyExists: 'IPv6 地址已被占用',
                 instanceMustRunning: '实例必须处于运行状态才能管理 IPv6',
                 loading: '加载中...',
-                // 重新分配 IPv6
                 reassignIpv6: '重新获取',
                 reassignIpv6Confirm: '确定要重新分配 IPv6 地址吗？',
                 reassignIpv6ConfirmHint: '重新分配后需要重装系统才能生效',
@@ -1700,7 +1619,6 @@ export default {
                 reassignIpv6CooldownShort: '{hours}小时后',
                 reassignIpv6NotSupported: '此实例不支持重新分配 IPv6',
             },
-            // 配额标签页
             quotaTab: {
                 title: '实例配额设置',
                 portLimit: 'NAT 端口数上限',
@@ -1720,7 +1638,6 @@ export default {
                 saving: '保存中...',
             },
         },
-        // 修改配置弹窗
         configEdit: {
             title: '修改配置',
             hint: '修改 CPU、内存配置将实时生效，无需重启实例。磁盘只能增大，不能缩小。',
@@ -1745,7 +1662,6 @@ export default {
             packageRequired: '实例必须绑定套餐才能修改配置',
             loadPackageFailed: '加载套餐信息失败，请稍后重试',
         },
-        // 站点管理
         sites: {
             title: '建站',
             addSite: '添加站点',
@@ -1816,9 +1732,10 @@ export default {
                 days: '天',
             },
         },
+        networkMode: {
+            routed: '路由',
+        },
     },
-
-    // 端口映射弹窗
     portModal: {
         singleMode: '单个端口',
         batchMode: '批量端口',
@@ -1847,7 +1764,6 @@ export default {
         cancel: '取消',
         adding: '添加中...',
         add: '添加',
-        // 新增：范围输入支持
         rangeHint: '支持范围输入，如 80-85',
         invalidPortFormat: '端口格式无效，请输入单个端口或端口范围（如 80-85）',
         ipv6OnlySshPortHint: '22 端口不用映射，公网 IPv6 直连 SSH 就行，正门口已经亮灯了',
@@ -1857,8 +1773,6 @@ export default {
         quotaRemaining: '剩余 {remain} 个',
         quotaInsufficient: '配额不足，需要 {need} 个，剩余 {remain} 个',
     },
-
-    // 端口冲突解决弹窗
     portConflict: {
         title: '部分端口已被占用',
         subtitle: '共 {count} 个端口冲突',
@@ -1872,8 +1786,6 @@ export default {
         cancel: '取消',
         confirm: '确认修改',
     },
-
-    // 重装系统弹窗
     rebuildModal: {
         title: '重装系统',
         dangerWarning: '危险操作',
@@ -1894,8 +1806,6 @@ export default {
         rebuilding: '重装中...',
         confirmRebuild: '确认重装',
     },
-
-    // 重建实例弹窗
     recreateModal: {
         title: '重建实例',
         dangerWarning: '危险操作',
@@ -1917,8 +1827,6 @@ export default {
         recreating: '重建中...',
         confirmRecreate: '确认重建',
     },
-
-    // 快照管理
     snapshot: {
         title: '快照',
         autoPolicy: '自动快照已启用',
@@ -1982,8 +1890,6 @@ export default {
             policySaveFailed: '保存失败',
         },
     },
-
-    // 备份管理
     backup: {
         title: '备份',
         autoPolicy: '自动备份已启用',
@@ -2087,7 +1993,6 @@ export default {
             uploadFailed: '上传失败',
             uploadCancelled: '上传任务已取消',
         },
-        // 上传到远程存储
         upload: '上传',
         uploadRemote: '上传到云端',
         uploadModal: {
@@ -2109,8 +2014,6 @@ export default {
             queuePosition: '队列位置：第 {position} 位',
         },
     },
-
-    // 仪表盘
     dashboard: {
         title: '概览',
         welcome: '欢迎回来',
@@ -2194,9 +2097,36 @@ export default {
             full: '{greeting}，{member}',
         },
     },
-
-    // 设置页面
     profile: {
+        apiKeys: {
+            title: 'API Key',
+            description: '创建 API Key 后，可通过面板 API 对本人已购实例执行受限控制（查询、开关机/重启、端口增删、更换 IPv6）。完整密钥仅在邮件确认落地页显示一次。',
+            name: '备注名（可选）',
+            namePlaceholder: '例如：服务器监控脚本',
+            create: '创建 API Key',
+            confirmEmailSent: '确认邮件已发送，请点击邮件中的链接完成创建（1 小时内有效）。完整密钥将在确认页显示一次，请立即保存。',
+            createFailed: '创建请求失败',
+            scopeHint: 'API Key 仅限本人已购实例的查询、开/关机/重启、端口增删与更换 IPv6，无法访问面板其他功能（钱包、工单、转移、重装等均被拒绝）。请求头示例：X-API-Key: incu_sk_…；实例列表请附带 ?mine=true。',
+            empty: '还没有 API Key',
+            nameCol: '备注名',
+            prefixLabel: '密钥前缀',
+            statusLabel: '状态',
+            lastUsed: '最近使用',
+            requests: '请求数',
+            actions: '操作',
+            defaultName: '未命名密钥',
+            statusActive: '启用中',
+            statusDisabled: '已停用',
+            never: '从未使用',
+            disable: '停用',
+            enable: '启用',
+            delete: '删除',
+            deleteConfirm: '确定删除密钥 {prefix}…？删除后使用该密钥的请求将立即失效。',
+            enabled: 'API Key 已启用',
+            disabled: 'API Key 已停用',
+            deleted: 'API Key 已删除',
+            loadFailed: '加载 API Key 失败',
+        },
         title: '个人设置',
         basicInfo: '基本信息',
         security: '安全设置',
@@ -2207,7 +2137,6 @@ export default {
         twoFactor: '两步验证',
         enableTwoFactor: '启用两步验证',
         disableTwoFactor: '禁用两步验证',
-        // 账户部分
         account: {
             title: '账户',
             username: '用户名',
@@ -2257,10 +2186,9 @@ export default {
                 confirmAction: '确认提交',
                 updateSuccess: '邮箱已更新',
                 verifying: '验证中...',
-                submitting: '提交中...'
-            }
+                submitting: '提交中...',
+            },
         },
-        // 头像
         avatar: {
             title: '头像风格',
             saveSuccess: '头像风格已更新',
@@ -2298,7 +2226,6 @@ export default {
                 thumbs: '拇指人',
             },
         },
-        // 资源配额
         resourceQuota: {
             title: '资源配额',
             hosts: '宿主机',
@@ -2306,7 +2233,6 @@ export default {
             friends: '好友',
             unit: '个',
         },
-        // 账单（BillingSection组件使用）
         billing: {
             title: '账户余额',
             currentBalance: '当前余额',
@@ -2361,7 +2287,6 @@ export default {
                 refunded: '已退款',
             },
         },
-        // 余额充值（旧版兼容）
         userBilling: {
             title: '余额充值',
             balance: '当前余额',
@@ -2388,7 +2313,6 @@ export default {
             rechargeFailed: '充值失败',
             loadFailed: '加载失败',
         },
-        // 增加配额
         increaseQuota: {
             title: '增加配额',
             description: '当配额使用率达到50%时，您可以自行增加配额',
@@ -2413,7 +2337,6 @@ export default {
             instancesInvalid: '实例每次只能增加 50 个',
             friendsInvalid: '好友每次只能增加 10 名',
         },
-        // 密码部分
         password: {
             title: '修改密码',
             current: '当前密码',
@@ -2430,7 +2353,6 @@ export default {
             updating: '更新中...',
             update: '更新密码',
         },
-        // 双因素认证
         twoFactorAuth: {
             title: '双因素认证 (2FA)',
             status: '状态',
@@ -2479,7 +2401,6 @@ export default {
             enterCodeError: '请输入6位验证码',
             fillPasswordAndCode: '请填写密码和验证码',
         },
-        // 会话管理
         sessions: {
             title: '登录会话',
             logoutAll: '登出所有设备',
@@ -2503,7 +2424,6 @@ export default {
             hoursAgo: '{n} 小时前',
             daysAgo: '{n} 天前',
         },
-        // OAuth 关联账号
         oauth: {
             title: '关联账号',
             description: '绑定后可使用快捷登录',
@@ -2527,7 +2447,6 @@ export default {
                 missingCode: '授权信息缺失，请重试',
             },
         },
-        // SSH 密钥
         sshKeys: {
             title: 'SSH 公钥',
             description: '用于 SSH 连接到实例',
@@ -2560,7 +2479,6 @@ export default {
             nextPage: '下一页',
             pageInfo: '第 {current}/{total} 页，共 {count} 条',
         },
-        // 通知渠道
         notifications: {
             title: '通知渠道',
             description: '接收实例、快照等事件通知',
@@ -2665,7 +2583,6 @@ export default {
             unlinked: 'Telegram 绑定已解除',
             unlinkFailed: '解除绑定失败: {error}',
         },
-        // 远程存储
         storage: {
             title: '远程存储',
             description: '配置 WebDAV/FTP/SFTP 存储，用于备份上传',
@@ -2697,15 +2614,12 @@ export default {
             setDefaultSuccess: '已设为默认',
             setDefaultFailed: '设置失败',
         },
-        // 登录历史
         loginHistory: {
             title: '登录历史',
             description: '查看您的账户登录记录',
             empty: '暂无登录记录',
         },
     },
-
-    // 管理后台
     admin: {
         systemUpdate: {
             title: '系统更新',
@@ -2718,7 +2632,7 @@ export default {
             modes: {
                 auto: '自动识别',
                 docker: 'Docker Compose',
-                release: 'systemd 产物包'
+                release: 'systemd 产物包',
             },
             check: '检查更新',
             checking: '检查中...',
@@ -2754,8 +2668,8 @@ export default {
                 idle: '未执行',
                 running: '执行中',
                 succeeded: '已完成',
-                failed: '失败'
-            }
+                failed: '失败',
+            },
         },
         statistics: {
             title: '统计',
@@ -2979,7 +2893,6 @@ export default {
             instanceDaysInvalid: 'VIP{level} 的赠送天数必须是正整数',
             instanceQuantityInvalid: 'VIP{level} 的实例数量必须是正整数',
         },
-        // 域名邮箱管理
         mail: {
             title: '邮箱管理',
             description: '管理邮箱源、方案和用户订阅',
@@ -3047,7 +2960,6 @@ export default {
                 successWithRefund: '订阅已退订，已退款 ¥{amount}',
             },
         },
-        // 管理员创建实例
         instanceCreate: {
             title: '创建实例',
             description: '为用户赠送实例，无需支付任何费用',
@@ -3078,7 +2990,6 @@ export default {
                 official: '自营套餐',
                 hosted: '托管套餐',
             },
-            // 付费实例相关
             instanceType: '实例类型',
             freeInstance: '免费实例',
             paidInstance: '付费实例',
@@ -3095,8 +3006,8 @@ export default {
             insufficientBalance: '用户余额不足',
             paidSummary: '付费摘要',
             paidInstanceHint: '创建付费实例，按方案计费',
+            credentialsHint: '凭据不再随创建结果返回；接收者可在其控制台查看连接信息。',
         },
-        // 全站公告
         broadcast: {
             title: '发送全站公告',
             description: '发送站内信给所有活跃用户',
@@ -3112,7 +3023,6 @@ export default {
             sendSuccess: '已成功发送给 {count} 个用户',
             sendFailed: '发送失败',
             hint: '公告将发送给所有状态为「正常」的用户。',
-            // 历史记录
             history: '历史记录',
             noHistory: '暂无发送记录',
             recipients: '发送给 {count} 人',
@@ -3124,7 +3034,6 @@ export default {
                 host_message: '宿主机私信',
             },
         },
-        // 系统设置
         system: {
             title: '系统设置',
             description: '配置系统初始参数和默认值',
@@ -3203,7 +3112,7 @@ export default {
             openRegistration: '开放注册',
             inviteOnly: '仅邀请',
             adminRegistrationEmails: '注册自动成为管理员的邮箱后缀',
-            adminRegistrationEmailsPlaceholder: "例如：{'@'}abc.com\n{'@'}example.org",
+            adminRegistrationEmailsPlaceholder: '例如：{\'@\'}abc.com\n{\'@\'}example.org',
             adminRegistrationEmailsDesc: '填写邮箱后缀，多个后缀可用逗号、分号或换行分隔。使用匹配后缀且完成邮箱验证的用户注册后会自动成为管理员。',
             affRebate: {
                 title: 'AFF 返利',
@@ -3296,7 +3205,7 @@ export default {
                 giftBalanceDesc: '注册成功后自动进入账户余额，单位为元。',
                 giftPoints: '赠送积分',
                 giftPointsDesc: '注册成功后自动进入娱乐中心积分账户。',
-                giftRequiresFreeSite: '需要先启用白嫖站，才能设置注册自动赠送。'
+                giftRequiresFreeSite: '需要先启用白嫖站，才能设置注册自动赠送。',
             },
             unitCount: '个',
             reset: '重置',
@@ -3311,7 +3220,6 @@ export default {
             note3: '宿主机配额限制用户可以创建的宿主机数量（0 = 功能未授权）。',
             note4: '好友配额限制用户可以添加的好友数量（0 = 功能未授权）。',
             note5: '套餐配额限制用户可以创建的套餐数量（0 = 功能未授权）。',
-            // Turnstile 配置
             turnstile: {
                 title: 'Cloudflare Turnstile',
                 description: '配置人机验证，保护登录、注册和敏感操作',
@@ -3334,7 +3242,6 @@ export default {
                 apiBaseDesc: 'DiceBear 头像 API 基础地址，可自建服务以提高访问速度',
                 helpText: '了解如何自建 DiceBear 服务：',
             },
-            // SMTP Email configuration
             smtp: {
                 title: 'SMTP 邮件服务',
                 description: '配置 SMTP 服务器以启用邮箱验证码功能，用户注册时需要验证邮箱',
@@ -3352,7 +3259,7 @@ export default {
                 password: '密码',
                 passwordPlaceholder: '授权码或密码',
                 fromEmail: '发件人邮箱',
-                fromEmailPlaceholder: "noreply{'@'}example.com",
+                fromEmailPlaceholder: 'noreply{\'@\'}example.com',
                 fromName: '发件人名称',
                 testConnection: '测试连接',
                 testing: '测试中...',
@@ -3368,7 +3275,6 @@ export default {
                 testEmailFailed: '测试邮件发送失败',
                 helpText: '请确保 SMTP 服务器地址、端口、用户名和密码正确。常见邮箱服务商需要使用授权码而非登录密码。',
             },
-            // 邮箱域名白名单配置
             emailDomain: {
                 title: '邮箱域名白名单',
                 description: '限制只允许特定邮箱域名进行注册，提高用户质量',
@@ -3381,7 +3287,6 @@ export default {
                 allowedDomainsDesc: '输入允许注册的邮箱域名，用逗号分隔或每行一个。留空则使用默认白名单（包含 Gmail、Outlook、iCloud、Yahoo、Proton 等主流邮箱服务）。',
                 helpText: '默认白名单包含：Gmail、Outlook/Hotmail、iCloud、Yahoo、Zoho、Proton、Fastmail、Tuta、Posteo、Disroot、Riseup 等主流邮箱服务。',
             },
-            // 转移设置
             transfer: {
                 title: '转移设置',
                 description: '配置实例转移功能的相关参数',
@@ -3401,7 +3306,7 @@ export default {
                 title: '底部联系方式',
                 description: '配置侧边栏底部的邮箱按钮',
                 email: '联系邮箱',
-                emailPlaceholder: "support{'@'}example.com 或 mailto:support{'@'}example.com",
+                emailPlaceholder: 'support{\'@\'}example.com 或 mailto:support{\'@\'}example.com',
                 emailDesc: '留空则隐藏邮箱按钮；支持填写邮箱地址或完整 mailto: 链接。',
                 telegram: 'Telegram 群链接',
                 telegramPlaceholder: 'https://t.me/your_group',
@@ -3423,7 +3328,6 @@ export default {
                 targetIdDesc: '可留空，留空时使用兰空默认策略或默认存储',
             },
         },
-        // 用户管理
         users: {
             title: '用户管理',
             description: '管理平台用户和邀请码',
@@ -3435,7 +3339,7 @@ export default {
                 usernamePlaceholder: '如：demo_user',
                 usernameHint: '3-32 位，必须以字母开头，仅支持字母、数字、下划线和连字符',
                 email: '邮箱',
-                emailPlaceholder: "user{'@'}example.com",
+                emailPlaceholder: 'user{\'@\'}example.com',
                 verifyEmail: '验证邮箱',
                 verifyEmailHint: '开启后需要先发送并填写邮箱验证码；创建成功后初始密码会发送到该邮箱',
                 emailCode: '邮箱验证码',
@@ -3455,7 +3359,7 @@ export default {
                 passwordOnceHint: '关闭或离开此页面后将无法再次查看该密码。',
                 passwordEmailHint: '密码已通过邮件交付给用户。',
                 continueCreate: '继续创建',
-                backToUsers: '返回用户列表'
+                backToUsers: '返回用户列表',
             },
             generateInvite: '生成邀请码',
             userInfo: '用户',
@@ -3497,7 +3401,6 @@ export default {
             loadFailed: '加载用户失败',
             userVipLevels: '用户 VIP 等级',
             vipBenefits: '会员福利大厅设置',
-            // 邀请码
             invites: '邀请码',
             inviteCode: '邀请码',
             inviteStatus: '状态',
@@ -3518,7 +3421,6 @@ export default {
             confirmDeleteInvite: '确定删除邀请码 {code}？',
             inviteDeleted: '邀请码已删除',
             deleteFailed: '删除失败',
-            // 生成邀请码
             generateInviteTitle: '生成邀请码',
             inviteCount: '生成数量',
             countUnit: '个',
@@ -3533,14 +3435,12 @@ export default {
             generate: '生成',
             generating: '生成中...',
             generateFailed: '生成邀请码失败',
-            // 邀请码结果
             inviteGenerated: '邀请码已生成',
             validUntil: '有效期至',
             copyCode: '复制邀请码',
             copyAllCodes: '一键复制全部',
             copyLink: '复制注册链接',
             copied: '已复制!',
-            // 配额编辑
             editQuota: '编辑配额',
             instanceLimit: '实例上限',
             instanceLimitHint: '用户可创建的实例数量上限',
@@ -3569,7 +3469,6 @@ export default {
             totalRecords: '共 {count} 条记录',
             prevPage: '上一页',
             nextPage: '下一页',
-            // 重置密码
             resetPassword: '重置密码',
             resetPasswordConfirm: '确定要重置用户 "{name}" 的密码吗？',
             resetPasswordHint: '系统将自动生成新密码，用户的所有会话将被撤销，需要使用新密码重新登录。',
@@ -3579,17 +3478,14 @@ export default {
             newPasswordFor: '用户 "{name}" 的新密码：',
             copyPassword: '复制密码',
             copyPasswordHint: '请妥善保管此密码，关闭弹窗后将无法再次查看',
-            // 取消2FA
             disable2FA: '取消双因素认证',
             disable2FAConfirm: '确定要取消用户 "{name}" 的双因素认证吗？',
             disable2FAWarning: '取消后，该用户登录时将不再需要验证码，可能降低账户安全性。',
             twoFADisabled: '双因素认证已取消',
-            // 解绑GitHub
             unbindGitHub: '解绑 GitHub',
             unbindGitHubConfirm: '确定要解除用户 "{name}" 的 GitHub 绑定吗？',
             unbindGitHubWarning: '解除后，该用户将无法使用 GitHub 快捷登录。',
             githubUnbound: 'GitHub 绑定已解除',
-            // 用户活动和登录记录
             userActivity: '用户活动',
             registeredNew: '新',
             registeredDays: '注册 {days} 天',
@@ -3598,7 +3494,6 @@ export default {
             loginRecords: '登录记录',
             noLoginRecords: '暂无登录记录',
             loadLoginRecordsFailed: '加载登录记录失败',
-            // 发送站内信
             sendMessage: '发送站内信',
             sendMessageTo: '发送站内信给 {username}',
             messageTitle: '消息标题',
@@ -3609,7 +3504,6 @@ export default {
             messageContentRequired: '请输入消息内容',
             messageSent: '消息已发送',
             messageSendFailed: '发送失败',
-            // 用户余额
             balance: '余额',
             viewBalance: '查看余额详情',
             consumed: '已消费',
@@ -3638,7 +3532,6 @@ export default {
                 balance_transfer_in: '余额转入',
                 balance_transfer_fee: '转账手续费',
             },
-            // 调整余额
             adjustBalance: '调整余额',
             adjustBalanceFor: '调整 {username} 的余额',
             adjustType: '调整类型',
@@ -3652,7 +3545,6 @@ export default {
             reasonRequired: '请输入调整理由',
             balanceAdjusted: '余额调整成功',
             balanceAdjustFailed: '余额调整失败',
-            // 积分相关
             points: '积分',
             earned: '累计',
             totalEarnedPoints: '累计获得积分',
@@ -3667,7 +3559,6 @@ export default {
             invalidPointsAmount: '请输入有效的积分数量',
             pointsAdjusted: '积分调整成功',
             pointsAdjustFailed: '积分调整失败',
-            // 托管余额相关
             hostingBalance: '托管余额',
             hostingBalanceDetails: '托管余额详情',
             hostingBalanceOverview: '概览',
@@ -3698,7 +3589,6 @@ export default {
                 withdraw: '提现',
                 admin_adjust: '管理员调整',
             },
-            // 关联账号检测
             linkedAccounts: '关联账号检测',
             detectDays: '检测范围',
             daysUnit: '天',
@@ -3721,7 +3611,6 @@ export default {
             lastLoginAt: '最后登录',
             noLinkedAccounts: '未检测到关联账号，您的用户非常贞洁！',
         },
-        // 节点管理
         hosts: {
             title: '节点管理',
             description: '管理宿主机和节点组',
@@ -3759,7 +3648,6 @@ export default {
             confirmDelete: '确定删除宿主机 "{name}"？',
             hostDeleted: '宿主机已删除',
             deleteFailed: '删除失败',
-            // 添加/编辑宿主机
             addHost: '添加宿主机',
             editHost: '编辑宿主机',
             hostName: '名称',
@@ -3812,9 +3700,7 @@ export default {
             typeChangeWarning: '节点类型变更警告',
             addFailed: '添加失败',
             updateFailed: '更新失败',
-            // 初始化配置
             initConfig: '初始化配置',
-            // 存储配置
             storageConfig: '存储配置',
             storageDriver: '存储驱动',
             storageDriverZfs: 'ZFS (推荐)',
@@ -3825,7 +3711,6 @@ export default {
             storagePath: '设备路径',
             storagePathHint: '如 /dev/sdb',
             storageSize: '存储大小',
-            // 网络配置
             networkConfig: '网络配置',
             networkOption: '网络选项',
             networkOptionHint: '选择容器实例的网络出口方式',
@@ -3843,13 +3728,11 @@ export default {
             ipv6ParentInterfaceHint: 'IPv6 routed 模式使用的宿主机物理网卡名（如 eth0）',
             ipv6ParentInterfaceRequired: '请输入 IPv6 父接口',
             enableApi: '启用 API',
-            // 内核参数
             sysctlConfig: '内核参数',
             sysctlConfigHint: '自定义 sysctl 配置，留空使用默认值',
             resetSysctl: '恢复默认',
             enableBBR: '启用 BBR',
             bbrEnabled: 'BBR 已启用',
-            // 安装脚本
             installScript: '安装脚本',
             runOnHost: '请在宿主机上以 root 权限运行以下命令：',
             copyCommand: '复制命令',
@@ -3866,7 +3749,6 @@ export default {
             waitingInstall: '等待安装完成...',
             installSuccess: '安装成功！',
             tokenExpired: 'Token 已过期，请重新创建宿主机',
-            // 详情页
             tabInfo: '信息',
             tabConfig: '配置',
             tabInstances: '实例',
@@ -4046,7 +3928,6 @@ export default {
             deleteNameMismatch: '输入的名称不匹配',
             hasInstances: '该节点上还有 {count} 个实例，请先删除或迁移实例',
             checkFailed: '检查失败',
-            // 批量延期
             batchExtend: '赠送时长',
             extendHint: '该节点下共有 {count} 个付费实例将被延期',
             extendDaysLabel: '延期天数',
@@ -4055,7 +3936,6 @@ export default {
             confirmExtendBtn: '确认赠送',
             extendSuccess: '已成功为 {count} 个付费实例延期 {days} 天',
             extendFailed: '批量延期失败',
-            // 批量删除实例
             selectedCount: '已选择 {count} 个实例',
             noInstanceSelected: '请勾选实例以使用批量操作',
             batchDelete: '批量删除',
@@ -4077,14 +3957,12 @@ export default {
             instanceName: '实例名称',
             instanceUser: '所属用户',
             refundAmount: '退款金额',
-            // 批量同步实例状态
             batchSyncStatus: '同步状态',
             batchSyncSuccess: '成功同步 {synced} 个实例，{changed} 个状态已更新',
             batchSyncWithIpv4: '成功同步 {synced} 个实例，{changed} 个状态更新，{ipv4Changed} 个内网 IP 更新',
             batchSyncPartial: '同步 {synced} 个，更新 {changed} 个，失败 {failed} 个',
             batchSyncNoChange: '成功同步 {synced} 个实例，状态无变化',
             batchSyncFailed: '同步状态失败',
-            // 批量封停实例
             batchSuspend: '批量封停',
             batchSuspendTitle: '批量封停实例',
             batchSuspendWarning: '封停后，实例所有者将无法对实例进行任何操作，直到解除封停。',
@@ -4103,7 +3981,6 @@ export default {
             deleteReason: '删除原因（可选）',
             deleteReasonPlaceholder: '填写删除原因后，系统将通过站内信和通知渠道告知用户...',
             deleteReasonHint: '如果填写了删除原因，被删除实例的所有者将收到通知',
-            // 实例流量
             trafficUsage: '流量使用',
             trafficUnlimited: '不限制',
             resetTraffic: '重置流量',
@@ -4112,11 +3989,9 @@ export default {
             resetTrafficTitle: '重置实例流量',
             resetTrafficWarning: '如果是已超额的实例，重置流量不会自动恢复实例的带宽限速（1Mbps），请手动为该实例恢复带宽速率。',
             resetTrafficDesc: '确定要重置实例 "{instance}" 的流量吗？',
-            // 节点流量统计
             trafficStats: '流量统计',
             monthlyUsed: '本月已用',
             hostTotalLimit: '节点总分配',
-            // 宿主机状态
             agentStatusTitle: '宿主机状态',
             agentStatusDesc: 'Agent 按 {seconds} 秒间隔上报宿主机实时资源与运行状态',
             agentStatusRefreshSuccess: '状态接口已刷新，请以最后心跳时间为准',
@@ -4162,7 +4037,6 @@ export default {
             agentLoadAverage: '负载',
             agentLoadAverageHint: '1 / 5 / 15 分钟',
             agentProcessCount: '进程数',
-            // 存储池管理
             storage: {
                 title: '存储池',
                 subtitle: '管理此宿主机上的 Incus 存储池',
@@ -4192,29 +4066,22 @@ export default {
                 size: '存储大小',
                 usedBy: '使用者',
                 volumes: '个卷',
-                // 驱动描述
                 zfsDesc: '推荐：功能最全（快照、克隆、压缩、配额），性能极佳',
                 lvmDesc: 'Linux 标配，极其稳定，建议开启 Thin Provisioning',
                 btrfsDesc: '类似 ZFS 特性，单盘或 RAID1/10 可用',
                 dirDesc: '目录存储，性能最差，仅用于测试',
-                // 通用
                 useLoop: '使用 Loop 文件',
                 loopSizeHint: '将在 /var/lib/incus/ 下创建镜像文件',
-                // ZFS
                 zfsSourceHint: '物理盘或分区路径，如 /dev/disk/by-id/nvme-xxx',
                 zfsPoolName: 'ZFS 池名称',
                 zfsPoolNameHint: '可选，不填则使用存储池名称',
-                // LVM
                 lvmSourceHint: '物理盘路径，如 /dev/sdb',
                 lvmVgName: '卷组名称',
                 lvmUseThinpool: '启用精简卷（Thin Provisioning）',
                 lvmThinpoolHint: '强烈建议开启，否则快照性能极差',
-                // Btrfs
                 btrfsSourceHint: '物理盘路径，如 /dev/sdb',
-                // DIR
                 dirPath: '目录路径',
                 dirPathHint: '指定一个存在的目录，如 /mnt/data/incus-storage',
-                // 存储用途
                 purpose: '存储用途',
                 forInstances: '用于实例系统盘',
                 forInstancesHint: '创建实例时作为默认存储',
@@ -4222,7 +4089,6 @@ export default {
                 forVolumesHint: '可手动挂载到实例',
                 purposeSystemDisk: '系统盘',
                 purposeStorageDisk: '存储盘',
-                // 模式切换
                 modeCreate: '创建新存储池',
                 modeExisting: '关联已有存储池',
                 modeImport: '导入已有存储',
@@ -4231,7 +4097,6 @@ export default {
                 modeImportHint: '导入底层已存在但 Incus 还未知晓的存储池（如手动创建的 ZFS 池、LVM VG）',
                 linkSuccess: '存储池关联成功',
                 importSuccess: '存储池导入成功',
-                // 导入存储池
                 importZfsSource: 'ZFS 池名称',
                 importLvmSource: 'LVM 卷组名称',
                 importBtrfsSource: 'Btrfs 设备或子卷路径',
@@ -4243,7 +4108,6 @@ export default {
                 importSourceRequired: 'Btrfs 和 DIR 类型必须提供底层存储源路径',
             },
         },
-        // 镜像管理
         images: {
             title: '镜像管理',
             description: '管理系统镜像库，用户可在创建实例时选择这些镜像',
@@ -4297,11 +4161,9 @@ export default {
                 sortOrder: '越小排序越靠前',
                 instanceType: '指定该镜像适用于容器、虚拟机或两者皆可',
             },
-            // 实例类型
             typeContainer: '容器',
             typeVm: '虚拟机',
             typeBoth: '通用',
-            // 同步状态
             syncStatusDesc: '查看各镜像在节点上的同步状态，点击单元格可进行同步或删除操作',
             refresh: '刷新',
             addToLibraryFirst: '请先添加镜像到镜像库',
@@ -4321,7 +4183,6 @@ export default {
             syncFailed: '同步失败',
             loadStatusFailed: '加载镜像状态失败',
             loadHostsFailed: '加载节点列表失败',
-            // 表单
             imageName: '名称',
             osType: '系统类型',
             remoteAlias: '远程别名',
@@ -4332,7 +4193,6 @@ export default {
             imageAdded: '镜像已添加',
             imageCreated: '镜像已创建',
             imageUpdated: '镜像已更新',
-            // 镜像表单弹窗
             selectDistro: '选择发行版',
             selectVersion: '选择版本',
             configureInfo: '配置信息',
@@ -4349,12 +4209,10 @@ export default {
             deselectAll: '取消全选',
             editSyncHint: '取消选择的节点将在保存时从该节点删除镜像，新选择的节点将开始同步',
             createSyncHint: '选中的节点将在保存后开始同步镜像',
-            // 同步弹窗
             selectTargetHosts: '选择目标节点',
             syncWarning: '镜像同步可能需要几分钟时间，具体取决于镜像大小和网络速度',
             startSync: '开始同步',
         },
-        // 套餐管理
         packages: {
             title: '套餐管理',
             description: '配置实例规格模板',
@@ -4385,7 +4243,6 @@ export default {
             packageDisabled: '套餐已下架',
             deleteFailed: '删除失败',
             operationFailed: '操作失败',
-            // 表单
             createPackage: '创建套餐',
             editPackage: '编辑套餐',
             basicInfo: '基本信息',
@@ -4422,7 +4279,6 @@ export default {
             confirmSyncTraffic: '确定将所有套餐的流量限额同步到对应的实例吗？',
             syncTrafficSuccess: '已同步 {count} 个实例的流量限额',
             syncTrafficFailed: '同步失败',
-            // 套餐列表
             traffic: '月流量限额',
             unlimited: '无限制',
             unlimitedPlaceholder: '留空表示无限制',
@@ -4434,7 +4290,6 @@ export default {
             loadFailed: '加载套餐失败',
             instanceMaxLimit: '实例最大上限',
         },
-        // 帮助管理
         helpManage: {
             title: '帮助文档管理',
             description: '创建和管理帮助文档',
@@ -4446,10 +4301,8 @@ export default {
             confirmDelete: '确定删除文档 "{title}"？',
             articleDeleted: '文档已删除',
             deleteFailed: '删除失败',
-            // 标签页
             articlesTab: '文档',
             categoriesTab: '分类管理',
-            // 分类
             addCategory: '添加分类',
             noCategories: '暂无分类，点击"添加分类"创建',
             categoryId: '分类 ID',
@@ -4464,7 +4317,6 @@ export default {
             duplicateCategoryId: '该分类ID已存在',
             invalidCategoryId: '分类ID只能包含小写字母、数字和连字符',
             fillCategoryIdAndName: '请填写分类ID和名称',
-            // 文档表格
             articleTitleCol: '标题',
             categoryCol: '分类',
             statusCol: '状态',
@@ -4477,7 +4329,6 @@ export default {
             publish: '发布',
             articleHidden: '文档已隐藏',
             articlePublished: '文档已发布',
-            // 表单
             createArticle: '创建文档',
             editArticle: '编辑文档',
             articleTitle: '标题',
@@ -4503,7 +4354,6 @@ export default {
             fillRequired: '请填写标题、URL 标识符和内容',
             invalidSlug: 'URL 标识符只能包含小写字母、数字和连字符',
             noTitle: '无标题',
-            // Markdown 帮助
             showMarkdownHelp: '查看语法帮助',
             hideMarkdownHelp: '隐藏语法帮助',
             markdownHeading1: '一级标题',
@@ -4525,7 +4375,6 @@ export default {
             alertDanger: '危险提示',
             alertNote: '备注提示',
         },
-        // OAuth 配置
         oauth: {
             title: 'OAuth 配置',
             description: '配置第三方登录方式',
@@ -4559,7 +4408,6 @@ export default {
             enableLogin: '启用此登录方式',
             enableLoginHint: '启用后用户可使用此方式快捷登录',
         },
-        // 支付渠道管理
         paymentProviders: {
             title: '支付渠道管理',
             description: '配置和管理支付渠道',
@@ -4661,27 +4509,24 @@ export default {
                 yipayFeeFieldHint: '易支付手续费请在上方每个支付方式中设置。',
                 rechargeCardFeeFieldHint: '卡密充值金额以生成卡密时的金额为准，不使用手续费字段。',
                 heleketMethods: '常见币种展示',
-                heleketMethodsPlaceholder: "USDT{'@'}TRON\nUSDT{'@'}BSC\nBTC\nETH",
+                heleketMethodsPlaceholder: 'USDT{\'@\'}TRON\nUSDT{\'@\'}BSC\nBTC\nETH',
                 heleketMethodsHint: '仅作为后台展示与记录参考，不会限制用户在 Heleket 支付页最终选择的币种和网络。',
                 instructions: '充值说明',
                 instructionsPlaceholder: '请输入用户充值时看到的说明信息...',
             },
         },
-        // 计费管理（兼容旧键名 billingManage）
         billingManage: {
             title: '计费管理',
             description: '管理用户付费实例和计费记录',
             tabOverview: '概览',
             tabInstances: '付费实例',
             tabRecords: '扣费记录',
-            // 概览
             totalIncome: '总收入',
             monthIncome: '本月收入',
             todayIncome: '今日收入',
             totalRefund: '总退款',
             paidInstances: '付费实例数',
             activeInstances: '活跃实例',
-            // 实例列表
             searchPlaceholder: '搜索实例...',
             instanceId: '实例ID',
             instanceName: '名称',
@@ -4699,7 +4544,6 @@ export default {
             confirmUnsuspend: '确定解封实例 "{name}"？',
             suspendSuccess: '实例已封停',
             unsuspendSuccess: '实例已解封',
-            // 延期
             extendTitle: '延期实例',
             extendDays: '延期天数',
             extendReason: '延期原因',
@@ -4707,13 +4551,11 @@ export default {
             freeExtendHint: '勾选后不扣除用户余额',
             extendSuccess: '实例已延期',
             extendFailed: '延期失败',
-            // 退款
             refundTitle: '退款实例',
             refundAmount: '退款金额',
             refundReason: '退款原因',
             refundSuccess: '退款成功',
             refundFailed: '退款失败',
-            // 扣费记录
             recordId: '记录ID',
             recordType: '类型',
             amount: '金额',
@@ -4721,7 +4563,6 @@ export default {
             remark: '备注',
             createdAt: '时间',
             noRecords: '暂无扣费记录',
-            // 用户余额
             userBalance: '用户余额',
             adjustBalance: '调整余额',
             giftBalance: '赠送余额',
@@ -4736,14 +4577,12 @@ export default {
             giftSuccess: '余额赠送成功',
             operationFailed: '操作失败',
         },
-        // 计费管理（新键名 billing，与组件对应）
         billing: {
             title: '计费管理',
             description: '管理用户付费实例和计费记录',
             loadFailed: '加载计费数据失败',
             loadInstancesFailed: '加载实例列表失败',
             loadRecordsFailed: '加载扣费记录失败',
-            // Tab 页签
             tabs: {
                 overview: '概览',
                 instances: '付费实例',
@@ -4754,7 +4593,6 @@ export default {
                 officialCoupons: '官方优惠券',
                 paymentProviders: '支付渠道',
             },
-            // 概览统计
             totalRevenue: '总收入',
             thisMonthRevenue: '本月收入',
             todayRevenue: '今日收入',
@@ -4778,7 +4616,6 @@ export default {
                 thisMonth: '本月',
                 today: '今日',
             },
-            // 实例列表
             allStatus: '全部状态',
             allHosts: '全部节点',
             showExpiring: '仅显示即将到期',
@@ -4800,7 +4637,6 @@ export default {
             noInstances: '暂无付费实例',
             viewInstance: '查看',
             autoRenew: '自动续费',
-            // 托管类型
             hostingType: '托管类型',
             direct: '直营',
             hosted: '托管',
@@ -4808,13 +4644,11 @@ export default {
             cycleMonths: '{months}个月',
             perPage: '每页',
             totalCount: '共 {count} 条',
-            // 操作
             suspend: '封停',
             unsuspend: '解封',
             extend: '延期',
             refund: '退款',
             deleteRefund: '删除并退款',
-            // 操作弹窗
             suspendTitle: '封停实例',
             unsuspendTitle: '解封实例',
             extendTitle: '延期实例',
@@ -4828,7 +4662,6 @@ export default {
             refundAmount: '退款金额',
             refundReasonPlaceholder: '请输入退款原因...',
             refundReasonRequired: '请填写退款原因',
-            // 删除并退款相关
             deleteRefundWarning: '警告：此操作将永久删除实例及其所有数据（快照、备份、端口映射等），此操作不可撤销！',
             refundTypeLabel: '退款方式',
             refundTypeRemaining: '按剩余价值退款（根据剩余天数计算）',
@@ -4838,7 +4671,6 @@ export default {
             deleteRefundSuccess: '实例已删除并退款',
             databaseOnlyDelete: '仅面板删除（仅免费实例）',
             deleteRefundDatabaseOnlySuccess: '免费实例已从面板删除',
-            // 应用折扣相关
             applyDiscount: '应用折扣',
             applyDiscountTitle: '应用续费折扣',
             applyDiscountHint: '输入AFF优惠码后，该实例后续续费时将自动享受5%折扣，同时优惠码创建者也将获得续费返利。',
@@ -4846,7 +4678,6 @@ export default {
             affCodePlaceholder: '请输入AFF优惠码...',
             affCodeRequired: '请输入AFF优惠码',
             applyDiscountSuccess: '已成功应用续费折扣',
-            // 修改价格相关
             updatePrice: '修改价格',
             owner: '所有者',
             currentPrice: '当前价格',
@@ -4862,7 +4693,6 @@ export default {
             actualRenewPrice: '实际续费价',
             affAppliedHint: '该实例已应用优惠码，续费时享受 {discount}% 折扣。差价计算已基于折扣后价格。',
             newActualPrice: '新实际续费价',
-            // 切换方案相关
             upgradePlan: '切换',
             upgradePlanTitle: '切换方案',
             currentPlan: '当前方案',
@@ -4883,7 +4713,6 @@ export default {
             yearly: '年付',
             month: '月',
             months: '个月',
-            // 操作结果
             suspendSuccess: '实例已封停',
             unsuspendSuccess: '实例已解封',
             extendSuccess: '实例已延期',
@@ -4908,7 +4737,6 @@ export default {
             batchPriceStatusUnchanged: '无变化',
             batchPriceStatusFailed: '失败',
             result: '结果',
-            // 扣费记录
             recordType: '类型',
             recordTypes: {
                 newPurchase: '新购',
@@ -4923,17 +4751,14 @@ export default {
             remark: '备注',
             time: '时间',
             noRecords: '暂无扣费记录',
-            // 充值统计
             totalRecharge: '总充值',
             thisMonthRecharge: '本月充值',
             todayRecharge: '今日充值',
             orders: '笔',
-            // AFF 返利统计
             totalAffCommission: 'AFF返利总额',
             thisMonthAff: '本月AFF返利',
             affConverted: '已转化金额',
             affPendingConvert: '待审批转化',
-            // 充值记录
             loadRechargeRecordsFailed: '加载充值记录失败',
             noRechargeRecords: '暂无充值记录',
             rechargeOrderNo: '订单号',
@@ -4955,7 +4780,6 @@ export default {
                 failed: '失败',
             },
         },
-        // 官方优惠券（折扣由平台承担，不产生 AFF 返利）
         officialCoupons: {
             title: '官方优惠券',
             description: '平台发放的官方优惠券：用户按折扣价支付，折扣金额由平台承担，托管主仍按原价结算，不产生 AFF 返利。',
@@ -5043,7 +4867,6 @@ export default {
                 chargeLimitRequired: '限定折价月数模式下必须填写不小于 1 的整数',
             },
         },
-
         rechargeCards: {
             title: '充值卡密管理',
             description: '生成、筛选和审计余额充值卡密',
@@ -5106,8 +4929,6 @@ export default {
             },
         },
     },
-
-    // 错误页面
     error: {
         notFound: '页面不存在',
         notFoundDesc: '抱歉，您访问的页面不存在',
@@ -5115,8 +4936,6 @@ export default {
         serverError: '服务器错误',
         networkError: '网络错误',
     },
-
-    // 日志页面
     logs: {
         title: '系统日志',
         module: '模块',
@@ -5140,8 +4959,6 @@ export default {
         expand: '展开',
         collapse: '收起',
     },
-
-    // 帮助页面
     help: {
         title: '帮助中心',
         search: '搜索帮助文档...',
@@ -5162,440 +4979,47 @@ export default {
             description: '覆盖从公开市场购买托管套餐，到节点准入、Agent 连接、方案发布、售后与收益管理。',
             summary: '包含买家开通、机主创建节点和验证 Agent、创建并公开方案、售后处理及托管收益。',
             read: '阅读指南',
-            content: `## 先了解托管流程
-
-托管套餐由第三方节点机主提供，平台负责公开展示、开通、计费和实例管理；机主负责自己的 Incus 主机、节点容量和买家售后。首页 / 和套餐页 /market 可以免登录浏览公开套餐。托管市场入口是否显示，取决于平台的托管设置。
-
-## A. 用户购买托管套餐
-
-1. 在 /market 切换“托管”来源，使用地区筛选和搜索。点击套餐卡片后，查看 LXC/KVM 类型、网络模式、流量、方案、资源范围和托管者信息；也可以切换“官方”比较。
-2. 付费套餐必须在右侧选择一个未售罄方案；方案会显示计费周期、价格、月均价、CPU、内存、硬盘和流量。免费套餐没有付费方案，但创建页的 CPU、内存和硬盘仍受套餐上限、账户配额限制。
-3. 点击“立即开通”或未登录时的“登录后开通”。未登录会先进入 /login 并保留返回地址；登录后回到带有 source=market、package、plan 参数的 /instances/create。/instances 和 /instances/create 都需要登录。
-4. 开通页会加载地区、套餐、方案、可用节点、系统镜像和 SSH 密钥。没有 SSH 公钥、没有可用镜像或主机时，创建按钮会禁用；没有密钥可先到需登录的 /profile 新增。付费方案的资源固定，托管套餐不显示官方推荐码字段；套餐若要求前置套餐，也必须先满足条件，且机主不能自己开通自己的付费套餐。
-5. 填写实例名称、节点、镜像和 SSH 密钥后点击“创建”。成功会前往 /instances；点击实例进入 /instances/:id。刚创建时可能是 creating，部署完成后才可按当前状态使用启动、停止、重启、终端和网络等功能。
-
-## B. 节点机主准入与创建节点
-
-1. 先登录，打开“我的节点”/resources/hosts，点击“创建节点／新增”。普通用户创建前会执行托管准入检查：目前必须曾拥有至少一台实例，且平台托管功能已开放；管理员可直接进入。未通过时页面会显示准入原因和提示，不能只靠前端绕过。
-2. 在 /resources/hosts/create 填写节点名称、主机地址、API 端口、国家/地区、实例类型和网络模式。普通用户的名称必须以 PEER + 你的用户 ID + - 开头；API 端口默认 8443。可选 NAT、NAT+IPv6、IPv6-only 等模式；需要 IPv6 时，子网和父接口要成对提供。NAT 设置包含公网 IP、绑定 IP 和端口范围，默认范围为 10000–65000；CPU、内存上限和 container/VM 类型也在这里设置。
-3. 点击“创建节点”后，页面会打开安装命令窗口。主机初始化 token 有效期 24 小时；如果失效，进入节点详情 /resources/hosts/:id 点击“重新安装”生成新命令。删除节点前必须没有其上的实例。
-
-## C. 安装 Agent、验证连接和查看状态
-
-1. 在自己的 Incus 主机以 root 执行窗口生成的命令，点击“复制命令”可复制。脚本会安装/初始化 Incus、导入面板证书，并根据注入的 token 安装和启动宿主机 Agent。脚本支持 Ubuntu、Debian、Rocky Linux 9/10、Alpine 3.20+；Ubuntu 低于 22 会提示，Debian 低于 11 或 Alpine 低于 3.20 会被拒绝。
-2. 回到安装窗口点击“验证并连接”，或在节点详情对未验证节点点击同名按钮。成功后节点状态为 online 且可用于套餐；失败时检查连接拒绝、超时或证书错误，确认主机 API、HTTPS、网络和命令是否已完成。
-3. 在节点详情的“信息”页查看节点状态 online/offline/maintenance、CPU/内存/磁盘使用量和 Agent 状态。Agent 卡片可以点击“Agent 安装命令”重新获取一次性安装/更新命令，点击“刷新”更新状态；Agent token 有效约 30 分钟且只能使用一次。Agent 通过心跳上报（默认 30 秒，允许 5–3600 秒），也可能显示未安装、online、offline、disabled 或版本过期。
-
-## D. 创建套餐/商品、方案并发布
-
-1. 登录后打开“我的套餐”/resources/packages，点击“创建套餐”进入 /resources/packages/create。普通用户只能选择自己的节点；至少要绑定一个节点。填写名称、说明、container/VM、网络模式、资源和流量/端口/快照限制，也可选择存储池、启动设置、前置套餐和各主机流量倍率。
-2. 创建免费商品可在商品层设置资源；付费商品要到套餐详情 /resources/packages/:id 的“方案”页签，点击“新增方案”。设置方案名称、CPU（15–10000%）、内存（128–62144 MB）、硬盘（512–104857600 MB）、流量（1–100000 GB）、速度（1–10000 Mbps）、端口/快照额度、价格和 SLA。托管机主方案只支持按月计费；方案状态可以设为“上架”“售罄”“下架”。
-3. “发布”不是另一个独立按钮：在套餐表单勾选“启用”和“公开访问/公开”后保存；付费商品还要有启用且未售罄的方案。返回 /resources/packages 可看到 active/inactive 和公开标记。公开商品还必须有在线节点和容量，才会出现在 /market 的托管来源；节点 offline、maintenance、无容量或所有方案售罄时，买家会看到售罄/无法开通。详情页的“配置”“方案”只对可管理的本人/管理员显示。
-
-## E. 售后、收益和提现
-
-1. 买家在 /tickets（需登录且平台启用工单）点击“创建工单”，选择托管实例，填写主题、分类、优先级和内容，可附图片。工单状态为 open、in_progress、resolved 或 closed；创建者可以回复/关闭，节点机主会在“收到的工单”页签看到自己节点的工单并回复、标记处理中/已解决或关闭。托管机主也可在这里跟踪买家和实例。
-2. 用户购买、续费或升级托管实例时，收入会进入节点机主的托管余额，但新收入先冻结约 30 天；每小时整点解冻，服务启动后也会补跑到期记录。托管实例续费只支持 1 个月，且通常只能在到期前 7 天内续费；免费实例无需续费，升级只能切换同一套餐的更高价方案，且实例必须处于 running/stopped。销毁/退款等状态变化可能先抵扣相关冻结收入，再抵扣可用托管余额，因此不要把冻结额当作立即可提现金额。
-3. 打开“托管收益”/hosting-wallet（需登录）：概览查看可用、冻结、当月收入、总收入、客户数和节点/实例数；“收支明细”可按购买、续费、升级、销毁等查看；“提现记录”查看状态。概览的“提现”按钮只有可用余额达到当前最低额度才可用；默认最低额为 ¥10，实际以页面设置为准。提现目标是平台余额，会按当前 5% 费率扣除，确认窗口会显示手续费和实际到账额。
-
-## 发布前检查
-
-- 确认节点为 online、Agent 持续心跳、主机容量和存储池正常，并核对 NAT/IPv6、端口范围和套餐资源限制。
-- 公开前先用 /market 检查托管套餐是否可见；不要在另一个账户购买前就假设“启用”代表有库存。
-- 售后由机主处理自己节点上的买家；续费、升级、销毁、退款、收入冻结和提现均以提交时页面及平台规则为准。`
+            content: '## 先了解托管流程\n\n托管套餐由第三方节点机主提供，平台负责公开展示、开通、计费和实例管理；机主负责自己的 Incus 主机、节点容量和买家售后。首页 / 和套餐页 /market 可以免登录浏览公开套餐。托管市场入口是否显示，取决于平台的托管设置。\n\n## A. 用户购买托管套餐\n\n1. 在 /market 切换“托管”来源，使用地区筛选和搜索。点击套餐卡片后，查看 LXC/KVM 类型、网络模式、流量、方案、资源范围和托管者信息；也可以切换“官方”比较。\n2. 付费套餐必须在右侧选择一个未售罄方案；方案会显示计费周期、价格、月均价、CPU、内存、硬盘和流量。免费套餐没有付费方案，但创建页的 CPU、内存和硬盘仍受套餐上限、账户配额限制。\n3. 点击“立即开通”或未登录时的“登录后开通”。未登录会先进入 /login 并保留返回地址；登录后回到带有 source=market、package、plan 参数的 /instances/create。/instances 和 /instances/create 都需要登录。\n4. 开通页会加载地区、套餐、方案、可用节点、系统镜像和 SSH 密钥。没有 SSH 公钥、没有可用镜像或主机时，创建按钮会禁用；没有密钥可先到需登录的 /profile 新增。付费方案的资源固定，托管套餐不显示官方推荐码字段；套餐若要求前置套餐，也必须先满足条件，且机主不能自己开通自己的付费套餐。\n5. 填写实例名称、节点、镜像和 SSH 密钥后点击“创建”。成功会前往 /instances；点击实例进入 /instances/:id。刚创建时可能是 creating，部署完成后才可按当前状态使用启动、停止、重启、终端和网络等功能。\n\n## B. 节点机主准入与创建节点\n\n1. 先登录，打开“我的节点”/resources/hosts，点击“创建节点／新增”。普通用户创建前会执行托管准入检查：目前必须曾拥有至少一台实例，且平台托管功能已开放；管理员可直接进入。未通过时页面会显示准入原因和提示，不能只靠前端绕过。\n2. 在 /resources/hosts/create 填写节点名称、主机地址、API 端口、国家/地区、实例类型和网络模式。普通用户的名称必须以 PEER + 你的用户 ID + - 开头；API 端口默认 8443。可选 NAT、NAT+IPv6、IPv6-only 等模式；需要 IPv6 时，子网和父接口要成对提供。NAT 设置包含公网 IP、绑定 IP 和端口范围，默认范围为 10000–65000；CPU、内存上限和 container/VM 类型也在这里设置。\n3. 点击“创建节点”后，页面会打开安装命令窗口。主机初始化 token 有效期 24 小时；如果失效，进入节点详情 /resources/hosts/:id 点击“重新安装”生成新命令。删除节点前必须没有其上的实例。\n\n## C. 安装 Agent、验证连接和查看状态\n\n1. 在自己的 Incus 主机以 root 执行窗口生成的命令，点击“复制命令”可复制。脚本会安装/初始化 Incus、导入面板证书，并根据注入的 token 安装和启动宿主机 Agent。脚本支持 Ubuntu、Debian、Rocky Linux 9/10、Alpine 3.20+；Ubuntu 低于 22 会提示，Debian 低于 11 或 Alpine 低于 3.20 会被拒绝。\n2. 回到安装窗口点击“验证并连接”，或在节点详情对未验证节点点击同名按钮。成功后节点状态为 online 且可用于套餐；失败时检查连接拒绝、超时或证书错误，确认主机 API、HTTPS、网络和命令是否已完成。\n3. 在节点详情的“信息”页查看节点状态 online/offline/maintenance、CPU/内存/磁盘使用量和 Agent 状态。Agent 卡片可以点击“Agent 安装命令”重新获取一次性安装/更新命令，点击“刷新”更新状态；Agent token 有效约 30 分钟且只能使用一次。Agent 通过心跳上报（默认 30 秒，允许 5–3600 秒），也可能显示未安装、online、offline、disabled 或版本过期。\n\n## D. 创建套餐/商品、方案并发布\n\n1. 登录后打开“我的套餐”/resources/packages，点击“创建套餐”进入 /resources/packages/create。普通用户只能选择自己的节点；至少要绑定一个节点。填写名称、说明、container/VM、网络模式、资源和流量/端口/快照限制，也可选择存储池、启动设置、前置套餐和各主机流量倍率。\n2. 创建免费商品可在商品层设置资源；付费商品要到套餐详情 /resources/packages/:id 的“方案”页签，点击“新增方案”。设置方案名称、CPU（15–10000%）、内存（128–62144 MB）、硬盘（512–104857600 MB）、流量（1–100000 GB）、速度（1–10000 Mbps）、端口/快照额度、价格和 SLA。托管机主方案只支持按月计费；方案状态可以设为“上架”“售罄”“下架”。\n3. “发布”不是另一个独立按钮：在套餐表单勾选“启用”和“公开访问/公开”后保存；付费商品还要有启用且未售罄的方案。返回 /resources/packages 可看到 active/inactive 和公开标记。公开商品还必须有在线节点和容量，才会出现在 /market 的托管来源；节点 offline、maintenance、无容量或所有方案售罄时，买家会看到售罄/无法开通。详情页的“配置”“方案”只对可管理的本人/管理员显示。\n\n## E. 售后、收益和提现\n\n1. 买家在 /tickets（需登录且平台启用工单）点击“创建工单”，选择托管实例，填写主题、分类、优先级和内容，可附图片。工单状态为 open、in_progress、resolved 或 closed；创建者可以回复/关闭，节点机主会在“收到的工单”页签看到自己节点的工单并回复、标记处理中/已解决或关闭。托管机主也可在这里跟踪买家和实例。\n2. 用户购买、续费或升级托管实例时，收入会进入节点机主的托管余额，但新收入先冻结约 30 天；每小时整点解冻，服务启动后也会补跑到期记录。托管实例续费只支持 1 个月，且通常只能在到期前 7 天内续费；免费实例无需续费，升级只能切换同一套餐的更高价方案，且实例必须处于 running/stopped。销毁/退款等状态变化可能先抵扣相关冻结收入，再抵扣可用托管余额，因此不要把冻结额当作立即可提现金额。\n3. 打开“托管收益”/hosting-wallet（需登录）：概览查看可用、冻结、当月收入、总收入、客户数和节点/实例数；“收支明细”可按购买、续费、升级、销毁等查看；“提现记录”查看状态。概览的“提现”按钮只有可用余额达到当前最低额度才可用；默认最低额为 ¥10，实际以页面设置为准。提现目标是平台余额，会按当前 5% 费率扣除，确认窗口会显示手续费和实际到账额。\n\n## 发布前检查\n\n- 确认节点为 online、Agent 持续心跳、主机容量和存储池正常，并核对 NAT/IPv6、端口范围和套餐资源限制。\n- 公开前先用 /market 检查托管套餐是否可见；不要在另一个账户购买前就假设“启用”代表有库存。\n- 售后由机主处理自己节点上的买家；续费、升级、销毁、退款、收入冻结和提现均以提交时页面及平台规则为准。',
         },
         platformOverview: {
             title: '平台使用总览',
             summary: '从公开预览比较套餐，登录后开通实例，再到列表和详情页管理。',
-            content: `## 1. 先使用公开预览
-
-1. 打开首页 /。首页会在不登录的情况下加载公开套餐和地区；点击“浏览套餐”或“查看目录”，进入 /market。
-2. 在套餐浏览页切换“官方”或“托管”来源，必要时使用地区筛选和搜索。点击套餐卡片后，右侧会显示网络模式、流量、方案和资源。
-3. 付费套餐必须再选择一个未售罄的方案；售罄套餐或方案的开通按钮会停用。免费套餐不需要方案。
-
-## 2. 区分官方和托管套餐
-
-- 官方节点由平台维护，套餐会标示为“官方”。
-- 托管套餐由第三方机主提供，市场页会标示为“托管”；开通前可以查看托管者信息。稳定性、线路、可用性和售后处理可能与官方不同，请先阅读套餐说明和页面上的托管提示。
-- 托管市场入口是否显示由平台设置控制；如果看不到托管来源，以当前页面为准。
-
-## 3. 登录并进入开通页
-
-4. 选定套餐和方案后点击“立即开通／登录后开通”。未登录时会先进入 /login，并保留返回地址；登录完成后回到带有来源、套餐和方案参数的 /instances/create。直接打开需要登录的页面（例如 /instances 或 /instances/create）也会被导向登录页。
-5. 开通页会加载账户配额、SSH 密钥、可用主机、镜像和套餐数据。先在“个人设置”（ /profile ）创建至少一把 SSH 公钥；没有 SSH 密钥时，创建按钮会被禁用。
-
-## 4. 填写并提交开通资料
-
-6. 依次选择地区（如有）、套餐、方案（付费套餐）、资源（免费套餐可调整）、可用主机、系统镜像，并填写实例名称。主机和镜像都必须有可用选项；套餐未绑定主机、主机没有容量或没有可用镜像时无法提交。
-7. 提交前确认页面显示的价格、计费周期、资源和网络条件。付费套餐使用所选方案的固定 CPU、内存和硬盘配置；自己的付费套餐不能由自己开通。如果平台启用推荐码，推荐码可以在官方付费套餐中验证；托管套餐不提供此字段。
-8. 确认实例名称、SSH 密钥和方案后点击“创建”。系统会调用实例创建 API；成功后提示创建成功并前往 /instances。如果套餐要求先拥有另一个套餐的实例，必须先满足该前置条件；配额不足、套餐售罄或资源不符合时也不能提交。
-
-## 5. 从实例列表进入详情
-
-9. /instances 需要登录，会列出你的实例并定期更新状态。创建后如果仍在部署，先等待状态更新；点击列表中的实例卡片或行，进入 /instances/:id。
-10. 实例详情默认显示信息页；可根据权限和实例配额切换网络、网站、流量、快照、配额、配置和日志页签。信息页可查看状态、资源和连接资料；网络页可管理端口映射，终端以及启动、停止、重启等操作也从详情页进行。执行重装、销毁、还原快照等破坏性操作前，先备份数据并确认页面提示。`
+            content: '## 1. 先使用公开预览\n\n1. 打开首页 /。首页会在不登录的情况下加载公开套餐和地区；点击“浏览套餐”或“查看目录”，进入 /market。\n2. 在套餐浏览页切换“官方”或“托管”来源，必要时使用地区筛选和搜索。点击套餐卡片后，右侧会显示网络模式、流量、方案和资源。\n3. 付费套餐必须再选择一个未售罄的方案；售罄套餐或方案的开通按钮会停用。免费套餐不需要方案。\n\n## 2. 区分官方和托管套餐\n\n- 官方节点由平台维护，套餐会标示为“官方”。\n- 托管套餐由第三方机主提供，市场页会标示为“托管”；开通前可以查看托管者信息。稳定性、线路、可用性和售后处理可能与官方不同，请先阅读套餐说明和页面上的托管提示。\n- 托管市场入口是否显示由平台设置控制；如果看不到托管来源，以当前页面为准。\n\n## 3. 登录并进入开通页\n\n4. 选定套餐和方案后点击“立即开通／登录后开通”。未登录时会先进入 /login，并保留返回地址；登录完成后回到带有来源、套餐和方案参数的 /instances/create。直接打开需要登录的页面（例如 /instances 或 /instances/create）也会被导向登录页。\n5. 开通页会加载账户配额、SSH 密钥、可用主机、镜像和套餐数据。先在“个人设置”（ /profile ）创建至少一把 SSH 公钥；没有 SSH 密钥时，创建按钮会被禁用。\n\n## 4. 填写并提交开通资料\n\n6. 依次选择地区（如有）、套餐、方案（付费套餐）、资源（免费套餐可调整）、可用主机、系统镜像，并填写实例名称。主机和镜像都必须有可用选项；套餐未绑定主机、主机没有容量或没有可用镜像时无法提交。\n7. 提交前确认页面显示的价格、计费周期、资源和网络条件。付费套餐使用所选方案的固定 CPU、内存和硬盘配置；自己的付费套餐不能由自己开通。如果平台启用推荐码，推荐码可以在官方付费套餐中验证；托管套餐不提供此字段。\n8. 确认实例名称、SSH 密钥和方案后点击“创建”。系统会调用实例创建 API；成功后提示创建成功并前往 /instances。如果套餐要求先拥有另一个套餐的实例，必须先满足该前置条件；配额不足、套餐售罄或资源不符合时也不能提交。\n\n## 5. 从实例列表进入详情\n\n9. /instances 需要登录，会列出你的实例并定期更新状态。创建后如果仍在部署，先等待状态更新；点击列表中的实例卡片或行，进入 /instances/:id。\n10. 实例详情默认显示信息页；可根据权限和实例配额切换网络、网站、流量、快照、配额、配置和日志页签。信息页可查看状态、资源和连接资料；网络页可管理端口映射，终端以及启动、停止、重启等操作也从详情页进行。执行重装、销毁、还原快照等破坏性操作前，先备份数据并确认页面提示。',
         },
         gettingStarted: {
             title: '快速开始：创建第一台实例',
             summary: '按公开市场、登录、创建表单到连接和初始化检查，完成第一台实例。',
-            content: `## 1. 在公开市场选择套餐和方案
-
-1. 打开 /market。这是未登录也能浏览的公开市场；可以在“官方”和“市场”来源之间切换，使用搜索框或地区筛选缩小列表。
-2. 选择套餐卡查看 LXC/KVM 类型、描述、流量、网络模式和是否售罄。付费套餐要在右侧方案列表选择一个未售罄方案，并核对计费周期、价格、月均价、CPU、内存、硬盘和流量；免费套餐没有付费方案，资源会在创建页调整。
-3. 确认选定的套餐和方案后，点击“创建／立即开通”。市场页会把来源、套餐和方案带入创建流程；套餐售罄，或付费套餐没有选定可用方案时，按钮不能使用。
-
-## 2. 登录并准备 SSH 密钥
-
-4. 已登录时会前往 /instances/create；未登录时会先前往 /login，登录后按照保留的返回地址回到带有来源、套餐和方案参数的 /instances/create。
-5. 创建页会加载账户配额、SSH 密钥、套餐、地区、可用节点和镜像。创建按钮要求至少有一把 SSH 密钥；如果没有密钥，请打开个人设置 /profile，在 SSH 公钥区域点击“添加”，填写密钥名称和公钥后保存。也可以点击“生成”让系统创建密钥对；私钥显示在弹窗时先复制或下载并妥善保存，再回到创建页选择对应密钥。
-
-## 3. 填写创建实例表单
-
-6. 如果页面有地区选择，先选择地区或“全部地区”。地区会过滤可选套餐；切换来源或地区后，原来的套餐、方案、节点和镜像选择会重置。
-7. 选择套餐。付费套餐接着在“方案”中选择方案；方案的 CPU、内存和硬盘是固定配置，页面也会显示计费周期、价格、流量、端口和快照额度。免费套餐则使用资源控制项调整 CPU、内存和硬盘，数值仍受套餐上限、配额和最小值限制。
-8. 选择可用节点。可用节点会根据套餐、方案（如有）以及 CPU、内存、硬盘需求加载；如果只有一个可用节点，页面可能自动选择。套餐没有绑定节点，或节点没有容量时，无法继续创建。
-9. 选择系统镜像。镜像列表会根据实例类型、内存和节点加载，且选择节点后才会出现；没有可用镜像时不能提交。选择镜像后，页面会出现可选的自定义初始化命令。
-10. 核对网络条件。创建表单没有独立的网络模式输入；网络模式来自套餐的 network_mode，请先在市场页查看，创建后再到实例信息页核对。最后填写必填的“实例名称”。官方付费套餐只有在平台启用推荐码时才会显示推荐码字段；托管市场套餐不提供此字段。
-11. 确认 SSH 密钥、套餐／方案、节点、镜像、资源和价格后点击“创建”。系统会提交 name、packageId、planId（付费套餐）、hostId、image、cpu、memory、disk、sshKeyId，以及可选的自定义初始化命令；售罄、配额不足、前置套餐条件未满足或自己的付费套餐都会使提交按钮保持禁用。
-
-## 4. 找到实例并获取连接资料
-
-12. 创建成功后会显示成功提示并前往 /instances。实例列表可以用搜索框查找名称，也可以按国家／地区筛选；页面在可见时会定期更新状态。点击实例卡片或列表行，进入 /instances/:id。
-13. 详情的信息页可以查看实例状态、镜像、实例类型、网络模式、节点、IPv4／IPv6、SSH 端口（有值时）和 Root 密码；密码默认隐藏，点击“显示”后才会加载。网络页可以查看公网／内网地址和端口映射。
-14. 使用 IPv4 NAT 连接时，先在“网络”页新增内部端口 22 的映射，再使用公网 IPv4 和映射后的公网端口连接。如果是页面所示的 IPv6 直连模式，则可以使用公网 IPv6 和 22 端口，不必新增映射；请以实例详情实际显示的网络模式和地址为准。实例为 running 时，详情页也会提供终端入口。
-
-## 5. 判断部署和初始化状态
-
-15. 创建后如果 /instances 列表显示 creating，表示实例仍在部署；列表会定期刷新，先等待状态更新。进入详情后，如果有 PENDING 或 PROCESSING 的活跃任务，标题旁会显示任务指示器；任务完成或失败后页面会重新加载。
-16. 实例变成 running 后，详情页会检查 Cloud-init 初始化。当检查返回 ready=false 时，页首会出现琥珀色初始化提示；提示可能表示初始化中、停滞或状态未知，点击提示可以重新检查。系统会在未就绪时每 10 秒自动重试，最多 12 次。
-17. 初始化检查返回 ready=true 时，初始化提示会消失；返回的 state 可能是 done、done_with_errors、disabled、unsupported、manual 等。如果状态是 agent_unavailable 或 unknown，只有具备相应权限时才会看到“手动完成”；连接前应先确认实例已 running，且初始化提示不再表示未就绪。`
+            content: '## 1. 在公开市场选择套餐和方案\n\n1. 打开 /market。这是未登录也能浏览的公开市场；可以在“官方”和“市场”来源之间切换，使用搜索框或地区筛选缩小列表。\n2. 选择套餐卡查看 LXC/KVM 类型、描述、流量、网络模式和是否售罄。付费套餐要在右侧方案列表选择一个未售罄方案，并核对计费周期、价格、月均价、CPU、内存、硬盘和流量；免费套餐没有付费方案，资源会在创建页调整。\n3. 确认选定的套餐和方案后，点击“创建／立即开通”。市场页会把来源、套餐和方案带入创建流程；套餐售罄，或付费套餐没有选定可用方案时，按钮不能使用。\n\n## 2. 登录并准备 SSH 密钥\n\n4. 已登录时会前往 /instances/create；未登录时会先前往 /login，登录后按照保留的返回地址回到带有来源、套餐和方案参数的 /instances/create。\n5. 创建页会加载账户配额、SSH 密钥、套餐、地区、可用节点和镜像。创建按钮要求至少有一把 SSH 密钥；如果没有密钥，请打开个人设置 /profile，在 SSH 公钥区域点击“添加”，填写密钥名称和公钥后保存。也可以点击“生成”让系统创建密钥对；私钥显示在弹窗时先复制或下载并妥善保存，再回到创建页选择对应密钥。\n\n## 3. 填写创建实例表单\n\n6. 如果页面有地区选择，先选择地区或“全部地区”。地区会过滤可选套餐；切换来源或地区后，原来的套餐、方案、节点和镜像选择会重置。\n7. 选择套餐。付费套餐接着在“方案”中选择方案；方案的 CPU、内存和硬盘是固定配置，页面也会显示计费周期、价格、流量、端口和快照额度。免费套餐则使用资源控制项调整 CPU、内存和硬盘，数值仍受套餐上限、配额和最小值限制。\n8. 选择可用节点。可用节点会根据套餐、方案（如有）以及 CPU、内存、硬盘需求加载；如果只有一个可用节点，页面可能自动选择。套餐没有绑定节点，或节点没有容量时，无法继续创建。\n9. 选择系统镜像。镜像列表会根据实例类型、内存和节点加载，且选择节点后才会出现；没有可用镜像时不能提交。选择镜像后，页面会出现可选的自定义初始化命令。\n10. 核对网络条件。创建表单没有独立的网络模式输入；网络模式来自套餐的 network_mode，请先在市场页查看，创建后再到实例信息页核对。最后填写必填的“实例名称”。官方付费套餐只有在平台启用推荐码时才会显示推荐码字段；托管市场套餐不提供此字段。\n11. 确认 SSH 密钥、套餐／方案、节点、镜像、资源和价格后点击“创建”。系统会提交 name、packageId、planId（付费套餐）、hostId、image、cpu、memory、disk、sshKeyId，以及可选的自定义初始化命令；售罄、配额不足、前置套餐条件未满足或自己的付费套餐都会使提交按钮保持禁用。\n\n## 4. 找到实例并获取连接资料\n\n12. 创建成功后会显示成功提示并前往 /instances。实例列表可以用搜索框查找名称，也可以按国家／地区筛选；页面在可见时会定期更新状态。点击实例卡片或列表行，进入 /instances/:id。\n13. 详情的信息页可以查看实例状态、镜像、实例类型、网络模式、节点、IPv4／IPv6、SSH 端口（有值时）和 Root 密码；密码默认隐藏，点击“显示”后才会加载。网络页可以查看公网／内网地址和端口映射。\n14. 使用 IPv4 NAT 连接时，先在“网络”页新增内部端口 22 的映射，再使用公网 IPv4 和映射后的公网端口连接。如果是页面所示的 IPv6 直连模式，则可以使用公网 IPv6 和 22 端口，不必新增映射；请以实例详情实际显示的网络模式和地址为准。实例为 running 时，详情页也会提供终端入口。\n\n## 5. 判断部署和初始化状态\n\n15. 创建后如果 /instances 列表显示 creating，表示实例仍在部署；列表会定期刷新，先等待状态更新。进入详情后，如果有 PENDING 或 PROCESSING 的活跃任务，标题旁会显示任务指示器；任务完成或失败后页面会重新加载。\n16. 实例变成 running 后，详情页会检查 Cloud-init 初始化。当检查返回 ready=false 时，页首会出现琥珀色初始化提示；提示可能表示初始化中、停滞或状态未知，点击提示可以重新检查。系统会在未就绪时每 10 秒自动重试，最多 12 次。\n17. 初始化检查返回 ready=true 时，初始化提示会消失；返回的 state 可能是 done、done_with_errors、disabled、unsupported、manual 等。如果状态是 agent_unavailable 或 unknown，只有具备相应权限时才会看到“手动完成”；连接前应先确认实例已 running，且初始化提示不再表示未就绪。',
         },
         instanceManagement: {
             title: '实例管理：启停、重装、快照与备份',
             summary: '按页面按钮完成实例启停、异步任务、系统重装、快照和备份操作。',
-            content: `## 先找到实例
-1. 登录后打开“实例”列表（/instances）。列表会定期刷新状态；点击实例卡片或行即可进入详情（/instances/:id）。
-2. 实例详情中的操作按钮会根据状态、权限、配额以及是否有进行中的任务显示或禁用。进行破坏性操作前，先另行保存数据库、配置文件和重要文件。
-
-## 日常启停
-
-### 单个实例
-
-1. 在列表中，状态为“已停止”时点击“启动”；状态为“运行中”时可以点击“停止”或“重启”。
-2. 在详情页同样按照当前状态使用“启动”“停止”或“重启”。这三个按钮不会先弹确认框；点击后只会提交任务，看到“任务已排队”不代表操作已经完成。
-3. 启动、停止或重启期间不要重复提交其他操作。详情页会在任务完成或失败后重新加载实例数据。
-
-### 批量启停
-
-1. 在列表勾选实例后，从批量操作栏选择启动、停止或重启。
-2. 批量启动只处理已停止的实例；批量停止和重启只处理运行中的实例。其他已勾选但状态不符合的实例会被跳过。
-3. 批量请求最多同时处理 5 个；完成后列表会刷新，部分失败时会显示成功、失败和跳过数量。
-
-## 异步任务与排队
-
-- start、stop、restart、rebuild、recreate API 都返回 taskId 和任务状态，由后端排队执行。详情页每 2 秒查询一次活跃任务；任务指示器可能显示 PENDING 或 PROCESSING，完成或失败后停止轮询并刷新页面。
-- 如果返回“已有任务进行中”（TASK_IN_PROGRESS），页面会接上现有任务的轮询；请等待它完成，不要连续提交同一操作。详情页有活跃任务、待处理迁移，或实例被封停时，其他操作会被禁用（封停时节点所有者的权限以页面显示为准）。
-- 长时间没有进度时，详情页可在符合条件后使用“恢复任务”：普通用户需任务已持续至少 15 分钟，管理员可以直接执行；按钮会先要求确认。恢复仍失败时，保留任务错误信息并提交支持信息。
-- 创建失败（error）的实例可以点击“重试创建／Retry”；这会调用 retryProvision，将状态改回 creating 并回到列表。只有 error 状态、原套餐仍存在且原节点在线时后端才接受重试。
-
-## 重装与重建的区别
-
-### 重装系统（rebuild）
-
-1. 先让实例变成“已停止”；运行中点击“重装系统”只会提示必须先关机，不会打开提交流程。
-2. 选择节点当前允许、且符合实例类型和内存的镜像，再选择自己的 SSH 密钥；需要时选择自定义初始化命令。
-3. 点击“确认重装”后会创建异步任务。重装会清除实例内数据和所有快照，但保留端口映射；完成后会生成新的 root 密码，可在详情页查看。重装弹窗另有完成后需手动启动的提示，请以任务完成后的实例状态为准。
-
-### 重建实例（recreate）
-
-- 重建不要求先停止，会创建全新的实例替换旧实例；只保留计费状态和配额。它会清除实例数据、快照、端口映射、备份记录和备份策略、反代站点及快照策略，因此必须先完成外部备份。
-- 重建同样需要选择镜像、SSH 密钥和可选的自定义初始化命令，提交后使用 taskId 跟踪。它与重装不是同一个按钮或 API：重装是在停止后于原实例上更换系统，重建是用新实例替换旧实例。
-- 当前 InstanceDetailView 实际绑定了“重装系统”按钮；源码虽然定义了 RecreateModal 和 recreate API，但此页面没有绑定打开重建弹窗的按钮。如果看不到“重建实例”入口，不要把“重装系统”当作重建使用。
-
-## 快照：创建、恢复和删除
-
-1. 在实例详情切换到“快照”标签页。快照配额为 0 时标签页会隐藏；没有配额或已达上限时，“创建”按钮会禁用。配额可在“配额”标签页查看／由有权限者调整。
-2. 点击“创建”，填写必填名称，可补充描述，再提交创建。成功后列表会重新加载；创建流程不会先弹确认框。
-3. 恢复前先点击“停止”，因为只有 stopped 状态可以恢复。运行中点击“恢复”会提示先停止；停机后点击快照旁的“恢复”，确认快照名称后才会调用恢复 API。
-4. 不再需要的快照点击“删除”，在确认框中确认快照名称后才会删除；删除失败时页面会重新加载列表。
-5. “自动快照设置”可以启用策略，并选择每 10 分钟、1 小时、6 小时或 24 小时；达到配额时，策略提示会按规则处理最早的自动快照。
-
-## 备份：创建、导出、远程上传和恢复
-
-当前 InstanceDetailView 实际挂载的是快照管理组件；备份 API 和 BackupManager 组件定义了以下按钮流程。只有当你的界面显示“备份”管理区时，才会看到这些按钮。
-1. **创建**：先确认有备份配额且尚未满额，否则“创建”会禁用。点击“创建”，输入必填名称及可选描述后提交。备份会先显示 creating，完成后变为 ready；创建可能需要几分钟。
-2. **导出／下载**：只有 ready 备份可以导出。点击“导出”后先创建导出任务，再获取一次性下载 token，由浏览器开始下载；准备或下载期间按钮会禁用，失败时可以点击“重试”。节点所有者在 canManageBackups=false 时不能下载。
-3. **上传到远程**：在 ready 备份旁点击“上传”，在弹窗中选择存储配置；系统会优先选择默认配置。没有存储配置时，先点击弹窗内链接到“个人资料”设置。提交后任务显示 PENDING／PROCESSING、排队位置和执行时间，页面每 3 秒查询状态；刷新页面也会加载活跃上传任务。节点所有者不能上传。
-4. **恢复**：对 ready 备份点击“恢复”，在危险操作弹窗确认后提交。恢复会停止当前实例并用备份替换；该实例的其他备份及所有快照会被永久删除，成功后名称会变为“原实例名称 | restored:备份名称”。恢复期间会显示任务状态和排队位置，同一时间已有恢复任务时不能再次提交。
-5. 恢复失败且原实例仍可回复时，备份行会提供“回滚”；点击后调用回滚 API，成功会恢复原实例。恢复完成后页面会重新加载，请重新检查 SSH、IP 和端口映射。
-6. **删除备份**：点击“删除”并在确认框中确认备份名称；creating 或恢复中的备份不能删除。删除备份不等于删除实例，也不能替代远程上传。
-
-## 删除与退款注意事项
-
-- 列表中的“删除”只在 error，或没有套餐计费 ID 时显示；点击后会先以实例名称弹出确认框，确认才调用 instances.delete。详情页的直接删除也遵循权限和套餐设置；付费实例通常应使用“销毁”流程，而不是把删除当成退款。
-- “销毁”会先加载可销毁状态和退款预览。付费实例要求当前流量周期已用流量低于套餐设置的退款销毁上限；首次销毁免手续费，之后的手续费率、剩余价值、退款上限和实际退款额以弹窗当时显示为准。免费实例可以直接销毁但没有退款，也不计入销毁次数。
-- 销毁不是简单点击：在弹窗查看实例和退款信息后，输入完整实例名称，再点击“确认销毁”。成功后实例及其数据（包括快照、备份、端口映射等）永久删除，付费实例的退款会在成功提示中显示；流量或其他条件不符合时，先按弹窗原因处理。
-- error 状态横幅另外提供“重试创建”和“立即销毁”；立即销毁会先弹确认，并使用 error 免手续费参数。任何删除、重装、重建或备份恢复前，都要先确认没有仍需保留的数据。`
+            content: '## 先找到实例\n1. 登录后打开“实例”列表（/instances）。列表会定期刷新状态；点击实例卡片或行即可进入详情（/instances/:id）。\n2. 实例详情中的操作按钮会根据状态、权限、配额以及是否有进行中的任务显示或禁用。进行破坏性操作前，先另行保存数据库、配置文件和重要文件。\n\n## 日常启停\n\n### 单个实例\n\n1. 在列表中，状态为“已停止”时点击“启动”；状态为“运行中”时可以点击“停止”或“重启”。\n2. 在详情页同样按照当前状态使用“启动”“停止”或“重启”。这三个按钮不会先弹确认框；点击后只会提交任务，看到“任务已排队”不代表操作已经完成。\n3. 启动、停止或重启期间不要重复提交其他操作。详情页会在任务完成或失败后重新加载实例数据。\n\n### 批量启停\n\n1. 在列表勾选实例后，从批量操作栏选择启动、停止或重启。\n2. 批量启动只处理已停止的实例；批量停止和重启只处理运行中的实例。其他已勾选但状态不符合的实例会被跳过。\n3. 批量请求最多同时处理 5 个；完成后列表会刷新，部分失败时会显示成功、失败和跳过数量。\n\n## 异步任务与排队\n\n- start、stop、restart、rebuild、recreate API 都返回 taskId 和任务状态，由后端排队执行。详情页每 2 秒查询一次活跃任务；任务指示器可能显示 PENDING 或 PROCESSING，完成或失败后停止轮询并刷新页面。\n- 如果返回“已有任务进行中”（TASK_IN_PROGRESS），页面会接上现有任务的轮询；请等待它完成，不要连续提交同一操作。详情页有活跃任务、待处理迁移，或实例被封停时，其他操作会被禁用（封停时节点所有者的权限以页面显示为准）。\n- 长时间没有进度时，详情页可在符合条件后使用“恢复任务”：普通用户需任务已持续至少 15 分钟，管理员可以直接执行；按钮会先要求确认。恢复仍失败时，保留任务错误信息并提交支持信息。\n- 创建失败（error）的实例可以点击“重试创建／Retry”；这会调用 retryProvision，将状态改回 creating 并回到列表。只有 error 状态、原套餐仍存在且原节点在线时后端才接受重试。\n\n## 重装与重建的区别\n\n### 重装系统（rebuild）\n\n1. 先让实例变成“已停止”；运行中点击“重装系统”只会提示必须先关机，不会打开提交流程。\n2. 选择节点当前允许、且符合实例类型和内存的镜像，再选择自己的 SSH 密钥；需要时选择自定义初始化命令。\n3. 点击“确认重装”后会创建异步任务。重装会清除实例内数据和所有快照，但保留端口映射；完成后会生成新的 root 密码，可在详情页查看。重装弹窗另有完成后需手动启动的提示，请以任务完成后的实例状态为准。\n\n### 重建实例（recreate）\n\n- 重建不要求先停止，会创建全新的实例替换旧实例；只保留计费状态和配额。它会清除实例数据、快照、端口映射、备份记录和备份策略、反代站点及快照策略，因此必须先完成外部备份。\n- 重建同样需要选择镜像、SSH 密钥和可选的自定义初始化命令，提交后使用 taskId 跟踪。它与重装不是同一个按钮或 API：重装是在停止后于原实例上更换系统，重建是用新实例替换旧实例。\n- 当前 InstanceDetailView 实际绑定了“重装系统”按钮；源码虽然定义了 RecreateModal 和 recreate API，但此页面没有绑定打开重建弹窗的按钮。如果看不到“重建实例”入口，不要把“重装系统”当作重建使用。\n\n## 快照：创建、恢复和删除\n\n1. 在实例详情切换到“快照”标签页。快照配额为 0 时标签页会隐藏；没有配额或已达上限时，“创建”按钮会禁用。配额可在“配额”标签页查看／由有权限者调整。\n2. 点击“创建”，填写必填名称，可补充描述，再提交创建。成功后列表会重新加载；创建流程不会先弹确认框。\n3. 恢复前先点击“停止”，因为只有 stopped 状态可以恢复。运行中点击“恢复”会提示先停止；停机后点击快照旁的“恢复”，确认快照名称后才会调用恢复 API。\n4. 不再需要的快照点击“删除”，在确认框中确认快照名称后才会删除；删除失败时页面会重新加载列表。\n5. “自动快照设置”可以启用策略，并选择每 10 分钟、1 小时、6 小时或 24 小时；达到配额时，策略提示会按规则处理最早的自动快照。\n\n## 备份：创建、导出、远程上传和恢复\n\n当前 InstanceDetailView 实际挂载的是快照管理组件；备份 API 和 BackupManager 组件定义了以下按钮流程。只有当你的界面显示“备份”管理区时，才会看到这些按钮。\n1. **创建**：先确认有备份配额且尚未满额，否则“创建”会禁用。点击“创建”，输入必填名称及可选描述后提交。备份会先显示 creating，完成后变为 ready；创建可能需要几分钟。\n2. **导出／下载**：只有 ready 备份可以导出。点击“导出”后先创建导出任务，再获取一次性下载 token，由浏览器开始下载；准备或下载期间按钮会禁用，失败时可以点击“重试”。节点所有者在 canManageBackups=false 时不能下载。\n3. **上传到远程**：在 ready 备份旁点击“上传”，在弹窗中选择存储配置；系统会优先选择默认配置。没有存储配置时，先点击弹窗内链接到“个人资料”设置。提交后任务显示 PENDING／PROCESSING、排队位置和执行时间，页面每 3 秒查询状态；刷新页面也会加载活跃上传任务。节点所有者不能上传。\n4. **恢复**：对 ready 备份点击“恢复”，在危险操作弹窗确认后提交。恢复会停止当前实例并用备份替换；该实例的其他备份及所有快照会被永久删除，成功后名称会变为“原实例名称 | restored:备份名称”。恢复期间会显示任务状态和排队位置，同一时间已有恢复任务时不能再次提交。\n5. 恢复失败且原实例仍可回复时，备份行会提供“回滚”；点击后调用回滚 API，成功会恢复原实例。恢复完成后页面会重新加载，请重新检查 SSH、IP 和端口映射。\n6. **删除备份**：点击“删除”并在确认框中确认备份名称；creating 或恢复中的备份不能删除。删除备份不等于删除实例，也不能替代远程上传。\n\n## 删除与退款注意事项\n\n- 列表中的“删除”只在 error，或没有套餐计费 ID 时显示；点击后会先以实例名称弹出确认框，确认才调用 instances.delete。详情页的直接删除也遵循权限和套餐设置；付费实例通常应使用“销毁”流程，而不是把删除当成退款。\n- “销毁”会先加载可销毁状态和退款预览。付费实例要求当前流量周期已用流量低于套餐设置的退款销毁上限；首次销毁免手续费，之后的手续费率、剩余价值、退款上限和实际退款额以弹窗当时显示为准。免费实例可以直接销毁但没有退款，也不计入销毁次数。\n- 销毁不是简单点击：在弹窗查看实例和退款信息后，输入完整实例名称，再点击“确认销毁”。成功后实例及其数据（包括快照、备份、端口映射等）永久删除，付费实例的退款会在成功提示中显示；流量或其他条件不符合时，先按弹窗原因处理。\n- error 状态横幅另外提供“重试创建”和“立即销毁”；立即销毁会先弹确认，并使用 error 免手续费参数。任何删除、重装、重建或备份恢复前，都要先确认没有仍需保留的数据。',
         },
-
         networkingBasics: {
             title: '网络配置：NAT 与端口映射',
             summary: '先确认网络模式，再用 TCP／UDP 创建单个或连续范围映射，从外部验证服务并处理端口冲突。',
-            content: `## 先判断网络模式
-
-1. 打开实例详情，在“信息”页核对“网络模式”，再切到“网络”页查看内网 IPv4、公网 IPv4、公网 IPv6 和端口映射。
-2. 按模式决定测试地址：
-   - IPv4 NAT（nat）：通过节点的公网 IPv4 和端口映射访问实例服务。
-   - IPv4 NAT & IPv6（nat_ipv6）：IPv4 仍使用端口映射；实例有独立公网 IPv6，可直接使用 IPv6 地址。
-   - IPv4 NAT & IPv6 NAT（nat_ipv6_nat）：IPv4 使用端口映射；如果节点有公网 IPv6，映射也会在节点共享的 IPv6 上使用相同外部端口。
-   - IPv6 NAT（ipv6_nat）：端口映射使用节点的公网 IPv6，不要把它当成有公网 IPv4 的模式。
-   - IPv6 Only（ipv6_only）：不支持端口映射，直接使用实例显示的公网 IPv6；网络页不会提供添加映射的操作。
-
-## 先确认实例内的服务
-
-服务必须在实例内监听要映射的内部端口，并且协议要一致：TCP 服务只能用 TCP 映射，UDP 服务只能用 UDP 映射。先在实例内确认服务状态，再从实例外部测试；只在实例内连接成功，不能代表映射已经可以从外部使用。
-
-## 创建单个映射
-
-1. 在实例详情切到“网络”，在“端口映射”中点击“添加”。IPv6 Only 实例请改用公网 IPv6，不能添加映射。
-2. 保持“单个端口”，选择 TCP、UDP 或 Both。Both 会使用同一个外部端口创建 TCP 和 UDP 两条映射，并占用两个端口配额。
-3. 填写必填的“内部端口”，可以输入单个端口（例如 80 或 22）；也可以输入连续范围（例如 80-85）。
-4. “公网端口”可以留空，让系统从节点端口池自动分配；如果指定，请输入可用的单个端口，并遵守页面显示的允许范围。如果输入范围，内外部范围必须包含相同数量的端口。
-5. 可填写备注后点击“添加”。成功后，列表会显示协议、外部端口和内部端口；使用列表中的外部端口作为客户端连接入口。
-
-## 创建批量映射
-
-1. 在“添加端口映射”中切换到“批量端口”。
-2. 选择 TCP、UDP 或 Both，填写外部端口起止值和内部端口起止值。两个范围必须包含相同数量的端口，并按顺序一一对应；例如外部 20000-20005 会对应内部 80-85。
-3. 一次最多创建 100 个连续的内部端口。Both 会为每个内部端口分别创建 TCP 和 UDP 映射，因此每个端口需要两个配额。
-4. 如果要让系统自动分配一整段外部端口，可以在单个模式输入内部范围并将公网端口留空；提交后会按批量创建流程自动分配。
-5. 填写备注并提交，成功后根据通知中的数量确认映射已创建。
-
-## 测试 SSH、HTTP 和其他服务
-
-- SSH：IPv4 连接时，将内部 22 映射到可用外部端口，再使用公网 IPv4 和该外部端口连接；IPv6 直连时，使用公网 IPv6 和 22，无需映射。IPv6 地址放入 URL 时请使用方括号。
-- HTTP：先确认 Web 服务实际监听的内部 TCP 端口，再使用对应的公网 IPv4 或公网 IPv6 加外部端口从外部打开；不要把内部端口当成外部端口。
-- 其他 TCP／UDP：客户端必须使用与映射相同的协议和外部端口。如果服务在实例内没有监听该内部端口，或把 TCP 与 UDP 选错，外部测试不会成功。
-
-## 遇到端口冲突
-
-- 单个映射指定的公网端口已经被使用时，提交会失败；换一个页面允许范围内的外部端口，或清空字段让系统自动分配。
-- 批量指定外部范围时，如果部分端口已经被其他实例占用，页面会打开冲突窗口。点击“使用全部建议”或逐项输入新的外部端口，再确认修改。
-- 新外部端口必须在允许范围内、介于 1-65535，并且冲突项目之间不能重复；Both 还必须同时能用于 TCP 和 UDP。如果重新提交后仍然冲突，继续改用其他端口。
-- 如果显示可用端口不足，缩小批量范围或改用其他可用端口。如果配额不足，先到“配额”页分配足够的端口配额。
-
-## 删除映射与常见限制
-
-1. 在端口映射列表找到目标项目，点击垃圾桶图标并确认；删除会同时移除该映射对应的底层代理设备和记录，释放配额。
-2. 也可以勾选当前列表页的多条映射，点击“批量删除”并确认。系统会逐条删除；如果部分失败，通知会列出成功／失败数量并重新加载列表。
-3. 添加和删除端口需要实例所有者权限；实例被封停或处于转移锁定时，操作也会被拒绝。如果按钮不存在或收到权限错误，先确认登录账户和实例所有权。
-
-## 排查顺序
-
-先核对网络模式和实际使用的公网地址，再核对映射的协议、外部端口、内部端口，最后回到实例内确认服务仍在监听。IPv4 NAT 没有可用公网 IPv4、IPv6 NAT／IPv6 Only 没有可用公网 IPv6，或服务只监听错误的协议／端口时，映射都无法完成外部连接。`
+            content: '## 先判断网络模式\n\n1. 打开实例详情，在“信息”页核对“网络模式”，再切到“网络”页查看内网 IPv4、公网 IPv4、公网 IPv6 和端口映射。\n2. 按模式决定测试地址：\n   - IPv4 NAT（nat）：通过节点的公网 IPv4 和端口映射访问实例服务。\n   - IPv4 NAT & IPv6（nat_ipv6）：IPv4 仍使用端口映射；实例有独立公网 IPv6，可直接使用 IPv6 地址。\n   - IPv4 NAT & IPv6 NAT（nat_ipv6_nat）：IPv4 使用端口映射；如果节点有公网 IPv6，映射也会在节点共享的 IPv6 上使用相同外部端口。\n   - IPv6 NAT（ipv6_nat）：端口映射使用节点的公网 IPv6，不要把它当成有公网 IPv4 的模式。\n   - IPv6 Only（ipv6_only）：不支持端口映射，直接使用实例显示的公网 IPv6；网络页不会提供添加映射的操作。\n\n## 先确认实例内的服务\n\n服务必须在实例内监听要映射的内部端口，并且协议要一致：TCP 服务只能用 TCP 映射，UDP 服务只能用 UDP 映射。先在实例内确认服务状态，再从实例外部测试；只在实例内连接成功，不能代表映射已经可以从外部使用。\n\n## 创建单个映射\n\n1. 在实例详情切到“网络”，在“端口映射”中点击“添加”。IPv6 Only 实例请改用公网 IPv6，不能添加映射。\n2. 保持“单个端口”，选择 TCP、UDP 或 Both。Both 会使用同一个外部端口创建 TCP 和 UDP 两条映射，并占用两个端口配额。\n3. 填写必填的“内部端口”，可以输入单个端口（例如 80 或 22）；也可以输入连续范围（例如 80-85）。\n4. “公网端口”可以留空，让系统从节点端口池自动分配；如果指定，请输入可用的单个端口，并遵守页面显示的允许范围。如果输入范围，内外部范围必须包含相同数量的端口。\n5. 可填写备注后点击“添加”。成功后，列表会显示协议、外部端口和内部端口；使用列表中的外部端口作为客户端连接入口。\n\n## 创建批量映射\n\n1. 在“添加端口映射”中切换到“批量端口”。\n2. 选择 TCP、UDP 或 Both，填写外部端口起止值和内部端口起止值。两个范围必须包含相同数量的端口，并按顺序一一对应；例如外部 20000-20005 会对应内部 80-85。\n3. 一次最多创建 100 个连续的内部端口。Both 会为每个内部端口分别创建 TCP 和 UDP 映射，因此每个端口需要两个配额。\n4. 如果要让系统自动分配一整段外部端口，可以在单个模式输入内部范围并将公网端口留空；提交后会按批量创建流程自动分配。\n5. 填写备注并提交，成功后根据通知中的数量确认映射已创建。\n\n## 测试 SSH、HTTP 和其他服务\n\n- SSH：IPv4 连接时，将内部 22 映射到可用外部端口，再使用公网 IPv4 和该外部端口连接；IPv6 直连时，使用公网 IPv6 和 22，无需映射。IPv6 地址放入 URL 时请使用方括号。\n- HTTP：先确认 Web 服务实际监听的内部 TCP 端口，再使用对应的公网 IPv4 或公网 IPv6 加外部端口从外部打开；不要把内部端口当成外部端口。\n- 其他 TCP／UDP：客户端必须使用与映射相同的协议和外部端口。如果服务在实例内没有监听该内部端口，或把 TCP 与 UDP 选错，外部测试不会成功。\n\n## 遇到端口冲突\n\n- 单个映射指定的公网端口已经被使用时，提交会失败；换一个页面允许范围内的外部端口，或清空字段让系统自动分配。\n- 批量指定外部范围时，如果部分端口已经被其他实例占用，页面会打开冲突窗口。点击“使用全部建议”或逐项输入新的外部端口，再确认修改。\n- 新外部端口必须在允许范围内、介于 1-65535，并且冲突项目之间不能重复；Both 还必须同时能用于 TCP 和 UDP。如果重新提交后仍然冲突，继续改用其他端口。\n- 如果显示可用端口不足，缩小批量范围或改用其他可用端口。如果配额不足，先到“配额”页分配足够的端口配额。\n\n## 删除映射与常见限制\n\n1. 在端口映射列表找到目标项目，点击垃圾桶图标并确认；删除会同时移除该映射对应的底层代理设备和记录，释放配额。\n2. 也可以勾选当前列表页的多条映射，点击“批量删除”并确认。系统会逐条删除；如果部分失败，通知会列出成功／失败数量并重新加载列表。\n3. 添加和删除端口需要实例所有者权限；实例被封停或处于转移锁定时，操作也会被拒绝。如果按钮不存在或收到权限错误，先确认登录账户和实例所有权。\n\n## 排查顺序\n\n先核对网络模式和实际使用的公网地址，再核对映射的协议、外部端口、内部端口，最后回到实例内确认服务仍在监听。IPv4 NAT 没有可用公网 IPv4、IPv6 NAT／IPv6 Only 没有可用公网 IPv6，或服务只监听错误的协议／端口时，映射都无法完成外部连接。',
         },
         hostingPublish: {
             title: '托管教程：创建节点并上架套餐',
             summary: '从托管准入、创建节点与连接 Agent，到创建套餐、设置方案及公开销售的完整步骤。',
-            content: `## 先分清楚三个名词
-
-- **节点**：你提供的 Incus 宿主机。在“我的节点”创建，并通过主机连接凭证与 Agent 回报状态。
-- **套餐**：面向用户的资源与网络政策，会绑定至少一个节点；它决定可用的网络模式、实例类型、配额及公开范围。
-- **方案**：套餐内的可购买版本，包含价格、计费周期、CPU、内存、磁盘、流量、速度及销售状态。免费套餐直接使用套餐字段；付费套餐则在“方案”页设置这些销售版本。
-
-## 1. 确认托管准入
-
-在“我的节点”点击“新增节点”。一般情况下，用户必须至少拥有一台自己的实例；免费或付费、官方或托管实例都会计入。若系统关闭托管功能，曾经创建过节点的用户仍可通过，而从未创建过节点的用户会被拒绝。管理员不受这项准入限制，但创建节点时仍会校验字段。创建节点的 API 会再次检查准入，不能只依赖前端显示。
-
-**常见错误：** 显示“不符合托管准入”或“托管功能尚未开放”时，先确认账户至少有一台实例；若按钮可见但提交仍被拒绝，说明后端准入检查未通过。
-
-## 2. 在“新增节点”填写节点资料
-
-1. **节点名称**：普通用户填写后缀，系统会加上 PEER + 用户 ID + -；管理员可直接填写完整名称。长度为 2–64 个字符，只能使用字母数字、下划线和连字符，且同一用户不能重复。
-2. **描述／地区、国家或地区**：地区最多 100 个字符；国家或地区用于节点标识。
-3. **连接地址、API 端口**：地址可填 IPv4、原始 IPv6 或域名；API 端口默认 8443，必须是 1–65535。这是面板连接 Incus 的地址，不是套餐给实例使用的服务端口。
-4. **网络模式**：按主机能力选择 NAT、NAT + IPv6、NAT + IPv6 NAT 或 IPv6 Only。需要路由 IPv6 的模式必须同时填写 IPv6 子网（需包含斜线）和 IPv6 父接口；也可以先留空，执行安装脚本后再在“设置”补上。
-5. **NAT 设置**：非 IPv6 Only 模式可填写公网 IPv4／IPv6、监听 IPv4／IPv6，以及端口范围。IPv6 地址必须包含冒号，结束端口不能小于开始端口。
-6. **资源上限**：CPU 配额是总 CPU 时间片上限，0 表示不设上限；内存上限以 MB 填写，非 0 时至少 256 MB。选择支持的实例类型：容器、VM 或两者皆可。
-
-页面提示支持 Ubuntu 22.04+、Debian 11+、Rocky Linux 10 以及 Alpine Linux 3.20+。创建后，节点详情的“存储”页可以再创建存储池。
-
-**常见错误：** 地址格式错误、IPv6 子网和父接口只填写一项、NAT 端口范围反向、内存小于 256 MB、名称重复或名称含有其他符号，都会被拒绝。
-
-## 3. 安装并验证节点连接
-
-创建节点后，页面会打开“安装脚本”窗口。第一步“执行安装脚本”点击“复制命令”，在该 Incus 主机上以 root 或可使用 sudo 的账户执行。安装脚本会配置主机连接所需资料；首次创建节点的安装会话有效 24 小时。
-
-完成脚本后，在第二步点击“验证并连接”。面板会调用 Incus 资源和版本端点，成功后将节点标记为已安装并显示“在线”。如果命令过期，在节点详情点击“重新安装”获取新命令，重新执行后再点击“验证并连接”。已有凭证的节点可以点击“测试”检查连接；还没有凭证时要先验证，不能直接测试。
-
-**Agent 与节点连接不是同一件事：** 在节点详情“信息”页的“宿主机状态”区域，点击“安装／重装 Agent”再点击“复制命令”，在主机执行一次性 Agent 命令。Agent 安装命令需要 HTTPS 面板地址，令牌有效 30 分钟且只能使用一次；重装会轮换凭证，旧 Agent 将不能回报。区域中的“在线／离线／未安装／已停用”是 Agent 状态；版本过旧时点击版本提示可请求升级，升级指令会在下一次心跳送达。
-
-**常见错误：** “验证并连接”失败通常是主机地址、API 端口、Incus API 或脚本配置不正确；Agent 命令被拒绝通常是面板不是 HTTPS、一次性令牌已过期或已使用。节点显示“在线”不代表 Agent 一定在线，Agent 长时间没有心跳仍会变为“离线”。
-
-## 4. 检查和管理节点
-
-在“我的节点”打开节点详情，确认标题状态为“在线”。在“信息”查看主机和 Agent 回报，在“设置”修改地址、资源上限、网络及通知设置，在“存储”创建或管理存储池。节点也可能显示“离线”或“维护中”；上架前应先处理连接和容量问题。节点所有者及管理员才能管理节点。删除节点前必须清空其实例，前端会先列出实例，后端也会再次阻止删除。
-
-## 5. 在“我的套餐”创建套餐
-
-点击“创建套餐”进入套餐表单。这里的套餐是资源政策，不是节点，也不是套餐内的方案：
-
-- 选择“免费实例套餐”时，CPU、内存、磁盘、流量、网络、配额、IO 及启动设置直接由套餐提供，不需要另建销售方案。
-- 选择“付费实例套餐”时，套餐提供共用的网络与管理设置，价格及各销售规格在“方案”页创建。已有方案的套餐不能直接切回免费模式，必须先删除所有方案。
-- 套餐至少要绑定一个节点。普通用户只能选择自己的节点；管理员可按权限选择官方或托管范围的节点。每个节点可指定系统磁盘存储池（留空则自动选择）及流量倍率，倍率必须为 0.001–100。
-
-填写套餐名称（2–64 个字符）、描述（最多 500 个字符）、网络模式、容器或 VM、CPU／内存／磁盘、流量及端口／快照／网站配额，以及 IO、网络速度、进程数、CPU 优先级和启动策略。若开启公开访问，公开套餐的实例上限必须是 1–5；需要前置套餐时，在“前置套餐”选择它。要让市场显示，还要启用套餐并打开“公开套餐”；分享链接可在套餐详情点击“复制分享链接”。
-
-**常见错误：** 未绑定节点、普通用户选择了别人的节点、公开套餐上限不在 1–5、套餐名称重复／不合规、VM 选择了不支持的网络模式，或非所有者尝试编辑，都会被拒绝。创建套餐本身要求登录及至少一个节点，不要把它与创建节点时的托管准入混为一谈。
-
-## 6. 在“方案”页创建和上架销售版本
-
-在套餐详情打开“方案”页，点击“新增方案”。方案是同一套餐内的价格与规格版本；填写方案名称、描述、价格、计费周期、CPU 15–10000%、内存 128–62144 MB、磁盘 512–104857600 MB、流量 1–100000 GB、速度 1–10000 Mbps，以及端口、快照、交换空间、网站、排序和可选 SLA。流量重置可另填重置价格，价格上限为 999999.99，精确到小数点后两位；普通托管用户只能选择月付，管理员可选择季付、半年付或年付。设置完成后点击“保存”。
-
-方案状态不是节点状态：
-
-- **可售**：在套餐中可见，用户可选择它创建新实例。
-- **售罄**：仍可见，但不能新开实例或切换到此方案。
-- **下架**：从开通入口隐藏，不能被选择。
-
-可以在方案卡点击“编辑”或“删除”；正在使用的方案不能删除。方案配额更新也会同步检查已有实例，因此请先确认不会低于已使用资源。
-
-**上架／下架的实际操作：** 没有独立的“发布”按钮。套餐层级要同时保持“启用”和“公开访问”才会公开；付费套餐还必须有“可售”方案。要下架套餐，取消启用或关闭公开访问；要暂停单个销售版本，将其切换为“售罄”或“下架”。
-
-## 7. 上架前检查和权限
-
-确认节点已通过“验证并连接”、Agent 在“宿主机状态”持续心跳，并在“设置／存储”确认 CPU、内存、存储及流量余量。确认套餐至少绑定一个可用节点、公开设置正确，且付费套餐有可售方案。套餐及方案的编辑、删除由套餐所有者或管理员执行；节点由节点所有者或管理员执行。任何前端隐藏的按钮都不是权限绕过方式，后端会再次检查所有权、配额、依赖套餐及实例使用情况。`
+            content: '## 先分清楚三个名词\n\n- **节点**：你提供的 Incus 宿主机。在“我的节点”创建，并通过主机连接凭证与 Agent 回报状态。\n- **套餐**：面向用户的资源与网络政策，会绑定至少一个节点；它决定可用的网络模式、实例类型、配额及公开范围。\n- **方案**：套餐内的可购买版本，包含价格、计费周期、CPU、内存、磁盘、流量、速度及销售状态。免费套餐直接使用套餐字段；付费套餐则在“方案”页设置这些销售版本。\n\n## 1. 确认托管准入\n\n在“我的节点”点击“新增节点”。一般情况下，用户必须至少拥有一台自己的实例；免费或付费、官方或托管实例都会计入。若系统关闭托管功能，曾经创建过节点的用户仍可通过，而从未创建过节点的用户会被拒绝。管理员不受这项准入限制，但创建节点时仍会校验字段。创建节点的 API 会再次检查准入，不能只依赖前端显示。\n\n**常见错误：** 显示“不符合托管准入”或“托管功能尚未开放”时，先确认账户至少有一台实例；若按钮可见但提交仍被拒绝，说明后端准入检查未通过。\n\n## 2. 在“新增节点”填写节点资料\n\n1. **节点名称**：普通用户填写后缀，系统会加上 PEER + 用户 ID + -；管理员可直接填写完整名称。长度为 2–64 个字符，只能使用字母数字、下划线和连字符，且同一用户不能重复。\n2. **描述／地区、国家或地区**：地区最多 100 个字符；国家或地区用于节点标识。\n3. **连接地址、API 端口**：地址可填 IPv4、原始 IPv6 或域名；API 端口默认 8443，必须是 1–65535。这是面板连接 Incus 的地址，不是套餐给实例使用的服务端口。\n4. **网络模式**：按主机能力选择 NAT、NAT + IPv6、NAT + IPv6 NAT 或 IPv6 Only。需要路由 IPv6 的模式必须同时填写 IPv6 子网（需包含斜线）和 IPv6 父接口；也可以先留空，执行安装脚本后再在“设置”补上。\n5. **NAT 设置**：非 IPv6 Only 模式可填写公网 IPv4／IPv6、监听 IPv4／IPv6，以及端口范围。IPv6 地址必须包含冒号，结束端口不能小于开始端口。\n6. **资源上限**：CPU 配额是总 CPU 时间片上限，0 表示不设上限；内存上限以 MB 填写，非 0 时至少 256 MB。选择支持的实例类型：容器、VM 或两者皆可。\n\n页面提示支持 Ubuntu 22.04+、Debian 11+、Rocky Linux 10 以及 Alpine Linux 3.20+。创建后，节点详情的“存储”页可以再创建存储池。\n\n**常见错误：** 地址格式错误、IPv6 子网和父接口只填写一项、NAT 端口范围反向、内存小于 256 MB、名称重复或名称含有其他符号，都会被拒绝。\n\n## 3. 安装并验证节点连接\n\n创建节点后，页面会打开“安装脚本”窗口。第一步“执行安装脚本”点击“复制命令”，在该 Incus 主机上以 root 或可使用 sudo 的账户执行。安装脚本会配置主机连接所需资料；首次创建节点的安装会话有效 24 小时。\n\n完成脚本后，在第二步点击“验证并连接”。面板会调用 Incus 资源和版本端点，成功后将节点标记为已安装并显示“在线”。如果命令过期，在节点详情点击“重新安装”获取新命令，重新执行后再点击“验证并连接”。已有凭证的节点可以点击“测试”检查连接；还没有凭证时要先验证，不能直接测试。\n\n**Agent 与节点连接不是同一件事：** 在节点详情“信息”页的“宿主机状态”区域，点击“安装／重装 Agent”再点击“复制命令”，在主机执行一次性 Agent 命令。Agent 安装命令需要 HTTPS 面板地址，令牌有效 30 分钟且只能使用一次；重装会轮换凭证，旧 Agent 将不能回报。区域中的“在线／离线／未安装／已停用”是 Agent 状态；版本过旧时点击版本提示可请求升级，升级指令会在下一次心跳送达。\n\n**常见错误：** “验证并连接”失败通常是主机地址、API 端口、Incus API 或脚本配置不正确；Agent 命令被拒绝通常是面板不是 HTTPS、一次性令牌已过期或已使用。节点显示“在线”不代表 Agent 一定在线，Agent 长时间没有心跳仍会变为“离线”。\n\n## 4. 检查和管理节点\n\n在“我的节点”打开节点详情，确认标题状态为“在线”。在“信息”查看主机和 Agent 回报，在“设置”修改地址、资源上限、网络及通知设置，在“存储”创建或管理存储池。节点也可能显示“离线”或“维护中”；上架前应先处理连接和容量问题。节点所有者及管理员才能管理节点。删除节点前必须清空其实例，前端会先列出实例，后端也会再次阻止删除。\n\n## 5. 在“我的套餐”创建套餐\n\n点击“创建套餐”进入套餐表单。这里的套餐是资源政策，不是节点，也不是套餐内的方案：\n\n- 选择“免费实例套餐”时，CPU、内存、磁盘、流量、网络、配额、IO 及启动设置直接由套餐提供，不需要另建销售方案。\n- 选择“付费实例套餐”时，套餐提供共用的网络与管理设置，价格及各销售规格在“方案”页创建。已有方案的套餐不能直接切回免费模式，必须先删除所有方案。\n- 套餐至少要绑定一个节点。普通用户只能选择自己的节点；管理员可按权限选择官方或托管范围的节点。每个节点可指定系统磁盘存储池（留空则自动选择）及流量倍率，倍率必须为 0.001–100。\n\n填写套餐名称（2–64 个字符）、描述（最多 500 个字符）、网络模式、容器或 VM、CPU／内存／磁盘、流量及端口／快照／网站配额，以及 IO、网络速度、进程数、CPU 优先级和启动策略。若开启公开访问，公开套餐的实例上限必须是 1–5；需要前置套餐时，在“前置套餐”选择它。要让市场显示，还要启用套餐并打开“公开套餐”；分享链接可在套餐详情点击“复制分享链接”。\n\n**常见错误：** 未绑定节点、普通用户选择了别人的节点、公开套餐上限不在 1–5、套餐名称重复／不合规、VM 选择了不支持的网络模式，或非所有者尝试编辑，都会被拒绝。创建套餐本身要求登录及至少一个节点，不要把它与创建节点时的托管准入混为一谈。\n\n## 6. 在“方案”页创建和上架销售版本\n\n在套餐详情打开“方案”页，点击“新增方案”。方案是同一套餐内的价格与规格版本；填写方案名称、描述、价格、计费周期、CPU 15–10000%、内存 128–62144 MB、磁盘 512–104857600 MB、流量 1–100000 GB、速度 1–10000 Mbps，以及端口、快照、交换空间、网站、排序和可选 SLA。流量重置可另填重置价格，价格上限为 999999.99，精确到小数点后两位；普通托管用户只能选择月付，管理员可选择季付、半年付或年付。设置完成后点击“保存”。\n\n方案状态不是节点状态：\n\n- **可售**：在套餐中可见，用户可选择它创建新实例。\n- **售罄**：仍可见，但不能新开实例或切换到此方案。\n- **下架**：从开通入口隐藏，不能被选择。\n\n可以在方案卡点击“编辑”或“删除”；正在使用的方案不能删除。方案配额更新也会同步检查已有实例，因此请先确认不会低于已使用资源。\n\n**上架／下架的实际操作：** 没有独立的“发布”按钮。套餐层级要同时保持“启用”和“公开访问”才会公开；付费套餐还必须有“可售”方案。要下架套餐，取消启用或关闭公开访问；要暂停单个销售版本，将其切换为“售罄”或“下架”。\n\n## 7. 上架前检查和权限\n\n确认节点已通过“验证并连接”、Agent 在“宿主机状态”持续心跳，并在“设置／存储”确认 CPU、内存、存储及流量余量。确认套餐至少绑定一个可用节点、公开设置正确，且付费套餐有可售方案。套餐及方案的编辑、删除由套餐所有者或管理员执行；节点由节点所有者或管理员执行。任何前端隐藏的按钮都不是权限绕过方式，后端会再次检查所有权、配额、依赖套餐及实例使用情况。',
         },
         hostingEarnings: {
             title: '托管收益：结算与提现',
             summary: '按收入类型、冻结／解冻状态与可用余额，完成托管收益核对、提现及退款扣回。',
-            content: `## 1. 先确认收益来源
-
-1. 进入“托管收益”。只有非管理员用户拥有的节点，在用户开通、续费或升级该节点上的付费实例时，才会产生托管收入。
-2. 在“收支明细”中，收入操作类型包括“开通”“续费”和“升级”；另外也可能看到“销毁”扣除、“提现”和“管理员调整”。数据分类还包括收入、解冻、提现和扣除；当前自动解冻是把原收入记录改为“已解冻”，不会另建一笔解冻收入。累计收入只统计收入记录，不要把提现、扣除或 AFF 返利当作托管收入。
-3. 开通按实际扣款金额入账；续费按折扣后的最终金额入账；升级只按补交的差价入账。
-
-## 2. 判断余额与解冻
-
-1. “可用余额”是可以直接提现的托管余额；“冻结中”是尚未解冻的收入合计，冻结金额不会计入可用余额。
-2. 每笔开通、续费或升级收入创建时都会冻结，解冻时间按创建当下的“现在 + 1 个月”计算；页面文案以 30 天说明。服务端每小时整点执行解冻，服务启动后约 5 秒也会补跑到期记录。记录变成“已解冻”后，金额才会进入可用余额。
-3. 明细会显示操作类型、金额、冻结状态、购买者、实例、节点和时间。接口数据另外包含解冻时间、关联 ID 及备注；实例删除后仍会使用创建收入时保存的快照显示名称等信息。
-
-## 3. 按步骤提现到面板余额
-
-1. 先确认“可用余额”至少为当前规则的最低提现金额 **¥10**。未达门槛时，按钮会停用；提交过低金额会提示“最低提现金额为 ¥10”。
-2. 点击“申请提现”，在表单只填写“提现金额”。当前自助接口仅支持提现到“面板余额”，表单没有其他目标选项；金额不能超过可用余额，否则会提示可用托管余额不足。
-3. 确认预览中的提现金额、手续费和实际到账。面板余额提现手续费率为 **5%**；手续费金额按提现金额乘以 5% 并四舍五入到小数点后两位，实际到账为提现金额减去手续费。
-4. 点击“确认提现”。成功后，托管可用余额扣除提现金额，实际到账金额加入面板余额，并新增一笔负数的托管“提现”明细。这个自助流程会在同一笔交易中完成，成功创建的记录状态为“已完成”并写入处理时间，不需要等待人工审核。
-5. 如需提现到页面提示的其他指定方式，请按页面说明提交工单；页面文案标示该方式手续费为 **10%**，自助提现表单不能选择该目标。提现记录字段包括提现金额、实际到账、方式、状态和申请时间；如果记录有拒绝原因，也会显示在状态下方。状态可能显示“待审核”“已通过”“已拒绝”或“已完成”，其中自助面板余额提现目前直接创建为“已完成”。
-
-## 4. 退款、销毁与开通失败如何影响收益
-
-1. 用户销毁付费托管实例，或节点所有者删除其他用户的付费实例并产生退款时，系统会按实际退款金额扣回托管收益；买方退款所扣的销毁手续费不会再加到托管扣回额中。
-2. 扣回顺序是：先从该实例相关的冻结收入删除或减少，再从可用托管余额扣除，最后在仍不足时从节点所有者的面板余额补扣。系统会新增“销毁”负数扣除明细，因此退款可能同时降低冻结收益、可用托管余额，甚至面板余额。
-3. 如果实例开通失败而自动全额退款，也会在同一结算中扣回已记录的托管收入。如果实际退款金额为 0，则不会创建这笔托管扣除。
-
-## 5. 遇到错误时
-
-- 最低金额错误：将金额调整为至少 ¥10。
-- 可用余额不足：只能提现可用余额；冻结中的金额必须先解冻。
-- “托管余额正在处理，请稍后重试”：等待上一笔解冻、扣回或提现交易完成后再提交；提现接口每分钟最多接受 5 次请求。
-- 提现成功但页面数据未更新：刷新“托管收益”，再核对可用余额、面板余额与两边的明细。`
+            content: '## 1. 先确认收益来源\n\n1. 进入“托管收益”。只有非管理员用户拥有的节点，在用户开通、续费或升级该节点上的付费实例时，才会产生托管收入。\n2. 在“收支明细”中，收入操作类型包括“开通”“续费”和“升级”；另外也可能看到“销毁”扣除、“提现”和“管理员调整”。数据分类还包括收入、解冻、提现和扣除；当前自动解冻是把原收入记录改为“已解冻”，不会另建一笔解冻收入。累计收入只统计收入记录，不要把提现、扣除或 AFF 返利当作托管收入。\n3. 开通按实际扣款金额入账；续费按折扣后的最终金额入账；升级只按补交的差价入账。\n\n## 2. 判断余额与解冻\n\n1. “可用余额”是可以直接提现的托管余额；“冻结中”是尚未解冻的收入合计，冻结金额不会计入可用余额。\n2. 每笔开通、续费或升级收入创建时都会冻结，解冻时间按创建当下的“现在 + 1 个月”计算；页面文案以 30 天说明。服务端每小时整点执行解冻，服务启动后约 5 秒也会补跑到期记录。记录变成“已解冻”后，金额才会进入可用余额。\n3. 明细会显示操作类型、金额、冻结状态、购买者、实例、节点和时间。接口数据另外包含解冻时间、关联 ID 及备注；实例删除后仍会使用创建收入时保存的快照显示名称等信息。\n\n## 3. 按步骤提现到面板余额\n\n1. 先确认“可用余额”至少为当前规则的最低提现金额 **¥10**。未达门槛时，按钮会停用；提交过低金额会提示“最低提现金额为 ¥10”。\n2. 点击“申请提现”，在表单只填写“提现金额”。当前自助接口仅支持提现到“面板余额”，表单没有其他目标选项；金额不能超过可用余额，否则会提示可用托管余额不足。\n3. 确认预览中的提现金额、手续费和实际到账。面板余额提现手续费率为 **5%**；手续费金额按提现金额乘以 5% 并四舍五入到小数点后两位，实际到账为提现金额减去手续费。\n4. 点击“确认提现”。成功后，托管可用余额扣除提现金额，实际到账金额加入面板余额，并新增一笔负数的托管“提现”明细。这个自助流程会在同一笔交易中完成，成功创建的记录状态为“已完成”并写入处理时间，不需要等待人工审核。\n5. 如需提现到页面提示的其他指定方式，请按页面说明提交工单；页面文案标示该方式手续费为 **10%**，自助提现表单不能选择该目标。提现记录字段包括提现金额、实际到账、方式、状态和申请时间；如果记录有拒绝原因，也会显示在状态下方。状态可能显示“待审核”“已通过”“已拒绝”或“已完成”，其中自助面板余额提现目前直接创建为“已完成”。\n\n## 4. 退款、销毁与开通失败如何影响收益\n\n1. 用户销毁付费托管实例，或节点所有者删除其他用户的付费实例并产生退款时，系统会按实际退款金额扣回托管收益；买方退款所扣的销毁手续费不会再加到托管扣回额中。\n2. 扣回顺序是：先从该实例相关的冻结收入删除或减少，再从可用托管余额扣除，最后在仍不足时从节点所有者的面板余额补扣。系统会新增“销毁”负数扣除明细，因此退款可能同时降低冻结收益、可用托管余额，甚至面板余额。\n3. 如果实例开通失败而自动全额退款，也会在同一结算中扣回已记录的托管收入。如果实际退款金额为 0，则不会创建这笔托管扣除。\n\n## 5. 遇到错误时\n\n- 最低金额错误：将金额调整为至少 ¥10。\n- 可用余额不足：只能提现可用余额；冻结中的金额必须先解冻。\n- “托管余额正在处理，请稍后重试”：等待上一笔解冻、扣回或提现交易完成后再提交；提现接口每分钟最多接受 5 次请求。\n- 提现成功但页面数据未更新：刷新“托管收益”，再核对可用余额、面板余额与两边的明细。',
         },
         billingBasics: {
             title: '计费与续费',
             summary: '按步骤完成充值、开通、续费、升级与销毁退款。',
-            content: `## 1. 充值到面板余额
-
-1. 登录后打开“钱包”，点击“充值”。
-2. 在“支付渠道”中选择页面当前显示的渠道；渠道提供多个选项时，再在“选择支付方式”中选择具体方式。如果要到支付页才选择币种和网络，按支付页提示完成（Heleket 类型会在支付页选择）。
-3. 普通充值可点击 ¥10、¥50、¥100、¥200，或输入自定义金额；以页面显示的金额范围为准。如果有手续费，先核对“应付金额”和“实际到账”；然后勾选无法原路退款、充值须知和服务条款，点击“立即支付”。
-4. 有支付链接的渠道会跳转到支付页。支付后回到钱包的“充值记录”；页面会验证订单，状态为“已完成”才表示余额已到账。显示“待支付”时先等待并刷新；付款金额不匹配、失败或已取消时，按记录中的提示处理。
-5. 如果选择“人工充值”，先阅读渠道说明，在“付款说明 / 交易信息”填写付款方式、交易编号或付款时间，再创建订单；这类订单不会显示普通的立即支付按钮。如果选择“卡密充值”，输入卡密编号和密码，点击“兑换卡密”；成功后余额会直接到账，不需要输入充值金额。
-
-充值记录中的未过期“待支付”订单通常可以点击“支付”重新获取支付链接，也可以点击“作废”取消；过期订单不能重新支付，请创建新订单。充值一律不能原路退款；实例销毁的退款是另一条规则，会退回面板余额。
-
-## 2. 开通付费实例
-
-1. 打开“市场”，先选择地区，再选择套餐和可用方案；确认方案周期、资源和价格后点击“立即开通”。未登录时会先要求登录，再回到创建流程。
-2. 在创建页填写实例名称，完成宿主机、镜像和 SSH 密钥选择；付费方案的 CPU、内存和磁盘使用方案固定配置。可用时输入 AFF 优惠码，按页面验证后继续。
-3. 在“订单概览”核对方案费用、优惠和最终价格，点击“创建”。后端会从面板余额一次扣除实际价格并创建计费记录；余额不足时不会开通，先回到“钱包”充值。
-4. 创建成功后实例可能先显示“creating”，表示仍在部署，等待列表或详情页更新。如果部署失败，系统会按开通失败流程退回已扣款项；需要重试时，重试会再次按上次实付金额扣款。
-
-## 3. 手动续费与自动续费
-
-1. 在“实例”列表打开实例详情，在计费卡点击“续费”。免费实例不需要续费。
-2. 选择页面提供的续费月数，核对原价（如有）、AFF 折扣、实付金额、新到期时间、当前余额和续费后余额，点击确认续费。费用从面板余额扣除；余额不足时点击“去充值”，充值后重新打开续费窗口。
-3. 托管实例只能按月续费，且只能在到期前 7 天内续费；太早或选择其他月数时，窗口会禁止提交。到期后因到期被封停的付费实例，续费成功后会恢复为已停止状态；手动封停的实例不能自行续费。
-4. 如果希望系统自动处理，在计费卡点击“自动续费”，再点击“开启自动续费”。系统会在到期前 24 小时按原计费周期从余额扣款；请预留足够余额。余额不足会通知并记录失败，连续尝试未成功后自动续费可能会被关闭。
-
-如果到期前仍未成功续费，实例到期后会被系统封停；到期封停超过 3 天的实例会由调度任务自动删除，这不等同于手动销毁退款流程。
-
-## 4. 升级方案
-
-1. 在付费实例详情点击“变更方案”，选择同一套餐中页面列出的更高方案；免费实例、已下架或已售罄方案不能变更，也不支持降级。
-2. 选定方案后等待预览，逐项确认剩余天数、原方案和新方案日价、剩余价值、新方案费用、折扣、应补差价、新到期时间和新配置。升级要求剩余至少 15 天，且实例状态必须是运行中或已停止；到期时间不会因升级改变。
-3. 确认面板余额足以支付差价后点击“升级”。系统只从余额扣除差价；不足时点击“去充值”充值后重新预览。LXC 通常即时应用新配置；KVM 需要重启，若页面出现重启提示，请按提示操作。
-
-## 5. 销毁与退款
-
-1. 先备份需要保留的数据，再在实例详情点击“销毁”。弹窗会先加载预览；展开“销毁规则”，核对实例名称、剩余天数、可退价值、手续费、退款金额和退款上限。
-2. 付费实例当前月流量周期已用流量达到或超过套餐设置上限时不能销毁（到期封停且符合系统条件的例外由后端判定）。首次付费实例销毁免手续费；之后销毁按可退款价值收取 10% 手续费。免费实例可以销毁，但没有退款，也不计入付费销毁次数。
-3. 确认无误后，在输入框完整输入页面指定的实例名称，点击确认销毁。这会永久删除实例及其快照、备份、端口映射等数据，无法恢复；付费退款按预览金额退回面板余额，不会退回原支付方式。
-
-## 6. 充值或扣款异常时
-
-- 所有开通、续费或升级都只使用面板余额；看到“余额不足”就先充值，不要重复点击扣款按钮。
-- 充值后仍显示“待支付”时，先到“充值记录”查看订单号和状态；支付回调可能尚未到达。显示“支付金额不匹配”或“失败”时，保留订单号和支付信息再联系管理员。
-- 在“充值记录”核对应付金额、实际到账、支付渠道、状态和完成时间；余额明细还可以核对开通、续费、升级或退款的扣款/入账记录。`
+            content: '## 1. 充值到面板余额\n\n1. 登录后打开“钱包”，点击“充值”。\n2. 在“支付渠道”中选择页面当前显示的渠道；渠道提供多个选项时，再在“选择支付方式”中选择具体方式。如果要到支付页才选择币种和网络，按支付页提示完成（Heleket 类型会在支付页选择）。\n3. 普通充值可点击 ¥10、¥50、¥100、¥200，或输入自定义金额；以页面显示的金额范围为准。如果有手续费，先核对“应付金额”和“实际到账”；然后勾选无法原路退款、充值须知和服务条款，点击“立即支付”。\n4. 有支付链接的渠道会跳转到支付页。支付后回到钱包的“充值记录”；页面会验证订单，状态为“已完成”才表示余额已到账。显示“待支付”时先等待并刷新；付款金额不匹配、失败或已取消时，按记录中的提示处理。\n5. 如果选择“人工充值”，先阅读渠道说明，在“付款说明 / 交易信息”填写付款方式、交易编号或付款时间，再创建订单；这类订单不会显示普通的立即支付按钮。如果选择“卡密充值”，输入卡密编号和密码，点击“兑换卡密”；成功后余额会直接到账，不需要输入充值金额。\n\n充值记录中的未过期“待支付”订单通常可以点击“支付”重新获取支付链接，也可以点击“作废”取消；过期订单不能重新支付，请创建新订单。充值一律不能原路退款；实例销毁的退款是另一条规则，会退回面板余额。\n\n## 2. 开通付费实例\n\n1. 打开“市场”，先选择地区，再选择套餐和可用方案；确认方案周期、资源和价格后点击“立即开通”。未登录时会先要求登录，再回到创建流程。\n2. 在创建页填写实例名称，完成宿主机、镜像和 SSH 密钥选择；付费方案的 CPU、内存和磁盘使用方案固定配置。可用时输入 AFF 优惠码，按页面验证后继续。\n3. 在“订单概览”核对方案费用、优惠和最终价格，点击“创建”。后端会从面板余额一次扣除实际价格并创建计费记录；余额不足时不会开通，先回到“钱包”充值。\n4. 创建成功后实例可能先显示“creating”，表示仍在部署，等待列表或详情页更新。如果部署失败，系统会按开通失败流程退回已扣款项；需要重试时，重试会再次按上次实付金额扣款。\n\n## 3. 手动续费与自动续费\n\n1. 在“实例”列表打开实例详情，在计费卡点击“续费”。免费实例不需要续费。\n2. 选择页面提供的续费月数，核对原价（如有）、AFF 折扣、实付金额、新到期时间、当前余额和续费后余额，点击确认续费。费用从面板余额扣除；余额不足时点击“去充值”，充值后重新打开续费窗口。\n3. 托管实例只能按月续费，且只能在到期前 7 天内续费；太早或选择其他月数时，窗口会禁止提交。到期后因到期被封停的付费实例，续费成功后会恢复为已停止状态；手动封停的实例不能自行续费。\n4. 如果希望系统自动处理，在计费卡点击“自动续费”，再点击“开启自动续费”。系统会在到期前 24 小时按原计费周期从余额扣款；请预留足够余额。余额不足会通知并记录失败，连续尝试未成功后自动续费可能会被关闭。\n\n如果到期前仍未成功续费，实例到期后会被系统封停；到期封停超过 3 天的实例会由调度任务自动删除，这不等同于手动销毁退款流程。\n\n## 4. 升级方案\n\n1. 在付费实例详情点击“变更方案”，选择同一套餐中页面列出的更高方案；免费实例、已下架或已售罄方案不能变更，也不支持降级。\n2. 选定方案后等待预览，逐项确认剩余天数、原方案和新方案日价、剩余价值、新方案费用、折扣、应补差价、新到期时间和新配置。升级要求剩余至少 15 天，且实例状态必须是运行中或已停止；到期时间不会因升级改变。\n3. 确认面板余额足以支付差价后点击“升级”。系统只从余额扣除差价；不足时点击“去充值”充值后重新预览。LXC 通常即时应用新配置；KVM 需要重启，若页面出现重启提示，请按提示操作。\n\n## 5. 销毁与退款\n\n1. 先备份需要保留的数据，再在实例详情点击“销毁”。弹窗会先加载预览；展开“销毁规则”，核对实例名称、剩余天数、可退价值、手续费、退款金额和退款上限。\n2. 付费实例当前月流量周期已用流量达到或超过套餐设置上限时不能销毁（到期封停且符合系统条件的例外由后端判定）。首次付费实例销毁免手续费；之后销毁按可退款价值收取 10% 手续费。免费实例可以销毁，但没有退款，也不计入付费销毁次数。\n3. 确认无误后，在输入框完整输入页面指定的实例名称，点击确认销毁。这会永久删除实例及其快照、备份、端口映射等数据，无法恢复；付费退款按预览金额退回面板余额，不会退回原支付方式。\n\n## 6. 充值或扣款异常时\n\n- 所有开通、续费或升级都只使用面板余额；看到“余额不足”就先充值，不要重复点击扣款按钮。\n- 充值后仍显示“待支付”时，先到“充值记录”查看订单号和状态；支付回调可能尚未到达。显示“支付金额不匹配”或“失败”时，保留订单号和支付信息再联系管理员。\n- 在“充值记录”核对应付金额、实际到账、支付渠道、状态和完成时间；余额明细还可以核对开通、续费、升级或退款的扣款/入账记录。',
         },
         commonIssues: {
             title: '常见问题与排查',
             summary: '按实例、Agent、网络、任务和计费状态逐步定位问题。',
-            content: `## 1. 先看实例与开通状态
-
-1. 到“实例”列表查看状态。\`creating\` 表示开通仍在进行，先等待列表状态更新或重新进入列表，不要重复创建。
-2. 如果状态是 \`error\`，点击“重试”。只有创建失败的实例可以重试；如果提示宿主机不可用或余额不足，分别查看“Agent／宿主机”或“余额与到期”段落。详情页的错误提示也有“重试”；不再需要时才点击“立即销毁”。
-3. 详情页如果显示 \`PENDING\` 或 \`PROCESSING\` 任务，先记下任务类型、进度、错误和排队位置。只有画面出现“解除异常”且确认宿主机上的原操作已停止时才点击；普通用户需任务已超过 15 分钟。此按钮只解除任务锁，不会删除或修改实例。
-4. 创建页没有可用宿主机或镜像时，确认已选择套餐、区域、资源和 SSH 公钥；没有 SSH 公钥时到“个人资料”添加后再回到创建页。
-
-## 2. Agent 或宿主机离线
-
-1. 到“资源”中的“我的宿主机”，打开“信息”页查看宿主机状态与 Agent 卡片；卡片会显示 Agent 是否已安装、是否停用、\`online\`／\`offline\`／\`unknown\`、最后回报、心跳 IP、Incus 状态和版本。
-2. 点击 Agent 卡片的“刷新”重新获取状态。尚未安装或需要重新安装时，点击“安装/重装 Agent”并复制页面生成的命令。
-3. 宿主机完成设置后，按页面显示点击“验证并连接”或“测试连接”。Agent 升级只在 Agent 显示 online 且版本过期时点击“请求升级”；offline 时先恢复心跳。
-
-## 3. SSH 或终端无法连接
-
-1. 详情页的“终端”只在实例 \`running\` 时可用；如果是 \`stopped\`，先点击“启动”。如果 Cloud-init 提示未完成，先点击“重新检查”；状态为 \`unknown\` 或 \`agent_unavailable\` 且画面允许时，可点击“手动标记完成”，或在终端提示中点击“忽略并连接”。
-2. 终端显示 \`disconnected\` 或 \`error\` 时点击“重新连接”；连接中会显示 \`connecting\`／\`reconnecting\`，先查看最后状态和错误文字。
-3. 使用 IPv4 时，先到“网络”标签页新增私有端口 \`22\` 的映射，再使用公网 IPv4 与映射后的公网端口连接。\`nat_ipv6\` 模式可直接使用公网 IPv6 与端口 \`22\`，不需映射。
-4. 连接资料可在“信息”标签页查看 SSH 端口；根密码必须先点击“显示”，需要时再点击“复制”。
-
-## 4. 端口映射冲突
-
-1. 到详情页“网络”标签页查看网络模式、端口配额和现有映射。只有 NAT 类模式可新增映射；IPv6-only 实例不需要端口映射；宿主机所有者查看实例时不能管理映射。
-2. 新增映射时遇到 \`PORT_IN_USE\`（公网端口已使用）、\`PORT_RANGE_INVALID\`（超出宿主机范围）或 \`PORT_NO_AVAILABLE\`（没有可用端口），按错误调整公网端口或先处理配额。批量新增出现 \`PORT_CONFLICT\` 时，在冲突窗口查看建议端口，确认后提交建议方案。
-3. 配额已满时，先在映射列表勾选项目并点击“删除”或使用批量删除，再新增需要的映射。
-
-## 5. 快照、备份与排队任务
-
-1. 在“快照”页创建快照需要填写名称，且必须有剩余快照配额；恢复快照前先将实例停止。自动快照只可选 10 分钟、1 小时、6 小时或 24 小时，设置时点击启用并保存。
-2. 如果页面显示备份管理，创建备份同样需要名称和备份配额；备份必须是 \`ready\` 才能导出、上传或恢复。上传前要选择远程存储；没有存储设置时点击页面“前往设置”。
-3. 备份恢复会显示 \`PENDING\`／\`PROCESSING\`、排队位置、执行时间和错误；同一实例已有恢复任务时不要重复提交。任务 \`FAILED\` 且页面提供“回滚”时，先保存错误文字，再点击“回滚”；导出或上传失败也以页面显示的错误与任务状态为准。
-
-## 6. 余额、套餐与到期
-
-1. 在实例列表或详情页查看套餐、到期时间、剩余天数和自动续费状态。付费实例在详情页点击“续费”；窗口会加载可用续费周期、价格和余额，选择页面提供的周期后提交。余额不足或没有可用选项时不要重复提交。
-2. 自动续费可在详情页点击“自动续费”，再按窗口点击“启用”或“停用”。托管实例只有在计费窗口允许的到期前期间才会提供续费选项；如果显示不可续费原因，按页面原因处理。
-3. \`suspended\` 或到期封停时，许多实例操作会被停用；先查看到期时间与封停原因，续费后重新加载详情。仍无法恢复时，提交工单并附上状态与原因。
-
-## 7. 托管售后与提交工单
-
-1. 到“工单”创建工单。托管实例必须在“实例”栏选择对应的那一台；选取后工单会发送给节点负责人。没有特定实例的问题不要臆填实例，系统会按无实例工单流程通知管理员。
-2. 填写主题（2–200 字）、分类、优先级和内容；没有图片附件时内容至少 10 字，内容上限 5000 字。可用“添加图片”上传最多 6 张 JPG、PNG、WebP、GIF 或 AVIF 图片，每张不超过 50 MB。
-3. 内容请带上：实例 ID／名称、宿主机或节点、当前状态、完整错误文字、发生时间、复现步骤；如果页面有显示，再附任务 ID／类型／进度／排队位置，以及网络模式、协议、公网到私有端口映射和 SSH 端口。
-4. 工单创建后可在详情查看工单 ID、状态、分类、优先级、宿主机和实例；已关闭的工单不能回复。不要在内容或附件中粘贴 SSH 私钥、密码或 Agent 密钥。`
+            content: '## 1. 先看实例与开通状态\n\n1. 到“实例”列表查看状态。`creating` 表示开通仍在进行，先等待列表状态更新或重新进入列表，不要重复创建。\n2. 如果状态是 `error`，点击“重试”。只有创建失败的实例可以重试；如果提示宿主机不可用或余额不足，分别查看“Agent／宿主机”或“余额与到期”段落。详情页的错误提示也有“重试”；不再需要时才点击“立即销毁”。\n3. 详情页如果显示 `PENDING` 或 `PROCESSING` 任务，先记下任务类型、进度、错误和排队位置。只有画面出现“解除异常”且确认宿主机上的原操作已停止时才点击；普通用户需任务已超过 15 分钟。此按钮只解除任务锁，不会删除或修改实例。\n4. 创建页没有可用宿主机或镜像时，确认已选择套餐、区域、资源和 SSH 公钥；没有 SSH 公钥时到“个人资料”添加后再回到创建页。\n\n## 2. Agent 或宿主机离线\n\n1. 到“资源”中的“我的宿主机”，打开“信息”页查看宿主机状态与 Agent 卡片；卡片会显示 Agent 是否已安装、是否停用、`online`／`offline`／`unknown`、最后回报、心跳 IP、Incus 状态和版本。\n2. 点击 Agent 卡片的“刷新”重新获取状态。尚未安装或需要重新安装时，点击“安装/重装 Agent”并复制页面生成的命令。\n3. 宿主机完成设置后，按页面显示点击“验证并连接”或“测试连接”。Agent 升级只在 Agent 显示 online 且版本过期时点击“请求升级”；offline 时先恢复心跳。\n\n## 3. SSH 或终端无法连接\n\n1. 详情页的“终端”只在实例 `running` 时可用；如果是 `stopped`，先点击“启动”。如果 Cloud-init 提示未完成，先点击“重新检查”；状态为 `unknown` 或 `agent_unavailable` 且画面允许时，可点击“手动标记完成”，或在终端提示中点击“忽略并连接”。\n2. 终端显示 `disconnected` 或 `error` 时点击“重新连接”；连接中会显示 `connecting`／`reconnecting`，先查看最后状态和错误文字。\n3. 使用 IPv4 时，先到“网络”标签页新增私有端口 `22` 的映射，再使用公网 IPv4 与映射后的公网端口连接。`nat_ipv6` 模式可直接使用公网 IPv6 与端口 `22`，不需映射。\n4. 连接资料可在“信息”标签页查看 SSH 端口；根密码必须先点击“显示”，需要时再点击“复制”。\n\n## 4. 端口映射冲突\n\n1. 到详情页“网络”标签页查看网络模式、端口配额和现有映射。只有 NAT 类模式可新增映射；IPv6-only 实例不需要端口映射；宿主机所有者查看实例时不能管理映射。\n2. 新增映射时遇到 `PORT_IN_USE`（公网端口已使用）、`PORT_RANGE_INVALID`（超出宿主机范围）或 `PORT_NO_AVAILABLE`（没有可用端口），按错误调整公网端口或先处理配额。批量新增出现 `PORT_CONFLICT` 时，在冲突窗口查看建议端口，确认后提交建议方案。\n3. 配额已满时，先在映射列表勾选项目并点击“删除”或使用批量删除，再新增需要的映射。\n\n## 5. 快照、备份与排队任务\n\n1. 在“快照”页创建快照需要填写名称，且必须有剩余快照配额；恢复快照前先将实例停止。自动快照只可选 10 分钟、1 小时、6 小时或 24 小时，设置时点击启用并保存。\n2. 如果页面显示备份管理，创建备份同样需要名称和备份配额；备份必须是 `ready` 才能导出、上传或恢复。上传前要选择远程存储；没有存储设置时点击页面“前往设置”。\n3. 备份恢复会显示 `PENDING`／`PROCESSING`、排队位置、执行时间和错误；同一实例已有恢复任务时不要重复提交。任务 `FAILED` 且页面提供“回滚”时，先保存错误文字，再点击“回滚”；导出或上传失败也以页面显示的错误与任务状态为准。\n\n## 6. 余额、套餐与到期\n\n1. 在实例列表或详情页查看套餐、到期时间、剩余天数和自动续费状态。付费实例在详情页点击“续费”；窗口会加载可用续费周期、价格和余额，选择页面提供的周期后提交。余额不足或没有可用选项时不要重复提交。\n2. 自动续费可在详情页点击“自动续费”，再按窗口点击“启用”或“停用”。托管实例只有在计费窗口允许的到期前期间才会提供续费选项；如果显示不可续费原因，按页面原因处理。\n3. `suspended` 或到期封停时，许多实例操作会被停用；先查看到期时间与封停原因，续费后重新加载详情。仍无法恢复时，提交工单并附上状态与原因。\n\n## 7. 托管售后与提交工单\n\n1. 到“工单”创建工单。托管实例必须在“实例”栏选择对应的那一台；选取后工单会发送给节点负责人。没有特定实例的问题不要臆填实例，系统会按无实例工单流程通知管理员。\n2. 填写主题（2–200 字）、分类、优先级和内容；没有图片附件时内容至少 10 字，内容上限 5000 字。可用“添加图片”上传最多 6 张 JPG、PNG、WebP、GIF 或 AVIF 图片，每张不超过 50 MB。\n3. 内容请带上：实例 ID／名称、宿主机或节点、当前状态、完整错误文字、发生时间、复现步骤；如果页面有显示，再附任务 ID／类型／进度／排队位置，以及网络模式、协议、公网到私有端口映射和 SSH 端口。\n4. 工单创建后可在详情查看工单 ID、状态、分类、优先级、宿主机和实例；已关闭的工单不能回复。不要在内容或附件中粘贴 SSH 私钥、密码或 Agent 密钥。',
         },
         categories: {
             general: '常规',
@@ -5607,8 +5031,6 @@ export default {
             faq: '常见问题',
         },
     },
-
-    // 日志模块翻译
     logModules: {
         security: '安全事件',
         instance: '实例操作',
@@ -5624,139 +5046,109 @@ export default {
         system: '系统配置',
         auth: '认证操作',
         storage: '远程存储',
-        // 兼容旧数据中的中文模块名
-        '登录操作': '登录操作',
-        '安全事件': '安全事件',
-        '实例操作': '实例操作',
-        '快照操作': '快照操作',
-        '备份操作': '备份操作',
-        '镜像操作': '镜像操作',
-        '节点操作': '节点操作',
-        '节点组操作': '节点组操作',
-        '套餐操作': '套餐操作',
-        '用户管理': '用户管理',
-        '个人设置': '个人设置',
-        '通知设置': '通知设置',
-        '系统配置': '系统配置',
-        '认证操作': '认证操作',
-        '远程存储': '远程存储',
+        "登录操作": '登录操作',
+        "安全事件": '安全事件',
+        "实例操作": '实例操作',
+        "快照操作": '快照操作',
+        "备份操作": '备份操作',
+        "镜像操作": '镜像操作',
+        "节点操作": '节点操作',
+        "节点组操作": '节点组操作',
+        "套餐操作": '套餐操作',
+        "用户管理": '用户管理',
+        "个人设置": '个人设置',
+        "通知设置": '通知设置',
+        "系统配置": '系统配置',
+        "认证操作": '认证操作',
+        "远程存储": '远程存储',
     },
-
-    // 日志操作翻译
     logActions: {
-        // 安全事件
-        'login_success': '登录成功',
-        'login_failed': '登录失败',
-        'logout': '登出',
-        'register_success': '注册成功',
-        'rate_limit_exceeded': '登录尝试过多',
-        'invalid_invite_code': '无效邀请码',
-        'suspicious_activity': '可疑活动',
-        'permission_denied': '权限不足',
-        'unauthorized_access': '未授权访问',
-        'admin_action': '管理员操作',
-        // 实例操作
-        'instance.create': '创建实例',
-        'instance.delete': '删除实例',
-        'instance.start': '启动实例',
-        'instance.stop': '停止实例',
-        'instance.restart': '重启实例',
-        'instance.rebuild': '重装系统',
-        'instance.recreate': '重建实例',
-        'instance.change_host': '改节点',
-        'instance.cloud_init_manual_complete': '手动完成初始化检测',
-        'instance.update_quota': '更新实例配额',
-        'instance.rename': '重命名实例',
-        // 端口映射
-        'port.add': '添加端口映射',
-        'port.delete': '删除端口映射',
-        // 快照操作
-        'snapshot.create': '创建快照',
-        'snapshot.delete': '删除快照',
-        'snapshot.restore': '恢复快照',
-        // 备份操作
-        'backup.create': '创建备份',
-        'backup.delete': '删除备份',
-        'backup.export': '导出备份',
-        // 镜像操作
-        'image.sync': '同步镜像',
-        'image.delete': '删除镜像',
-        'image.create': '创建镜像',
-        'image.update': '更新镜像',
-        // 节点操作
-        'host.create': '添加节点',
-        'host.update': '更新节点',
-        'host.delete': '删除节点',
-        'host.test': '测试节点',
-        // 节点组操作
-        // 套餐操作
-        'package.create': '创建套餐',
-        'package.update': '更新套餐',
-        'package.delete': '删除套餐',
-        // 用户管理
-        'user.ban': '封禁用户',
-        'user.unban': '解封用户',
-        'user.delete': '删除用户',
-        'user.update_quota': '更新用户配额',
-        'user.revoke_sessions': '撤销用户会话',
-        // 个人设置
-        'profile.update': '更新个人信息',
-        'password.change': '修改密码',
-        // SSH 密钥
-        'ssh_key.add': '添加 SSH 密钥',
-        'ssh_key.delete': '删除 SSH 密钥',
-        // 通知设置
-        'notification.add': '添加通知渠道',
-        'notification.delete': '删除通知渠道',
-        // 安全设置
-        '2fa.setup': '设置双因素认证',
-        '2fa.enable': '启用双因素认证',
-        '2fa.disable': '禁用双因素认证',
-        '2fa.recovery_reset': '重置恢复码',
-        // 认证操作
-        'session.revoke': '撤销会话',
-        'session.revoke_all': '撤销所有会话',
-        // 系统配置
-        'system.config_update': '更新系统配置',
-        // 帮助文档
-        'help.create': '创建帮助文档',
-        'help.update': '更新帮助文档',
-        'help.delete': '删除帮助文档',
-        // 备份上传操作
-        'backup.upload': '上传备份',
-        'backup.upload.queue': '备份上传排队',
-        'backup.upload.cancel': '取消备份上传',
-        // 备份恢复操作
-        'backup.restore': '恢复备份',
-        'backup.restore.rollback': '回滚恢复',
-        'backup.restore.cancel': '取消恢复',
-        // 存储配置操作
-        'storage.create': '创建存储配置',
-        'storage.update': '更新存储配置',
-        'storage.delete': '删除存储配置',
-        // AFF 推荐计划
-        'aff.create_code': '创建优惠码',
-        'aff.convert_request': '申请 AFF 转化',
-        'aff.approve_convert': '审核通过 AFF 转化',
-        'aff.reject_convert': '审核拒绝 AFF 转化',
+        login_success: '登录成功',
+        login_failed: '登录失败',
+        logout: '登出',
+        register_success: '注册成功',
+        rate_limit_exceeded: '登录尝试过多',
+        invalid_invite_code: '无效邀请码',
+        suspicious_activity: '可疑活动',
+        permission_denied: '权限不足',
+        unauthorized_access: '未授权访问',
+        admin_action: '管理员操作',
+        "instance.create": '创建实例',
+        "instance.delete": '删除实例',
+        "instance.start": '启动实例',
+        "instance.stop": '停止实例',
+        "instance.restart": '重启实例',
+        "instance.rebuild": '重装系统',
+        "instance.recreate": '重建实例',
+        "instance.change_host": '改节点',
+        "instance.cloud_init_manual_complete": '手动完成初始化检测',
+        "instance.update_quota": '更新实例配额',
+        "instance.rename": '重命名实例',
+        "port.add": '添加端口映射',
+        "port.delete": '删除端口映射',
+        "snapshot.create": '创建快照',
+        "snapshot.delete": '删除快照',
+        "snapshot.restore": '恢复快照',
+        "backup.create": '创建备份',
+        "backup.delete": '删除备份',
+        "backup.export": '导出备份',
+        "image.sync": '同步镜像',
+        "image.delete": '删除镜像',
+        "image.create": '创建镜像',
+        "image.update": '更新镜像',
+        "host.create": '添加节点',
+        "host.update": '更新节点',
+        "host.delete": '删除节点',
+        "host.test": '测试节点',
+        "package.create": '创建套餐',
+        "package.update": '更新套餐',
+        "package.delete": '删除套餐',
+        "user.ban": '封禁用户',
+        "user.unban": '解封用户',
+        "user.delete": '删除用户',
+        "user.update_quota": '更新用户配额',
+        "user.revoke_sessions": '撤销用户会话',
+        "profile.update": '更新个人信息',
+        "password.change": '修改密码',
+        "ssh_key.add": '添加 SSH 密钥',
+        "ssh_key.delete": '删除 SSH 密钥',
+        "notification.add": '添加通知渠道',
+        "notification.delete": '删除通知渠道',
+        "2fa.setup": '设置双因素认证',
+        "2fa.enable": '启用双因素认证',
+        "2fa.disable": '禁用双因素认证',
+        "2fa.recovery_reset": '重置恢复码',
+        "session.revoke": '撤销会话',
+        "session.revoke_all": '撤销所有会话',
+        "system.config_update": '更新系统配置',
+        "help.create": '创建帮助文档',
+        "help.update": '更新帮助文档',
+        "help.delete": '删除帮助文档',
+        "backup.upload": '上传备份',
+        "backup.upload.queue": '备份上传排队',
+        "backup.upload.cancel": '取消备份上传',
+        "backup.restore": '恢复备份',
+        "backup.restore.rollback": '回滚恢复',
+        "backup.restore.cancel": '取消恢复',
+        "storage.create": '创建存储配置',
+        "storage.update": '更新存储配置',
+        "storage.delete": '删除存储配置',
+        "aff.create_code": '创建优惠码',
+        "aff.convert_request": '申请 AFF 转化',
+        "aff.approve_convert": '审核通过 AFF 转化',
+        "aff.reject_convert": '审核拒绝 AFF 转化',
     },
-
-    // 日志结果翻译
     logResults: {
         success: '成功',
         failed: '失败',
         warning: '警告',
     },
-
-    // API 错误码翻译
     errors: {
-        // 通用错误
         INVALID_ID: '无效的 ID',
         NOT_FOUND: '资源不存在',
         UNAUTHORIZED: '未授权',
         FORBIDDEN: '无权访问',
         ADMIN_REQUIRED: '需要管理员权限',
-        // 用户错误
         USER_NOT_FOUND: '用户不存在',
         USER_EXISTS: '用户名已存在',
         CANNOT_MODIFY_SELF: '不能修改自己的状态',
@@ -5764,7 +5156,6 @@ export default {
         CANNOT_BAN_ADMIN: '不能封禁管理员账户',
         CANNOT_DELETE_ADMIN: '不能删除管理员账户',
         USER_HAS_INSTANCES: '该用户还有实例，请先删除实例',
-        // 认证错误
         INVALID_CREDENTIALS: '用户名或密码错误',
         ACCOUNT_BANNED: '账户已被禁用',
         TOO_MANY_ATTEMPTS: '登录尝试次数过多，请稍后再试',
@@ -5782,7 +5173,6 @@ export default {
         REFRESH_TOKEN_MISSING: '缺少刷新令牌',
         REFRESH_TOKEN_INVALID: '刷新令牌无效或已过期',
         SESSION_NOT_FOUND: '会话不存在',
-        // 验证错误
         INVALID_EMAIL: '请输入有效的邮箱地址',
         EMAIL_CONTAINS_ILLEGAL: '邮箱包含非法字符',
         USERNAME_CONTAINS_ILLEGAL: '用户名包含非法字符',
@@ -5790,7 +5180,6 @@ export default {
         INVALID_SSH_KEY: '无效的 SSH 公钥格式',
         SSH_KEY_EXISTS: '该公钥已添加',
         INVALID_NAME: '名称格式不正确',
-        // 实例错误
         INSTANCE_NOT_FOUND: '实例不存在',
         INSTANCE_ALREADY_RUNNING: '实例已在运行',
         INSTANCE_ALREADY_STOPPED: '实例已停止',
@@ -5799,21 +5188,17 @@ export default {
         INSTANCE_NOT_SUSPENDED: '实例未处于封停状态',
         INSTANCE_SUSPENDED_EXPIRED: '实例因到期被封停，请续费后解封',
         INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED: '当前月流量周期无法销毁，已用流量已达套餐设置上限',
-        // 节点错误
         HOST_NOT_FOUND: '宿主机不存在',
         HOST_OFFLINE: '宿主机离线',
         HOST_HAS_INSTANCES: '宿主机上有实例，请先删除',
         HOST_ALREADY_OFFICIAL: '该节点已经是自营节点',
         HOST_TAKEOVER_PACKAGE_BINDING_CONFLICT: '接管失败，部分套餐会失去全部绑定节点',
         NO_AVAILABLE_HOSTS: '没有可用的节点',
-        // 镜像错误
         IMAGE_NOT_FOUND: '镜像不存在',
         IMAGE_SYNCED_ON_HOSTS: '镜像已在节点上同步，请先从节点删除',
         IMAGE_TYPE_MISMATCH: '所选镜像与套餐实例类型不兼容',
-        // 套餐错误
         PACKAGE_NOT_FOUND: '套餐不存在',
         PACKAGE_IN_USE: '套餐正在被实例使用',
-        // 配额错误
         QUOTA_EXCEEDED: '配额不足',
         QUOTA_CPU_EXCEEDED: 'CPU 配额不足',
         QUOTA_MEMORY_EXCEEDED: '内存配额不足',
@@ -5823,43 +5208,32 @@ export default {
         QUOTA_SNAPSHOT_EXCEEDED: '快照配额不足',
         QUOTA_BACKUP_EXCEEDED: '备份配额不足',
         QUOTA_NOT_ALLOCATED: '请先分配配额',
-        // 快照错误
         SNAPSHOT_NOT_FOUND: '快照不存在',
         SNAPSHOT_RESTORE_REQUIRES_STOP: '请先停止实例再恢复快照',
-        // 备份错误
         BACKUP_NOT_FOUND: '备份不存在',
         BACKUP_NOT_READY: '备份尚未就绪，无法导出',
         EXPORT_TASK_NOT_FOUND: '导出任务不存在或已过期',
         EXPORT_TASK_EXPIRED: '导出任务已过期',
-        // 端口映射错误
         PORT_IN_USE: '该端口已被使用',
         PORT_OUT_OF_RANGE: '端口超出允许范围',
         PORT_MAPPING_NOT_FOUND: '端口映射不存在',
-        // 节点组错误
         NODE_GROUP_NOT_FOUND: '节点组不存在',
         NODE_GROUP_HAS_HOSTS: '节点组下有宿主机，请先移除',
         NODE_GROUP_HAS_PACKAGES: '节点组被套餐使用中',
-        // 通知错误
         NOTIFICATION_CHANNEL_NOT_FOUND: '通知渠道不存在',
-        // 帮助错误
         ARTICLE_NOT_FOUND: '文档不存在',
         SLUG_EXISTS: 'Slug 已存在',
-        // 邀请码错误
         INVITE_CODE_USED: '邀请码已被使用',
         INVITE_CODE_NOT_FOUND: '邀请码不存在',
-        // OAuth 错误
         OAUTH_PROVIDER_DISABLED: '该登录方式已被禁用',
         OAUTH_ALREADY_BOUND: '该账号已被其他用户绑定',
         OAUTH_NOT_BOUND: '账号未绑定',
         OAUTH_TOKEN_ERROR: '获取授权失败',
-        // SSH 密钥错误
         SSH_KEY_NOT_FOUND: 'SSH 密钥不存在',
         SSH_KEY_REQUIRED: '必须选择一个 SSH 密钥，请先在个人设置中添加',
         SSH_KEY_NOT_OWNED: 'SSH 密钥不存在或不属于该用户',
-        // 套餐错误（补充）
         PACKAGE_UNAVAILABLE: '套餐不可用或已下架',
         CANNOT_CREATE_OWN_PAID_PACKAGE: '不能使用自己的付费套餐创建实例',
-        // 节点资源错误
         HOST_UNAVAILABLE: '选择的宿主机不可用或资源不足',
         HOST_NO_ONLINE: '没有在线的宿主机，请先在节点管理中测试连接',
         HOST_RESOURCES_NOT_SYNCED: '宿主机资源信息未同步，请在节点管理中点击"测试连接"',
@@ -5875,7 +5249,6 @@ export default {
         HOST_IPV6_ROUTE_REQUIRES_CONFIG: 'IPv6 路由模式需要提供子网和父接口',
         HOST_CPU_BELOW_USED: 'CPU 最大额配不能低于实例已使用的资源',
         HOST_MEMORY_BELOW_USED: '内存最大值不能低于实例已使用的资源',
-        // 实例操作错误
         INSTANCE_STOP_REQUIRED: '请先停止实例',
         INSTANCE_IMAGE_REQUIRED: '请指定镜像',
         INSTANCE_IMAGE_UNAVAILABLE: '选择的镜像在当前节点不可用',
@@ -5886,33 +5259,25 @@ export default {
         HOST_NO_IPV6_SUBNET: '宿主机未配置 IPv6 子网',
         IPV6_POOL_EXHAUSTED: 'IPv6 地址池已耗尽，请稍后重试',
         IPV6_REASSIGN_COOLDOWN: '每实例每天只能重新分配一次 IPv6，请稍后再试',
-        // 端口映射错误（补充）
         PORT_MAPPING_NAT_ONLY: '仅 NAT 和双栈模式支持端口映射',
         PORT_NO_AVAILABLE: '没有可用端口，请联系管理员',
         PORT_CONFLICT: '端口已被占用，请使用其他端口',
         PORT_MAPPING_INVALID_ID: '无效的实例或端口映射 ID',
-        // 镜像错误（补充）
         IMAGE_CREATE_FAILED: '镜像创建失败',
         IMAGE_UPDATE_FAILED: '镜像更新失败',
         IMAGE_INVALID_HOST_ID: '无效的镜像或节点 ID',
-        // 备份错误（补充）
         BACKUP_CREATE_FAILED: '创建备份失败',
         BACKUP_DELETE_FAILED: '删除备份失败',
         BACKUP_EXPORT_FAILED: '导出备份失败',
         BACKUP_QUOTA_NOT_SET: '请先为该实例设置备份配额',
         BACKUP_EXPORT_STATUS_INVALID: '导出任务状态异常',
-        // 配置错误
         CONFIG_INVALID_KEY: '无效的配置键',
         CONFIG_INVALID_VALUE: '配置值必须是非负整数',
-        // 快照错误（补充）
         SNAPSHOT_QUOTA_NOT_SET: '请先为该实例设置快照配额',
-        // 套餐错误（补充）
         PACKAGE_HAS_INSTANCES: '该套餐正在被实例使用，无法删除',
-        // 资源限制错误
         RESOURCE_CPU_EXCEEDS_PACKAGE: 'CPU 配置超出套餐限制',
         RESOURCE_MEMORY_EXCEEDS_PACKAGE: '内存配置超出套餐限制',
         RESOURCE_DISK_EXCEEDS_PACKAGE: '磁盘配置超出套餐限制',
-        // 用户配额错误（详细）
         QUOTA_CPU_INSUFFICIENT: 'CPU 配额不足',
         QUOTA_MEMORY_INSUFFICIENT: '内存配额不足',
         QUOTA_DISK_INSUFFICIENT: '磁盘配额不足',
@@ -5925,23 +5290,16 @@ export default {
         QUOTA_PORT_TOTAL_EXCEEDED: '端口配额超出用户总配额',
         QUOTA_SNAPSHOT_TOTAL_EXCEEDED: '快照配额超出用户总配额',
         QUOTA_BACKUP_TOTAL_EXCEEDED: '备份配额超出用户总配额',
-        // 镜像错误（补充）
         IMAGE_NOT_SYNCED: '镜像尚未同步到所选宿主机',
         IMAGE_SYNCING_CANNOT_DELETE: '镜像正在同步中，无法删除',
         IMAGE_NO_HOSTS: '没有可用的节点，请先添加节点',
-        // 端口错误（补充）
         PORT_RANGE_INVALID: '端口必须在允许范围内',
-        // 快照策略错误
         SNAPSHOT_MANUAL_FULL: '手动快照已达实例配额，无法启用自动快照',
         SNAPSHOT_RETENTION_EXCEEDS: '保留数量超出可用配额',
-        // 备份策略错误
         BACKUP_MANUAL_FULL: '手动备份已达实例配额，无法启用自动备份',
         BACKUP_RETENTION_EXCEEDS: '保留数量超出可用配额',
-        // OAuth 错误（补充）
         OAUTH_NOT_ENABLED: '该登录方式未启用',
-        // 存储池错误
         STORAGE_POOL_NOT_CONFIGURED: '宿主机未配置系统盘存储池，无法创建实例',
-        // 好友系统错误
         CANNOT_ADD_SELF: '不能添加自己为好友',
         ALREADY_FRIENDS: '你们已经是好友了',
         FRIEND_REQUEST_PENDING: '好友请求已在待处理中',
@@ -5949,7 +5307,6 @@ export default {
         FRIEND_REQUEST_NOT_PENDING: '该请求已被处理',
         FRIENDSHIP_NOT_FOUND: '好友关系不存在',
         TARGET_FRIEND_QUOTA_FULL: '对方好友数量已达上限，无法添加',
-        // 套餐共享错误
         CANNOT_SHARE_TO_SELF: '不能共享给自己',
         PACKAGE_ALREADY_SHARED: '套餐已共享给该用户',
         SHARE_NOT_FOUND: '共享记录不存在',
@@ -5957,7 +5314,6 @@ export default {
         SHARE_QUOTA_CPU_EXCEEDED: '共享套餐 CPU 配额已用完',
         SHARE_QUOTA_MEMORY_EXCEEDED: '共享套餐内存配额已用完',
         SHARE_QUOTA_INSTANCES_EXCEEDED: '共享套餐实例数量已达上限',
-        // Email verification errors
         EMAIL_VERIFICATION_DISABLED: '邮箱验证功能未启用',
         EMAIL_CODE_REQUIRED: '请输入邮箱验证码',
         INVALID_EMAIL_CODE: '验证码无效或已过期',
@@ -5965,7 +5321,6 @@ export default {
         EMAIL_SEND_FAILED: '验证邮件发送失败，请稍后再试',
         EMAIL_ALREADY_REGISTERED: '该邮箱地址已被使用',
         EMAIL_DOMAIN_NOT_ALLOWED: '该邮箱域名不允许注册，请使用其他邮箱',
-        // 转移错误
         TRANSFER_NOT_FOUND: '转移请求不存在',
         TRANSFER_TO_SELF: '不能转移给自己',
         TRANSFER_TO_BANNED: '不能转移给被封禁的用户',
@@ -5977,17 +5332,14 @@ export default {
         TRANSFER_INSTANCE_LOCKED: '实例正在转移中，暂时无法操作',
         TRANSFER_HOST_DISABLED: '该节点已禁止转移操作',
         TRANSFER_INSUFFICIENT_BALANCE: '余额不足，无法支付转移手续费',
-        // 转移过程错误
         INSTANCE_MUST_BE_STOPPED: '实例必须在转移前停止',
         INCUS_RENAME_FAILED: '在宿主机上重命名实例失败',
         DATABASE_ERROR: '数据库操作失败，请重试',
-        // 敏感操作二次验证错误
         VERIFICATION_REQUIRED: '此操作需要二次验证',
         INVALID_CODE: '验证码无效或已过期',
         NO_NOTIFICATION_CHANNEL: '未绑定通知渠道，无需二次验证',
         EMAIL_NOT_CONFIGURED: '未配置邮箱，无法发送验证码',
         SEND_FAILED: '验证码发送失败',
-        // 签到错误
         CHECKIN_NO_INSTANCE: '您需要至少拥有一个实例才能签到',
         CHECKIN_ALREADY_TODAY: '今日已签到',
         REDEEM_ALREADY_TODAY: '今日已兑换过兑换码',
@@ -6004,7 +5356,6 @@ export default {
         REDEEM_EXCEEDS_PACKAGE_QUOTA: '兑换后将超出实例套餐配额限制',
         REDEEM_ALREADY_AT_LIMIT: '实例资源已达到套餐上限',
         CHECKIN_CODE_PAID_INSTANCE: '签到兑换码只能用于免费实例',
-        // 官方优惠券错误
         COUPON_NOT_FOUND: '官方优惠券不存在',
         COUPON_DISABLED: '此官方优惠券已被停用',
         COUPON_NOT_STARTED: '此官方优惠券尚未生效',
@@ -6017,7 +5368,6 @@ export default {
         COUPON_INVALID_DISCOUNT: '折扣比例必须在 0 到 1 之间',
         PAID_INSTANCE_DELETION_NOT_ALLOWED: '付费实例不允许删除',
         INSTANCE_DELETION_NOT_ALLOWED: '此套餐不支持用户自行删除及退款',
-        // 余额错误
         BALANCE_INSUFFICIENT: '余额不足，请先充值',
         BALANCE_TRANSFER_DISABLED: '余额转账功能未开启',
         BALANCE_TRANSFER_TO_SELF: '不能转账给自己',
@@ -6030,8 +5380,6 @@ export default {
         INSUFFICIENT_BALANCE: '余额不足，请先充值',
         INTERNAL_ERROR: '服务器内部错误',
     },
-
-    // 流量统计
     traffic: {
         title: '流量统计',
         monthlyUsage: '本月流量',
@@ -6069,8 +5417,6 @@ export default {
         resetSuccess: '流量已重置',
         resetFailed: '重置流量失败',
     },
-
-    // 实例转移
     transfer: {
         title: '实例转移',
         sentTab: '转移记录',
@@ -6079,7 +5425,6 @@ export default {
         noTransfers: '暂无转移记录',
         noPendingTransfers: '暂无待接收的转移',
         searchPlaceholder: '搜索实例名称、接收方用户名或备注...',
-        // 状态
         status: {
             pending: '等待接收',
             processing: '处理中',
@@ -6087,7 +5432,6 @@ export default {
             rejected: '已拒绝',
             cancelled: '已取消',
         },
-        // 操作
         actions: {
             transfer: '转移',
             accept: '接受',
@@ -6095,11 +5439,9 @@ export default {
             cancel: '取消',
             push: '直接推送',
         },
-        // 完成时间
         completedAt: '完成时间',
         rejectedAt: '拒绝时间',
         cancelledAt: '取消时间',
-        // 转移弹窗
         modal: {
             title: '转移实例',
             targetUser: '接收方用户名',
@@ -6123,13 +5465,11 @@ export default {
             insufficientBalance: '余额不足，请先充值',
             feeRefundHint: '确认转移时将扣除手续费，对方拒绝接收将自动退还',
         },
-        // 拒绝弹窗
         rejectModal: {
             title: '拒绝转移',
             reason: '拒绝原因（可选）',
             reasonPlaceholder: '输入拒绝原因',
         },
-        // 配置详情弹窗
         configModal: {
             title: '转移时配置详情',
             instanceName: '实例名称',
@@ -6141,7 +5481,6 @@ export default {
             package: '套餐',
         },
         hasRemark: '有备注',
-        // 详情
         detail: {
             fromUser: '发起方',
             toUser: '接收方',
@@ -6162,7 +5501,6 @@ export default {
             rejectedAt: '拒绝时间',
             cancelledAt: '取消时间',
         },
-        // 提示消息
         messages: {
             transferSuccess: '转移请求已发送',
             transferComplete: '转移完成',
@@ -6172,7 +5510,6 @@ export default {
             pushSuccess: '已成功推送实例',
             instanceLocked: '该实例正在转移中，暂时无法操作',
         },
-        // 错误
         errors: {
             TRANSFER_NOT_FOUND: '转移请求不存在',
             TRANSFER_TO_SELF: '不能转移给自己',
@@ -6188,8 +5525,6 @@ export default {
             PUSH_NOT_HOST_OWNER: '只有宿主机所有者才能直接推送',
         },
     },
-
-    // 好友系统
     friends: {
         title: '好友',
         description: '管理您的好友列表，好友之间可以共享资源',
@@ -6230,7 +5565,6 @@ export default {
         filterRejected: '已拒绝',
         hosts: '节点',
         instances: '实例',
-        // 邀请码
         invites: '邀请码',
         generateInvite: '生成邀请码',
         generateInviteTitle: '生成邀请码',
@@ -6266,7 +5600,6 @@ export default {
         requestAlreadyPending: '好友请求已在待处理中',
         requestNotFound: '请求不存在或已处理',
         friendshipNotFound: '好友关系不存在',
-        // 套餐共享
         selectFriendHint: '请选择一个好友',
         selectFriendDesc: '点击左侧好友卡片来管理套餐共享',
         sharedPackages: '已共享的套餐',
@@ -6298,8 +5631,6 @@ export default {
         createPackageFirst: '请先在“我的套餐”中创建套餐',
         noPackageSearchResult: '未找到匹配的套餐',
     },
-
-    // 套餐标签
     package: {
         shared: '好友',
         globalShared: '可用',
@@ -6307,8 +5638,6 @@ export default {
         myPackage: '我的套餐',
         soldOut: '售罄',
     },
-
-    // 用户资源管理
     resources: {
         hosts: {
             title: '我的节点',
@@ -6335,7 +5664,6 @@ export default {
             calibrateAllNoChange: '已对齐 {total} 个节点，无差异',
             nameHint: '节点名称以 PEER + 您的用户ID 作为前缀，后面可自定义',
             nameSuffixRequired: '请输入节点名称后缀',
-            // 管理员专用：节点切换器
             mine: '我的节点',
             official: '官方自营节点',
             hosted: '托管节点',
@@ -6373,7 +5701,6 @@ export default {
             searchFriend: '搜索好友...',
             noAvailableFriends: '所有好友都已共享此套餐',
             selectToShare: '选择要共享的好友',
-            // 配额限制
             quotaSettings: '配额限制',
             quotaMultiplier: '资源配额倍数',
             quotaMultiplierHint: '限制好友可使用的 CPU/内存占套餐比例',
@@ -6386,7 +5713,6 @@ export default {
             updateQuota: '修改配额',
             updateQuotaSuccess: '配额已更新',
             updateQuotaFailed: '更新配额失败',
-            // 美化弹窗新增
             shareToFriend: '分享套餐给好友',
             noFriendsHint: '先添加好友才能共享套餐',
             allFriendsShared: '已全部共享',
@@ -6410,14 +5736,11 @@ export default {
             searchPlaceholder: '搜索套餐名、节点名、描述...',
             noSearchResults: '未找到匹配的套餐',
             clearSearch: '清除搜索',
-            // 通知渠道设置
             notifyChannel: '通知渠道',
             notifyChannelTitle: '资源释放通知渠道',
             notifyChannelDesc: '当用户删除实例或宿主机所有者释放配额时，系统会通过此渠道发送通知',
-            // 分享链接
             copyShareLink: '复制分享链接',
             shareLinkCopied: '购买链接已复制，用户可先预览套餐详情再继续开通',
-            // 管理员专用：套餐切换器
             mine: '我的套餐',
             hosted: '托管套餐',
             owner: '所有者',
@@ -6446,7 +5769,6 @@ export default {
                 },
             },
         },
-        // 套餐方案管理
         plans: {
             title: '方案管理',
             manage: '管理方案',
@@ -6561,8 +5883,6 @@ export default {
             noImagesHint: '添加镜像后可以在创建实例时使用',
         },
     },
-
-    // 实例配置标签页
     instanceConfig: {
         title: '高级配置',
         sections: {
@@ -6632,8 +5952,6 @@ export default {
             failed: '提升进程数上限失败',
         },
     },
-
-    // 套餐表单页面
     packageForm: {
         createTitle: '创建套餐',
         editTitle: '编辑套餐',
@@ -6751,8 +6069,6 @@ export default {
             vmWindows: '可运行 Windows 等非 Linux 系统',
         },
     },
-
-    // 敏感操作二次验证
     sensitiveVerification: {
         title: '敏感操作验证',
         description: '此操作需要二次验证以确保账户安全',
@@ -6791,8 +6107,6 @@ export default {
             webhook: 'Webhook',
         },
     },
-
-    // 宿主机 Caddy 管理
     host: {
         caddy: {
             title: 'Caddy 反代',
@@ -6825,7 +6139,6 @@ export default {
             step1: '复制上方命令，在宿主机上以 root 权限执行',
             step2: '等待安装完成，应看到 "Caddy Reverse Proxy Ready" 提示',
             step3: '返回此页面，点击“确认已安装”按钮',
-            // 站点列表
             sitesList: '反代站点列表',
             sitesTotalCount: '共 {count} 个站点',
             loadSitesFailed: '加载站点列表失败',
@@ -6840,7 +6153,6 @@ export default {
             nextPage: '下一页',
             pageInfo: '第 {current}/{total} 页，共 {count} 条',
         },
-        // 节点创建实例
         createInstance: {
             title: '创建实例',
             selfMode: '给自己创建',
@@ -6865,7 +6177,6 @@ export default {
             userInactive: '该用户未处于可用状态',
             cannotGiftToSelf: '如果要给自己创建实例，请切换到“给自己创建”模式',
         },
-        // 节点所有者通知实例用户
         notify: {
             title: '通知用户',
             sendToUsers: '通知用户',
@@ -6888,13 +6199,11 @@ export default {
             emailSkipped: '{count} 位用户未设置邮箱，已跳过邮件发送',
             emailFailed: '{count} 封邮件发送或入队失败',
             sendFailed: '发送失败',
-            // 发送给单个实例用户
             sendToUser: '发送站内信',
             sendToUserTitle: '发送站内信给 {username}',
             sendToUserHint: '消息将发送给实例「{instance}」的所有者',
             sendToUserSuccess: '消息已发送',
         },
-        // 修改续费价格
         price: {
             editPrice: '修改续费价格',
             modalTitle: '修改续费价格',
@@ -6908,14 +6217,12 @@ export default {
             updateSuccess: '续费价格已更新，已通知用户',
             updateFailed: '更新失败',
         },
-        // 批量修改配置
         batchConfig: {
             title: '批量修改配置',
             button: '批量配置',
             targetAll: '应用范围：宿主机全部 {count} 个实例',
             targetSelected: '应用范围：已选中的 {count} 个实例',
             enableFieldHint: '勾选复选框以启用对应字段的修改',
-            // 分类
             section: {
                 resources: '资源配置',
                 quota: '配额限制',
@@ -6926,7 +6233,6 @@ export default {
                 process: '进程与调度',
                 boot: '启动设置',
             },
-            // 字段
             cpu: 'CPU 核心数',
             memory: '内存',
             disk: '硬盘',
@@ -6949,7 +6255,6 @@ export default {
             bootAutostart: '开机自启',
             bootDelay: '启动延迟',
             shutdownTimeout: '关机超时',
-            // 占位符
             placeholder: {
                 cpu: '如 1, 2, 4',
                 memory: '如 512, 1024, 2048',
@@ -6962,10 +6267,8 @@ export default {
                 processLimit: '如 500, 1000',
                 bootPriority: '如 0, 1, 2',
             },
-            // 状态
             processing: '正在批量修改配置...',
             processed: '已处理 {current} / {total}',
-            // 结果
             success: '成功',
             failed: '失败',
             successAll: '批量修改成功，共 {count} 个实例',
@@ -6981,13 +6284,11 @@ export default {
             errorReason: '错误原因',
             copyIncusIds: '复制失败的 Incus ID',
             copiedIncusIds: '已复制 {count} 个 Incus ID',
-            // 操作
             submit: '应用配置 ({count})',
             close: '关闭',
             noFieldsEnabled: '请至少启用一个配置字段',
             noChanges: '没有需要修改的配置',
         },
-        // 批量迁移实例
         migrate: {
             title: '迁移实例到其他节点',
             button: '改节点',
@@ -7015,7 +6316,6 @@ export default {
             selectTargetRequired: '请选择目标节点',
             noInstancesSelected: '请先选择要迁移的实例',
             failed: '迁移失败',
-            // 付费实例方案选择
             targetPlan: '目标方案',
             selectPlan: '请选择目标方案',
             selectPlanRequired: '请选择目标方案',
@@ -7023,7 +6323,6 @@ export default {
             noPlanAvailable: '目标节点无可用方案',
             planHint: '付费实例将使用新方案的续费价格，保留原到期时间和优惠码',
         },
-        // 批量赠送时长
         giftDays: {
             title: '赠送时长',
             button: '赠送时长',
@@ -7039,8 +6338,6 @@ export default {
             noPaidInstances: '请选择付费实例',
         },
     },
-
-    // 站内信
     inbox: {
         title: '通知中心',
         description: '查看您的所有系统通知',
@@ -7066,7 +6363,6 @@ export default {
         markedRead: '已标记为已读',
         markedAllRead: '已全部标记为已读',
         currentPageFiltered: '当前页筛选结果：{count} 条',
-        // 消息类别
         categories: {
             instance: '实例',
             snapshot: '快照',
@@ -7080,8 +6376,6 @@ export default {
             system: '系统',
         },
     },
-
-    // 配额释放
     quotaRelease: {
         title: '释放配额',
         packageQuota: '套餐配额',
@@ -7114,8 +6408,6 @@ export default {
         channelUpdated: '通知渠道已更新',
         channelUpdateFailed: '更新通知渠道失败',
     },
-
-    // Web 终端
     terminal: {
         title: '终端',
         connecting: '正在连接...',
@@ -7159,18 +6451,15 @@ export default {
         searchPrevious: '上一个',
         restore: '恢复终端',
         exportLog: '导出日志',
-        // 多标签
         tab: '标签',
         newTab: '新建标签',
         closeTab: '关闭标签',
         maxTabsReached: '已达到最大标签数',
-        // 右键菜单
         contextMenu: {
             copy: '复制',
             paste: '粘贴',
             selectAll: '全选',
         },
-        // Cloud-init 状态
         cloudInitChecking: '正在检查实例初始化状态...',
         cloudInitInProgress: '实例正在初始化中',
         cloudInitInProgressHint: '实例正在运行 Cloud-init 初始化，可能需要等待 10-60 秒。请稍后点击“重新检查”尝试连接。',
@@ -7180,9 +6469,7 @@ export default {
         cloudInitSkip: '忽略并连接',
         cloudInitManualComplete: '手动标记完成',
         cloudInitManualCompleteSuccess: '已手动标记该实例初始化为完成',
-        // 移动端提示
         mobileKeyboardHint: '请切换至英文键盘以获得最佳体验',
-        // 帮助
         help: '帮助',
         helpTitle: '终端使用帮助',
         helpShortcuts: '快捷键',
@@ -7202,7 +6489,6 @@ export default {
         helpTouchOps: '触控操作',
         helpTouchPinchZoom: '双指捨合调整字体大小',
         helpTouchSwipeScroll: '单指滑动滚动历史',
-        // 设置面板
         settings: '设置',
         settingBell: '终端提示音',
         settingBellDesc: '程序发出提醒时播放声音（如命令完成、错误警告等）',
@@ -7255,12 +6541,9 @@ export default {
             disconnectedHint: '当前终端未连接，连接成功后才可执行命令',
             shellRequiredHint: '当前还未进入 Shell，Shell 就绪后才可执行快捷命令',
         },
-        // 移动端快捷工具栏
         paste: '粘贴',
         hideKeyboard: '收起键盘',
     },
-
-    // 终端管理页面
     terminalPage: {
         newConnection: '新建连接',
         selectInstance: '选择实例',
@@ -7282,8 +6565,6 @@ export default {
         noMatchingInstances: '没有匹配的实例',
         noMatchingInstancesHint: '换个关键词试试，或清空搜索条件查看全部运行中实例。',
     },
-
-    // 工单系统
     tickets: {
         title: '工单中心',
         myTickets: '我的工单',
@@ -7301,28 +6582,24 @@ export default {
         noOfficialTicketsHint: '当前没有来自自营节点的工单',
         noHostedTickets: '暂无托管工单',
         noHostedTicketsHint: '当前没有来自托管节点的工单',
-        // 工单状态
         status: {
             open: '待处理',
             in_progress: '处理中',
             resolved: '已解决',
             closed: '已关闭',
         },
-        // 工单优先级
         priority: {
             low: '低',
             normal: '普通',
             high: '高',
             urgent: '紧急',
         },
-        // 工单分类
         category: {
             general: '常规咨询',
             billing: '计费问题',
             technical: '技术支持',
             abuse: '滥用举报',
         },
-        // 表单
         subject: '主题',
         subjectPlaceholder: '简要描述问题',
         content: '内容',
@@ -7331,10 +6608,9 @@ export default {
         selectInstanceHint: '选择实例（可选）',
         noInstancesHint: '您还没有实例，可直接提交工单',
         hostedInstanceHint: '如需针对托管实例提交工单，请务必选择对应实例，工单将发送至该节点负责人处理。',
-            hostedInstanceHintTitle: '托管实例提示',
+        hostedInstanceHintTitle: '托管实例提示',
         selectCategory: '选择分类',
         selectPriority: '选择优先级',
-        // 操作
         reply: '回复',
         replyPlaceholder: '输入回复内容...',
         close: '关闭工单',
@@ -7342,10 +6618,8 @@ export default {
         updateStatus: '更新状态',
         markResolved: '标记为已解决',
         markInProgress: '标记为处理中',
-        // 确认对话框
         confirmClose: '确认关闭工单？',
         confirmCloseHint: '关闭后将无法继续回复',
-        // 消息
         createSuccess: '工单创建成功',
         replySuccess: '回复成功',
         closeSuccess: '工单已关闭',
@@ -7353,7 +6627,6 @@ export default {
         confirmDeleteMessage: '确定要删除这条消息吗？删除后所有人都将无法查看。',
         deleteMessageSuccess: '消息已删除',
         statusUpdated: '状态已更新',
-        // 其他
         host: '宿主机',
         instance: '实例',
         from: '来自',
@@ -7409,14 +6682,11 @@ export default {
             resetZoom: '重置缩放',
         },
     },
-
-    // 签到系统
     checkin: {
         title: '每日签到',
         checkinTab: '签到',
         redeemTab: '兑换',
         recordsTab: '记录',
-        // 签到状态
         notCheckedIn: '今日尚未签到',
         alreadyCheckedIn: '今日已签到',
         checkinButton: '签到',
@@ -7426,14 +6696,12 @@ export default {
         opening: '开启中',
         revealing: '揭晓奖励',
         congratulations: '恭喜您获得以下奖励',
-        // 兑换码
         redeemCode: '兑换码',
         codeExpired: '已过期',
         codeUsed: '已使用',
         expiresIn: '剩余时间',
         copyCode: '复制兑换码',
         codeCopied: '兑换码已复制',
-        // 资源类型
         resourceType: '资源类型',
         resourceValue: '资源数值',
         cpu: 'CPU',
@@ -7441,7 +6709,6 @@ export default {
         disk: '硬盘',
         traffic: '流量',
         points: '积分',
-        // 兑换
         redeemTitle: '兑换兑换码',
         inputCode: '请输入兑换码',
         selectInstance: '选择实例',
@@ -7452,37 +6719,32 @@ export default {
         redeemHint: '签到兑换码仅可用于免费实例',
         alreadyRedeemed: '今日签到码已兑换过',
         noInstancesForRedeem: '没有可用的免费实例',
-        // 记录
         checkinRecords: '签到记录',
         redeemRecords: '兑换记录',
         noRecords: '暂无记录',
-                showingRecent: '显示最近 {count} 条，共 {total} 条',
+        showingRecent: '显示最近 {count} 条，共 {total} 条',
         usedBy: '使用者',
         usedFor: '兑换实例',
         self: '自己',
         others: '他人',
         unused: '未使用',
-        // 分享规则
         selfOnlyMode: '仅限自用',
         selfOnlyHint: '您的兑换码已连续两天被他人使用，从今天起只能自己使用，直到您自己使用一次',
-                // 规则说明
-                rulesTitle: '签到说明',
-                rulesCheckin: '签到规则',
-                rulesCheckin1: '每日 1 次，0 点重置',
-                rulesCheckin2: '需拥有至少 1 个实例',
-                rulesCheckin3: '随机获得 CPU / 内存 / 硬盘 / 流量 奖励',
-                rulesRedeem: '兑换规则',
-                rulesRedeem1: '兑换码有效期 3 小时',
-                rulesRedeem2: '每人每日限兑换 1 次',
-                rulesRedeem3: '资源不能超过套餐上限',
-                rulesShare: '分享',
-                rulesShare1: '兑换码可分享给好友使用',
-                rulesShare2: '连续 2 天被他人使用将限制为仅自己可用，直到再次自己使用后解除',
-        // 单位
+        rulesTitle: '签到说明',
+        rulesCheckin: '签到规则',
+        rulesCheckin1: '每日 1 次，0 点重置',
+        rulesCheckin2: '需拥有至少 1 个实例',
+        rulesCheckin3: '随机获得 CPU / 内存 / 硬盘 / 流量 奖励',
+        rulesRedeem: '兑换规则',
+        rulesRedeem1: '兑换码有效期 3 小时',
+        rulesRedeem2: '每人每日限兑换 1 次',
+        rulesRedeem3: '资源不能超过套餐上限',
+        rulesShare: '分享',
+        rulesShare1: '兑换码可分享给好友使用',
+        rulesShare2: '连续 2 天被他人使用将限制为仅自己可用，直到再次自己使用后解除',
         percent: '%',
         mb: 'MB',
         gb: 'GB',
-        // 资源池系统新增
         tabCheckin: '签到',
         tabRedeem: '兑换',
         tabPool: '资源池',
@@ -7520,8 +6782,6 @@ export default {
         actionApply: '应用',
         actionSystemRedeem: '系统兑换码',
     },
-
-    // 兑换码管理
     redeemCodes: {
         title: '兑换码管理',
         create: '创建兑换码',
@@ -7593,8 +6853,6 @@ export default {
         valueOutOfRange: '数值必须在 {min} 到 {max} 之间',
         valueMustBeInteger: '数值必须为整数',
     },
-
-    // 扩展
     extensions: {
         title: '脚本',
         description: '管理扩展功能',
@@ -7638,11 +6896,9 @@ export default {
             loadDetailFailed: '加载命令详情失败',
             noContent: '无内容',
             lineCount: '{count} 行',
-            // Modal
             addTitle: '添加初始化命令',
             editTitle: '编辑初始化命令',
             modalDesc: '命令将在实例初始化时执行',
-            // Selector
             selectTitle: '初始化命令',
             optional: '(可选)',
             noAvailable: '暂无可用的初始化命令',
@@ -7651,7 +6907,6 @@ export default {
             selectedCount: '已选择 {count} 个',
             showAll: '展开全部 {count} 条',
             collapse: '收起',
-            // Distro names
             distroAll: '所有发行版',
             distroNames: {
                 all: '所有发行版',
@@ -7664,10 +6919,7 @@ export default {
             },
         },
     },
-
-    // 计费管理
     billing: {
-        // 通用
         balance: '余额',
         frozen: '冻结',
         totalRecharge: '累计充值',
@@ -7690,8 +6942,6 @@ export default {
             annual: '年付',
             months: '个月',
         },
-        
-        // 实例计费信息
         billingInfo: '计费信息',
         currentPlan: '当前方案',
         expiresAt: '到期时间',
@@ -7707,8 +6957,6 @@ export default {
         autoRenewHint: '到期前 24 小时将自动从余额扣款续费',
         autoRenewDesc: '开启自动续费后，实例将在到期前自动按 {cycle} 周期续费，每次续费 ￥{price}',
         currentStatus: '当前状态',
-        
-        // 续费
         renew: '续费',
         renewInstance: '实例续费',
         renewTitle: '续费实例',
@@ -7735,8 +6983,6 @@ export default {
         renewFailed: '续费失败',
         freeInstanceNoRenew: '免费实例无需续费',
         hostingRenewTooEarly: '托管实例仅可在到期前 7 天内续费（当前剩余 {days} 天）',
-        
-        // 升降级
         changePlan: '升级',
         changePlanTitle: '变更套餐方案',
         upgrade: '升级',
@@ -7759,7 +7005,6 @@ export default {
         newConfig: '新配置',
         freeInstanceNoChange: '免费实例不支持升级',
         samePlan: '不能切换到相同方案',
-        // 变更规则
         viewRules: '变更规则',
         hideRules: '收起规则',
         changePlanRulesTitle: '方案升级规则',
@@ -7767,27 +7012,21 @@ export default {
         changePlanRule2: '剩余天数 ≥ 15 天才可升级方案',
         changePlanRule3: '到期时间保持不变',
         changePlanRule4: '优惠码折扣继续享受',
-        // 已是最高方案
         alreadyHighestPlan: '当前已是最高方案',
         contactForCustomPlan: '更高配置可提交工单定制',
-        // KVM/LXC 重启提示
         kvmRestartHint: 'KVM 实例升级后需重启以应用新配置；若使用过重装脚本，可能需自行扩容分区',
         lxcInstantHint: 'LXC 实例升级后配置即时生效',
         kvmRestartRequired: 'KVM 实例方案已变更，请重启实例以应用新配置',
-        // 不能变更原因
         cannotChange: '暂时无法升级',
         cannotChangeRemainingDays: '剩余天数不足 {days} 天，无法升级方案',
         cannotChangeInstanceStatus: '当前实例状态不允许升级方案，仅运行中或已停止的实例可以操作',
         cannotChangeUnknown: '当前无法升级方案',
-        // 计算详情
         oldDailyPrice: '原方案日价',
         newDailyPrice: '新方案日价',
         day: '天',
         newPlanCostOriginal: '新方案剩余费用',
         newPlanCostFinal: '新方案剩余费用（折后）',
         discountAmount: '优惠码折扣',
-        
-        // 计费记录
         records: '计费记录',
         billingRecords: '计费记录',
         recordType: '类型',
@@ -7801,8 +7040,6 @@ export default {
             downgrade: '降级',
             admin_extension: '管理员延期',
         },
-        
-        // 充值
         recharge: '充值',
         rechargeTitle: '账户充值',
         rechargeAmount: '充值金额',
@@ -7827,13 +7064,9 @@ export default {
         orderStatus_cancelled: '已取消',
         orderStatus_expired: '已过期',
         orderStatus_refunded: '已退款',
-        
-        // 充值记录
         rechargeRecords: '充值记录',
         noRecords: '暂无记录',
         viewDetails: '查看详情',
-        
-        // 余额记录
         balanceLogs: '余额明细',
         balanceLogTypes: {
             recharge: '充值',
@@ -7844,8 +7077,6 @@ export default {
             refund: '退款',
             admin_adjust: '管理员调整',
         },
-        
-        // 套餐方案
         plan: '方案',
         planName: '方案名称',
         planPrice: '价格',
@@ -7860,9 +7091,8 @@ export default {
         perMonth: '/月',
         perQuarter: '/季',
         perYear: '/年',
+        expired: '已到期',
     },
-
-    // 托管准入
     hosting: {
         accessDenied: {
             title: '暂不满足托管条件',
@@ -7875,8 +7105,6 @@ export default {
             featureHiddenHint: '如需使用托管功能，请联系管理员开放，或在功能重新开放后再试。',
         },
     },
-
-    // 托管收益
     hostingWallet: {
         title: '托管收益',
         description: '查看您的节点托管收益和提现记录',
@@ -7884,33 +7112,28 @@ export default {
         notice: {
             title: '托管公告',
         },
-        // 余额概览
         balance: {
             available: '可用余额',
             frozen: '冻结中',
             frozenNote: '收入冻结30天后解冻',
             totalIncome: '累计收入',
         },
-        // 统计信息
         stats: {
             myHostsCount: '托管节点',
             instancesOnMyHosts: '节点实例',
             uniqueCustomersCount: '客户数',
             monthIncome: '本月收入',
         },
-        // 提现相关
         withdraw: {
             button: '申请提现',
             minAmountNote: '可用余额达到 {amount} 后可提现',
         },
-        // 选项卡
         tabs: {
             overview: '概览',
             logs: '收支明细',
             withdrawals: '提现记录',
             blocks: '黑名单',
         },
-        // 概览内容
         overview: {
             title: '提现说明',
             howItWorks: '收益流程',
@@ -7930,7 +7153,6 @@ export default {
             withdrawMethodTitle: '提现方式',
             withdrawMethodDesc: '自助提现至余额或发送工单申请其他提现方式',
         },
-        // 收支明细
         logs: {
             noRecords: '暂无收支记录',
             emptyHint: '当用户在您的节点上购买实例后，收益将显示在这里',
@@ -7972,12 +7194,9 @@ export default {
             unknownUser: '未知用户',
             unknownHost: '未知节点',
         },
-        // 每页条数
         perPage: '条/页',
-        // 分页按钮
         prevPage: '上一页',
         nextPage: '下一页',
-        // 提现记录
         withdrawals: {
             noRecords: '暂无提现记录',
             emptyTitle: '还没有提现记录',
@@ -8016,7 +7235,6 @@ export default {
             blockSuccess: '已加入黑名单',
             unblockSuccess: '已移出黑名单',
         },
-        // 提现弹窗
         modal: {
             title: '申请提现',
             amount: '提现金额',
@@ -8032,13 +7250,11 @@ export default {
             confirm: '确认提现',
             submitting: '提交中...',
         },
-        // 错误信息
         errors: {
             minAmount: '最低提现金额为 {amount}',
             exceedBalance: '提现金额超过可用余额',
         },
     },
-
     vipBenefits: {
         commonMember: '普通会员',
         overviewLabel: 'VIP 福利大厅',
@@ -8092,8 +7308,6 @@ export default {
             pending: '待发放',
         },
     },
-
-    // 福利系统
     entertainment: {
         title: '福利',
         description: '领取会员福利，管理积分和徽章奖励',
@@ -8122,7 +7336,6 @@ export default {
         checkinSection: {
             title: '每日签到',
         },
-        // 抽奖
         spin: '抽奖',
         spinCost: '消耗 {points} 积分',
         spinFailed: '抽奖失败',
@@ -8132,7 +7345,6 @@ export default {
         prizeList: '奖品列表',
         probability: '概率',
         remaining: '剩余',
-        // 十连抽
         multiDraw: '十连抽',
         multiDrawAgain: '再次十连',
         multiDrawFailed: '十连抽失败',
@@ -8146,7 +7358,6 @@ export default {
         multiDrawBadgesTitle: '本次十连抽中了徽章',
         multiDrawBadgesSubtitle: '本轮十连共获得 {count} 枚徽章，先看看这次的新收获。',
         continueToMultiResults: '继续查看十连结果',
-        // 奖品类型
         prizeTypes: {
             nothing: '再接再励',
             points: '积分',
@@ -8158,7 +7369,6 @@ export default {
             disk: '硬盘资源',
             traffic: '流量资源',
         },
-        // 中奖结果
         congratulations: '恭喜中奖！',
         betterLuckNextTime: '再接再励',
         wonPoints: '获得 {points} 积分',
@@ -8169,7 +7379,6 @@ export default {
         wonMemory: '获得 {value}MB 内存，已存入资源池',
         wonDisk: '获得 {value}MB 硬盘，已存入资源池',
         wonTraffic: '获得 {value}GB 流量，已存入资源池',
-        // 抽奖记录
         lotteryName: '活动名称',
         prize: '奖品',
         prizeType: '奖品类型',
@@ -8177,18 +7386,7 @@ export default {
         time: '时间',
         noRecords: '暂无抽奖记录',
         loadRecordsFailed: '加载抽奖记录失败',
-        recordStatus: '发放状态',
-        recordActions: '操作',
-        recordStatusPending: '待发放',
-        recordStatusDelivered: '已发放',
-        recordStatusClaimed: '已领取',
-        deliverButton: '发放实例',
-        deliverSuccess: '已标记为发放完成，请确认已为中奖用户开通实例',
-        deliverFailed: '发放操作失败',
-        invalidTicketId: '工单 ID 必须为正整数',
-        ticketIdPrompt: '为用户 {username} 发放实例奖励。如需关联处理该奖励的工单，请输入工单 ID（可留空）：',
         loadLotteriesFailed: '加载抽奖活动失败',
-        // 积分明细
         pointsLogType: '类型',
         pointsChange: '变动',
         pointsAfter: '变动后',
@@ -8253,8 +7451,17 @@ export default {
             applyInstanceSuccess: '已应用到实例图标',
             unapplySuccess: '已取消应用',
         },
-        // 管理端
         admin: {
+            recordStatus: '发放状态',
+            recordActions: '操作',
+            recordStatusPending: '待发放',
+            recordStatusDelivered: '已发放',
+            recordStatusClaimed: '已领取',
+            deliverButton: '发放实例',
+            deliverSuccess: '已标记为发放完成，请确认已为中奖用户开通实例',
+            deliverFailed: '发放操作失败',
+            invalidTicketId: '工单 ID 必须为正整数',
+            ticketIdPrompt: '为用户 {username} 发放实例奖励。如需关联处理该奖励的工单，请输入工单 ID（可留空）：',
             title: '娱乐管理',
             description: '管理抽奖活动、奖品和用户积分',
             tabs: {
@@ -8287,7 +7494,6 @@ export default {
             status: '状态',
             active: '已启用',
             inactive: '已停用',
-            // 奖品管理
             managePrizes: '管理奖品',
             addPrize: '添加奖品',
             prizeName: '奖品名称',
@@ -8313,21 +7519,18 @@ export default {
             invalidProbability: '权重必须大于0',
             savePrizesSuccess: '奖品保存成功',
             savePrizesFailed: '奖品保存失败',
-            // 中奖记录
             user: '用户',
             searchUser: '搜索用户名',
             noRecords: '暂无中奖记录',
             loadRecordsFailed: '加载中奖记录失败',
             prize: '奖品',
             value: '奖励值',
-            // 用户积分
             currentPoints: '当前积分',
             totalEarned: '累计获得',
             totalSpent: '累计消耗',
             lastConvertedAt: '最后兑换',
             noUsers: '暂无用户积分数据',
             loadUsersFailed: '加载用户积分失败',
-            // 徽章目录
             badgeCatalog: {
                 loadFailed: '加载徽章目录失败',
                 fillSeriesRequired: '请填写系列 ID、标题、名称和说明',
@@ -8397,7 +7600,6 @@ export default {
                     previewLabel: '完整标签',
                 },
             },
-            // 通知配置
             notification: {
                 title: '中奖通知',
                 enabled: '启用通知',
@@ -8415,8 +7617,6 @@ export default {
             },
         },
     },
-
-    // 邮箱模块
     mail: {
         title: '邮箱',
         description: '管理您的专业邮箱服务',
@@ -8507,9 +7707,9 @@ export default {
         renewMonths: '续费时长',
         monthlyPrice: '月单价',
         yearlyPrice: '年单价',
-                alreadyPurchased: '您已购买该地区的邮箱服务',
-                alreadyPurchasedDesc: '每个用户仅可购买一个地区的邮箱服务。如需更换方案，请先到「我的邮箱」进行管理。',
-                viewMySubscription: '查看我的订阅',
+        alreadyPurchased: '您已购买该地区的邮箱服务',
+        alreadyPurchasedDesc: '每个用户仅可购买一个地区的邮箱服务。如需更换方案，请先到「我的邮箱」进行管理。',
+        viewMySubscription: '查看我的订阅',
         renewDuration: '续费时长',
         months: '个月',
         renewSuccess: '续费成功',
@@ -8523,13 +7723,13 @@ export default {
         accountsDescription: '管理此域名下的邮箱账户',
         createAccount: '创建账户',
         verifyFirst: '请先验证域名 DNS 配置后再创建邮箱账户',
-                completeDnsFirst: '请先完成 DNS 配置验证，邮箱服务才能正常使用',
-                goDnsConfig: '前往配置',
-                adminAccount: '管理员账号',
-                adminAccountDesc: '此账号在添加域名时自动创建，可用于登录 Webmail 管理邮箱',
-                webmailUrl: '登录地址',
-                helpDoc: '查看帮助文档',
-                noAdminAccount: '管理员账号信息不可用',
+        completeDnsFirst: '请先完成 DNS 配置验证，邮箱服务才能正常使用',
+        goDnsConfig: '前往配置',
+        adminAccount: '管理员账号',
+        adminAccountDesc: '此账号在添加域名时自动创建，可用于登录 Webmail 管理邮箱',
+        webmailUrl: '登录地址',
+        helpDoc: '查看帮助文档',
+        noAdminAccount: '管理员账号信息不可用',
         refreshStatus: '刷新状态',
         noAccounts: '暂无邮箱账户',
         admin: '管理员',

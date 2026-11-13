@@ -1,14 +1,9 @@
-// 繁體中文（台灣）語言檔案
-// Traditional Chinese (Taiwan) - 使用台灣用語習慣
 export default {
-    // 應用程式名稱
     app: {
         name: 'Incus NAT VPS',
         tagline: '簡潔而強大的雲端實例託管平台',
         description: '一個現代化的雲端實例託管平台',
     },
-
-    // 通用
     common: {
         user: '使用者',
         confirm: '確認',
@@ -81,9 +76,7 @@ export default {
         month: '月',
         totalRecords: '共 {count} 筆記錄',
         deleted: '已刪除',
-        // 國家名稱
         countries: {
-            // 亞洲
             cn: '中國',
             hk: '中國香港',
             mo: '中國澳門',
@@ -105,7 +98,6 @@ export default {
             sa: '沙烏地阿拉伯',
             il: '以色列',
             tr: '土耳其',
-            // 歐洲
             gb: '英國',
             de: '德國',
             fr: '法國',
@@ -130,26 +122,21 @@ export default {
             gr: '希臘',
             ua: '烏克蘭',
             ru: '俄羅斯',
-            // 北美洲
             us: '美國',
             ca: '加拿大',
             mx: '墨西哥',
-            // 南美洲
             br: '巴西',
             ar: '阿根廷',
             cl: '智利',
             co: '哥倫比亞',
             pe: '秘魯',
-            // 大洋洲
             au: '澳洲',
             nz: '紐西蘭',
-            // 非洲
             za: '南非',
             eg: '埃及',
             ng: '奈及利亞',
             ke: '肯亞',
         },
-        // 網路模式（統一定義）
         networkMode: {
             nat: 'IPv4 NAT',
             nat_ipv6: 'IPv4 NAT & IPv6',
@@ -157,18 +144,20 @@ export default {
             ipv6_only: 'IPv6 Only',
             ipv6_nat: 'IPv6 NAT',
         },
-        // 實例類型
         instanceType: {
             container: 'LXC',
             vm: 'KVM',
         },
-        // 啟用/停用狀態
         enabled: '啟用',
         disabled: '停用',
         active: '已啟用',
         inactive: '已停用',
+        noResults: '無符合結果',
+        operationFailed: '操作失敗',
+        prev: '上一頁',
+        retry: '重試',
+        unlimited: '無限制',
     },
-
     validation: {
         fields: {
             name: '名稱',
@@ -190,8 +179,6 @@ export default {
         ipAddressInvalid: '{field}格式不正確，請輸入有效的 IPv4 或 IPv6 地址',
         ipv4Invalid: '{field}格式不正確，請輸入有效的 IPv4 地址',
     },
-
-    // 導航
     nav: {
         main: '常用',
         dashboard: '總覽',
@@ -252,7 +239,6 @@ export default {
         telegramSettings: 'Telegram 設定',
         adminCreateInstance: '管理員建立實例',
     },
-
     hourlyBilling: {
         badge: '按小時計費',
         createTitle: '按小時建立實例',
@@ -330,14 +316,11 @@ export default {
         balance: '餘額',
         outstanding: '待補繳',
     },
-
-    // 佈景主題
     theme: {
         dark: '深色模式',
         light: '淺色模式',
         system: '跟隨系統',
     },
-
     freeSite: {
         billingCycleLabel: {
             monthly: '月付？月亮替你付了',
@@ -414,7 +397,6 @@ export default {
             mailBalanceRequired: '餘額不餘額的，白嫖站講究先用再說。',
         },
     },
-
     publicSite: {
         brandTagline: 'Incus 驅動的 NAT VPS 平台',
         nav: {
@@ -537,8 +519,6 @@ export default {
             },
         },
     },
-
-    // 錢包
     wallet: {
         title: '錢包',
         description: '管理您的帳戶餘額和充值',
@@ -593,13 +573,13 @@ export default {
         paymentUuid: 'UUID:',
         paymentTxid: 'TxID:',
         paymentMethods: {
-          alipay: '支付寶',
-          wxpay: '微信支付',
-          qqpay: 'QQ錢包',
-          bank: '網銀支付',
-          jdpay: '京東支付',
-          usdt: 'USDT',
-          usdtTrc20: 'USDT (TRC20)',
+            alipay: '支付寶',
+            wxpay: '微信支付',
+            qqpay: 'QQ錢包',
+            bank: '網銀支付',
+            jdpay: '京東支付',
+            usdt: 'USDT',
+            usdtTrc20: 'USDT (TRC20)',
         },
         noProviders: '暫無可用支付渠道',
         amountLabel: '充值金額',
@@ -662,8 +642,6 @@ export default {
         amountMismatch: '支付金額與訂單金額不匹配，請聯繫客服',
         natDisclaimer: '我知道所售實例都是 NAT 屬性，不保證 IP 在大陸的連通性，所有充值都無法退款。',
     },
-
-    // 官方優惠券（平台發放，折扣由平台承擔，不產生 AFF 返利）
     officialCoupon: {
         label: '官方優惠券',
         valid: '官方優惠券有效，享受 {rate}% 折扣',
@@ -672,8 +650,6 @@ export default {
         benefit: '本單享受 {discount}% 折扣，折扣金額由平台承擔',
         discountAmount: '官方優惠券折扣',
     },
-
-    // 推薦計劃
     aff: {
         title: '推薦計劃',
         description: '邀請好友使用您的優惠碼，獲取返利收益',
@@ -748,7 +724,6 @@ export default {
             empty: '暫無榜單資料',
             you: '就是你',
         },
-        // 實例建立頁優惠碼輸入
         promoCode: '優惠碼',
         promoCodeOptional: '優惠碼（可選）',
         promoCodePlaceholder: '輸入優惠碼（可選）',
@@ -765,7 +740,6 @@ export default {
         usingPromoCode: '您正在使用優惠碼',
         promoCodeBenefit: '您享受 {discount} 折扣，同時為分享者帶來約 {commission}% 的返利',
         commissionEstimate: '預計為分享者帶來 ¥{amount} 返利',
-        // 管理員審核
         adminTitle: 'AFF 轉化審核',
         adminDescription: '審核使用者的 AFF 餘額轉化申請',
         user: '使用者',
@@ -784,7 +758,6 @@ export default {
         filterStatus: '狀態篩選',
         all: '全部',
     },
-
     popupAnnouncement: {
         title: '站點公告',
         subtitle: '請留意這條最新通知',
@@ -796,14 +769,10 @@ export default {
         dismissToday: '今日不見',
         dismissForever: '再也不見',
     },
-
-    // 語言
     language: {
         zh: '中文',
         en: 'English',
     },
-
-    // 認證
     auth: {
         login: '登入',
         loginTo: '登入',
@@ -870,49 +839,22 @@ export default {
             passwordMismatch: '兩次輸入的密碼不一致',
             resetPassword: '重設密碼',
             resetSuccess: '密碼重設成功！請使用新密碼登入。',
-            twoFactorDisabled: '您的雙重驗證（2FA）已被自動停用，建議重新啟用以確保帳號安全。'
-        },
-        apiKeys: {
-          title: 'API Key',
-          description: '建立 API Key 後，可透過面板 API 對本人已購實例執行受限控制（查詢、開關機/重啟、連接埠增刪、更換 IPv6）。完整金鑰僅在郵件確認落地頁顯示一次。',
-          name: '備註名稱（可選）',
-          namePlaceholder: '例如：伺服器監控腳本',
-          create: '建立 API Key',
-          confirmEmailSent: '確認郵件已發送，請點擊郵件中的連結完成建立（1 小時內有效）。完整金鑰將在確認頁顯示一次，請立即保存。',
-          createFailed: '建立請求失敗',
-          scopeHint: 'API Key 僅限本人已購實例的查詢、開/關機/重啟、連接埠增刪與更換 IPv6，無法存取面板其他功能（錢包、工單、轉移、重裝等均被拒絕）。請求標頭範例：X-API-Key: incu_sk_…；實例清單請附帶 ?mine=true。',
-          empty: '還沒有 API Key',
-          nameCol: '備註名稱',
-          prefixLabel: '金鑰前綴',
-          statusLabel: '狀態',
-          lastUsed: '最近使用',
-          requests: '請求數',
-          actions: '操作',
-          defaultName: '未命名金鑰',
-          statusActive: '啟用中',
-          statusDisabled: '已停用',
-          never: '從未使用',
-          disable: '停用',
-          enable: '啟用',
-          delete: '刪除',
-          deleteConfirm: '確定刪除金鑰 {prefix}…？刪除後使用該金鑰的請求將立即失效。',
-          enabled: 'API Key 已啟用',
-          disabled: 'API Key 已停用',
-          deleted: 'API Key 已刪除',
-          loadFailed: '載入 API Key 失敗'
+            twoFactorDisabled: '您的雙重驗證（2FA）已被自動停用，建議重新啟用以確保帳號安全。',
         },
         operationConfirm: {
-          processing: '正在確認操作...',
-          successTitle: '操作已確認',
-          failedTitle: '確認失敗',
-          success: '操作已成功執行',
-          failed: '確認失敗',
-          missingToken: '連結缺少確認參數，請從郵件中重新開啟',
-          taskQueued: '任務 #{id} 已加入佇列',
-          canClosePage: '您可以關閉此頁面',
-          backToPanel: '返回面板',
-          apiKeyOnceTitle: '⚠️ 請立即保存您的 API Key',
-          apiKeyOnceDesc: '完整金鑰不會再次顯示。請透過請求標頭 X-API-Key: <金鑰> 呼叫面板 API（僅限本人實例的受限控制）。',
+            processing: '正在確認操作...',
+            successTitle: '操作已確認',
+            failedTitle: '確認失敗',
+            success: '操作已成功執行',
+            failed: '確認失敗',
+            missingToken: '連結缺少確認參數，請從郵件中重新開啟',
+            taskQueued: '任務 #{id} 已加入佇列',
+            canClosePage: '您可以關閉此頁面',
+            backToPanel: '返回面板',
+            apiKeyOnceTitle: '⚠️ 請立即保存您的 API Key',
+            apiKeyOnceDesc: '完整金鑰不會再次顯示。請透過請求標頭 X-API-Key: <金鑰> 呼叫面板 API（僅限本人實例的受限控制）。',
+            copied: '已複製',
+            copy: '複製',
         },
         oauthNotBound: '請先在個人設定中綁定 {provider} 帳號後再使用快速登入',
         oauthUserNotFound: '使用者不存在',
@@ -939,7 +881,6 @@ export default {
         passwordNeedsNumber: '密碼需要包含至少一個數字',
         turnstileRequired: '請完成人機驗證',
         turnstileFailed: '人機驗證失敗，請重試',
-        // 電子郵件驗證
         emailCode: '電子郵件驗證碼',
         emailCodePlaceholder: '請輸入 6 位驗證碼',
         emailCodeRequired: '請輸入電子郵件驗證碼',
@@ -955,7 +896,6 @@ export default {
         confirmEmail: '確認電子郵件地址',
         confirmEmailMessage: '驗證碼將發送至以下電子郵件，請確認地址是否正確：',
         confirmAndSend: '確認發送',
-        // 服務條款
         tos: {
             title: '服務條款',
             agreePrefix: '我已閱讀並同意',
@@ -964,24 +904,19 @@ export default {
             understood: '我已瞭解',
             loadFailed: '載入服務條款失敗',
         },
+        enterEmailFirst: '請先輸入電子郵件地址',
     },
-
-    // 使用者選單
     userMenu: {
         profile: '個人設定',
         myInstances: '我的實例',
         logout: '登出',
     },
-
-    // 配額
     quota: {
         hosts: '主機',
         instances: '實例',
         friends: '好友',
         packages: '方案',
     },
-
-    // 儀表板
     dashboard: {
         title: '總覽',
         welcome: '歡迎回來',
@@ -989,7 +924,6 @@ export default {
         overview: '總覽',
         recentActivity: '最近活動',
         quickActions: '快速操作',
-        // 統計卡片（頂層定義）
         totalInstances: '實例總數',
         runningInstances: '運行中',
         stoppedInstances: '已停止',
@@ -1050,7 +984,6 @@ export default {
         noPublicIp: '無公網 IP',
         unknownHost: '未分配節點',
         createFirst: '建立第一個實例',
-        // 快速操作卡片
         createInstance: '建立實例',
         newContainer: '新增容器',
         instanceList: '實例列表',
@@ -1059,7 +992,6 @@ export default {
         accountSecurity: '帳戶安全',
         helpDocs: '說明文件',
         userGuide: '使用指南',
-        // 問候語
         greeting: {
             morning: '早安',
             afternoon: '午安',
@@ -1068,7 +1000,6 @@ export default {
             memberUser: '尊貴的 {level} {username}',
             full: '{greeting}，{member}',
         },
-        // 統計（嵌套定義）
         stats: {
             totalInstances: '實例總數',
             runningInstances: '運行中的實例',
@@ -1113,8 +1044,6 @@ export default {
         noPackagesSelected: '未選擇方案',
         selectPackages: '選擇方案',
     },
-
-    // 服務條款模態框
     tosModal: {
         title: '服務條款',
         content: '服務條款內容',
@@ -1130,8 +1059,6 @@ export default {
         loading: '載入服務條款中...',
         loadFailed: '載入服務條款失敗，請重新整理頁面重試',
     },
-
-    // 實例相關
     instance: {
         title: '實例管理',
         titlePlural: '實例',
@@ -1151,7 +1078,6 @@ export default {
         config: '設定',
         user: '使用者',
         details: '詳情',
-        // 資源配額（訂單概覽用）
         ports: '連接埠',
         snapshots: '快照',
         backups: '備份',
@@ -1299,7 +1225,6 @@ export default {
             packagePrerequisiteRequired: '前置要求：您必須先擁有「{package}」方案的正常實例，才能建立此方案的實例。',
             destroyTrafficNotice: '銷毀限制：實例本月已用流量低於 5 GB 時才可銷毀。',
             firstPaidInstanceNotice: '銷毀限制：實例本月已用流量低於 5 GB 時才可銷毀。',
-            // 訂單概覽
             orderSummary: '訂單概覽',
             packageName: '方案',
             planName: '方案',
@@ -1308,7 +1233,6 @@ export default {
             month: '月',
             resourceConfig: '資源設定',
             planFee: '方案費用',
-            // 套餐來源
             source: {
                 official: '直營',
                 market: '託管',
@@ -1330,7 +1254,6 @@ export default {
                 noImages: '暫無可用映像檔',
                 selectSshKey: '選擇 SSH 金鑰',
             },
-            // 託管免責提示
             hostedDisclaimer: {
                 title: '託管節點提示',
                 content: '此為用戶託管節點，售後由託管者（UID:{uid}）負責。僅提供平台服務，不擔保節點品質。若託管者失聯，將處理其託管餘額退還至受影響用戶的面板餘額。',
@@ -1404,7 +1327,6 @@ export default {
             destroyNotAllowed: '此方案不支援使用者自行刪除及退款',
             destroyFailed: '銷毀實例失敗',
         },
-        // 行動裝置卡片
         mobileCard: {
             ipAddress: 'IP 位址',
             config: '設定',
@@ -1420,14 +1342,11 @@ export default {
             backups: '備份',
             sites: '反代',
         },
-        // 實例建立組件
         selector: {
-            // 地區選擇
             selectRegion: '選擇國家/地區',
             allRegions: '全部',
             noRegions: '暫無可用地區',
             packageCount: '{count} 個方案',
-            // 方案選擇
             selectPackage: '選擇方案',
             selectPlan: '選擇方案',
             planDesc: '選擇適合您需求的付費方案',
@@ -1474,14 +1393,12 @@ export default {
             prevPage: '上一頁',
             nextPage: '下一頁',
             pageInfo: '第 {current}/{total} 頁，共 {count} 筆',
-            // 方案資源配額
             ports: '連接埠',
             snapshots: '快照',
             backups: '備份',
             sites: '站點',
             bandwidth: '頻寬',
         },
-        // 付費訂閱卡片
         subscription: {
             premium: '付費訂閱',
             expiresAt: '到期日期',
@@ -1528,7 +1445,6 @@ export default {
             applyAffNoStackHint: '優惠碼不可疊加。',
             applyAffNextRenewalHint: '優惠碼自下一筆未結算續費開始生效。',
             applyAffHistoryHint: '不會修改已經完成的續費帳單。',
-            // 自動續費
             autoRenew: '自動續費',
             autoRenewOn: '已開啟自動續費',
             autoRenewOff: '未開啟自動續費',
@@ -1540,7 +1456,6 @@ export default {
             autoRenewDesc: '開啟自動續費後，實例將在到期前自動按 {cycle} 週期續費，每次續費 ￥{price}',
             currentStatus: '當前狀態',
         },
-        // 實例銷毀
         destroy: {
             button: '銷毀',
             title: '銷毀實例',
@@ -1556,7 +1471,6 @@ export default {
             ruleTrafficThresholdDesc: '若當前月流量週期已用流量達到或超過 {limit}，則本次無法銷毀付費實例',
             ruleFreeInstance: '免費實例可直接銷毀',
             ruleFreeInstanceDesc: '免費實例銷毀無退款，不計入銷毀次數',
-            // 預覽資訊
             instanceInfo: '實例資訊',
             instanceName: '實例名稱',
             hostName: '所在節點',
@@ -1571,14 +1485,12 @@ export default {
             firstTimeFree: '首次免手續費',
             freeInstanceNoRefund: '免費實例無退款',
             days: '天',
-            // 確認
             confirmTitle: '確認銷毀',
             confirmHint: '請輸入實例名稱 {name} 以確認銷毀',
             confirmPlaceholder: '輸入實例名稱確認',
             confirmButton: '確認銷毀',
             destroying: '銷毀中...',
             cancel: '取消',
-            // 狀態
             success: '實例已銷毀',
             successWithRefund: '實例已銷毀，已退款 ¥{amount}',
             successPending: '實例已刪除；來源節點失聯，退款將在節點恢復線上並確認遠端刪除後自動入帳',
@@ -1587,7 +1499,6 @@ export default {
             failed: '銷毀失敗',
             loadFailed: '載入銷毀資訊失敗',
             forcePanelDeleteConfirm: '來源節點無法連線。僅從面板刪除只允許處理免費實例，不會連線主機，也不會退款；付費或按小時計費實例必須確認遠端已刪除。確定繼續嗎？',
-            // 不可銷毀原因
             cannotDestroy: '無法銷毀',
         },
         create: '建立實例',
@@ -1747,7 +1658,6 @@ export default {
                 success: '已複製到剪貼簿',
                 failed: '複製失敗',
             },
-            // 資訊標籤頁
             info: {
                 title: '基本資訊',
                 instanceId: '實例 ID',
@@ -1793,7 +1703,6 @@ export default {
                 redeem: '兑換',
                 redeemTitle: '兑換資源',
             },
-            // Cloud-init 初始化狀態
             cloudInit: {
                 initializing: '初始化中',
                 retry: '重新檢查',
@@ -1811,7 +1720,6 @@ export default {
                 manualShort: '完成',
                 manualCompleteSuccess: '已手動標記實例初始化為完成',
             },
-            // 網路標籤頁
             network: {
                 title: '網路位址',
                 privateIpv4: '內網 IPv4',
@@ -1843,7 +1751,6 @@ export default {
                 ipDeleted: 'IPv6 位址已刪除',
                 ipDeleteFailed: 'IPv6 位址刪除失敗',
                 confirmDeleteIp: '確定要刪除這個 IPv6 位址嗎？',
-                // IPv6 管理新增
                 primaryIpv6: '主 IPv6',
                 extraIpv6: '額外 IPv6',
                 ipv6Subnets: 'IPv6 網段',
@@ -1883,7 +1790,6 @@ export default {
                 ipv6AlreadyExists: 'IPv6 位址已被佔用',
                 instanceMustRunning: '實例必須處於運行狀態才能管理 IPv6',
                 loading: '載入中...',
-                // 重新分配 IPv6
                 reassignIpv6: '重新取得',
                 reassignIpv6Confirm: '確定要重新分配 IPv6 位址嗎？',
                 reassignIpv6ConfirmHint: '重新分配後需要重裝系統才能生效',
@@ -1895,7 +1801,6 @@ export default {
                 reassignIpv6CooldownShort: '{hours}小時後',
                 reassignIpv6NotSupported: '此實例不支援重新分配 IPv6',
             },
-            // 配額標籤頁
             quotaTab: {
                 title: '實例配額設定',
                 portLimit: 'NAT 連接埠數上限',
@@ -1914,7 +1819,6 @@ export default {
                 save: '儲存配額設定',
                 saving: '儲存中...',
             },
-
             storageTitle: '儲存',
             rootDisk: '根磁碟',
             totalDisk: '總磁碟',
@@ -2062,7 +1966,6 @@ export default {
             deletionScheduled: '刪除已排程，{relativeTime}後執行',
             siteQuota: '站點配額',
         },
-        // 站點管理
         sites: {
             title: '建站',
             addSite: '新增站點',
@@ -2161,6 +2064,15 @@ export default {
                 disabled: 'HTTPS 未啟用',
                 pending: '待激活',
                 certPending: '憑證申請中',
+                connectionRefused: '連線被拒絕',
+                days: '天',
+                daysRemaining: '剩餘天數',
+                dnsError: 'DNS 未解析',
+                error: '檢查失敗',
+                issuer: '頒發者',
+                timeout: '連線超時',
+                validFrom: '生效日期',
+                validTo: '過期日期',
             },
         },
         list: {
@@ -2305,9 +2217,23 @@ export default {
                 nameRequired: '請輸入新實例名稱',
             },
         },
+        networkMode: {
+            routed: '路由',
+        },
+        configEdit: {
+            cpu: 'CPU',
+            current: '當前',
+            disk: '硬碟',
+            failed: '配置修改失敗',
+            memory: '記憶體',
+            modifyTo: '修改為',
+            resourceType: '資源型別',
+            success: '配置修改成功',
+            title: '修改配置',
+            traffic: '流量',
+            trafficHint: '留空表示無限制，單位為GB',
+        },
     },
-
-    // 新增連接埠映射彈窗
     portModal: {
         singleMode: '單個連接埠',
         batchMode: '批量連接埠',
@@ -2336,7 +2262,6 @@ export default {
         cancel: '取消',
         adding: '新增中...',
         add: '新增',
-        // 新增：範圍輸入支援
         rangeHint: '支援範圍輸入，如 80-85',
         invalidPortFormat: '連接埠格式無效，請輸入單一連接埠或連接埠範圍（如 80-85）',
         ipv6OnlySshPortHint: '22 連接埠不用映射，直接用公網 IPv6 登入 SSH 就好，正門口已經亮燈了',
@@ -2346,8 +2271,6 @@ export default {
         quotaRemaining: '剩餘 {remain} 個',
         quotaInsufficient: '配額不足，需要 {need} 個，剩餘 {remain} 個',
     },
-
-    // 連接埠衝突解決彈窗
     portConflict: {
         title: '部分連接埠已被佔用',
         subtitle: '共 {count} 個連接埠衝突',
@@ -2361,8 +2284,6 @@ export default {
         cancel: '取消',
         confirm: '確認修改',
     },
-
-    // 重裝系統彈窗
     rebuildModal: {
         title: '重裝系統',
         dangerWarning: '危險操作',
@@ -2383,8 +2304,6 @@ export default {
         rebuilding: '重裝中...',
         confirmRebuild: '確認重裝',
     },
-
-    // 重建實例彈窗
     recreateModal: {
         title: '重建實例',
         dangerWarning: '危險操作',
@@ -2406,8 +2325,6 @@ export default {
         recreating: '重建中...',
         confirmRecreate: '確認重建',
     },
-
-    // 快照管理
     snapshot: {
         title: '快照',
         autoPolicy: '自動快照已啟用',
@@ -2471,8 +2388,6 @@ export default {
             policySaveFailed: '儲存失敗',
         },
     },
-
-    // 備份管理
     backup: {
         title: '備份',
         autoPolicy: '自動備份已啟用',
@@ -2573,8 +2488,6 @@ export default {
             uploadStarted: '上傳任務已建立',
         },
     },
-
-    // 主機相關
     host: {
         title: '主機',
         titlePlural: '主機',
@@ -2676,7 +2589,6 @@ export default {
             step1: '複製上方指令，在主機上以 root 權限執行',
             step2: '等待安裝完成，應看到「Caddy Reverse Proxy Ready」提示',
             step3: '返回此頁面，點擊「確認已安裝」按鈕',
-            // 站點列表
             sitesList: '反向代理站點列表',
             sitesTotalCount: '共 {count} 個站點',
             loadSitesFailed: '載入站點列表失敗',
@@ -2691,7 +2603,6 @@ export default {
             nextPage: '下一頁',
             pageInfo: '第 {current}/{total} 頁，共 {count} 筆',
         },
-        // 節點創建實例
         createInstance: {
             title: '創建實例',
             selfMode: '給自己創建',
@@ -2716,7 +2627,6 @@ export default {
             userInactive: '該使用者未處於可用狀態',
             cannotGiftToSelf: '如果要給自己創建實例，請切換到「給自己創建」模式',
         },
-        // 節點擁有者通知實例使用者
         notify: {
             title: '通知使用者',
             sendToUsers: '通知使用者',
@@ -2739,13 +2649,11 @@ export default {
             emailSkipped: '{count} 位使用者未設定電子郵件，已略過郵件發送',
             emailFailed: '{count} 封郵件發送或入佇列失敗',
             sendFailed: '發送失敗',
-            // 發送給單個實例使用者
             sendToUser: '發送站內信',
             sendToUserTitle: '發送站內信給 {username}',
             sendToUserHint: '訊息將發送給實例「{instance}」的擁有者',
             sendToUserSuccess: '訊息已發送',
         },
-        // 修改續費價格
         price: {
             editPrice: '修改續費價格',
             modalTitle: '修改續費價格',
@@ -2759,14 +2667,12 @@ export default {
             updateSuccess: '續費價格已更新，已通知用戶',
             updateFailed: '更新失敗',
         },
-        // 批量修改配置
         batchConfig: {
             title: '批量修改配置',
             button: '批量配置',
             targetAll: '應用範圍：主機全部 {count} 個實例',
             targetSelected: '應用範圍：已選中的 {count} 個實例',
             enableFieldHint: '勾選核取方塊以啟用對應欄位的修改',
-            // 分類
             section: {
                 resources: '資源配置',
                 quota: '配額限制',
@@ -2777,7 +2683,6 @@ export default {
                 process: '程序與調度',
                 boot: '啟動設定',
             },
-            // 欄位
             cpu: 'CPU 核心數',
             memory: '記憶體',
             disk: '磁碟',
@@ -2800,7 +2705,6 @@ export default {
             bootAutostart: '開機自啟',
             bootDelay: '啟動延遲',
             shutdownTimeout: '關機逾時',
-            // 佔位符
             placeholder: {
                 cpu: '如 1, 2, 4',
                 memory: '如 512, 1024, 2048',
@@ -2813,10 +2717,8 @@ export default {
                 processLimit: '如 500, 1000',
                 bootPriority: '如 0, 1, 2',
             },
-            // 狀態
             processing: '正在批量修改配置...',
             processed: '已處理 {current} / {total}',
-            // 結果
             success: '成功',
             failed: '失敗',
             successAll: '批量修改成功，共 {count} 個實例',
@@ -2832,13 +2734,11 @@ export default {
             errorReason: '錯誤原因',
             copyIncusIds: '複製失敗的 Incus ID',
             copiedIncusIds: '已複製 {count} 個 Incus ID',
-            // 操作
             submit: '應用配置 ({count})',
             close: '關閉',
             noFieldsEnabled: '請至少啟用一個配置欄位',
             noChanges: '沒有需要修改的配置',
         },
-        // 批量遷移實例
         migrate: {
             title: '遷移實例到其他節點',
             button: '改節點',
@@ -2866,7 +2766,6 @@ export default {
             selectTargetRequired: '請選擇目標節點',
             noInstancesSelected: '請先選擇要遷移的實例',
             failed: '遷移失敗',
-            // 付費實例方案選擇
             targetPlan: '目標方案',
             selectPlan: '請選擇目標方案',
             selectPlanRequired: '請選擇目標方案',
@@ -2874,7 +2773,6 @@ export default {
             noPlanAvailable: '目標節點無可用方案',
             planHint: '付費實例將使用新方案的續費價格，保留原到期時間和優惠碼',
         },
-        // 批量贈送時長
         giftDays: {
             title: '贈送時長',
             button: '贈送時長',
@@ -2890,8 +2788,6 @@ export default {
             noPaidInstances: '請選擇付費實例',
         },
     },
-    
-    // 方案相關
     package: {
         title: '方案',
         titlePlural: '方案',
@@ -2939,16 +2835,42 @@ export default {
             bandwidth: '{size} 頻寬',
             noLimit: '無限制',
         },
-        // 套餐標籤（創建實例頁）
         shared: '好友',
         globalShared: '可用',
         friendPrefix: '好友:',
         myPackage: '我的方案',
         soldOut: '售罄',
     },
-
-    // 個人資料
     profile: {
+        apiKeys: {
+            title: 'API Key',
+            description: '建立 API Key 後，可透過面板 API 對本人已購實例執行受限控制（查詢、開關機/重啟、連接埠增刪、更換 IPv6）。完整金鑰僅在郵件確認落地頁顯示一次。',
+            name: '備註名稱（可選）',
+            namePlaceholder: '例如：伺服器監控腳本',
+            create: '建立 API Key',
+            confirmEmailSent: '確認郵件已發送，請點擊郵件中的連結完成建立（1 小時內有效）。完整金鑰將在確認頁顯示一次，請立即保存。',
+            createFailed: '建立請求失敗',
+            scopeHint: 'API Key 僅限本人已購實例的查詢、開/關機/重啟、連接埠增刪與更換 IPv6，無法存取面板其他功能（錢包、工單、轉移、重裝等均被拒絕）。請求標頭範例：X-API-Key: incu_sk_…；實例清單請附帶 ?mine=true。',
+            empty: '還沒有 API Key',
+            nameCol: '備註名稱',
+            prefixLabel: '金鑰前綴',
+            statusLabel: '狀態',
+            lastUsed: '最近使用',
+            requests: '請求數',
+            actions: '操作',
+            defaultName: '未命名金鑰',
+            statusActive: '啟用中',
+            statusDisabled: '已停用',
+            never: '從未使用',
+            disable: '停用',
+            enable: '啟用',
+            delete: '刪除',
+            deleteConfirm: '確定刪除金鑰 {prefix}…？刪除後使用該金鑰的請求將立即失效。',
+            enabled: 'API Key 已啟用',
+            disabled: 'API Key 已停用',
+            deleted: 'API Key 已刪除',
+            loadFailed: '載入 API Key 失敗',
+        },
         title: '個人設定',
         basicInfo: '基本資料',
         security: '安全設定',
@@ -2959,7 +2881,6 @@ export default {
         twoFactor: '兩步驗證',
         enableTwoFactor: '啟用兩步驗證',
         disableTwoFactor: '停用兩步驗證',
-        // 帳號部分
         account: {
             title: '帳號',
             username: '使用者名稱',
@@ -3009,10 +2930,9 @@ export default {
                 confirmAction: '確認提交',
                 updateSuccess: '電子郵件已更新',
                 verifying: '驗證中...',
-                submitting: '提交中...'
-            }
+                submitting: '提交中...',
+            },
         },
-        // 頭像
         avatar: {
             title: '頭像風格',
             saveSuccess: '頭像風格已更新',
@@ -3050,7 +2970,6 @@ export default {
                 thumbs: '拇指人',
             },
         },
-        // 資源配額
         resourceQuota: {
             title: '資源配額',
             hosts: '主機',
@@ -3058,7 +2977,6 @@ export default {
             friends: '好友',
             unit: '個',
         },
-        // 帳單（BillingSection 元件使用）
         billing: {
             title: '帳戶餘額',
             currentBalance: '目前餘額',
@@ -3113,7 +3031,6 @@ export default {
                 refunded: '已退款',
             },
         },
-        // 餘額充值
         userBilling: {
             title: '餘額充值',
             balance: '目前餘額',
@@ -3140,7 +3057,6 @@ export default {
             rechargeFailed: '充值失敗',
             loadFailed: '載入失敗',
         },
-        // 增加配額
         increaseQuota: {
             title: '增加配額',
             description: '當配額使用率達到50%時，您可以自行增加配額',
@@ -3165,7 +3081,6 @@ export default {
             instancesInvalid: '實例每次只能增加 50 個',
             friendsInvalid: '好友每次只能增加 10 名',
         },
-        // 密碼部分
         password: {
             title: '變更密碼',
             current: '目前密碼',
@@ -3182,7 +3097,6 @@ export default {
             updating: '更新中...',
             update: '更新密碼',
         },
-        // 雙重驗證
         twoFactorAuth: {
             title: '雙重驗證 (2FA)',
             status: '狀態',
@@ -3231,7 +3145,6 @@ export default {
             enterCodeError: '請輸入6位驗證碼',
             fillPasswordAndCode: '請填寫密碼和驗證碼',
         },
-        // 會話管理
         sessions: {
             title: '登入會話',
             logoutAll: '登出所有裝置',
@@ -3255,7 +3168,6 @@ export default {
             hoursAgo: '{n} 小時前',
             daysAgo: '{n} 天前',
         },
-        // OAuth 關聯帳號
         oauth: {
             title: '關聯帳號',
             description: '綁定後可使用快捷登入',
@@ -3279,7 +3191,6 @@ export default {
                 missingCode: '授權資訊缺失，請重試',
             },
         },
-        // SSH 金鑰
         sshKeys: {
             title: 'SSH 公鑰',
             description: '用於 SSH 連接到實例',
@@ -3312,7 +3223,6 @@ export default {
             nextPage: '下一頁',
             pageInfo: '第 {current}/{total} 頁，共 {count} 筆',
         },
-        // 通知渠道
         notifications: {
             title: '通知渠道',
             description: '接收實例、快照等事件通知',
@@ -3417,7 +3327,6 @@ export default {
             unlinked: 'Telegram 綁定已解除',
             unlinkFailed: '解除綁定失敗: {error}',
         },
-        // 遠端儲存
         storage: {
             title: '遠端儲存',
             description: '設定 WebDAV/FTP/SFTP 儲存，用於備份上傳',
@@ -3449,15 +3358,12 @@ export default {
             setDefaultSuccess: '已設為預設',
             setDefaultFailed: '設定失敗',
         },
-        // 登入歷史
         loginHistory: {
             title: '登入歷史',
             description: '查看您的帳號登入記錄',
             empty: '暫無登入記錄',
         },
     },
-
-    // 好友系統
     friends: {
         title: '好友',
         description: '管理您的好友列表，好友之間可以共享資源',
@@ -3541,7 +3447,6 @@ export default {
         rejecting: '拒絕中...',
         removeConfirmTitle: '刪除好友',
         removing: '刪除中...',
-        // 邀請碼
         invites: '邀請碼',
         generateInvite: '產生邀請碼',
         generateInviteTitle: '產生邀請碼',
@@ -3574,7 +3479,6 @@ export default {
         requestAlreadyPending: '好友請求已在待處理中',
         requestNotFound: '請求不存在或已處理',
         friendshipNotFound: '好友關係不存在',
-        // 套餐共享
         selectFriendHint: '請選擇一個好友',
         selectFriendDesc: '點擊左側好友卡片來管理方案共享',
         sharedPackages: '已共享的方案',
@@ -3605,8 +3509,6 @@ export default {
         createPackageFirst: '請先在「我的方案」中建立方案',
         noPackageSearchResult: '未找到符合的方案',
     },
-
-    // 移轉系統
     transfers: {
         title: '實例移轉',
         description: '將您的實例移轉給好友',
@@ -3669,8 +3571,6 @@ export default {
         expiresInHours: '{hours} 小時後過期',
         expired: '已過期',
     },
-
-    // 日誌
     logs: {
         title: '系統日誌',
         module: '模組',
@@ -3694,8 +3594,6 @@ export default {
         expand: '展開',
         collapse: '收起',
     },
-
-    // 說明頁面
     help: {
         title: '說明中心',
         search: '搜尋說明文件...',
@@ -3716,440 +3614,47 @@ export default {
             description: '從公開市場購買託管商品，或完成節點准入、Agent 連線、方案發布與收益管理。',
             summary: '涵蓋買家開通、機主建立節點與 Agent 驗證、建立並公開方案、售後和託管收益。',
             read: '閱讀指南',
-            content: `## 先認識託管流程
-
-託管商品由第三方節點機主提供，平台負責公開展示、開通、計費與實例管理；機主負責自己的 Incus 主機、節點容量與買家售後。首頁 / 與商品頁 /market 可免登入瀏覽公開商品。託管市場入口是否顯示，取決於平台的託管設定。
-
-## A. 使用者購買託管商品
-
-1. 在 /market 切換「託管」來源，使用地區篩選與搜尋。點選商品卡片後，查看 LXC/KVM 類型、網路模式、流量、方案、資源範圍與託管者資訊；也可切回「官方」比較。
-2. 付費商品必須在右側選擇一個未售罄方案；方案會顯示計費週期、價格、月均價、CPU、記憶體、硬碟與流量。免費商品沒有付費方案，但建立頁的 CPU、記憶體與硬碟仍受商品上限、帳戶配額限制。
-3. 按「立即開通」或未登入時的「登入後開通」。未登入會先到 /login，並保留返回網址；登入後回到帶有 source=market、package、plan 參數的 /instances/create。/instances 與 /instances/create 都需要登入。
-4. 開通頁會載入地區、商品、方案、可用節點、系統映像檔和 SSH 金鑰。沒有 SSH 公鑰、沒有可用映像檔或主機時，建立按鈕會停用；沒有金鑰可先到需登入的 /profile 新增。付費方案的資源固定，託管商品不顯示官方推薦碼欄位；商品若要求前置商品，也必須先滿足條件，且機主不能自己開通自己的付費商品。
-5. 填好實例名稱、節點、映像檔與 SSH 金鑰後按「建立」。成功會前往 /instances；點選實例進入 /instances/:id。剛建立時可能是 creating，部署完成後才可按目前狀態使用啟動、停止、重啟、終端與網路等功能。
-
-## B. 節點機主准入與建立節點
-
-1. 先登入，開啟「我的節點」/resources/hosts；按「建立節點／新增」。一般使用者建立前會執行託管准入檢查：目前須曾擁有至少一台實例，且平台託管功能須開放；管理員可直接進入。未通過時頁面會顯示准入原因與提示，不能只靠前端繞過。
-2. 在 /resources/hosts/create 填寫節點名稱、主機位址、API 連接埠、國家/地區、實例類型與網路模式。一般使用者的名稱須以 PEER + 你的使用者 ID + - 開頭；API 連接埠預設 8443。可選 NAT、NAT+IPv6、IPv6-only 等模式；需要 IPv6 時，子網與父介面要成對提供。NAT 設定包含公網 IP、綁定 IP 與連接埠範圍，預設範圍為 10000–65000；CPU、記憶體上限與 container/VM 類型也在此設定。
-3. 按「建立節點」後，頁面會開啟安裝指令視窗。主機初始化 token 有效期 24 小時；若失效，進入節點詳情 /resources/hosts/:id 按「重新安裝」產生新指令。刪除節點前必須沒有其上的實例。
-
-## C. 安裝 Agent、驗證連線與看狀態
-
-1. 在自己的 Incus 主機以 root 執行視窗產生的指令，按「複製命令」可複製。腳本會安裝/初始化 Incus、匯入面板憑證，並依注入的 token 安裝與啟動宿主機 Agent。腳本支援 Ubuntu、Debian、Rocky Linux 9/10、Alpine 3.20+；Ubuntu 低於 22 會提示，Debian 低於 11 或 Alpine 低於 3.20 會被拒絕。
-2. 回到安裝視窗按「驗證並連接」，或在節點詳情對未驗證節點按同名按鈕。成功後節點狀態為 online 且可供商品使用；失敗時查看連線拒絕、逾時或憑證錯誤，確認主機 API、HTTPS、網路與指令是否已完成。
-3. 在節點詳情的「資訊」頁查看節點狀態 online/offline/maintenance、CPU/記憶體/磁碟使用量與 Agent 狀態。Agent 卡片可按「Agent 安裝命令」重新取得一次性安裝/更新指令、按「重新整理」刷新；Agent token 有效約 30 分鐘且只能使用一次。Agent 以心跳上報（預設 30 秒，允許 5–3600 秒），也可能顯示未安裝、online、offline、disabled 或版本過期。
-
-## D. 建立套餐/商品、方案並發布
-
-1. 登入後開啟「我的套餐」/resources/packages，按「建立套餐」進入 /resources/packages/create。一般使用者只能選自己的節點；至少要綁定一個節點。填寫名稱、說明、container/VM、網路模式、資源與流量/端口/快照限制，也可選儲存池、啟動設定、前置套餐與各主機流量倍率。
-2. 建立免費商品可在商品層設定資源；付費商品要到商品詳情 /resources/packages/:id 的「方案」頁籤，按「新增方案」。設定方案名稱、CPU（15–10000%）、記憶體（128–62144 MB）、硬碟（512–104857600 MB）、流量（1–100000 GB）、速度（1–10000 Mbps）、端口/快照額度、價格與 SLA。託管機主方案只支援按月計費；方案狀態可設「上架」「售罄」「下架」。
-3. 「發布」不是另一個獨立按鈕：在套餐表單勾選「啟用」與「公開訪問/公開」後儲存；付費商品還要有啟用且未售罄的方案。返回 /resources/packages 可看到 active/inactive 與公開標記。公開商品還必須有在線節點與容量，才會在 /market 的託管來源出現；節點 offline、maintenance、無容量或所有方案售罄時，買家會看到售罄/不能開通。詳情頁的「設定」「方案」僅對可管理的本人/管理員顯示。
-
-## E. 售後、收益與提現
-
-1. 買家在 /tickets（需登入、且平台啟用工單）按「建立工單」，選擇託管實例，填寫主旨、分類、優先級與內容，可附圖片。工單狀態為 open、in_progress、resolved 或 closed；建立者可回覆/關閉，節點機主會在「收到的工單」分頁看到自己節點的工單並回覆、標記處理中/已解決或關閉。託管機主也可在此追蹤買家與實例。
-2. 使用者購買、續費或升級託管實例時，收入會進入節點機主的託管餘額，但新收入先凍結約 30 天；每小時整點解凍，服務啟動後也會補跑到期記錄。託管實例續費只支援 1 個月，且通常只能在到期前 7 天內續費；免費實例不需續費，升級只能切換同一商品的更高價方案，且實例須為 running/stopped。銷毀/退款等狀態變更可能先抵扣相關凍結收入，再抵扣可用託管餘額，因此不要把凍結額當作立即可提現金額。
-3. 開啟「託管收益」/hosting-wallet（需登入）：概覽查看可用、凍結、當月收入、總收入、客戶數與節點/實例數；「收支明細」可按購買、續費、升級、銷毀等查看；「提現記錄」查看狀態。概覽的「提現」按鈕只有可用餘額達到目前最低額度才可用；預設最低額為 ¥10，實際以頁面設定為準。提現目標是平台餘額，會按目前 5% 費率扣除，確認視窗會顯示手續費與實際入帳額。
-
-## 上架前檢查
-
-- 確認節點為 online、Agent 持續心跳、主機容量與儲存池正常，並核對 NAT/IPv6、端口範圍和商品資源限制。
-- 公開前先用 /market 檢查託管商品是否可見；不要用另一個帳戶購買前就假設「啟用」代表有庫存。
-- 售後由機主處理自己節點上的買家；續費、升級、銷毀、退款、收入凍結與提現均以提交當下頁面及平台規則為準。`
+            content: '## 先認識託管流程\n\n託管商品由第三方節點機主提供，平台負責公開展示、開通、計費與實例管理；機主負責自己的 Incus 主機、節點容量與買家售後。首頁 / 與商品頁 /market 可免登入瀏覽公開商品。託管市場入口是否顯示，取決於平台的託管設定。\n\n## A. 使用者購買託管商品\n\n1. 在 /market 切換「託管」來源，使用地區篩選與搜尋。點選商品卡片後，查看 LXC/KVM 類型、網路模式、流量、方案、資源範圍與託管者資訊；也可切回「官方」比較。\n2. 付費商品必須在右側選擇一個未售罄方案；方案會顯示計費週期、價格、月均價、CPU、記憶體、硬碟與流量。免費商品沒有付費方案，但建立頁的 CPU、記憶體與硬碟仍受商品上限、帳戶配額限制。\n3. 按「立即開通」或未登入時的「登入後開通」。未登入會先到 /login，並保留返回網址；登入後回到帶有 source=market、package、plan 參數的 /instances/create。/instances 與 /instances/create 都需要登入。\n4. 開通頁會載入地區、商品、方案、可用節點、系統映像檔和 SSH 金鑰。沒有 SSH 公鑰、沒有可用映像檔或主機時，建立按鈕會停用；沒有金鑰可先到需登入的 /profile 新增。付費方案的資源固定，託管商品不顯示官方推薦碼欄位；商品若要求前置商品，也必須先滿足條件，且機主不能自己開通自己的付費商品。\n5. 填好實例名稱、節點、映像檔與 SSH 金鑰後按「建立」。成功會前往 /instances；點選實例進入 /instances/:id。剛建立時可能是 creating，部署完成後才可按目前狀態使用啟動、停止、重啟、終端與網路等功能。\n\n## B. 節點機主准入與建立節點\n\n1. 先登入，開啟「我的節點」/resources/hosts；按「建立節點／新增」。一般使用者建立前會執行託管准入檢查：目前須曾擁有至少一台實例，且平台託管功能須開放；管理員可直接進入。未通過時頁面會顯示准入原因與提示，不能只靠前端繞過。\n2. 在 /resources/hosts/create 填寫節點名稱、主機位址、API 連接埠、國家/地區、實例類型與網路模式。一般使用者的名稱須以 PEER + 你的使用者 ID + - 開頭；API 連接埠預設 8443。可選 NAT、NAT+IPv6、IPv6-only 等模式；需要 IPv6 時，子網與父介面要成對提供。NAT 設定包含公網 IP、綁定 IP 與連接埠範圍，預設範圍為 10000–65000；CPU、記憶體上限與 container/VM 類型也在此設定。\n3. 按「建立節點」後，頁面會開啟安裝指令視窗。主機初始化 token 有效期 24 小時；若失效，進入節點詳情 /resources/hosts/:id 按「重新安裝」產生新指令。刪除節點前必須沒有其上的實例。\n\n## C. 安裝 Agent、驗證連線與看狀態\n\n1. 在自己的 Incus 主機以 root 執行視窗產生的指令，按「複製命令」可複製。腳本會安裝/初始化 Incus、匯入面板憑證，並依注入的 token 安裝與啟動宿主機 Agent。腳本支援 Ubuntu、Debian、Rocky Linux 9/10、Alpine 3.20+；Ubuntu 低於 22 會提示，Debian 低於 11 或 Alpine 低於 3.20 會被拒絕。\n2. 回到安裝視窗按「驗證並連接」，或在節點詳情對未驗證節點按同名按鈕。成功後節點狀態為 online 且可供商品使用；失敗時查看連線拒絕、逾時或憑證錯誤，確認主機 API、HTTPS、網路與指令是否已完成。\n3. 在節點詳情的「資訊」頁查看節點狀態 online/offline/maintenance、CPU/記憶體/磁碟使用量與 Agent 狀態。Agent 卡片可按「Agent 安裝命令」重新取得一次性安裝/更新指令、按「重新整理」刷新；Agent token 有效約 30 分鐘且只能使用一次。Agent 以心跳上報（預設 30 秒，允許 5–3600 秒），也可能顯示未安裝、online、offline、disabled 或版本過期。\n\n## D. 建立套餐/商品、方案並發布\n\n1. 登入後開啟「我的套餐」/resources/packages，按「建立套餐」進入 /resources/packages/create。一般使用者只能選自己的節點；至少要綁定一個節點。填寫名稱、說明、container/VM、網路模式、資源與流量/端口/快照限制，也可選儲存池、啟動設定、前置套餐與各主機流量倍率。\n2. 建立免費商品可在商品層設定資源；付費商品要到商品詳情 /resources/packages/:id 的「方案」頁籤，按「新增方案」。設定方案名稱、CPU（15–10000%）、記憶體（128–62144 MB）、硬碟（512–104857600 MB）、流量（1–100000 GB）、速度（1–10000 Mbps）、端口/快照額度、價格與 SLA。託管機主方案只支援按月計費；方案狀態可設「上架」「售罄」「下架」。\n3. 「發布」不是另一個獨立按鈕：在套餐表單勾選「啟用」與「公開訪問/公開」後儲存；付費商品還要有啟用且未售罄的方案。返回 /resources/packages 可看到 active/inactive 與公開標記。公開商品還必須有在線節點與容量，才會在 /market 的託管來源出現；節點 offline、maintenance、無容量或所有方案售罄時，買家會看到售罄/不能開通。詳情頁的「設定」「方案」僅對可管理的本人/管理員顯示。\n\n## E. 售後、收益與提現\n\n1. 買家在 /tickets（需登入、且平台啟用工單）按「建立工單」，選擇託管實例，填寫主旨、分類、優先級與內容，可附圖片。工單狀態為 open、in_progress、resolved 或 closed；建立者可回覆/關閉，節點機主會在「收到的工單」分頁看到自己節點的工單並回覆、標記處理中/已解決或關閉。託管機主也可在此追蹤買家與實例。\n2. 使用者購買、續費或升級託管實例時，收入會進入節點機主的託管餘額，但新收入先凍結約 30 天；每小時整點解凍，服務啟動後也會補跑到期記錄。託管實例續費只支援 1 個月，且通常只能在到期前 7 天內續費；免費實例不需續費，升級只能切換同一商品的更高價方案，且實例須為 running/stopped。銷毀/退款等狀態變更可能先抵扣相關凍結收入，再抵扣可用託管餘額，因此不要把凍結額當作立即可提現金額。\n3. 開啟「託管收益」/hosting-wallet（需登入）：概覽查看可用、凍結、當月收入、總收入、客戶數與節點/實例數；「收支明細」可按購買、續費、升級、銷毀等查看；「提現記錄」查看狀態。概覽的「提現」按鈕只有可用餘額達到目前最低額度才可用；預設最低額為 ¥10，實際以頁面設定為準。提現目標是平台餘額，會按目前 5% 費率扣除，確認視窗會顯示手續費與實際入帳額。\n\n## 上架前檢查\n\n- 確認節點為 online、Agent 持續心跳、主機容量與儲存池正常，並核對 NAT/IPv6、端口範圍和商品資源限制。\n- 公開前先用 /market 檢查託管商品是否可見；不要用另一個帳戶購買前就假設「啟用」代表有庫存。\n- 售後由機主處理自己節點上的買家；續費、升級、銷毀、退款、收入凍結與提現均以提交當下頁面及平台規則為準。',
         },
         platformOverview: {
             title: '平台使用總覽',
             summary: '從公開預覽比較商品，登入後開通實例，再到列表與詳情頁管理。',
-            content: `## 1. 先使用公開預覽
-
-1. 開啟首頁 /。首頁會在不登入的情況下載入公開商品與地區；按「瀏覽商品」或「查看目錄」，進入 /market。
-2. 在商品瀏覽頁切換「官方」或「託管」來源，必要時用地區篩選與搜尋。點選商品卡片後，右側會顯示網路模式、流量、方案與資源。
-3. 付費商品必須再選一個未售罄的方案；售罄商品或方案的開通按鈕會停用。免費商品則不需要方案。
-
-## 2. 分辨官方與託管商品
-
-- 官方節點由平台維運，商品直接標示為「官方」。
-- 託管商品由第三方機主提供，市場頁會標示為「託管」；開通前可查看託管者資訊。穩定性、線路、可用性與售後處理可能和官方不同，請先閱讀商品說明與頁面上的託管提示。
-- 託管市場入口是否顯示由平台設定控制；若看不到託管來源，請以目前頁面為準。
-
-## 3. 登入並進入開通頁
-
-4. 在選定商品與方案後按「立即開通／登入後開通」。未登入時會先到 /login，並保留返回網址；登入完成後會回到帶有來源、商品與方案參數的 /instances/create。直接開啟需要登入的頁面（例如 /instances 或 /instances/create）也會被導向登入頁。
-5. 開通頁會載入帳戶配額、SSH 金鑰、可用主機、映像檔與商品資料。先在「個人設定」（ /profile ）建立至少一把 SSH 公鑰；沒有 SSH 金鑰時，建立按鈕會停用。
-
-## 4. 填寫並提交開通資料
-
-6. 依序選擇地區（若有）、商品、方案（付費商品）、資源（免費商品可調整）、可用主機、系統映像檔，並填寫實例名稱。主機和映像檔都必須有可用選項；商品未綁定主機、主機無容量或沒有可用映像檔時無法提交。
-7. 提交前確認頁面顯示的價格、計費週期、資源與網路條件。付費商品會使用所選方案的固定 CPU、記憶體與硬碟配置；自己的付費商品不能由自己開通。若平台啟用推薦碼，推薦碼可在官方付費商品中驗證；託管商品不提供此欄位。
-8. 確認實例名稱、SSH 金鑰與方案後按「建立」。系統會呼叫實例建立 API；成功後會提示建立成功並前往 /instances。若商品要求先擁有另一個商品的實例，必須先完成該前置條件；配額不足、商品售罄或資源不符時也不能提交。
-
-## 5. 從實例列表進入詳情
-
-9. /instances 需要登入，會列出你的實例並定期更新狀態。建立後若仍在佈建，先等待狀態更新；點選列表中的實例卡片或列，進入 /instances/:id。
-10. 實例詳情預設顯示資訊頁；可依權限與實例配額切換網路、網站、流量、快照、配額、設定與日誌頁籤。資訊頁可查看狀態、資源與連線資料；網路頁可管理連接埠映射，終端與啟停、重新啟動等操作也從詳情頁進行。執行重裝、銷毀、還原快照等破壞性操作前，先備份資料並確認頁面提示。`
+            content: '## 1. 先使用公開預覽\n\n1. 開啟首頁 /。首頁會在不登入的情況下載入公開商品與地區；按「瀏覽商品」或「查看目錄」，進入 /market。\n2. 在商品瀏覽頁切換「官方」或「託管」來源，必要時用地區篩選與搜尋。點選商品卡片後，右側會顯示網路模式、流量、方案與資源。\n3. 付費商品必須再選一個未售罄的方案；售罄商品或方案的開通按鈕會停用。免費商品則不需要方案。\n\n## 2. 分辨官方與託管商品\n\n- 官方節點由平台維運，商品直接標示為「官方」。\n- 託管商品由第三方機主提供，市場頁會標示為「託管」；開通前可查看託管者資訊。穩定性、線路、可用性與售後處理可能和官方不同，請先閱讀商品說明與頁面上的託管提示。\n- 託管市場入口是否顯示由平台設定控制；若看不到託管來源，請以目前頁面為準。\n\n## 3. 登入並進入開通頁\n\n4. 在選定商品與方案後按「立即開通／登入後開通」。未登入時會先到 /login，並保留返回網址；登入完成後會回到帶有來源、商品與方案參數的 /instances/create。直接開啟需要登入的頁面（例如 /instances 或 /instances/create）也會被導向登入頁。\n5. 開通頁會載入帳戶配額、SSH 金鑰、可用主機、映像檔與商品資料。先在「個人設定」（ /profile ）建立至少一把 SSH 公鑰；沒有 SSH 金鑰時，建立按鈕會停用。\n\n## 4. 填寫並提交開通資料\n\n6. 依序選擇地區（若有）、商品、方案（付費商品）、資源（免費商品可調整）、可用主機、系統映像檔，並填寫實例名稱。主機和映像檔都必須有可用選項；商品未綁定主機、主機無容量或沒有可用映像檔時無法提交。\n7. 提交前確認頁面顯示的價格、計費週期、資源與網路條件。付費商品會使用所選方案的固定 CPU、記憶體與硬碟配置；自己的付費商品不能由自己開通。若平台啟用推薦碼，推薦碼可在官方付費商品中驗證；託管商品不提供此欄位。\n8. 確認實例名稱、SSH 金鑰與方案後按「建立」。系統會呼叫實例建立 API；成功後會提示建立成功並前往 /instances。若商品要求先擁有另一個商品的實例，必須先完成該前置條件；配額不足、商品售罄或資源不符時也不能提交。\n\n## 5. 從實例列表進入詳情\n\n9. /instances 需要登入，會列出你的實例並定期更新狀態。建立後若仍在佈建，先等待狀態更新；點選列表中的實例卡片或列，進入 /instances/:id。\n10. 實例詳情預設顯示資訊頁；可依權限與實例配額切換網路、網站、流量、快照、配額、設定與日誌頁籤。資訊頁可查看狀態、資源與連線資料；網路頁可管理連接埠映射，終端與啟停、重新啟動等操作也從詳情頁進行。執行重裝、銷毀、還原快照等破壞性操作前，先備份資料並確認頁面提示。',
         },
         gettingStarted: {
             title: '快速開始：建立第一台實例',
             summary: '依照公開市場、登入、建立表單到連線與初始化檢查，完成第一台實例。',
-            content: `## 1. 在公開市場選擇套餐與方案
-
-1. 開啟 /market。這是未登入也能瀏覽的公開市場；可在「官方」與「市場」來源間切換，使用搜尋框或地區篩選縮小清單。
-2. 選取套餐卡查看 LXC/KVM 類型、描述、流量、網路模式與是否售罄。付費套餐要在右側方案清單選一個未售罄方案，並核對計費週期、價格、月均價、CPU、記憶體、硬碟及流量；免費套餐沒有付費方案，資源會在建立頁調整。
-3. 確認選定的套餐與方案後，按「建立／立即開通」。市場頁會把來源、套餐與方案帶到建立流程；套餐售罄，或付費套餐沒有選定可用方案時，按鈕不能使用。
-
-## 2. 登入並準備 SSH 金鑰
-
-4. 已登入時會前往 /instances/create；未登入時會先前往 /login，登入後依照保留的返回位址回到帶有來源、套餐與方案參數的 /instances/create。
-5. 建立頁會載入帳戶配額、SSH 金鑰、套餐、地區、可用節點與映像檔。建立按鈕要求至少有一把 SSH 金鑰；若沒有金鑰，請開啟個人設定 /profile，在 SSH 公鑰區按「新增」，填寫金鑰名稱與公鑰後儲存。也可以按「生成」讓系統建立金鑰對；私鑰顯示在彈窗時先複製或下載並妥善保存，再回到建立頁選用對應金鑰。
-
-## 3. 填寫建立實例表單
-
-6. 若頁面有地區選擇，先選地區或「全部地區」。地區會過濾可選套餐；切換來源或地區後，原本的套餐、方案、節點與映像檔選擇會重置。
-7. 選擇套餐。付費套餐接著在「方案」選擇方案；方案的 CPU、記憶體與硬碟是固定配置，頁面也會顯示計費週期、價格、流量、連接埠與快照額度。免費套餐則使用資源控制項調整 CPU、記憶體與硬碟，數值仍受套餐上限、配額與最小值限制。
-8. 選擇可用節點。可用節點會依套餐、方案（若有）及 CPU、記憶體、硬碟需求載入；若只有一個可用節點，頁面可能自動選取。沒有套餐綁定節點、節點沒有容量時，無法繼續建立。
-9. 選擇系統映像檔。映像檔清單會依實例類型、記憶體與節點載入，且選定節點後才會出現；沒有可用映像檔時不能提交。選好映像檔後，頁面會出現可選的自訂初始化命令。
-10. 核對網路條件。建立表單沒有獨立的網路模式輸入；網路模式來自套餐的 network_mode，請先在市場頁查看，建立後再到實例資訊頁核對。最後填寫必填的「實例名稱」。付費官方套餐在平台啟用推薦碼時才會顯示推薦碼欄位；託管市場套餐不提供這個欄位。
-11. 確認 SSH 金鑰、套餐／方案、節點、映像檔、資源與價格後按「建立」。系統會提交 name、packageId、planId（付費套餐）、hostId、image、cpu、memory、disk、sshKeyId，以及可選的自訂初始化命令；售罄、配額不足、前置套餐條件未滿足或自己的付費套餐都會使提交按鈕保持停用。
-
-## 4. 找到實例並取得連線資料
-
-12. 建立成功後會顯示成功提示並前往 /instances。實例列表可用搜尋框找名稱，也可用國家／地區篩選；頁面在可見時會定期更新狀態。點選實例卡片或列表列，進入 /instances/:id。
-13. 詳情的資訊頁可查看實例狀態、映像檔、實例類型、網路模式、節點、IPv4／IPv6、SSH 連接埠（有值時）及 Root 密碼；密碼預設隱藏，按「顯示」後才會載入。網路頁可查看公網／內網位址與連接埠映射。
-14. IPv4 NAT 連線時，先在「網路」頁新增內部連接埠 22 的映射，再使用公網 IPv4 與映射後的公網連接埠連線。若是頁面所示的 IPv6 直連模式，則可使用公網 IPv6 與 22 連接埠，不必新增映射；請以實例詳情實際顯示的網路模式與位址為準。實例為 running 時，詳情頁也會提供終端入口。
-
-## 5. 判斷佈建與初始化狀態
-
-15. 建立後若 /instances 列表顯示 creating，表示實例仍在佈建；列表會定期刷新，先等待狀態更新。進入詳情後，若有 PENDING 或 PROCESSING 的活躍任務，標題旁會顯示任務指示器；任務完成或失敗後頁面會重新載入。
-16. 實例變成 running 後，詳情頁會檢查 Cloud-init 初始化。當檢查回傳 ready=false，頁首會出現琥珀色初始化提示；提示可能表示初始化中、卡住或狀態未知，按提示可重新檢查。系統會在未就緒時自動每 10 秒重試，最多 12 次。
-17. 初始化檢查回傳 ready=true 時，初始化提示會消失；回傳的 state 可能是 done、done_with_errors、disabled、unsupported、manual 等。若狀態是 agent_unavailable 或 unknown，只有具備對應權限時才會看到「手動完成」；連線前應先確認實例已 running，且初始化提示不再表示未就緒。`
+            content: '## 1. 在公開市場選擇套餐與方案\n\n1. 開啟 /market。這是未登入也能瀏覽的公開市場；可在「官方」與「市場」來源間切換，使用搜尋框或地區篩選縮小清單。\n2. 選取套餐卡查看 LXC/KVM 類型、描述、流量、網路模式與是否售罄。付費套餐要在右側方案清單選一個未售罄方案，並核對計費週期、價格、月均價、CPU、記憶體、硬碟及流量；免費套餐沒有付費方案，資源會在建立頁調整。\n3. 確認選定的套餐與方案後，按「建立／立即開通」。市場頁會把來源、套餐與方案帶到建立流程；套餐售罄，或付費套餐沒有選定可用方案時，按鈕不能使用。\n\n## 2. 登入並準備 SSH 金鑰\n\n4. 已登入時會前往 /instances/create；未登入時會先前往 /login，登入後依照保留的返回位址回到帶有來源、套餐與方案參數的 /instances/create。\n5. 建立頁會載入帳戶配額、SSH 金鑰、套餐、地區、可用節點與映像檔。建立按鈕要求至少有一把 SSH 金鑰；若沒有金鑰，請開啟個人設定 /profile，在 SSH 公鑰區按「新增」，填寫金鑰名稱與公鑰後儲存。也可以按「生成」讓系統建立金鑰對；私鑰顯示在彈窗時先複製或下載並妥善保存，再回到建立頁選用對應金鑰。\n\n## 3. 填寫建立實例表單\n\n6. 若頁面有地區選擇，先選地區或「全部地區」。地區會過濾可選套餐；切換來源或地區後，原本的套餐、方案、節點與映像檔選擇會重置。\n7. 選擇套餐。付費套餐接著在「方案」選擇方案；方案的 CPU、記憶體與硬碟是固定配置，頁面也會顯示計費週期、價格、流量、連接埠與快照額度。免費套餐則使用資源控制項調整 CPU、記憶體與硬碟，數值仍受套餐上限、配額與最小值限制。\n8. 選擇可用節點。可用節點會依套餐、方案（若有）及 CPU、記憶體、硬碟需求載入；若只有一個可用節點，頁面可能自動選取。沒有套餐綁定節點、節點沒有容量時，無法繼續建立。\n9. 選擇系統映像檔。映像檔清單會依實例類型、記憶體與節點載入，且選定節點後才會出現；沒有可用映像檔時不能提交。選好映像檔後，頁面會出現可選的自訂初始化命令。\n10. 核對網路條件。建立表單沒有獨立的網路模式輸入；網路模式來自套餐的 network_mode，請先在市場頁查看，建立後再到實例資訊頁核對。最後填寫必填的「實例名稱」。付費官方套餐在平台啟用推薦碼時才會顯示推薦碼欄位；託管市場套餐不提供這個欄位。\n11. 確認 SSH 金鑰、套餐／方案、節點、映像檔、資源與價格後按「建立」。系統會提交 name、packageId、planId（付費套餐）、hostId、image、cpu、memory、disk、sshKeyId，以及可選的自訂初始化命令；售罄、配額不足、前置套餐條件未滿足或自己的付費套餐都會使提交按鈕保持停用。\n\n## 4. 找到實例並取得連線資料\n\n12. 建立成功後會顯示成功提示並前往 /instances。實例列表可用搜尋框找名稱，也可用國家／地區篩選；頁面在可見時會定期更新狀態。點選實例卡片或列表列，進入 /instances/:id。\n13. 詳情的資訊頁可查看實例狀態、映像檔、實例類型、網路模式、節點、IPv4／IPv6、SSH 連接埠（有值時）及 Root 密碼；密碼預設隱藏，按「顯示」後才會載入。網路頁可查看公網／內網位址與連接埠映射。\n14. IPv4 NAT 連線時，先在「網路」頁新增內部連接埠 22 的映射，再使用公網 IPv4 與映射後的公網連接埠連線。若是頁面所示的 IPv6 直連模式，則可使用公網 IPv6 與 22 連接埠，不必新增映射；請以實例詳情實際顯示的網路模式與位址為準。實例為 running 時，詳情頁也會提供終端入口。\n\n## 5. 判斷佈建與初始化狀態\n\n15. 建立後若 /instances 列表顯示 creating，表示實例仍在佈建；列表會定期刷新，先等待狀態更新。進入詳情後，若有 PENDING 或 PROCESSING 的活躍任務，標題旁會顯示任務指示器；任務完成或失敗後頁面會重新載入。\n16. 實例變成 running 後，詳情頁會檢查 Cloud-init 初始化。當檢查回傳 ready=false，頁首會出現琥珀色初始化提示；提示可能表示初始化中、卡住或狀態未知，按提示可重新檢查。系統會在未就緒時自動每 10 秒重試，最多 12 次。\n17. 初始化檢查回傳 ready=true 時，初始化提示會消失；回傳的 state 可能是 done、done_with_errors、disabled、unsupported、manual 等。若狀態是 agent_unavailable 或 unknown，只有具備對應權限時才會看到「手動完成」；連線前應先確認實例已 running，且初始化提示不再表示未就緒。',
         },
         instanceManagement: {
             title: '實例管理：啟停、重裝、快照與備份',
             summary: '依照頁面按鈕完成實例啟停、異步任務、系統重裝、快照與備份操作。',
-            content: `## 先找到實例
-1. 登入後開啟「實例」列表（/instances）。列表會定期刷新狀態；點選實例卡片或列即可進入詳情（/instances/:id）。
-2. 實例詳情的操作按鈕會依狀態、權限、配額及是否有進行中的任務顯示或停用。進行破壞性操作前，先另行保存資料庫、設定檔及重要檔案。
-
-## 日常啟停
-
-### 單一實例
-
-1. 在列表中，狀態為「已停止」時按「啟動」；狀態為「運行中」時可按「停止」或「重新啟動」。
-2. 在詳情頁同樣依目前狀態使用「啟動」、「停止」或「重新啟動」。這三個按鈕不會先跳確認視窗；按下後只會送出任務，看到「任務已排隊」不等於操作已完成。
-3. 啟動、停止或重新啟動期間不要重複按其他操作。詳情頁會在任務完成或失敗後重新載入實例資料。
-
-### 批量啟停
-
-1. 在列表勾選實例後，從批量操作列選擇啟動、停止或重新啟動。
-2. 批量啟動只處理已停止的實例；批量停止與重新啟動只處理運行中的實例。其他已勾選但不符合狀態的實例會被跳過。
-3. 批量請求最多同時處理 5 個；完成後列表會刷新，若部分失敗會顯示成功、失敗與跳過數量。
-
-## 異步任務與排隊
-
-- start、stop、restart、rebuild、recreate API 都回傳 taskId 與任務狀態，並由後端排隊執行。詳情頁會每 2 秒查詢一次活躍任務；任務指示器可能顯示 PENDING 或 PROCESSING，完成或失敗後停止輪詢並刷新頁面。
-- 若回傳「已有任務進行中」（TASK_IN_PROGRESS），頁面會接上現有任務的輪詢；請等待它完成，不要連續提交同一操作。詳情頁有活躍任務、待處理移轉，或實例被封停時，其他操作會被停用（封停時節點擁有者的權限另按頁面顯示）。
-- 長時間沒有進度時，詳情頁可在符合條件後使用「恢復任務」：一般使用者需任務已持續至少 15 分鐘，管理員可直接執行；按鈕會先要求確認。任務恢復仍失敗時，保留任務錯誤訊息並提交支援資訊。
-- 建立失敗（error）的實例可按「重試建立／Retry」；這會呼叫 retryProvision，將狀態改回 creating 並回到列表。只有 error 狀態、原方案仍存在且原節點在線時後端才接受重試。
-
-## 重裝與重建差異
-
-### 重裝系統（rebuild）
-
-1. 先讓實例變成「已停止」；運行中按「重裝系統」只會提示必須先關機，不會開啟提交流程。
-2. 選擇節點目前允許、且符合實例類型與記憶體的映像檔，再選一個自己的 SSH 金鑰；有需要時選擇自訂初始化命令。
-3. 按「確認重裝」後會建立異步任務。重裝會清除實例內資料與所有快照，但保留連接埠映射；完成後會產生新的 root 密碼，可在詳情頁查看。重裝彈窗另提示完成後需手動啟動，請以任務完成後顯示的實例狀態為準。
-
-### 重建實例（recreate）
-
-- 重建不要求先停止，會建立全新的實例來替換舊實例；只保留計費狀態與配額。它會清除實例資料、快照、連接埠映射、備份記錄與備份策略、反代站點及快照策略，因此必須先完成外部備份。
-- 重建同樣要選擇映像檔、SSH 金鑰及可選的自訂初始化命令，提交後以 taskId 追蹤。它與重裝不是同一個按鈕或 API：重裝是停止後在原實例上換系統，重建是以新實例替換舊實例。
-- 目前 InstanceDetailView 實際綁定了「重裝系統」按鈕；原始碼雖定義 RecreateModal 與 recreate API，但此頁沒有綁定開啟重建彈窗的按鈕。若看不到「重建實例」入口，請不要把「重裝系統」當成重建使用。
-
-## 快照：建立、還原與刪除
-
-1. 在實例詳情切到「快照」分頁。當快照配額為 0 時分頁會隱藏；沒有配額或已達上限時，「建立」按鈕會停用。配額可在「配額」分頁查看／由有權限者調整。
-2. 按「建立」，填寫必填的名稱，可補充描述，再按確認建立。建立成功後列表會重新載入；建立流程不會先跳確認視窗。
-3. 還原前先按「停止」，因為只有 stopped 狀態能還原。運行中按「還原」會提示先停止；停機後再按快照旁的「還原」，確認快照名稱後才會呼叫還原 API。
-4. 不再需要的快照按「刪除」，確認對話框中的快照名稱後才會刪除；刪除失敗時頁面會重新載入列表。
-5. 「自動快照設定」可啟用策略並選擇每 10 分鐘、1 小時、6 小時或 24 小時；達到配額時，策略提示會按規則處理最早的自動快照。
-
-## 備份：建立、匯出、遠端上傳與還原
-
-目前 InstanceDetailView 實際掛載的是快照管理元件；備份 API 與 BackupManager 元件定義了以下按鈕流程。只有當你的介面顯示「備份」管理區時，才會看到這些按鈕。
-1. **建立**：先確認有備份配額且尚未滿額；否則「建立」會停用。按「建立」，輸入必填名稱及可選描述後提交。備份會先顯示 creating，完成後變為 ready；建立可能需要幾分鐘。
-2. **匯出／下載**：只有 ready 備份可匯出。按「匯出」後先建立匯出任務，再取得一次性下載 token，由瀏覽器開始下載；準備或下載期間按鈕會停用，失敗時可按「重試」。節點擁有者在 canManageBackups=false 時不能下載。
-3. **上傳到遠端**：在 ready 備份旁按「上傳」，從彈窗選擇儲存設定；系統會優先選取預設設定。沒有儲存設定時，先按彈窗內的連結到「個人資料」設定。提交後任務會顯示 PENDING／PROCESSING、排隊位置與執行時間，頁面每 3 秒查詢狀態；重新整理頁面也會載入活躍上傳任務。節點擁有者不能上傳。
-4. **還原**：對 ready 備份按「還原」，在危險操作彈窗確認後提交。還原會停止目前實例並用備份替換；該實例的其他備份及所有快照會被永久刪除，成功後名稱會變為「原實例名稱 | restored:備份名稱」。還原期間會顯示任務狀態與排隊位置，同一時間已有還原任務時不能再次提交。
-5. 還原失敗且原實例仍可回復時，備份列會提供「回滾」；按下後呼叫回滾 API，成功會恢復原實例。完成還原後頁面會重新載入，請重新檢查 SSH、IP 與連接埠映射。
-6. **刪除備份**：按「刪除」並在確認視窗確認備份名稱；creating 或還原中的備份不能刪除。刪除備份不等於刪除實例，也不會替代遠端上傳。
-
-## 刪除與退款注意事項
-
-- 列表中的「刪除」只有在 error，或沒有方案計費 ID 時顯示；按下後會先以實例名稱跳出確認視窗，確認才呼叫 instances.delete。詳情頁的直接刪除也遵循權限與方案設定；付費實例通常要使用「銷毀」流程，而不是把刪除當成退款。
-- 「銷毀」會先載入可銷毀狀態與退款預覽。付費實例需在目前流量週期已用流量低於方案設定的退款銷毀上限；首次銷毀免手續費，之後的手續費率、剩餘價值、退款上限與實際退款額以彈窗當下顯示為準。免費實例可直接銷毀但無退款，也不計入銷毀次數。
-- 銷毀確認不是單純按一下：在彈窗讀完實例與退款資訊後，輸入完整實例名稱，再按「確認銷毀」。成功後實例及其資料（包含快照、備份、連接埠映射等）永久刪除，付費實例的退款會在成功提示中顯示；若流量或其他條件不符，先依彈窗原因處理。
-- error 狀態橫幅另有「重試建立」和「立即銷毀」；立即銷毀會先跳確認，並走 error 免手續費參數。任何刪除、重裝、重建或備份還原前，都要先確認沒有仍需保留的資料。`
+            content: '## 先找到實例\n1. 登入後開啟「實例」列表（/instances）。列表會定期刷新狀態；點選實例卡片或列即可進入詳情（/instances/:id）。\n2. 實例詳情的操作按鈕會依狀態、權限、配額及是否有進行中的任務顯示或停用。進行破壞性操作前，先另行保存資料庫、設定檔及重要檔案。\n\n## 日常啟停\n\n### 單一實例\n\n1. 在列表中，狀態為「已停止」時按「啟動」；狀態為「運行中」時可按「停止」或「重新啟動」。\n2. 在詳情頁同樣依目前狀態使用「啟動」、「停止」或「重新啟動」。這三個按鈕不會先跳確認視窗；按下後只會送出任務，看到「任務已排隊」不等於操作已完成。\n3. 啟動、停止或重新啟動期間不要重複按其他操作。詳情頁會在任務完成或失敗後重新載入實例資料。\n\n### 批量啟停\n\n1. 在列表勾選實例後，從批量操作列選擇啟動、停止或重新啟動。\n2. 批量啟動只處理已停止的實例；批量停止與重新啟動只處理運行中的實例。其他已勾選但不符合狀態的實例會被跳過。\n3. 批量請求最多同時處理 5 個；完成後列表會刷新，若部分失敗會顯示成功、失敗與跳過數量。\n\n## 異步任務與排隊\n\n- start、stop、restart、rebuild、recreate API 都回傳 taskId 與任務狀態，並由後端排隊執行。詳情頁會每 2 秒查詢一次活躍任務；任務指示器可能顯示 PENDING 或 PROCESSING，完成或失敗後停止輪詢並刷新頁面。\n- 若回傳「已有任務進行中」（TASK_IN_PROGRESS），頁面會接上現有任務的輪詢；請等待它完成，不要連續提交同一操作。詳情頁有活躍任務、待處理移轉，或實例被封停時，其他操作會被停用（封停時節點擁有者的權限另按頁面顯示）。\n- 長時間沒有進度時，詳情頁可在符合條件後使用「恢復任務」：一般使用者需任務已持續至少 15 分鐘，管理員可直接執行；按鈕會先要求確認。任務恢復仍失敗時，保留任務錯誤訊息並提交支援資訊。\n- 建立失敗（error）的實例可按「重試建立／Retry」；這會呼叫 retryProvision，將狀態改回 creating 並回到列表。只有 error 狀態、原方案仍存在且原節點在線時後端才接受重試。\n\n## 重裝與重建差異\n\n### 重裝系統（rebuild）\n\n1. 先讓實例變成「已停止」；運行中按「重裝系統」只會提示必須先關機，不會開啟提交流程。\n2. 選擇節點目前允許、且符合實例類型與記憶體的映像檔，再選一個自己的 SSH 金鑰；有需要時選擇自訂初始化命令。\n3. 按「確認重裝」後會建立異步任務。重裝會清除實例內資料與所有快照，但保留連接埠映射；完成後會產生新的 root 密碼，可在詳情頁查看。重裝彈窗另提示完成後需手動啟動，請以任務完成後顯示的實例狀態為準。\n\n### 重建實例（recreate）\n\n- 重建不要求先停止，會建立全新的實例來替換舊實例；只保留計費狀態與配額。它會清除實例資料、快照、連接埠映射、備份記錄與備份策略、反代站點及快照策略，因此必須先完成外部備份。\n- 重建同樣要選擇映像檔、SSH 金鑰及可選的自訂初始化命令，提交後以 taskId 追蹤。它與重裝不是同一個按鈕或 API：重裝是停止後在原實例上換系統，重建是以新實例替換舊實例。\n- 目前 InstanceDetailView 實際綁定了「重裝系統」按鈕；原始碼雖定義 RecreateModal 與 recreate API，但此頁沒有綁定開啟重建彈窗的按鈕。若看不到「重建實例」入口，請不要把「重裝系統」當成重建使用。\n\n## 快照：建立、還原與刪除\n\n1. 在實例詳情切到「快照」分頁。當快照配額為 0 時分頁會隱藏；沒有配額或已達上限時，「建立」按鈕會停用。配額可在「配額」分頁查看／由有權限者調整。\n2. 按「建立」，填寫必填的名稱，可補充描述，再按確認建立。建立成功後列表會重新載入；建立流程不會先跳確認視窗。\n3. 還原前先按「停止」，因為只有 stopped 狀態能還原。運行中按「還原」會提示先停止；停機後再按快照旁的「還原」，確認快照名稱後才會呼叫還原 API。\n4. 不再需要的快照按「刪除」，確認對話框中的快照名稱後才會刪除；刪除失敗時頁面會重新載入列表。\n5. 「自動快照設定」可啟用策略並選擇每 10 分鐘、1 小時、6 小時或 24 小時；達到配額時，策略提示會按規則處理最早的自動快照。\n\n## 備份：建立、匯出、遠端上傳與還原\n\n目前 InstanceDetailView 實際掛載的是快照管理元件；備份 API 與 BackupManager 元件定義了以下按鈕流程。只有當你的介面顯示「備份」管理區時，才會看到這些按鈕。\n1. **建立**：先確認有備份配額且尚未滿額；否則「建立」會停用。按「建立」，輸入必填名稱及可選描述後提交。備份會先顯示 creating，完成後變為 ready；建立可能需要幾分鐘。\n2. **匯出／下載**：只有 ready 備份可匯出。按「匯出」後先建立匯出任務，再取得一次性下載 token，由瀏覽器開始下載；準備或下載期間按鈕會停用，失敗時可按「重試」。節點擁有者在 canManageBackups=false 時不能下載。\n3. **上傳到遠端**：在 ready 備份旁按「上傳」，從彈窗選擇儲存設定；系統會優先選取預設設定。沒有儲存設定時，先按彈窗內的連結到「個人資料」設定。提交後任務會顯示 PENDING／PROCESSING、排隊位置與執行時間，頁面每 3 秒查詢狀態；重新整理頁面也會載入活躍上傳任務。節點擁有者不能上傳。\n4. **還原**：對 ready 備份按「還原」，在危險操作彈窗確認後提交。還原會停止目前實例並用備份替換；該實例的其他備份及所有快照會被永久刪除，成功後名稱會變為「原實例名稱 | restored:備份名稱」。還原期間會顯示任務狀態與排隊位置，同一時間已有還原任務時不能再次提交。\n5. 還原失敗且原實例仍可回復時，備份列會提供「回滾」；按下後呼叫回滾 API，成功會恢復原實例。完成還原後頁面會重新載入，請重新檢查 SSH、IP 與連接埠映射。\n6. **刪除備份**：按「刪除」並在確認視窗確認備份名稱；creating 或還原中的備份不能刪除。刪除備份不等於刪除實例，也不會替代遠端上傳。\n\n## 刪除與退款注意事項\n\n- 列表中的「刪除」只有在 error，或沒有方案計費 ID 時顯示；按下後會先以實例名稱跳出確認視窗，確認才呼叫 instances.delete。詳情頁的直接刪除也遵循權限與方案設定；付費實例通常要使用「銷毀」流程，而不是把刪除當成退款。\n- 「銷毀」會先載入可銷毀狀態與退款預覽。付費實例需在目前流量週期已用流量低於方案設定的退款銷毀上限；首次銷毀免手續費，之後的手續費率、剩餘價值、退款上限與實際退款額以彈窗當下顯示為準。免費實例可直接銷毀但無退款，也不計入銷毀次數。\n- 銷毀確認不是單純按一下：在彈窗讀完實例與退款資訊後，輸入完整實例名稱，再按「確認銷毀」。成功後實例及其資料（包含快照、備份、連接埠映射等）永久刪除，付費實例的退款會在成功提示中顯示；若流量或其他條件不符，先依彈窗原因處理。\n- error 狀態橫幅另有「重試建立」和「立即銷毀」；立即銷毀會先跳確認，並走 error 免手續費參數。任何刪除、重裝、重建或備份還原前，都要先確認沒有仍需保留的資料。',
         },
-
         networkingBasics: {
             title: '網路設定：NAT 與連接埠映射',
             summary: '先確認網路模式，再用 TCP／UDP 建立單個或連續範圍映射，從外部驗證服務並處理連接埠衝突。',
-            content: `## 先判斷網路模式
-
-1. 開啟實例詳情，在「資訊」頁核對「網路模式」，再切到「網路」頁查看內網 IPv4、公網 IPv4、公網 IPv6 與連接埠映射。
-2. 依模式決定測試位址：
-   - IPv4 NAT（nat）：透過節點的公網 IPv4 和連接埠映射存取實例服務。
-   - IPv4 NAT & IPv6（nat_ipv6）：IPv4 仍使用連接埠映射；實例有獨立公網 IPv6，可直接使用 IPv6 位址。
-   - IPv4 NAT & IPv6 NAT（nat_ipv6_nat）：IPv4 使用連接埠映射；若節點有公網 IPv6，映射也會在節點共用的 IPv6 上使用相同外部連接埠。
-   - IPv6 NAT（ipv6_nat）：連接埠映射使用節點的公網 IPv6，不要把它當成有公網 IPv4 的模式。
-   - IPv6 Only（ipv6_only）：不支援連接埠映射，直接使用實例顯示的公網 IPv6；網路頁不會提供新增映射的操作。
-
-## 先確認實例內的服務
-
-服務必須在實例內監聽你要映射的內部連接埠，且協定要一致：TCP 服務只能用 TCP 映射，UDP 服務只能用 UDP 映射。先在實例內確認服務狀態，再從實例外部測試；只在實例內連線成功，不能代表映射已可從外部使用。
-
-## 建立單個映射
-
-1. 在實例詳情切到「網路」，於「連接埠映射」按「新增」。IPv6 Only 實例請改用公網 IPv6，不能新增映射。
-2. 保持「單個連接埠」，選擇 TCP、UDP 或 Both。Both 會以同一個外部連接埠建立 TCP 和 UDP 兩筆映射，並使用兩個連接埠配額。
-3. 填寫必填的「內部連接埠」，可輸入單一連接埠（例如 80 或 22）；也可輸入連續範圍（例如 80-85）。
-4. 「公網連接埠」可留空，讓系統從節點連接埠池自動分配；若指定，請輸入可用的單一連接埠，並遵守頁面顯示的允許範圍。若輸入範圍，內外部範圍必須有相同數量的連接埠。
-5. 可填寫備註後按「新增」。成功後，列表會顯示協定、外部連接埠與內部連接埠；以列表中的外部連接埠作為客戶端連線入口。
-
-## 建立批量映射
-
-1. 在「新增連接埠映射」切換到「批量連接埠」。
-2. 選擇 TCP、UDP 或 Both，填寫外部連接埠起止值與內部連接埠起止值。兩個範圍必須包含相同數量的連接埠，並按順序一一對應；例如外部 20000-20005 會對應內部 80-85。
-3. 一次最多建立 100 個連續的內部連接埠。Both 會為每個內部連接埠各建立 TCP 與 UDP 映射，因此每個連接埠需要兩個配額。
-4. 若要讓系統自動分配一整段外部連接埠，可在單個模式輸入內部範圍並把公網連接埠留空；送出後會按批量建立流程自動分配。
-5. 填寫備註並送出，成功後依通知中的數量確認映射已建立。
-
-## 測試 SSH、HTTP 與其他服務
-
-- SSH：IPv4 連線時，將內部 22 映射到可用外部連接埠，再以公網 IPv4 和該外部連接埠連線；IPv6 直連時，使用公網 IPv6 和 22，無需映射。IPv6 位址放入 URL 時請使用方括號。
-- HTTP：先確認 Web 服務實際監聽的內部 TCP 連接埠，再以對應的公網 IPv4 或公網 IPv6 加外部連接埠從外部開啟；不要把內部連接埠當成外部連接埠。
-- 其他 TCP／UDP：客戶端必須使用與映射相同的協定和外部連接埠。若服務在實例內未監聽該內部連接埠，或把 TCP 與 UDP 選錯，外部測試不會成功。
-
-## 遇到連接埠衝突
-
-- 單個映射指定的公網連接埠已被使用時，提交會失敗；換一個頁面允許範圍內的外部連接埠，或清空欄位讓系統自動分配。
-- 批量指定外部範圍時，若部分連接埠已被其他實例佔用，頁面會開啟衝突視窗。按「使用全部建議」或逐筆輸入新的外部連接埠，再確認修改。
-- 新外部連接埠必須在允許範圍內、介於 1-65535，且衝突項目之間不可重複；Both 還必須同時能用於 TCP 和 UDP。若重新提交後仍衝突，繼續改用其他連接埠。
-- 若顯示可用連接埠不足，縮小批量範圍或改用其他可用連接埠。若配額不足，先到「配額」頁分配足夠的連接埠配額。
-
-## 刪除映射與常見限制
-
-1. 在連接埠映射列表找到目標項目，按垃圾桶圖示並確認；刪除會同時移除該映射對應的底層代理設備與記錄，釋放配額。
-2. 也可勾選目前列表頁的多筆映射，按「批量刪除」並確認。系統會逐筆刪除；若部分失敗，通知會列出成功／失敗數量並重新載入列表。
-3. 連接埠新增與刪除需要實例所有者權限；實例被封停或處於移轉鎖定時，操作也會被拒絕。若按鈕不存在或收到權限錯誤，先確認登入帳戶與實例所有權。
-
-## 排查順序
-
-先核對網路模式與實際使用的公網位址，再核對映射的協定、外部連接埠、內部連接埠，最後回到實例內確認服務仍在監聽。IPv4 NAT 沒有可用公網 IPv4、IPv6 NAT／IPv6 Only 沒有可用公網 IPv6，或服務只監聽錯誤的協定／連接埠時，映射都無法完成外部連線。`
+            content: '## 先判斷網路模式\n\n1. 開啟實例詳情，在「資訊」頁核對「網路模式」，再切到「網路」頁查看內網 IPv4、公網 IPv4、公網 IPv6 與連接埠映射。\n2. 依模式決定測試位址：\n   - IPv4 NAT（nat）：透過節點的公網 IPv4 和連接埠映射存取實例服務。\n   - IPv4 NAT & IPv6（nat_ipv6）：IPv4 仍使用連接埠映射；實例有獨立公網 IPv6，可直接使用 IPv6 位址。\n   - IPv4 NAT & IPv6 NAT（nat_ipv6_nat）：IPv4 使用連接埠映射；若節點有公網 IPv6，映射也會在節點共用的 IPv6 上使用相同外部連接埠。\n   - IPv6 NAT（ipv6_nat）：連接埠映射使用節點的公網 IPv6，不要把它當成有公網 IPv4 的模式。\n   - IPv6 Only（ipv6_only）：不支援連接埠映射，直接使用實例顯示的公網 IPv6；網路頁不會提供新增映射的操作。\n\n## 先確認實例內的服務\n\n服務必須在實例內監聽你要映射的內部連接埠，且協定要一致：TCP 服務只能用 TCP 映射，UDP 服務只能用 UDP 映射。先在實例內確認服務狀態，再從實例外部測試；只在實例內連線成功，不能代表映射已可從外部使用。\n\n## 建立單個映射\n\n1. 在實例詳情切到「網路」，於「連接埠映射」按「新增」。IPv6 Only 實例請改用公網 IPv6，不能新增映射。\n2. 保持「單個連接埠」，選擇 TCP、UDP 或 Both。Both 會以同一個外部連接埠建立 TCP 和 UDP 兩筆映射，並使用兩個連接埠配額。\n3. 填寫必填的「內部連接埠」，可輸入單一連接埠（例如 80 或 22）；也可輸入連續範圍（例如 80-85）。\n4. 「公網連接埠」可留空，讓系統從節點連接埠池自動分配；若指定，請輸入可用的單一連接埠，並遵守頁面顯示的允許範圍。若輸入範圍，內外部範圍必須有相同數量的連接埠。\n5. 可填寫備註後按「新增」。成功後，列表會顯示協定、外部連接埠與內部連接埠；以列表中的外部連接埠作為客戶端連線入口。\n\n## 建立批量映射\n\n1. 在「新增連接埠映射」切換到「批量連接埠」。\n2. 選擇 TCP、UDP 或 Both，填寫外部連接埠起止值與內部連接埠起止值。兩個範圍必須包含相同數量的連接埠，並按順序一一對應；例如外部 20000-20005 會對應內部 80-85。\n3. 一次最多建立 100 個連續的內部連接埠。Both 會為每個內部連接埠各建立 TCP 與 UDP 映射，因此每個連接埠需要兩個配額。\n4. 若要讓系統自動分配一整段外部連接埠，可在單個模式輸入內部範圍並把公網連接埠留空；送出後會按批量建立流程自動分配。\n5. 填寫備註並送出，成功後依通知中的數量確認映射已建立。\n\n## 測試 SSH、HTTP 與其他服務\n\n- SSH：IPv4 連線時，將內部 22 映射到可用外部連接埠，再以公網 IPv4 和該外部連接埠連線；IPv6 直連時，使用公網 IPv6 和 22，無需映射。IPv6 位址放入 URL 時請使用方括號。\n- HTTP：先確認 Web 服務實際監聽的內部 TCP 連接埠，再以對應的公網 IPv4 或公網 IPv6 加外部連接埠從外部開啟；不要把內部連接埠當成外部連接埠。\n- 其他 TCP／UDP：客戶端必須使用與映射相同的協定和外部連接埠。若服務在實例內未監聽該內部連接埠，或把 TCP 與 UDP 選錯，外部測試不會成功。\n\n## 遇到連接埠衝突\n\n- 單個映射指定的公網連接埠已被使用時，提交會失敗；換一個頁面允許範圍內的外部連接埠，或清空欄位讓系統自動分配。\n- 批量指定外部範圍時，若部分連接埠已被其他實例佔用，頁面會開啟衝突視窗。按「使用全部建議」或逐筆輸入新的外部連接埠，再確認修改。\n- 新外部連接埠必須在允許範圍內、介於 1-65535，且衝突項目之間不可重複；Both 還必須同時能用於 TCP 和 UDP。若重新提交後仍衝突，繼續改用其他連接埠。\n- 若顯示可用連接埠不足，縮小批量範圍或改用其他可用連接埠。若配額不足，先到「配額」頁分配足夠的連接埠配額。\n\n## 刪除映射與常見限制\n\n1. 在連接埠映射列表找到目標項目，按垃圾桶圖示並確認；刪除會同時移除該映射對應的底層代理設備與記錄，釋放配額。\n2. 也可勾選目前列表頁的多筆映射，按「批量刪除」並確認。系統會逐筆刪除；若部分失敗，通知會列出成功／失敗數量並重新載入列表。\n3. 連接埠新增與刪除需要實例所有者權限；實例被封停或處於移轉鎖定時，操作也會被拒絕。若按鈕不存在或收到權限錯誤，先確認登入帳戶與實例所有權。\n\n## 排查順序\n\n先核對網路模式與實際使用的公網位址，再核對映射的協定、外部連接埠、內部連接埠，最後回到實例內確認服務仍在監聽。IPv4 NAT 沒有可用公網 IPv4、IPv6 NAT／IPv6 Only 沒有可用公網 IPv6，或服務只監聽錯誤的協定／連接埠時，映射都無法完成外部連線。',
         },
         hostingPublish: {
             title: '託管教程：建立節點並上架套餐',
             summary: '從託管准入、建立節點與連接 Agent，到建立套餐、設定方案及公開銷售的完整步驟。',
-            content: `## 先分清楚三個名詞
-
-- **節點**：你提供的 Incus 宿主機。在「我的節點」建立，並透過主機連接憑證與 Agent 回報狀態。
-- **套餐**：面向使用者的資源與網路政策，會綁定至少一個節點；它決定可用的網路模式、實例類型、配額及公開範圍。
-- **方案**：套餐內的可購買版本，包含價格、計費週期、CPU、記憶體、磁碟、流量、速度及銷售狀態。免費套餐直接使用套餐欄位；付費套餐則在「方案」分頁設定這些銷售版本。
-
-## 1. 確認託管准入
-
-在「我的節點」點擊「新增節點」。一般情況下，使用者必須至少擁有一台自己的實例；免費或付費、官方或託管實例都會計入。若系統關閉託管功能，曾經建立過節點的使用者仍可通過，而從未建立過節點的使用者會被拒絕。管理員不受這項准入限制，但建立節點時仍會驗證欄位。建立節點的 API 會再次檢查准入，不能只依賴前端顯示。
-
-**常見錯誤：** 顯示「不符合託管准入」或「託管功能尚未開放」時，先確認帳戶有至少一台實例；若按鈕可見但送出仍被拒絕，代表後端准入檢查未通過。
-
-## 2. 在「新增節點」填寫節點資料
-
-1. **節點名稱**：一般使用者填寫後綴，系統會加上 PEER + 使用者 ID + -；管理員可直接填完整名稱。名稱長度為 2–64 個字元，只能使用英數字、底線及連字號，且同一使用者不可重複。
-2. **描述／地區、國家或地區**：地區最多 100 個字元；國家或地區用於節點標示。
-3. **連接位址、API 連接埠**：位址可填 IPv4、原始 IPv6 或網域；API 連接埠預設 8443，必須是 1–65535。這是面板連接 Incus 的位址，不是套餐給實例使用的服務連接埠。
-4. **網路模式**：依主機能力選擇 NAT、NAT + IPv6、NAT + IPv6 NAT 或 IPv6 Only。需要路由 IPv6 的模式必須同時填寫 IPv6 子網（需包含斜線）及 IPv6 父介面；也可先留白，執行安裝腳本後再在「設定」補上。
-5. **NAT 設定**：非 IPv6 Only 模式可填公網 IPv4／IPv6、監聽 IPv4／IPv6，以及連接埠範圍。IPv6 位址必須包含冒號，結束連接埠不可小於開始連接埠。
-6. **資源上限**：CPU 配額為總 CPU 時間片上限，0 表示不設上限；記憶體上限以 MB 填寫，非 0 時至少 256 MB。選擇支援的實例類型：容器、VM 或兩者皆可。
-
-頁面提示支援 Ubuntu 22.04+、Debian 11+、Rocky Linux 10 及 Alpine Linux 3.20+。建立後，節點詳情的「儲存」分頁可再建立儲存池。
-
-**常見錯誤：** 位址格式錯誤、IPv6 子網與父介面只填一項、NAT 連接埠範圍反向、記憶體小於 256 MB、名稱重複或名稱含有其他符號，都會被拒絕。
-
-## 3. 安裝並驗證節點連線
-
-建立節點後，頁面會開啟「安裝腳本」視窗。第一步「執行安裝腳本」按「複製命令」，在該台 Incus 主機以 root 或可使用 sudo 的帳戶執行。安裝腳本會配置主機連接所需資料；首次建立節點的安裝工作階段有效 24 小時。
-
-完成腳本後，在第二步按「驗證並連線」。面板會呼叫 Incus 資源與版本端點，成功後將節點標記為已安裝並顯示「線上」。若命令過期，在節點詳情按「重新安裝」取得新命令，重新執行後再按「驗證並連線」。已有憑證的節點可按「測試」檢查連線；尚未有憑證時要先驗證，不能直接測試。
-
-**Agent 與節點連線不是同一件事：** 在節點詳情「資訊」分頁的「宿主機狀態」區塊，按「安裝／重裝 Agent」再按「複製命令」，於主機執行一次性 Agent 命令。Agent 安裝命令需要 HTTPS 面板網址，令牌有效 30 分鐘且只能使用一次；重裝會輪換憑證，舊 Agent 將不能回報。區塊中的「線上／離線／未安裝／已停用」是 Agent 狀態；版本過舊時點擊版本提示可要求升級，升級指令會在下一次心跳送達。
-
-**常見錯誤：** 「驗證並連線」失敗通常是主機位址、API 連接埠、Incus API 或腳本配置不正確；Agent 命令被拒絕通常是面板不是 HTTPS、一次性令牌已過期或已使用。節點顯示「線上」不代表 Agent 一定在線，Agent 長時間沒有心跳仍會變為「離線」。
-
-## 4. 檢查及管理節點
-
-在「我的節點」開啟節點詳情，確認標頭狀態為「線上」。在「資訊」查看主機與 Agent 回報，在「設定」修改位址、資源上限、網路及通知設定，在「儲存」建立或管理儲存池。節點也可能顯示「離線」或「維護中」；發布前應先處理連線及容量問題。節點擁有者及管理員才能管理節點。刪除節點前必須清空其實例，前端會先列出實例，後端也會再次阻止刪除。
-
-## 5. 在「我的方案」建立套餐
-
-按「建立方案」進入套餐表單。這裡的套餐是資源政策，不是節點，也不是套餐內的方案：
-
-- 選擇「免費實例方案」時，CPU、記憶體、磁碟、流量、網路、配額、IO 及開機設定直接由套餐提供，不需要另建銷售方案。
-- 選擇「付費實例方案」時，套餐提供共用的網路與管理設定，價格及各銷售規格在「方案」分頁建立。已有方案的套餐不能直接切回免費模式，必須先刪除所有方案。
-- 套餐至少要綁定一個節點。一般使用者只能選自己的節點；管理員可按權限選擇官方或託管範圍的節點。每個節點可指定系統磁碟儲存池（留白則自動選擇）及流量倍率，倍率必須為 0.001–100。
-
-填寫套餐名稱（2–64 字元）、描述（最多 500 字元）、網路模式、容器或 VM、CPU／記憶體／磁碟、流量與連接埠／快照／網站配額，以及 IO、網路速度、程序數、CPU 優先級與開機策略。若開啟公開存取，公開套餐的實例上限必須是 1–5；需要前置套餐時，在「前置套餐」選擇它。要讓市場顯示，還要啟用套餐並開啟「公開方案」；分享連結可在套餐詳情按「複製分享連結」。
-
-**常見錯誤：** 未綁定節點、普通使用者選了別人的節點、公開套餐上限不在 1–5、套餐名稱重複／不合規、VM 選用了不支援的網路模式，或非擁有者嘗試編輯，都會被拒絕。建立套餐本身要求登入及至少一個節點，不要把它與建立節點時的託管准入混為一談。
-
-## 6. 在「方案」分頁建立及上架銷售版本
-
-在套餐詳情開啟「方案」分頁，按「新增方案」。方案是同一套餐內的價格與規格版本；填寫方案名稱、描述、價格、計費週期、CPU 15–10000%、記憶體 128–62144 MB、磁碟 512–104857600 MB、流量 1–100000 GB、速度 1–10000 Mbps，以及連接埠、快照、交換空間、網站、排序及可選 SLA。流量重置可另填重置價格，價格上限為 999999.99，精確到小數點後兩位；一般託管使用者只能選月付，管理員可選季付、半年付或年付。設定完成後按「儲存」。
-
-方案狀態不是節點狀態：
-
-- **可售**：在套餐可見，使用者可選來建立新實例。
-- **售罄**：仍可見，但不能新開實例或切換到此方案。
-- **下架**：從開通入口隱藏，不能被選取。
-
-可在方案卡按「編輯」或「刪除」；正在使用中的方案不能刪除。方案配額更新也會同步檢查既有實例，因此請先確認不會低於已使用資源。
-
-**上架／下架的實際操作：** 沒有獨立的「發布」按鈕。套餐層級要同時保持「啟用」及「公開存取」才會公開；付費套餐還必須有「可售」方案。要下架套餐，取消啟用或關閉公開存取；要暫停單一銷售版本，將其切換為「售罄」或「下架」。
-
-## 7. 上架前檢查與權限
-
-確認節點已透過「驗證並連線」、Agent 在「宿主機狀態」持續心跳，並在「設定／儲存」確認 CPU、記憶體、儲存及流量餘量。確認套餐至少綁定一個可用節點、公開設定正確，且付費套餐有可售方案。套餐及方案的編輯、刪除由套餐擁有者或管理員執行；節點由節點擁有者或管理員執行。任何前端隱藏的按鈕都不是權限繞過方式，後端會再次檢查擁有權、配額、依賴套餐及實例使用情況。`
+            content: '## 先分清楚三個名詞\n\n- **節點**：你提供的 Incus 宿主機。在「我的節點」建立，並透過主機連接憑證與 Agent 回報狀態。\n- **套餐**：面向使用者的資源與網路政策，會綁定至少一個節點；它決定可用的網路模式、實例類型、配額及公開範圍。\n- **方案**：套餐內的可購買版本，包含價格、計費週期、CPU、記憶體、磁碟、流量、速度及銷售狀態。免費套餐直接使用套餐欄位；付費套餐則在「方案」分頁設定這些銷售版本。\n\n## 1. 確認託管准入\n\n在「我的節點」點擊「新增節點」。一般情況下，使用者必須至少擁有一台自己的實例；免費或付費、官方或託管實例都會計入。若系統關閉託管功能，曾經建立過節點的使用者仍可通過，而從未建立過節點的使用者會被拒絕。管理員不受這項准入限制，但建立節點時仍會驗證欄位。建立節點的 API 會再次檢查准入，不能只依賴前端顯示。\n\n**常見錯誤：** 顯示「不符合託管准入」或「託管功能尚未開放」時，先確認帳戶有至少一台實例；若按鈕可見但送出仍被拒絕，代表後端准入檢查未通過。\n\n## 2. 在「新增節點」填寫節點資料\n\n1. **節點名稱**：一般使用者填寫後綴，系統會加上 PEER + 使用者 ID + -；管理員可直接填完整名稱。名稱長度為 2–64 個字元，只能使用英數字、底線及連字號，且同一使用者不可重複。\n2. **描述／地區、國家或地區**：地區最多 100 個字元；國家或地區用於節點標示。\n3. **連接位址、API 連接埠**：位址可填 IPv4、原始 IPv6 或網域；API 連接埠預設 8443，必須是 1–65535。這是面板連接 Incus 的位址，不是套餐給實例使用的服務連接埠。\n4. **網路模式**：依主機能力選擇 NAT、NAT + IPv6、NAT + IPv6 NAT 或 IPv6 Only。需要路由 IPv6 的模式必須同時填寫 IPv6 子網（需包含斜線）及 IPv6 父介面；也可先留白，執行安裝腳本後再在「設定」補上。\n5. **NAT 設定**：非 IPv6 Only 模式可填公網 IPv4／IPv6、監聽 IPv4／IPv6，以及連接埠範圍。IPv6 位址必須包含冒號，結束連接埠不可小於開始連接埠。\n6. **資源上限**：CPU 配額為總 CPU 時間片上限，0 表示不設上限；記憶體上限以 MB 填寫，非 0 時至少 256 MB。選擇支援的實例類型：容器、VM 或兩者皆可。\n\n頁面提示支援 Ubuntu 22.04+、Debian 11+、Rocky Linux 10 及 Alpine Linux 3.20+。建立後，節點詳情的「儲存」分頁可再建立儲存池。\n\n**常見錯誤：** 位址格式錯誤、IPv6 子網與父介面只填一項、NAT 連接埠範圍反向、記憶體小於 256 MB、名稱重複或名稱含有其他符號，都會被拒絕。\n\n## 3. 安裝並驗證節點連線\n\n建立節點後，頁面會開啟「安裝腳本」視窗。第一步「執行安裝腳本」按「複製命令」，在該台 Incus 主機以 root 或可使用 sudo 的帳戶執行。安裝腳本會配置主機連接所需資料；首次建立節點的安裝工作階段有效 24 小時。\n\n完成腳本後，在第二步按「驗證並連線」。面板會呼叫 Incus 資源與版本端點，成功後將節點標記為已安裝並顯示「線上」。若命令過期，在節點詳情按「重新安裝」取得新命令，重新執行後再按「驗證並連線」。已有憑證的節點可按「測試」檢查連線；尚未有憑證時要先驗證，不能直接測試。\n\n**Agent 與節點連線不是同一件事：** 在節點詳情「資訊」分頁的「宿主機狀態」區塊，按「安裝／重裝 Agent」再按「複製命令」，於主機執行一次性 Agent 命令。Agent 安裝命令需要 HTTPS 面板網址，令牌有效 30 分鐘且只能使用一次；重裝會輪換憑證，舊 Agent 將不能回報。區塊中的「線上／離線／未安裝／已停用」是 Agent 狀態；版本過舊時點擊版本提示可要求升級，升級指令會在下一次心跳送達。\n\n**常見錯誤：** 「驗證並連線」失敗通常是主機位址、API 連接埠、Incus API 或腳本配置不正確；Agent 命令被拒絕通常是面板不是 HTTPS、一次性令牌已過期或已使用。節點顯示「線上」不代表 Agent 一定在線，Agent 長時間沒有心跳仍會變為「離線」。\n\n## 4. 檢查及管理節點\n\n在「我的節點」開啟節點詳情，確認標頭狀態為「線上」。在「資訊」查看主機與 Agent 回報，在「設定」修改位址、資源上限、網路及通知設定，在「儲存」建立或管理儲存池。節點也可能顯示「離線」或「維護中」；發布前應先處理連線及容量問題。節點擁有者及管理員才能管理節點。刪除節點前必須清空其實例，前端會先列出實例，後端也會再次阻止刪除。\n\n## 5. 在「我的方案」建立套餐\n\n按「建立方案」進入套餐表單。這裡的套餐是資源政策，不是節點，也不是套餐內的方案：\n\n- 選擇「免費實例方案」時，CPU、記憶體、磁碟、流量、網路、配額、IO 及開機設定直接由套餐提供，不需要另建銷售方案。\n- 選擇「付費實例方案」時，套餐提供共用的網路與管理設定，價格及各銷售規格在「方案」分頁建立。已有方案的套餐不能直接切回免費模式，必須先刪除所有方案。\n- 套餐至少要綁定一個節點。一般使用者只能選自己的節點；管理員可按權限選擇官方或託管範圍的節點。每個節點可指定系統磁碟儲存池（留白則自動選擇）及流量倍率，倍率必須為 0.001–100。\n\n填寫套餐名稱（2–64 字元）、描述（最多 500 字元）、網路模式、容器或 VM、CPU／記憶體／磁碟、流量與連接埠／快照／網站配額，以及 IO、網路速度、程序數、CPU 優先級與開機策略。若開啟公開存取，公開套餐的實例上限必須是 1–5；需要前置套餐時，在「前置套餐」選擇它。要讓市場顯示，還要啟用套餐並開啟「公開方案」；分享連結可在套餐詳情按「複製分享連結」。\n\n**常見錯誤：** 未綁定節點、普通使用者選了別人的節點、公開套餐上限不在 1–5、套餐名稱重複／不合規、VM 選用了不支援的網路模式，或非擁有者嘗試編輯，都會被拒絕。建立套餐本身要求登入及至少一個節點，不要把它與建立節點時的託管准入混為一談。\n\n## 6. 在「方案」分頁建立及上架銷售版本\n\n在套餐詳情開啟「方案」分頁，按「新增方案」。方案是同一套餐內的價格與規格版本；填寫方案名稱、描述、價格、計費週期、CPU 15–10000%、記憶體 128–62144 MB、磁碟 512–104857600 MB、流量 1–100000 GB、速度 1–10000 Mbps，以及連接埠、快照、交換空間、網站、排序及可選 SLA。流量重置可另填重置價格，價格上限為 999999.99，精確到小數點後兩位；一般託管使用者只能選月付，管理員可選季付、半年付或年付。設定完成後按「儲存」。\n\n方案狀態不是節點狀態：\n\n- **可售**：在套餐可見，使用者可選來建立新實例。\n- **售罄**：仍可見，但不能新開實例或切換到此方案。\n- **下架**：從開通入口隱藏，不能被選取。\n\n可在方案卡按「編輯」或「刪除」；正在使用中的方案不能刪除。方案配額更新也會同步檢查既有實例，因此請先確認不會低於已使用資源。\n\n**上架／下架的實際操作：** 沒有獨立的「發布」按鈕。套餐層級要同時保持「啟用」及「公開存取」才會公開；付費套餐還必須有「可售」方案。要下架套餐，取消啟用或關閉公開存取；要暫停單一銷售版本，將其切換為「售罄」或「下架」。\n\n## 7. 上架前檢查與權限\n\n確認節點已透過「驗證並連線」、Agent 在「宿主機狀態」持續心跳，並在「設定／儲存」確認 CPU、記憶體、儲存及流量餘量。確認套餐至少綁定一個可用節點、公開設定正確，且付費套餐有可售方案。套餐及方案的編輯、刪除由套餐擁有者或管理員執行；節點由節點擁有者或管理員執行。任何前端隱藏的按鈕都不是權限繞過方式，後端會再次檢查擁有權、配額、依賴套餐及實例使用情況。',
         },
         hostingEarnings: {
             title: '託管收益：結算與提現',
             summary: '按收入類型、凍結／解凍狀態與可用餘額，完成託管收益核對、提現及退款扣回。',
-            content: `## 1. 先確認收益來源
-
-1. 進入「託管收益」。只有非管理員使用者擁有的節點，在使用者開通、續費或升級該節點上的付費實例時，才會產生託管收入。
-2. 在「收支明細」中，收入操作類型包括「開通」「續費」及「升級」；另外也可能看到「銷毀」扣除、「提現」與「管理員調整」。資料分類還包括收入、解凍、提現及扣除；目前自動解凍是把原收入記錄改為「已解凍」，不會另建一筆解凍收入。累計收入只統計收入記錄，不要把提現、扣除或 AFF 返利當作託管收入。
-3. 開通按實際扣款金額入帳；續費按折扣後的最終金額入帳；升級只按補交的差價入帳。
-
-## 2. 判讀餘額與解凍
-
-1. 「可用餘額」是可以直接提現的託管餘額；「凍結中」是尚未解凍的收入合計，凍結金額不會計入可用餘額。
-2. 每筆開通、續費或升級收入建立時都會凍結，解凍時間按建立當下的「現在 + 1 個月」計算；頁面文案以 30 天說明。服務端每小時整點執行解凍，服務啟動後約 5 秒也會補跑到期記錄。記錄變成「已解凍」後，金額才會進入可用餘額。
-3. 明細會顯示操作類型、金額、凍結狀態、購買者、實例、節點與時間。介面資料另外包含解凍時間、關聯 ID 及備註；實例刪除後仍會用建立收入時保存的快照顯示名稱等資訊。
-
-## 3. 按步驟提現到面板餘額
-
-1. 先確認「可用餘額」至少為目前規則的最低提現金額 **¥10**。未達門檻時，按鈕會停用；提交過低金額會提示「最低提現金額為 ¥10」。
-2. 按「申請提現」，在表單只填「提現金額」。目前自助接口僅支援提現到「面板餘額」，表單沒有其他目標選項；金額不可超過可用餘額，否則會提示可用託管餘額不足。
-3. 確認預覽的提現金額、手續費及實際到賬。面板餘額提現手續費率為 **5%**；手續費金額按提現金額乘以 5% 並四捨五入至小數點後兩位，實際到賬為提現金額減去手續費。
-4. 按「確認提現」。成功後，託管可用餘額扣除提現金額，實際到賬金額加入面板餘額，並新增一筆負數的託管「提現」明細。這個自助流程會在同一筆交易中完成，成功建立的記錄狀態為「已完成」並寫入處理時間，不需等待人工審核。
-5. 如需提現到頁面提示的其他指定方式，請按頁面說明提交工單；頁面文案標示該方式手續費為 **10%**，自助提現表單不能選擇該目標。提現記錄欄位包括提現金額、實際到賬、方式、狀態及申請時間；若記錄有拒絕原因，也會顯示在狀態下方。狀態可能顯示「待審核」「已通過」「已拒絕」或「已完成」，其中自助面板餘額提現目前直接建立為「已完成」。
-
-## 4. 退款、銷毀與開通失敗如何影響收益
-
-1. 使用者銷毀付費託管實例，或節點所有者刪除其他使用者的付費實例並產生退款時，系統會按實際退款金額扣回託管收益；買方退款所扣的銷毀手續費不會再加到託管扣回額中。
-2. 扣回順序是：先從該實例相關的凍結收入刪除或減少，再從可用託管餘額扣除，最後在仍不足時從節點所有者的面板餘額補扣。系統會新增「銷毀」負數扣除明細，因此退款可能同時降低凍結收益、可用託管餘額，甚至面板餘額。
-3. 若實例開通失敗而自動全額退款，也會在同一結算中扣回已記錄的託管收入。若實際退款金額為 0，則不會建立這筆託管扣除。
-
-## 5. 遇到錯誤時
-
-- 最低金額錯誤：將金額調整至至少 ¥10。
-- 可用餘額不足：只可提現可用餘額；凍結中的金額必須先解凍。
-- 「託管餘額正在處理，請稍後重試」：等待上一筆解凍、扣回或提現交易完成後再提交；提現接口每分鐘最多接受 5 次請求。
-- 提現成功但頁面資料未更新：重新整理「託管收益」，再核對可用餘額、面板餘額與兩邊的明細。`
+            content: '## 1. 先確認收益來源\n\n1. 進入「託管收益」。只有非管理員使用者擁有的節點，在使用者開通、續費或升級該節點上的付費實例時，才會產生託管收入。\n2. 在「收支明細」中，收入操作類型包括「開通」「續費」及「升級」；另外也可能看到「銷毀」扣除、「提現」與「管理員調整」。資料分類還包括收入、解凍、提現及扣除；目前自動解凍是把原收入記錄改為「已解凍」，不會另建一筆解凍收入。累計收入只統計收入記錄，不要把提現、扣除或 AFF 返利當作託管收入。\n3. 開通按實際扣款金額入帳；續費按折扣後的最終金額入帳；升級只按補交的差價入帳。\n\n## 2. 判讀餘額與解凍\n\n1. 「可用餘額」是可以直接提現的託管餘額；「凍結中」是尚未解凍的收入合計，凍結金額不會計入可用餘額。\n2. 每筆開通、續費或升級收入建立時都會凍結，解凍時間按建立當下的「現在 + 1 個月」計算；頁面文案以 30 天說明。服務端每小時整點執行解凍，服務啟動後約 5 秒也會補跑到期記錄。記錄變成「已解凍」後，金額才會進入可用餘額。\n3. 明細會顯示操作類型、金額、凍結狀態、購買者、實例、節點與時間。介面資料另外包含解凍時間、關聯 ID 及備註；實例刪除後仍會用建立收入時保存的快照顯示名稱等資訊。\n\n## 3. 按步驟提現到面板餘額\n\n1. 先確認「可用餘額」至少為目前規則的最低提現金額 **¥10**。未達門檻時，按鈕會停用；提交過低金額會提示「最低提現金額為 ¥10」。\n2. 按「申請提現」，在表單只填「提現金額」。目前自助接口僅支援提現到「面板餘額」，表單沒有其他目標選項；金額不可超過可用餘額，否則會提示可用託管餘額不足。\n3. 確認預覽的提現金額、手續費及實際到賬。面板餘額提現手續費率為 **5%**；手續費金額按提現金額乘以 5% 並四捨五入至小數點後兩位，實際到賬為提現金額減去手續費。\n4. 按「確認提現」。成功後，託管可用餘額扣除提現金額，實際到賬金額加入面板餘額，並新增一筆負數的託管「提現」明細。這個自助流程會在同一筆交易中完成，成功建立的記錄狀態為「已完成」並寫入處理時間，不需等待人工審核。\n5. 如需提現到頁面提示的其他指定方式，請按頁面說明提交工單；頁面文案標示該方式手續費為 **10%**，自助提現表單不能選擇該目標。提現記錄欄位包括提現金額、實際到賬、方式、狀態及申請時間；若記錄有拒絕原因，也會顯示在狀態下方。狀態可能顯示「待審核」「已通過」「已拒絕」或「已完成」，其中自助面板餘額提現目前直接建立為「已完成」。\n\n## 4. 退款、銷毀與開通失敗如何影響收益\n\n1. 使用者銷毀付費託管實例，或節點所有者刪除其他使用者的付費實例並產生退款時，系統會按實際退款金額扣回託管收益；買方退款所扣的銷毀手續費不會再加到託管扣回額中。\n2. 扣回順序是：先從該實例相關的凍結收入刪除或減少，再從可用託管餘額扣除，最後在仍不足時從節點所有者的面板餘額補扣。系統會新增「銷毀」負數扣除明細，因此退款可能同時降低凍結收益、可用託管餘額，甚至面板餘額。\n3. 若實例開通失敗而自動全額退款，也會在同一結算中扣回已記錄的託管收入。若實際退款金額為 0，則不會建立這筆託管扣除。\n\n## 5. 遇到錯誤時\n\n- 最低金額錯誤：將金額調整至至少 ¥10。\n- 可用餘額不足：只可提現可用餘額；凍結中的金額必須先解凍。\n- 「託管餘額正在處理，請稍後重試」：等待上一筆解凍、扣回或提現交易完成後再提交；提現接口每分鐘最多接受 5 次請求。\n- 提現成功但頁面資料未更新：重新整理「託管收益」，再核對可用餘額、面板餘額與兩邊的明細。',
         },
         billingBasics: {
             title: '計費與續費',
             summary: '依序完成充值、開通、續費、升級與銷毀退款。',
-            content: `## 1. 充值到面板餘額
-
-1. 登入後開啟「錢包」，按「充值」。
-2. 在「支付渠道」選擇頁面目前顯示的渠道；渠道提供多個選項時，再於「選擇支付方式」選擇具體方式。若支付頁才選擇幣種與網路，依該頁提示完成（Heleket 類型會在支付頁選擇）。
-3. 一般充值可按 ¥10、¥50、¥100、¥200，或輸入自訂金額；以畫面顯示的金額範圍為準。若有手續費，先核對「應付金額」與「實際到帳」；再勾選無法原路退款、充值須知與服務條款，按「立即支付」。
-4. 有支付連結的渠道會跳轉到支付頁。支付後回到錢包的「充值記錄」；頁面會驗證訂單，狀態為「已完成」才代表餘額已到帳。顯示「待支付」時先等待並重新整理；付款金額不符、失敗或已取消時，按記錄中的提示處理。
-5. 若選「人工充值」，先閱讀渠道說明，在「付款說明 / 交易資訊」填入付款方式、交易編號或付款時間，再建立訂單；這類訂單不會顯示一般的立即支付按鈕。若選「卡密充值」，輸入卡密編號與密碼，按「兌換卡密」；成功後餘額會直接到帳，不需輸入充值金額。
-
-充值記錄中的未過期「待支付」一般可按「支付」重新取得支付連結，也可按「作廢」取消；過期訂單不能重新支付，請建立新訂單。充值一律不能原路退款；實例銷毀的退款是另一條規則，會退回面板餘額。
-
-## 2. 開通付費實例
-
-1. 開啟「市場」，先選地區，再選商品與可用方案；確認方案週期、資源與價格後按「立即開通」。未登入時會先要求登入，再回到建立流程。
-2. 在建立頁完成實例名稱、宿主機、映像檔與 SSH 金鑰；付費方案的 CPU、記憶體與磁碟使用方案固定配置。可用時輸入 AFF 優惠碼，按畫面驗證後再繼續。
-3. 在「訂單概覽」核對方案費用、優惠與最終價格，按「建立」。後端會從面板餘額一次扣除實際價格並建立計費記錄；餘額不足時不會開通，先回到「錢包」充值。
-4. 建立成功後實例可能先顯示「creating」，這代表仍在部署，等待列表或詳情頁更新。若部署失敗，系統會依開通失敗流程退回已扣款項；需要重試時，重試會再次按上次實付金額扣款。
-
-## 3. 手動續費與自動續費
-
-1. 在「實例」列表開啟實例詳情，於計費卡按「續費」。免費實例不需要續費。
-2. 選擇畫面提供的續費月數，核對原價（如有）、AFF 折扣、實付金額、新到期日、目前餘額與續費後餘額，按確認續費。費用從面板餘額扣除；餘額不足時按「前往充值」，充值後重新開啟續費視窗。
-3. 托管實例只能按月續費，且只可在到期前 7 天內續費；太早或選擇其他月數時，視窗會禁止提交。到期後因到期被封停的付費實例，成功續費後會恢復為已停止狀態；手動封停的實例不能自行續費。
-4. 若要讓系統自動處理，在計費卡按「自動續費」再按「開啟自動續費」。系統會在到期前 24 小時按原計費週期從餘額扣款；請預留足夠餘額。餘額不足會通知並記錄失敗，連續嘗試未成功後自動續費可能會被關閉。
-
-若到期前仍未成功續費，實例到期後會被系統封停；到期封停超過 3 天的實例會由排程自動刪除，這不等同於手動銷毀退款流程。
-
-## 4. 升級方案
-
-1. 付費實例詳情按「變更方案」，選擇同一商品中畫面列出的更高方案；免費實例、已下架或已售罄方案不能變更，也不支援降級。
-2. 選定方案後等待預覽，逐項確認剩餘天數、原方案與新方案日價、剩餘價值、新方案費用、折扣、應補差價、新到期日與新配置。升級需剩餘至少 15 天，且實例狀態必須是執行中或已停止；到期日不會因升級改變。
-3. 確認面板餘額足以支付差價後按「升級」。系統只從餘額扣除差價；不足時按「前往充值」充值後重新預覽。LXC 通常即時套用新配置；KVM 需要重啟，若畫面出現重啟提示，請按提示操作。
-
-## 5. 銷毀與退款
-
-1. 先備份需要保留的資料，再在實例詳情按「銷毀」。彈窗會先載入預覽；展開「銷毀規則」並核對實例名稱、剩餘天數、可退價值、手續費、退款金額與退款上限。
-2. 付費實例當月流量週期已用流量達到或超過方案設定上限時不能銷毀（到期封停、符合系統條件的例外由後端判定）。首次付費實例銷毀免手續費；之後銷毀按可退款價值收取 10% 手續費。免費實例可銷毀，但沒有退款，也不計入付費銷毀次數。
-3. 確認無誤後，在輸入框完整輸入畫面指定的實例名稱，按確認銷毀。這會永久刪除實例及其快照、備份、連接埠映射等資料，無法復原；付費退款按預覽金額退回面板餘額，不會退回原支付方式。
-
-## 6. 充值或扣款異常時
-
-- 任何開通、續費或升級都只使用面板餘額；看到「餘額不足」就先充值，不要重複點擊扣款按鈕。
-- 充值後仍顯示「待支付」時，先到「充值記錄」查看訂單號與狀態；支付回調可能尚未到達。顯示「支付金額不匹配」或「失敗」時，保留訂單號與支付資訊再聯繫管理員。
-- 充值訂單可在「充值記錄」核對應付金額、實際到帳、支付渠道、狀態與完成時間；餘額明細可再核對開通、續費、升級或退款的扣款/入帳記錄。`
+            content: '## 1. 充值到面板餘額\n\n1. 登入後開啟「錢包」，按「充值」。\n2. 在「支付渠道」選擇頁面目前顯示的渠道；渠道提供多個選項時，再於「選擇支付方式」選擇具體方式。若支付頁才選擇幣種與網路，依該頁提示完成（Heleket 類型會在支付頁選擇）。\n3. 一般充值可按 ¥10、¥50、¥100、¥200，或輸入自訂金額；以畫面顯示的金額範圍為準。若有手續費，先核對「應付金額」與「實際到帳」；再勾選無法原路退款、充值須知與服務條款，按「立即支付」。\n4. 有支付連結的渠道會跳轉到支付頁。支付後回到錢包的「充值記錄」；頁面會驗證訂單，狀態為「已完成」才代表餘額已到帳。顯示「待支付」時先等待並重新整理；付款金額不符、失敗或已取消時，按記錄中的提示處理。\n5. 若選「人工充值」，先閱讀渠道說明，在「付款說明 / 交易資訊」填入付款方式、交易編號或付款時間，再建立訂單；這類訂單不會顯示一般的立即支付按鈕。若選「卡密充值」，輸入卡密編號與密碼，按「兌換卡密」；成功後餘額會直接到帳，不需輸入充值金額。\n\n充值記錄中的未過期「待支付」一般可按「支付」重新取得支付連結，也可按「作廢」取消；過期訂單不能重新支付，請建立新訂單。充值一律不能原路退款；實例銷毀的退款是另一條規則，會退回面板餘額。\n\n## 2. 開通付費實例\n\n1. 開啟「市場」，先選地區，再選商品與可用方案；確認方案週期、資源與價格後按「立即開通」。未登入時會先要求登入，再回到建立流程。\n2. 在建立頁完成實例名稱、宿主機、映像檔與 SSH 金鑰；付費方案的 CPU、記憶體與磁碟使用方案固定配置。可用時輸入 AFF 優惠碼，按畫面驗證後再繼續。\n3. 在「訂單概覽」核對方案費用、優惠與最終價格，按「建立」。後端會從面板餘額一次扣除實際價格並建立計費記錄；餘額不足時不會開通，先回到「錢包」充值。\n4. 建立成功後實例可能先顯示「creating」，這代表仍在部署，等待列表或詳情頁更新。若部署失敗，系統會依開通失敗流程退回已扣款項；需要重試時，重試會再次按上次實付金額扣款。\n\n## 3. 手動續費與自動續費\n\n1. 在「實例」列表開啟實例詳情，於計費卡按「續費」。免費實例不需要續費。\n2. 選擇畫面提供的續費月數，核對原價（如有）、AFF 折扣、實付金額、新到期日、目前餘額與續費後餘額，按確認續費。費用從面板餘額扣除；餘額不足時按「前往充值」，充值後重新開啟續費視窗。\n3. 托管實例只能按月續費，且只可在到期前 7 天內續費；太早或選擇其他月數時，視窗會禁止提交。到期後因到期被封停的付費實例，成功續費後會恢復為已停止狀態；手動封停的實例不能自行續費。\n4. 若要讓系統自動處理，在計費卡按「自動續費」再按「開啟自動續費」。系統會在到期前 24 小時按原計費週期從餘額扣款；請預留足夠餘額。餘額不足會通知並記錄失敗，連續嘗試未成功後自動續費可能會被關閉。\n\n若到期前仍未成功續費，實例到期後會被系統封停；到期封停超過 3 天的實例會由排程自動刪除，這不等同於手動銷毀退款流程。\n\n## 4. 升級方案\n\n1. 付費實例詳情按「變更方案」，選擇同一商品中畫面列出的更高方案；免費實例、已下架或已售罄方案不能變更，也不支援降級。\n2. 選定方案後等待預覽，逐項確認剩餘天數、原方案與新方案日價、剩餘價值、新方案費用、折扣、應補差價、新到期日與新配置。升級需剩餘至少 15 天，且實例狀態必須是執行中或已停止；到期日不會因升級改變。\n3. 確認面板餘額足以支付差價後按「升級」。系統只從餘額扣除差價；不足時按「前往充值」充值後重新預覽。LXC 通常即時套用新配置；KVM 需要重啟，若畫面出現重啟提示，請按提示操作。\n\n## 5. 銷毀與退款\n\n1. 先備份需要保留的資料，再在實例詳情按「銷毀」。彈窗會先載入預覽；展開「銷毀規則」並核對實例名稱、剩餘天數、可退價值、手續費、退款金額與退款上限。\n2. 付費實例當月流量週期已用流量達到或超過方案設定上限時不能銷毀（到期封停、符合系統條件的例外由後端判定）。首次付費實例銷毀免手續費；之後銷毀按可退款價值收取 10% 手續費。免費實例可銷毀，但沒有退款，也不計入付費銷毀次數。\n3. 確認無誤後，在輸入框完整輸入畫面指定的實例名稱，按確認銷毀。這會永久刪除實例及其快照、備份、連接埠映射等資料，無法復原；付費退款按預覽金額退回面板餘額，不會退回原支付方式。\n\n## 6. 充值或扣款異常時\n\n- 任何開通、續費或升級都只使用面板餘額；看到「餘額不足」就先充值，不要重複點擊扣款按鈕。\n- 充值後仍顯示「待支付」時，先到「充值記錄」查看訂單號與狀態；支付回調可能尚未到達。顯示「支付金額不匹配」或「失敗」時，保留訂單號與支付資訊再聯繫管理員。\n- 充值訂單可在「充值記錄」核對應付金額、實際到帳、支付渠道、狀態與完成時間；餘額明細可再核對開通、續費、升級或退款的扣款/入帳記錄。',
         },
         commonIssues: {
             title: '常見問題與排查',
             summary: '依照實例、Agent、網路、任務與計費狀態逐步定位問題。',
-            content: `## 1. 先看實例與開通狀態
-
-1. 到「實例」列表查看狀態。\`creating\` 表示開通仍在進行，先等待列表狀態更新或重新進入列表，不要重複建立。
-2. 若狀態是 \`error\`，按「重試」。只有建立失敗的實例可以重試；若提示宿主機不可用或餘額不足，分別查看「Agent／宿主機」或「餘額與到期」段落。詳情頁的錯誤提示也有「重試」；不再需要時才按「立即銷毀」。
-3. 詳情頁若顯示 \`PENDING\` 或 \`PROCESSING\` 任務，先記下任務類型、進度、錯誤與排隊位置。只有畫面出現「解除異常」且確認宿主機上的原操作已停止時才按它；一般使用者需任務已超過 15 分鐘。此按鈕只解除任務鎖，不會刪除或修改實例。
-4. 建立頁沒有可用宿主機或映像時，確認已選方案、區域、資源與 SSH 公鑰；沒有 SSH 公鑰時到「個人資料」新增後再回到建立頁。
-
-## 2. Agent 或宿主機離線
-
-1. 到「資源」中的「我的宿主機」，開啟「資訊」頁查看宿主機狀態與 Agent 卡片；卡片會顯示 Agent 是否已安裝、是否停用、\`online\`／\`offline\`／\`unknown\`、最後回報、心跳 IP、Incus 狀態與版本。
-2. 按 Agent 卡片的「重新整理」重新取得狀態。若尚未安裝或需要重新安裝，按「安裝/重裝 Agent」並複製頁面產生的命令。
-3. 宿主機完成設定後，依頁面顯示按「驗證並連線」或「測試連線」。Agent 升級只在 Agent 顯示 online 且版本過期時按「請求升級」；offline 時先恢復心跳。
-
-## 3. SSH 或終端無法連線
-
-1. 詳情頁的「終端」只在實例 \`running\` 時可用；若是 \`stopped\`，先按「啟動」。若 Cloud-init 提示未完成，先按「重新檢查」；狀態為 \`unknown\` 或 \`agent_unavailable\` 且畫面允許時，可按「手動標記完成」，或在終端提示中按「忽略並連線」。
-2. 終端顯示 \`disconnected\` 或 \`error\` 時按「重新連線」；連線中會顯示 \`connecting\`／\`reconnecting\`，先查看最後狀態與錯誤文字。
-3. 使用 IPv4 時，先到「網路」標籤頁新增私有連接埠 \`22\` 的映射，再使用公網 IPv4 與映射後的公網連接埠連線。\`nat_ipv6\` 模式可直接使用公網 IPv6 與連接埠 \`22\`，不需映射。
-4. 連線資料可在「資訊」標籤頁查看 SSH 連接埠；根密碼必須先按「顯示」，需要時再按「複製」。
-
-## 4. 連接埠映射衝突
-
-1. 到詳情頁「網路」標籤頁查看網路模式、連接埠配額與現有映射。只有 NAT 類模式可新增映射；IPv6-only 實例不需要連接埠映射；宿主機擁有者檢視實例時不能管理映射。
-2. 新增映射時若遇到 \`PORT_IN_USE\`（公網連接埠已使用）、\`PORT_RANGE_INVALID\`（超出宿主機範圍）或 \`PORT_NO_AVAILABLE\`（沒有可用連接埠），依錯誤調整公網連接埠或先處理配額。批量新增出現 \`PORT_CONFLICT\` 時，在衝突視窗查看建議連接埠，確認後提交建議方案。
-3. 配額已滿時，先在映射列表勾選項目並按「刪除」或使用批量刪除，再新增需要的映射。
-
-## 5. 快照、備份與排隊任務
-
-1. 在「快照」頁建立快照需要填寫名稱，且必須有剩餘快照配額；恢復快照前先將實例停止。自動快照只可選 10 分鐘、1 小時、6 小時或 24 小時，設定時按啟用並儲存。
-2. 若頁面顯示備份管理，建立備份同樣需要名稱與備份配額；備份必須是 \`ready\` 才能匯出、上傳或恢復。上傳前要選遠端儲存；沒有儲存設定時按頁面「前往設定」。
-3. 備份恢復會顯示 \`PENDING\`／\`PROCESSING\`、排隊位置、執行時間與錯誤；同一實例已有恢復任務時不要重複提交。任務 \`FAILED\` 且畫面提供「回滾」時，先保存錯誤文字，再按「回滾」；匯出或上傳失敗也以畫面顯示的錯誤與任務狀態為準。
-
-## 6. 餘額、方案與到期
-
-1. 在實例列表或詳情頁查看方案、到期時間、剩餘天數與自動續費狀態。付費實例在詳情頁按「續費」；視窗會載入可用續費週期、價格與餘額，選擇頁面提供的週期後提交。餘額不足或沒有可用選項時不要重複提交。
-2. 自動續費可在詳情頁按「自動續費」後依視窗按「啟用」或「停用」。托管實例只有在計費視窗允許的到期前期間才會提供續費選項；若顯示不可續費原因，按頁面原因處理。
-3. \`suspended\` 或到期封停時，許多實例操作會被停用；先查看到期時間與封停原因，續費後重新載入詳情。仍無法恢復時，提交工單並附上狀態與原因。
-
-## 7. 託管售後與提交工單
-
-1. 到「工單」建立工單。託管實例必須在「實例」欄選擇對應的那一台；選取後工單會送給節點負責人。沒有特定實例的問題不要臆填實例，系統會按無實例工單流程通知管理員。
-2. 填寫主旨（2–200 字）、分類、優先級與內容；沒有圖片附件時內容至少 10 字，內容上限 5000 字。可用「新增圖片」上傳最多 6 張 JPG、PNG、WebP、GIF 或 AVIF 圖片，每張不超過 50 MB。
-3. 內容請帶上：實例 ID／名稱、宿主機或節點、目前狀態、完整錯誤文字、發生時間、重現步驟；若畫面有顯示，再附任務 ID／類型／進度／排隊位置，以及網路模式、協定、公網到私有連接埠映射和 SSH 連接埠。
-4. 工單建立後可在詳情查看工單 ID、狀態、分類、優先級、宿主機與實例；已關閉的工單不能回覆。不要在內容或附件中貼 SSH 私鑰、密碼或 Agent 密鑰。`
+            content: '## 1. 先看實例與開通狀態\n\n1. 到「實例」列表查看狀態。`creating` 表示開通仍在進行，先等待列表狀態更新或重新進入列表，不要重複建立。\n2. 若狀態是 `error`，按「重試」。只有建立失敗的實例可以重試；若提示宿主機不可用或餘額不足，分別查看「Agent／宿主機」或「餘額與到期」段落。詳情頁的錯誤提示也有「重試」；不再需要時才按「立即銷毀」。\n3. 詳情頁若顯示 `PENDING` 或 `PROCESSING` 任務，先記下任務類型、進度、錯誤與排隊位置。只有畫面出現「解除異常」且確認宿主機上的原操作已停止時才按它；一般使用者需任務已超過 15 分鐘。此按鈕只解除任務鎖，不會刪除或修改實例。\n4. 建立頁沒有可用宿主機或映像時，確認已選方案、區域、資源與 SSH 公鑰；沒有 SSH 公鑰時到「個人資料」新增後再回到建立頁。\n\n## 2. Agent 或宿主機離線\n\n1. 到「資源」中的「我的宿主機」，開啟「資訊」頁查看宿主機狀態與 Agent 卡片；卡片會顯示 Agent 是否已安裝、是否停用、`online`／`offline`／`unknown`、最後回報、心跳 IP、Incus 狀態與版本。\n2. 按 Agent 卡片的「重新整理」重新取得狀態。若尚未安裝或需要重新安裝，按「安裝/重裝 Agent」並複製頁面產生的命令。\n3. 宿主機完成設定後，依頁面顯示按「驗證並連線」或「測試連線」。Agent 升級只在 Agent 顯示 online 且版本過期時按「請求升級」；offline 時先恢復心跳。\n\n## 3. SSH 或終端無法連線\n\n1. 詳情頁的「終端」只在實例 `running` 時可用；若是 `stopped`，先按「啟動」。若 Cloud-init 提示未完成，先按「重新檢查」；狀態為 `unknown` 或 `agent_unavailable` 且畫面允許時，可按「手動標記完成」，或在終端提示中按「忽略並連線」。\n2. 終端顯示 `disconnected` 或 `error` 時按「重新連線」；連線中會顯示 `connecting`／`reconnecting`，先查看最後狀態與錯誤文字。\n3. 使用 IPv4 時，先到「網路」標籤頁新增私有連接埠 `22` 的映射，再使用公網 IPv4 與映射後的公網連接埠連線。`nat_ipv6` 模式可直接使用公網 IPv6 與連接埠 `22`，不需映射。\n4. 連線資料可在「資訊」標籤頁查看 SSH 連接埠；根密碼必須先按「顯示」，需要時再按「複製」。\n\n## 4. 連接埠映射衝突\n\n1. 到詳情頁「網路」標籤頁查看網路模式、連接埠配額與現有映射。只有 NAT 類模式可新增映射；IPv6-only 實例不需要連接埠映射；宿主機擁有者檢視實例時不能管理映射。\n2. 新增映射時若遇到 `PORT_IN_USE`（公網連接埠已使用）、`PORT_RANGE_INVALID`（超出宿主機範圍）或 `PORT_NO_AVAILABLE`（沒有可用連接埠），依錯誤調整公網連接埠或先處理配額。批量新增出現 `PORT_CONFLICT` 時，在衝突視窗查看建議連接埠，確認後提交建議方案。\n3. 配額已滿時，先在映射列表勾選項目並按「刪除」或使用批量刪除，再新增需要的映射。\n\n## 5. 快照、備份與排隊任務\n\n1. 在「快照」頁建立快照需要填寫名稱，且必須有剩餘快照配額；恢復快照前先將實例停止。自動快照只可選 10 分鐘、1 小時、6 小時或 24 小時，設定時按啟用並儲存。\n2. 若頁面顯示備份管理，建立備份同樣需要名稱與備份配額；備份必須是 `ready` 才能匯出、上傳或恢復。上傳前要選遠端儲存；沒有儲存設定時按頁面「前往設定」。\n3. 備份恢復會顯示 `PENDING`／`PROCESSING`、排隊位置、執行時間與錯誤；同一實例已有恢復任務時不要重複提交。任務 `FAILED` 且畫面提供「回滾」時，先保存錯誤文字，再按「回滾」；匯出或上傳失敗也以畫面顯示的錯誤與任務狀態為準。\n\n## 6. 餘額、方案與到期\n\n1. 在實例列表或詳情頁查看方案、到期時間、剩餘天數與自動續費狀態。付費實例在詳情頁按「續費」；視窗會載入可用續費週期、價格與餘額，選擇頁面提供的週期後提交。餘額不足或沒有可用選項時不要重複提交。\n2. 自動續費可在詳情頁按「自動續費」後依視窗按「啟用」或「停用」。托管實例只有在計費視窗允許的到期前期間才會提供續費選項；若顯示不可續費原因，按頁面原因處理。\n3. `suspended` 或到期封停時，許多實例操作會被停用；先查看到期時間與封停原因，續費後重新載入詳情。仍無法恢復時，提交工單並附上狀態與原因。\n\n## 7. 託管售後與提交工單\n\n1. 到「工單」建立工單。託管實例必須在「實例」欄選擇對應的那一台；選取後工單會送給節點負責人。沒有特定實例的問題不要臆填實例，系統會按無實例工單流程通知管理員。\n2. 填寫主旨（2–200 字）、分類、優先級與內容；沒有圖片附件時內容至少 10 字，內容上限 5000 字。可用「新增圖片」上傳最多 6 張 JPG、PNG、WebP、GIF 或 AVIF 圖片，每張不超過 50 MB。\n3. 內容請帶上：實例 ID／名稱、宿主機或節點、目前狀態、完整錯誤文字、發生時間、重現步驟；若畫面有顯示，再附任務 ID／類型／進度／排隊位置，以及網路模式、協定、公網到私有連接埠映射和 SSH 連接埠。\n4. 工單建立後可在詳情查看工單 ID、狀態、分類、優先級、宿主機與實例；已關閉的工單不能回覆。不要在內容或附件中貼 SSH 私鑰、密碼或 Agent 密鑰。',
         },
         categories: {
             general: '常規',
@@ -4161,8 +3666,6 @@ export default {
             faq: '常見問題',
         },
     },
-
-    // 日誌模組翻譯
     logModules: {
         security: '安全事件',
         instance: '實例操作',
@@ -4178,130 +3681,103 @@ export default {
         system: '系統設定',
         auth: '認證操作',
         storage: '遠端儲存',
-        // 相容舊資料中的中文模組名
-        '登入操作': '登入操作',
-        '安全事件': '安全事件',
-        '實例操作': '實例操作',
-        '快照操作': '快照操作',
-        '備份操作': '備份操作',
-        '映像檔操作': '映像檔操作',
-        '節點操作': '節點操作',
-        '節點組操作': '節點組操作',
-        '方案操作': '方案操作',
-        '使用者管理': '使用者管理',
-        '個人設定': '個人設定',
-        '通知設定': '通知設定',
-        '系統設定': '系統設定',
-        '認證操作': '認證操作',
-        '遠端儲存': '遠端儲存',
+        "登入操作": '登入操作',
+        "安全事件": '安全事件',
+        "實例操作": '實例操作',
+        "快照操作": '快照操作',
+        "備份操作": '備份操作',
+        "映像檔操作": '映像檔操作',
+        "節點操作": '節點操作',
+        "節點組操作": '節點組操作',
+        "方案操作": '方案操作',
+        "使用者管理": '使用者管理',
+        "個人設定": '個人設定',
+        "通知設定": '通知設定',
+        "系統設定": '系統設定',
+        "認證操作": '認證操作',
+        "遠端儲存": '遠端儲存',
     },
-
-    // 日誌操作翻譯
     logActions: {
-        // 安全事件
-        'login_success': '登入成功',
-        'login_failed': '登入失敗',
-        'logout': '登出',
-        'register_success': '註冊成功',
-        'rate_limit_exceeded': '登入嘗試過多',
-        'invalid_invite_code': '無效邀請碼',
-        'suspicious_activity': '可疑活動',
-        'permission_denied': '權限不足',
-        'unauthorized_access': '未授權存取',
-        'admin_action': '管理員操作',
-        // 實例操作
-        'instance.create': '建立實例',
-        'instance.delete': '刪除實例',
-        'instance.start': '啟動實例',
-        'instance.stop': '停止實例',
-        'instance.restart': '重新啟動實例',
-        'instance.rebuild': '重裝系統',
-        'instance.recreate': '重建實例',
-        'instance.change_host': '改節點',
-        'instance.cloud_init_manual_complete': '手動完成初始化檢測',
-        'instance.update_quota': '更新實例配額',
-        'instance.rename': '重新命名實例',
-        // 連接埠映射
-        'port.add': '新增連接埠映射',
-        'port.delete': '刪除連接埠映射',
-        // 快照操作
-        'snapshot.create': '建立快照',
-        'snapshot.delete': '刪除快照',
-        'snapshot.restore': '還原快照',
-        // 備份操作
-        'backup.create': '建立備份',
-        'backup.delete': '刪除備份',
-        'backup.export': '匯出備份',
-        // 映像檔操作
-        'image.sync': '同步映像檔',
-        'image.delete': '刪除映像檔',
-        'image.create': '建立映像檔',
-        'image.update': '更新映像檔',
-        // 節點操作
-        'host.create': '新增節點',
-        'host.update': '更新節點',
-        'host.delete': '刪除節點',
-        'host.test': '測試節點',
-        // 方案操作
-        'package.create': '建立方案',
-        'package.update': '更新方案',
-        'package.delete': '刪除方案',
-        // 使用者管理
-        'user.ban': '封禁使用者',
-        'user.unban': '解除封禁',
-        'user.delete': '刪除使用者',
-        'user.update_quota': '更新使用者配額',
-        'user.revoke_sessions': '撤銷使用者會話',
-        // 個人設定
-        'profile.update': '更新個人資料',
-        'password.change': '變更密碼',
-        // SSH 金鑰
-        'ssh_key.add': '新增 SSH 金鑰',
-        'ssh_key.delete': '刪除 SSH 金鑰',
-        // 通知設定
-        'notification.add': '新增通知管道',
-        'notification.delete': '刪除通知管道',
-        // 安全設定
-        '2fa.setup': '設定雙重驗證',
-        '2fa.enable': '啟用雙重驗證',
-        '2fa.disable': '停用雙重驗證',
-        '2fa.recovery_reset': '重設恢復碼',
-        // 認證操作
-        'session.revoke': '撤銷會話',
-        'session.revoke_all': '撤銷所有會話',
-        // 系統設定
-        'system.config_update': '更新系統設定',
-        // 幫助文件
-        'help.create': '建立幫助文件',
-        'help.update': '更新幫助文件',
-        'help.delete': '刪除幫助文件',
-        // 備份上傳操作
-        'backup.upload': '上傳備份',
-        'backup.upload.queue': '備份上傳排隊',
-        'backup.upload.cancel': '取消備份上傳',
-        // 備份還原操作
-        'backup.restore': '還原備份',
-        'backup.restore.rollback': '回滾還原',
-        'backup.restore.cancel': '取消還原',
-        // 儲存設定操作
-        'storage.create': '建立儲存設定',
-        'storage.update': '更新儲存設定',
-        'storage.delete': '刪除儲存設定',
-        // AFF 推薦計劃
-        'aff.create_code': '建立優惠碼',
-        'aff.convert_request': '申請 AFF 轉化',
-        'aff.approve_convert': '審核通過 AFF 轉化',
-        'aff.reject_convert': '審核拒絕 AFF 轉化',
+        login_success: '登入成功',
+        login_failed: '登入失敗',
+        logout: '登出',
+        register_success: '註冊成功',
+        rate_limit_exceeded: '登入嘗試過多',
+        invalid_invite_code: '無效邀請碼',
+        suspicious_activity: '可疑活動',
+        permission_denied: '權限不足',
+        unauthorized_access: '未授權存取',
+        admin_action: '管理員操作',
+        "instance.create": '建立實例',
+        "instance.delete": '刪除實例',
+        "instance.start": '啟動實例',
+        "instance.stop": '停止實例',
+        "instance.restart": '重新啟動實例',
+        "instance.rebuild": '重裝系統',
+        "instance.recreate": '重建實例',
+        "instance.change_host": '改節點',
+        "instance.cloud_init_manual_complete": '手動完成初始化檢測',
+        "instance.update_quota": '更新實例配額',
+        "instance.rename": '重新命名實例',
+        "port.add": '新增連接埠映射',
+        "port.delete": '刪除連接埠映射',
+        "snapshot.create": '建立快照',
+        "snapshot.delete": '刪除快照',
+        "snapshot.restore": '還原快照',
+        "backup.create": '建立備份',
+        "backup.delete": '刪除備份',
+        "backup.export": '匯出備份',
+        "image.sync": '同步映像檔',
+        "image.delete": '刪除映像檔',
+        "image.create": '建立映像檔',
+        "image.update": '更新映像檔',
+        "host.create": '新增節點',
+        "host.update": '更新節點',
+        "host.delete": '刪除節點',
+        "host.test": '測試節點',
+        "package.create": '建立方案',
+        "package.update": '更新方案',
+        "package.delete": '刪除方案',
+        "user.ban": '封禁使用者',
+        "user.unban": '解除封禁',
+        "user.delete": '刪除使用者',
+        "user.update_quota": '更新使用者配額',
+        "user.revoke_sessions": '撤銷使用者會話',
+        "profile.update": '更新個人資料',
+        "password.change": '變更密碼',
+        "ssh_key.add": '新增 SSH 金鑰',
+        "ssh_key.delete": '刪除 SSH 金鑰',
+        "notification.add": '新增通知管道',
+        "notification.delete": '刪除通知管道',
+        "2fa.setup": '設定雙重驗證',
+        "2fa.enable": '啟用雙重驗證',
+        "2fa.disable": '停用雙重驗證',
+        "2fa.recovery_reset": '重設恢復碼',
+        "session.revoke": '撤銷會話',
+        "session.revoke_all": '撤銷所有會話',
+        "system.config_update": '更新系統設定',
+        "help.create": '建立幫助文件',
+        "help.update": '更新幫助文件',
+        "help.delete": '刪除幫助文件',
+        "backup.upload": '上傳備份',
+        "backup.upload.queue": '備份上傳排隊',
+        "backup.upload.cancel": '取消備份上傳',
+        "backup.restore": '還原備份',
+        "backup.restore.rollback": '回滾還原',
+        "backup.restore.cancel": '取消還原',
+        "storage.create": '建立儲存設定',
+        "storage.update": '更新儲存設定',
+        "storage.delete": '刪除儲存設定',
+        "aff.create_code": '建立優惠碼',
+        "aff.convert_request": '申請 AFF 轉化',
+        "aff.approve_convert": '審核通過 AFF 轉化',
+        "aff.reject_convert": '審核拒絕 AFF 轉化',
     },
-
-    // 日誌結果翻譯
     logResults: {
         success: '成功',
         failed: '失敗',
         warning: '警告',
     },
-
-    // 管理後台
     admin: {
         systemUpdate: {
             title: '系統更新',
@@ -4314,7 +3790,7 @@ export default {
             modes: {
                 auto: '自動辨識',
                 docker: 'Docker Compose',
-                release: 'systemd 產物包'
+                release: 'systemd 產物包',
             },
             check: '檢查更新',
             checking: '檢查中...',
@@ -4350,8 +3826,8 @@ export default {
                 idle: '未執行',
                 running: '執行中',
                 succeeded: '已完成',
-                failed: '失敗'
-            }
+                failed: '失敗',
+            },
         },
         statistics: {
             title: '統計',
@@ -4655,7 +4131,7 @@ export default {
             openRegistration: '開放註冊',
             inviteOnly: '僅邀請',
             adminRegistrationEmails: '註冊後自動成為管理員的信箱後綴',
-            adminRegistrationEmailsPlaceholder: "例如：{'@'}abc.com\n{'@'}example.org",
+            adminRegistrationEmailsPlaceholder: '例如：{\'@\'}abc.com\n{\'@\'}example.org',
             adminRegistrationEmailsDesc: '填寫信箱後綴，多個後綴可用逗號、分號或換行分隔。使用符合後綴且完成信箱驗證的使用者，註冊後會自動成為管理員。',
             affRebate: {
                 title: 'AFF 返利',
@@ -4748,7 +4224,7 @@ export default {
                 giftBalanceDesc: '註冊成功後自動進入帳戶餘額，單位為元。',
                 giftPoints: '贈送積分',
                 giftPointsDesc: '註冊成功後自動進入娛樂中心積分帳戶。',
-                giftRequiresFreeSite: '需要先啟用白嫖站，才能設定註冊自動贈送。'
+                giftRequiresFreeSite: '需要先啟用白嫖站，才能設定註冊自動贈送。',
             },
             unitCount: '個',
             reset: '重設',
@@ -4802,7 +4278,7 @@ export default {
                 password: '密碼',
                 passwordPlaceholder: '授權碼或密碼',
                 fromEmail: '寄件者信箱',
-                fromEmailPlaceholder: "noreply{'@'}example.com",
+                fromEmailPlaceholder: 'noreply{\'@\'}example.com',
                 fromName: '寄件者名稱',
                 testConnection: '測試連線',
                 testing: '測試中...',
@@ -4849,7 +4325,7 @@ export default {
                 title: '底部聯絡方式',
                 description: '配置側邊欄底部的電子郵件按鈕',
                 email: '聯絡信箱',
-                emailPlaceholder: "support{'@'}example.com 或 mailto:support{'@'}example.com",
+                emailPlaceholder: 'support{\'@\'}example.com 或 mailto:support{\'@\'}example.com',
                 emailDesc: '留空則隱藏信箱按鈕；支援填寫信箱地址或完整 mailto: 連結。',
                 telegram: 'Telegram 群組連結',
                 telegramPlaceholder: 'https://t.me/your_group',
@@ -4873,8 +4349,52 @@ export default {
         },
         images: {
             noImagesForArchitecture: '目前架構下沒有映像檔',
+            create: '新增映像',
+            createSuccess: '映像建立成功',
+            deleteFailed: '刪除失敗',
+            deleteSuccess: '映像已刪除',
+            description: '管理系統映像庫，使用者可在建立實例時選擇這些映像',
+            edit: '編輯映像',
+            fields: {
+                architecture: '架構',
+                hidden: '對使用者隱藏此映像',
+                icon: '圖示',
+                instanceType: '實例型別',
+                name: '名稱',
+                osType: '系統型別',
+                remoteAlias: '遠端別名',
+                sortOrder: '排序',
+                status: '狀態',
+            },
+            hidden: '映像已隱藏',
+            hide: '隱藏',
+            hint: {
+                instanceType: '指定該映像適用於容器、虛擬機器或兩者皆可',
+                remoteAlias: 'Incus 遠端映像別名，如 ubuntu/noble/cloud',
+                sortOrder: '越小排序越靠前',
+            },
+            loadFailed: '載入映像列表失敗',
+            noImages: '還沒有新增任何映像',
+            placeholder: {
+                icon: '請選擇圖示',
+                name: '例如: Ubuntu 24.04 LTS',
+                remoteAlias: '例如: ubuntu/noble/cloud',
+            },
+            refresh: '重新整理',
+            saveFailed: '儲存失敗',
+            show: '顯示',
+            shown: '映像已顯示',
+            statusHidden: '已隱藏',
+            statusVisible: '可見',
+            title: '映像管理',
+            typeBoth: '通用',
+            typeContainer: '容器',
+            typeVm: '虛擬機器',
+            updateSuccess: '映像更新成功',
+            validation: {
+                requiredFields: '請填寫名稱、遠端別名和圖示',
+            },
         },
-        // 網域郵箱管理
         mail: {
             title: '郵箱管理',
             description: '管理郵箱源、方案和使用者訂閱',
@@ -4942,7 +4462,6 @@ export default {
                 successWithRefund: '訂閱已退訂，已退款 ¥{amount}',
             },
         },
-        // 管理員建立實例
         instanceCreate: {
             title: '建立實例',
             description: '為使用者贈送實例，無需支付任何費用',
@@ -4973,7 +4492,6 @@ export default {
                 official: '自營方案',
                 hosted: '託管方案',
             },
-            // 付費實例相關
             instanceType: '實例類型',
             freeInstance: '免費實例',
             paidInstance: '付費實例',
@@ -4990,6 +4508,7 @@ export default {
             insufficientBalance: '使用者餘額不足',
             paidSummary: '付費摘要',
             paidInstanceHint: '建立付費實例，按方案計費',
+            credentialsHint: '憑證不再隨建立結果返回；接收者可在其控制台查看連線資訊。',
         },
         dashboard: '儀表板',
         hosts: {
@@ -5029,7 +4548,6 @@ export default {
             confirmDelete: '確定刪除宿主機 "{name}"？',
             hostDeleted: '宿主機已刪除',
             deleteFailed: '刪除失敗',
-            // 新增/編輯宿主機
             addHost: '新增宿主機',
             editHost: '編輯宿主機',
             hostName: '名稱',
@@ -5082,9 +4600,7 @@ export default {
             typeChangeWarning: '節點類型變更警告',
             addFailed: '新增失敗',
             updateFailed: '更新失敗',
-            // 初始化設定
             initConfig: '初始化設定',
-            // 儲存設定
             storageConfig: '儲存設定',
             storageDriver: '儲存驅動',
             storageDriverZfs: 'ZFS (推薦)',
@@ -5095,7 +4611,6 @@ export default {
             storagePath: '裝置路徑',
             storagePathHint: '如 /dev/sdb',
             storageSize: '儲存大小',
-            // 網路設定
             networkConfig: '網路設定',
             networkOption: '網路選項',
             networkOptionHint: '選擇容器實例的網路出口方式',
@@ -5113,13 +4628,11 @@ export default {
             ipv6ParentInterfaceHint: 'IPv6 routed 模式使用的宿主機實體網卡名（如 eth0）',
             ipv6ParentInterfaceRequired: '請輸入 IPv6 父介面',
             enableApi: '啟用 API',
-            // 核心參數
             sysctlConfig: '核心參數',
             sysctlConfigHint: '自訂 sysctl 設定，留空使用預設值',
             resetSysctl: '恢復預設',
             enableBBR: '啟用 BBR',
             bbrEnabled: 'BBR 已啟用',
-            // 安裝腳本
             installScript: '安裝腳本',
             runOnHost: '請在宿主機上以 root 權限執行以下命令：',
             copyCommand: '複製命令',
@@ -5136,7 +4649,6 @@ export default {
             waitingInstall: '等待安裝完成...',
             installSuccess: '安裝成功！',
             tokenExpired: 'Token 已過期，請重新建立宿主機',
-            // 詳情頁
             tabInfo: '資訊',
             tabConfig: '設定',
             tabInstances: '實例',
@@ -5308,7 +4820,6 @@ export default {
             deleteNameMismatch: '輸入的名稱不匹配',
             hasInstances: '該節點上還有 {count} 個實例，請先刪除或遷移實例',
             checkFailed: '檢查失敗',
-            // 批次延期
             batchExtend: '贈送時長',
             extendHint: '該節點下共有 {count} 個付費實例將被延期',
             extendDaysLabel: '延期天數',
@@ -5317,7 +4828,6 @@ export default {
             confirmExtendBtn: '確認贈送',
             extendSuccess: '已成功為 {count} 個付費實例延期 {days} 天',
             extendFailed: '批次延期失敗',
-            // 批次刪除實例
             selectedCount: '已選擇 {count} 個實例',
             noInstanceSelected: '請勾選實例以使用批次操作',
             batchDelete: '批次刪除',
@@ -5339,14 +4849,12 @@ export default {
             instanceName: '實例名稱',
             instanceUser: '所屬用戶',
             refundAmount: '退款金額',
-            // 批次同步實例狀態
             batchSyncStatus: '同步狀態',
             batchSyncSuccess: '成功同步 {synced} 個實例，{changed} 個狀態已更新',
             batchSyncWithIpv4: '成功同步 {synced} 個實例，{changed} 個狀態更新，{ipv4Changed} 個內網 IP 更新',
             batchSyncPartial: '同步 {synced} 個，更新 {changed} 個，失敗 {failed} 個',
             batchSyncNoChange: '成功同步 {synced} 個實例，狀態無變化',
             batchSyncFailed: '同步狀態失敗',
-            // 批次封停實例
             batchSuspend: '批次封停',
             batchSuspendTitle: '批次封停實例',
             batchSuspendWarning: '封停後，實例所有者將無法對實例進行任何操作，直到解除封停。',
@@ -5365,7 +4873,6 @@ export default {
             deleteReason: '刪除原因（選填）',
             deleteReasonPlaceholder: '填寫刪除原因後，系統將透過站內信和通知管道告知使用者...',
             deleteReasonHint: '如果填寫了刪除原因，被刪除實例的所有者將收到通知',
-            // 實例流量
             trafficUsage: '流量使用',
             trafficUnlimited: '不限制',
             resetTraffic: '重置流量',
@@ -5374,11 +4881,9 @@ export default {
             resetTrafficTitle: '重置實例流量',
             resetTrafficWarning: '如果是已超額的實例，重置流量不會自動恢復實例的頻寬限速（1Mbps），請手動為該實例恢復頻寬速率。',
             resetTrafficDesc: '確定要重置實例 "{instance}" 的流量嗎？',
-            // 節點流量統計
             trafficStats: '流量統計',
             monthlyUsed: '本月已用',
             hostTotalLimit: '節點總分配',
-            // 宿主機狀態
             agentStatusTitle: '宿主機狀態',
             agentStatusDesc: 'Agent 按 {seconds} 秒間隔上報宿主機即時資源與執行狀態',
             agentStatusRefreshSuccess: '狀態介面已重新整理，請以最後心跳時間為準',
@@ -5424,7 +4929,6 @@ export default {
             agentLoadAverage: '負載',
             agentLoadAverageHint: '1 / 5 / 15 分鐘',
             agentProcessCount: '處理程序數',
-            // 儲存池管理
             storage: {
                 title: '儲存池',
                 subtitle: '管理此宿主機上的 Incus 儲存池',
@@ -5454,29 +4958,22 @@ export default {
                 size: '儲存大小',
                 usedBy: '使用者',
                 volumes: '個卷',
-                // 驅動描述
                 zfsDesc: '推薦：功能最全（快照、複製、壓縮、配額），效能極佳',
                 lvmDesc: 'Linux 標配，極其穩定，建議開啟 Thin Provisioning',
                 btrfsDesc: '類似 ZFS 特性，單碟或 RAID1/10 可用',
                 dirDesc: '目錄儲存，效能最差，僅用於測試',
-                // 通用
                 useLoop: '使用 Loop 檔案',
                 loopSizeHint: '將在 /var/lib/incus/ 下建立映像檔檔案',
-                // ZFS
                 zfsSourceHint: '實體碟或分割區路徑，如 /dev/disk/by-id/nvme-xxx',
                 zfsPoolName: 'ZFS 池名稱',
                 zfsPoolNameHint: '選填，不填則使用儲存池名稱',
-                // LVM
                 lvmSourceHint: '實體碟路徑，如 /dev/sdb',
                 lvmVgName: '卷組名稱',
                 lvmUseThinpool: '啟用精簡卷（Thin Provisioning）',
                 lvmThinpoolHint: '強烈建議開啟，否則快照效能極差',
-                // Btrfs
                 btrfsSourceHint: '實體碟路徑，如 /dev/sdb',
-                // DIR
                 dirPath: '目錄路徑',
                 dirPathHint: '指定一個存在的目錄，如 /mnt/data/incus-storage',
-                // 儲存用途
                 purpose: '儲存用途',
                 forInstances: '用於實例系統碟',
                 forInstancesHint: '建立實例時作為預設儲存',
@@ -5484,7 +4981,6 @@ export default {
                 forVolumesHint: '可手動掛載到實例',
                 purposeSystemDisk: '系統碟',
                 purposeStorageDisk: '儲存碟',
-                // 模式切換
                 modeCreate: '建立新儲存池',
                 modeExisting: '關聯已有儲存池',
                 modeImport: '匯入已有儲存',
@@ -5493,7 +4989,6 @@ export default {
                 modeImportHint: '匯入底層已存在但 Incus 還未知曉的儲存池（如手動建立的 ZFS 池、LVM VG）',
                 linkSuccess: '儲存池關聯成功',
                 importSuccess: '儲存池匯入成功',
-                // 匯入儲存池
                 importZfsSource: 'ZFS 池名稱',
                 importLvmSource: 'LVM 卷組名稱',
                 importBtrfsSource: 'Btrfs 裝置或子卷路徑',
@@ -5504,6 +4999,14 @@ export default {
                 importDirHint: '已存在的目錄路徑，如 /mnt/storage',
                 importSourceRequired: 'Btrfs 和 DIR 類型必須提供底層儲存源路徑',
             },
+            notificationSettings: '通知設定',
+            notificationSettingsHint: '僅透過你已啟用的 Telegram、Discord、Webhook 渠道傳送，這裡不會傳送 Email。',
+            notifyDestroy: '銷燬通知',
+            notifyDestroyHint: '當有使用者銷燬該節點實例時通知你，幷包含實際退款金額和手續費金額。',
+            notifyPurchase: '購買通知',
+            notifyPurchaseHint: '當有使用者在該節點購買付費實例時通知你。',
+            notifyRenew: '續費通知',
+            notifyRenewHint: '當有使用者在該節點續費付費實例時通知你。',
         },
         packages: {
             title: '方案管理',
@@ -5598,7 +5101,6 @@ export default {
                 user: '一般使用者',
             },
         },
-        // 用戶管理頁面資料（用於UsersView.vue）
         users: {
             title: '使用者管理',
             description: '管理平台使用者與邀請碼',
@@ -5610,7 +5112,7 @@ export default {
                 usernamePlaceholder: '例如：demo_user',
                 usernameHint: '3-32 位，必須以字母開頭，僅支援字母、數字、底線和連字號',
                 email: '電子郵件',
-                emailPlaceholder: "user{'@'}example.com",
+                emailPlaceholder: 'user{\'@\'}example.com',
                 verifyEmail: '驗證電子郵件',
                 verifyEmailHint: '開啟後需要先發送並填寫電子郵件驗證碼；建立成功後初始密碼會發送到該信箱',
                 emailCode: '電子郵件驗證碼',
@@ -5630,7 +5132,7 @@ export default {
                 passwordOnceHint: '關閉或離開此頁面後將無法再次查看該密碼。',
                 passwordEmailHint: '密碼已透過電子郵件交付給使用者。',
                 continueCreate: '繼續建立',
-                backToUsers: '返回使用者列表'
+                backToUsers: '返回使用者列表',
             },
             generateInvite: '產生邀請碼',
             userInfo: '使用者',
@@ -5654,7 +5156,6 @@ export default {
             onlyActiveCanBeAdmin: '只有正常狀態的使用者可以設為管理員',
             userVipLevels: '使用者 VIP 等級',
             vipBenefits: '會員福利大廳設定',
-            // 邀請碼
             invites: '邀請碼',
             inviteCode: '邀請碼',
             inviteStatus: '狀態',
@@ -5674,7 +5175,6 @@ export default {
             confirmDeleteInvite: '確定刪除邀請碼 {code}？',
             inviteDeleted: '邀請碼已刪除',
             deleteFailed: '刪除失敗',
-            // 發送站內信
             sendMessage: '發送站內信',
             sendMessageTo: '發送站內信給 {username}',
             messageTitle: '訊息標題',
@@ -5685,7 +5185,6 @@ export default {
             messageContentRequired: '請輸入訊息內容',
             messageSent: '訊息已發送',
             messageSendFailed: '發送失敗',
-            // 調整餘額
             adjustBalance: '調整餘額',
             adjustBalanceFor: '調整 {username} 的餘額',
             adjustType: '調整類型',
@@ -5699,7 +5198,6 @@ export default {
             reasonRequired: '請輸入調整理由',
             balanceAdjusted: '餘額調整成功',
             balanceAdjustFailed: '餘額調整失敗',
-            // 積分相關
             points: '積分',
             earned: '累計',
             totalEarnedPoints: '累計獲得積分',
@@ -5714,7 +5212,6 @@ export default {
             invalidPointsAmount: '請輸入有效的積分數量',
             pointsAdjusted: '積分調整成功',
             pointsAdjustFailed: '積分調整失敗',
-            // 托管餘額相關
             hostingBalance: '托管餘額',
             hostingBalanceDetails: '托管餘額詳情',
             hostingBalanceOverview: '概覽',
@@ -5745,7 +5242,6 @@ export default {
                 withdraw: '提現',
                 admin_adjust: '管理員調整',
             },
-            // 用戶餘額
             balance: '餘額',
             viewBalance: '查看餘額詳情',
             consumed: '已消費',
@@ -5777,7 +5273,6 @@ export default {
                 balance_transfer_in: '餘額轉入',
                 balance_transfer_fee: '轉帳手續費',
             },
-            // 關聯帳號檢測
             linkedAccounts: '關聯帳號檢測',
             detectDays: '檢測範圍',
             daysUnit: '天',
@@ -5801,12 +5296,59 @@ export default {
             noLinkedAccounts: '未檢測到關聯帳號，您的使用者非常純潔！',
             registeredNew: '新',
             registeredDays: '註冊 {days} 天',
-            // 用戶狀態
             active: '正常',
             banned: '已封禁',
             createdAt: '建立時間',
+            ban: '封禁',
+            confirmResetPassword: '確認重置',
+            copied: '已複製!',
+            copyAllCodes: '一鍵複製全部',
+            copyCode: '複製邀請碼',
+            copyLink: '複製註冊連結',
+            copyPassword: '複製密碼',
+            copyPasswordHint: '請妥善保管此密碼，關閉彈窗後將無法再次檢視',
+            countUnit: '個',
+            day1: '1 天',
+            day14: '14 天',
+            day3: '3 天',
+            day30: '30 天',
+            day7: '7 天',
+            disable2FA: '取消雙因素認證',
+            disable2FAWarning: '取消後，該使用者登入時將不再需要驗證碼，可能降低帳戶安全性。',
+            expireDays: '有效期',
+            expireHint: '設定邀請碼的過期時間',
+            generate: '生成',
+            generateFailed: '生成邀請碼失敗',
+            generateInviteTitle: '生成邀請碼',
+            generating: '生成中...',
+            githubUnbound: 'GitHub 繫結已解除',
+            instances: '個實例',
+            inviteCount: '生成數量',
+            inviteGenerated: '邀請碼已生成',
+            loadFailed: '載入使用者失敗',
+            loadLoginRecordsFailed: '載入登入記錄失敗',
+            loginRecords: '登入記錄',
+            noEmail: '未設定郵箱',
+            noLoginRecord: '無登入記錄',
+            noLoginRecords: '暫無登入記錄',
+            noMatchingUsers: '未找到匹配的使用者',
+            noUsers: '暫無使用者',
+            passwordResetSuccess: '密碼重置成功',
+            permanentValid: '永久有效',
+            resetPassword: '重置密碼',
+            resetPasswordHint: '系統將自動生成新密碼，使用者的所有會話將被撤銷，需要使用新密碼重新登入。',
+            resetting: '重置中...',
+            twoFADisabled: '雙因素認證已取消',
+            unban: '解封',
+            unbindGitHub: '解綁 GitHub',
+            unbindGitHubWarning: '解除後，該使用者將無法使用 GitHub 快捷登入。',
+            userActivity: '使用者活動',
+            userBanned: '使用者已封禁',
+            userUnbanned: '使用者已解封',
+            validUntil: '有效期至',
+            viewInstances: '檢視實例',
+            viewLoginRecords: '檢視登入記錄',
         },
-        // 支付渠道管理
         paymentProviders: {
             title: '支付渠道管理',
             description: '設定和管理支付渠道',
@@ -5908,13 +5450,12 @@ export default {
                 yipayFeeFieldHint: '易支付手續費請在上方每個支付方式中設定。',
                 rechargeCardFeeFieldHint: '卡密充值金額以生成卡密時的金額為準，不使用手續費欄位。',
                 heleketMethods: '常見幣種展示',
-                heleketMethodsPlaceholder: "USDT{'@'}TRON\nUSDT{'@'}BSC\nBTC\nETH",
+                heleketMethodsPlaceholder: 'USDT{\'@\'}TRON\nUSDT{\'@\'}BSC\nBTC\nETH',
                 heleketMethodsHint: '僅作為後台展示與紀錄參考，不會限制使用者在 Heleket 支付頁最終選擇的幣種和網路。',
                 instructions: '充值說明',
                 instructionsPlaceholder: '請輸入使用者充值時看到的說明資訊...',
             },
         },
-        // 計費管理
         billingManage: {
             title: '計費管理',
             description: '管理使用者付費實例和計費紀錄',
@@ -5977,14 +5518,12 @@ export default {
             giftSuccess: '餘額贈送成功',
             operationFailed: '操作失敗',
         },
-        // 計費管理（新鍵名 billing，與元件對應）
         billing: {
             title: '計費管理',
             description: '管理使用者付費實例和計費紀錄',
             loadFailed: '載入計費資料失敗',
             loadInstancesFailed: '載入實例列表失敗',
             loadRecordsFailed: '載入扣費紀錄失敗',
-            // Tab 標籤
             tabs: {
                 overview: '總覽',
                 instances: '付費實例',
@@ -5995,7 +5534,6 @@ export default {
                 officialCoupons: '官方優惠券',
                 paymentProviders: '支付渠道',
             },
-            // 總覽統計
             totalRevenue: '總收入',
             thisMonthRevenue: '本月收入',
             todayRevenue: '今日收入',
@@ -6019,7 +5557,6 @@ export default {
                 thisMonth: '本月',
                 today: '今日',
             },
-            // 實例列表
             allStatus: '全部狀態',
             allHosts: '全部節點',
             showExpiring: '僅顯示即將到期',
@@ -6041,7 +5578,6 @@ export default {
             noInstances: '暫無付費實例',
             viewInstance: '查看',
             autoRenew: '自動續費',
-            // 托管類型
             hostingType: '托管類型',
             direct: '直營',
             hosted: '托管',
@@ -6049,13 +5585,11 @@ export default {
             cycleMonths: '{months}個月',
             perPage: '每頁',
             totalCount: '共 {count} 條',
-            // 操作
             suspend: '封停',
             unsuspend: '解封',
             extend: '延期',
             refund: '退款',
             deleteRefund: '刪除並退款',
-            // 操作彈窗
             suspendTitle: '封停實例',
             unsuspendTitle: '解封實例',
             extendTitle: '延期實例',
@@ -6069,7 +5603,6 @@ export default {
             refundAmount: '退款金額',
             refundReasonPlaceholder: '請輸入退款原因...',
             refundReasonRequired: '請填寫退款原因',
-            // 刪除並退款相關
             deleteRefundWarning: '警告：此操作將永久刪除實例及其所有資料（快照、備份、端口映射等），此操作不可撤銷！',
             refundTypeLabel: '退款方式',
             refundTypeRemaining: '按剩餘價值退款（根據剩餘天數計算）',
@@ -6079,7 +5612,6 @@ export default {
             deleteRefundSuccess: '實例已刪除並退款',
             databaseOnlyDelete: '僅面板刪除（僅免費實例）',
             deleteRefundDatabaseOnlySuccess: '免費實例已從面板刪除',
-            // 應用折扣相關
             applyDiscount: '應用折扣',
             applyDiscountTitle: '應用續費折扣',
             applyDiscountHint: '輸入AFF優惠碼後，該實例後續續費時將自動享受5%折扣，同時優惠碼創建者也將獲得續費返利。',
@@ -6087,23 +5619,21 @@ export default {
             affCodePlaceholder: '請輸入AFF優惠碼...',
             affCodeRequired: '請輸入AFF優惠碼',
             applyDiscountSuccess: '已成功應用續費折扣',
-                        // 修改價格相關
-                        updatePrice: '修改價格',
-                        owner: '擁有者',
-                        currentPrice: '當前價格',
-                        newPrice: '新價格',
-                        enterNewPrice: '請輸入新價格',
-                        priceHint: '此價格為單週期價格，修改後將影響續費費用',
-                        settleBalance: '結算差價（根據剩餘天數補交/退還）',
-                        needPay: '需補交',
-                        willRefund: '將退還',
-                        priceDiffHint: '根據剩餘 {days} 天計算，將自動處理用戶餘額',
-                        noSettleHint: '不結算差價，僅修改後續續費價格，不影響當前週期餘額',
-                        affDiscount: 'AFF折扣',
-                        actualRenewPrice: '實際續費價',
-                        affAppliedHint: '該實例已應用優惠碼，續費時享受 {discount}% 折扣。差價計算已基於折扣後價格。',
-                        newActualPrice: '新實際續費價',
-            // 切換方案相關
+            updatePrice: '修改價格',
+            owner: '擁有者',
+            currentPrice: '當前價格',
+            newPrice: '新價格',
+            enterNewPrice: '請輸入新價格',
+            priceHint: '此價格為單週期價格，修改後將影響續費費用',
+            settleBalance: '結算差價（根據剩餘天數補交/退還）',
+            needPay: '需補交',
+            willRefund: '將退還',
+            priceDiffHint: '根據剩餘 {days} 天計算，將自動處理用戶餘額',
+            noSettleHint: '不結算差價，僅修改後續續費價格，不影響當前週期餘額',
+            affDiscount: 'AFF折扣',
+            actualRenewPrice: '實際續費價',
+            affAppliedHint: '該實例已應用優惠碼，續費時享受 {discount}% 折扣。差價計算已基於折扣後價格。',
+            newActualPrice: '新實際續費價',
             upgradePlan: '切換',
             upgradePlanTitle: '切換方案',
             currentPlan: '當前方案',
@@ -6124,7 +5654,6 @@ export default {
             yearly: '年付',
             month: '月',
             months: '個月',
-            // 操作結果
             suspendSuccess: '實例已封停',
             unsuspendSuccess: '實例已解封',
             extendSuccess: '實例已延期',
@@ -6149,7 +5678,6 @@ export default {
             batchPriceStatusUnchanged: '無變化',
             batchPriceStatusFailed: '失敗',
             result: '結果',
-            // 扣費紀錄
             recordType: '類型',
             recordTypes: {
                 newPurchase: '新購',
@@ -6164,17 +5692,14 @@ export default {
             remark: '備註',
             time: '時間',
             noRecords: '暫無扣費紀錄',
-            // 充值統計
             totalRecharge: '總充值',
             thisMonthRecharge: '本月充值',
             todayRecharge: '今日充值',
             orders: '筆',
-            // AFF 返利統計
             totalAffCommission: 'AFF返利總額',
             thisMonthAff: '本月AFF返利',
             affConverted: '已轉化金額',
             affPendingConvert: '待審批轉化',
-            // 充值紀錄
             loadRechargeRecordsFailed: '載入充值紀錄失敗',
             noRechargeRecords: '暫無充值紀錄',
             rechargeOrderNo: '訂單號',
@@ -6196,7 +5721,6 @@ export default {
                 failed: '失敗',
             },
         },
-        // 官方優惠券（折扣由平台承擔，不產生 AFF 返利）
         officialCoupons: {
             title: '官方優惠券',
             description: '平台發放的官方優惠券：使用者按折扣價支付，折扣金額由平台承擔，託管主仍按原價結算，不產生 AFF 返利。',
@@ -6284,7 +5808,6 @@ export default {
                 chargeLimitRequired: '限定折價月數模式下必須填寫不小於 1 的整數',
             },
         },
-
         rechargeCards: {
             title: '充值卡密管理',
             description: '生成、篩選和稽核餘額充值卡密',
@@ -6346,9 +5869,132 @@ export default {
                 status: '按狀態排序',
             },
         },
+        broadcast: {
+            contentPlaceholder: '輸入公告內容',
+            contentRequired: '請輸入公告內容',
+            contentTooLong: '內容超過 5000 字元',
+            description: '傳送站內信給所有活躍使用者',
+            hint: '公告將傳送給所有狀態為「正常」的使用者。',
+            history: '歷史記錄',
+            messageContent: '公告內容',
+            messageTitle: '公告標題',
+            noHistory: '暫無傳送記錄',
+            send: '傳送公告',
+            sendFailed: '傳送失敗',
+            sender: '傳送者',
+            title: '傳送全站公告',
+            titlePlaceholder: '輸入公告標題',
+            titleRequired: '請輸入公告標題',
+            titleTooLong: '標題超過 200 字元',
+        },
+        helpManage: {
+            actionsCol: '操作',
+            addCategory: '新增分類',
+            alertDanger: '危險提示',
+            alertInfo: '資訊提示',
+            alertNote: '備註提示',
+            alertSuccess: '成功提示',
+            alertWarning: '警告提示',
+            articleCreated: '文件已建立',
+            articleDeleted: '文件已刪除',
+            articleHidden: '文件已隱藏',
+            articlePublished: '文件已釋出',
+            articleTitle: '標題',
+            articleTitleCol: '標題',
+            articleUpdated: '文件已更新',
+            articlesTab: '文件',
+            categoriesTab: '分類管理',
+            category: '分類',
+            categoryAdded: '分類已新增',
+            categoryCol: '分類',
+            categoryColor: '標識顏色',
+            categoryDeleted: '分類已刪除',
+            categoryId: '分類 ID',
+            categoryIdHint: '只能包含小寫字母、數字和連字元',
+            categoryInUse: '該分類下有文件，無法刪除',
+            categoryName: '分類名稱',
+            categoryUpdated: '分類已更新',
+            contentMarkdown: '內容 (Markdown)',
+            create: '新建文件',
+            createArticle: '建立文件',
+            createFirst: '建立第一篇文件',
+            customAlerts: '自定義提示框:',
+            deleteFailed: '刪除失敗',
+            description: '建立和管理幫助文件',
+            draft: '草稿',
+            duplicateCategoryId: '該分類ID已存在',
+            editArticle: '編輯文件',
+            fillCategoryIdAndName: '請填寫分類ID和名稱',
+            fillRequired: '請填寫標題、URL 識別符號和內容',
+            hide: '隱藏',
+            hideMarkdownHelp: '隱藏語法幫助',
+            invalidCategoryId: '分類ID只能包含小寫字母、數字和連字元',
+            invalidSlug: 'URL 識別符號只能包含小寫字母、數字和連字元',
+            loadFailed: '載入失敗',
+            markdownBold: '粗體文字',
+            markdownCodeBlock: '程式碼塊',
+            markdownHeading1: '一級標題',
+            markdownHeading2: '二級標題',
+            markdownHr: '分隔線',
+            markdownImage: '圖片',
+            markdownInlineCode: '行內程式碼',
+            markdownItalic: '斜體文字',
+            markdownLink: '超連結',
+            markdownOrderedList: '有序列表',
+            markdownQuote: '引用塊',
+            markdownUnorderedList: '無序列表',
+            nextPage: '下一頁',
+            noArticles: '暫無文件',
+            noCategories: '暫無分類，點選"新增分類"建立',
+            noTitle: '無標題',
+            notPinned: '未置頂',
+            operationFailed: '操作失敗',
+            pinned: '已置頂',
+            prevPage: '上一頁',
+            preview: '預覽',
+            publish: '釋出',
+            published: '已釋出',
+            saveFailed: '儲存失敗',
+            showMarkdownHelp: '檢視語法幫助',
+            sortOrder: '排序',
+            statusCol: '狀態',
+            title: '幫助文件管理',
+            titlePlaceholder: '文件標題',
+            updatedAtCol: '更新時間',
+            urlSlug: 'URL 識別符號',
+            urlSlugHint: '只能包含小寫字母、數字和連字元',
+            urlSlugPlaceholder: 'getting-started',
+        },
+        oauth: {
+            callbackUrl: '回撥 URL (Callback URL)',
+            clientId: 'Client ID',
+            clientSecret: 'Client Secret',
+            configure: '配置',
+            createOAuthApp: '建立 OAuth 應用。',
+            description: '配置第三方登入方式',
+            developerConsole: '開發者控制檯',
+            disabled: '已禁用',
+            edit: '編輯',
+            enableLogin: '啟用此登入方式',
+            enableLoginHint: '啟用後使用者可使用此方式快捷登入',
+            enabled: '已啟用',
+            enterClientId: '輸入 Client ID',
+            enterClientSecret: '輸入 Client Secret',
+            leaveEmptyUnchanged: '(留空表示不更改)',
+            notConfigured: '尚未配置。請前往',
+            save: '儲存',
+            saveFailed: '儲存失敗',
+            saveSuccess: '配置已儲存',
+            saving: '儲存中...',
+            step1: '1. 在對應平臺的開發者控制檯建立 OAuth 應用，獲取 Client ID 和 Client Secret。',
+            step2: '2. 將上方顯示的回撥 URL 填入 OAuth 應用配置中。',
+            step3: '3. 在此頁面填入 Client ID 和 Client Secret，並啟用。',
+            step4: '4. 使用者可在個人設定中繫結 OAuth 帳號，繫結後即可使用快捷登入。',
+            title: 'OAuth 配置',
+            usageGuide: '使用說明',
+            warning: '注意：使用者必須先註冊帳號並繫結，無法直接使用 OAuth 註冊新帳號。',
+        },
     },
-
-    // 錯誤頁面
     error: {
         notFound: '頁面不存在',
         notFoundMessage: '您尋找的頁面不存在或已被移動。',
@@ -6361,9 +6007,8 @@ export default {
         goHome: '返回首頁',
         goBack: '返回上一頁',
         tryAgain: '重試',
+        backHome: '返回首頁',
     },
-
-    // 時間格式化
     time: {
         justNow: '剛剛',
         minutesAgo: '{n} 分鐘前',
@@ -6379,8 +6024,6 @@ export default {
         inMonths: '{n} 個月後',
         inYears: '{n} 年後',
     },
-
-    // 單位
     units: {
         bytes: 'B',
         kilobytes: 'KB',
@@ -6395,16 +6038,12 @@ export default {
         cores: '核心',
         vcpu: 'vCPU',
     },
-
-    // API 錯誤碼翻譯
     errors: {
-        // 通用錯誤
         INVALID_ID: '無效的 ID',
         NOT_FOUND: '資源不存在',
         UNAUTHORIZED: '未授權',
         FORBIDDEN: '無權存取',
         ADMIN_REQUIRED: '需要管理員權限',
-        // 使用者錯誤
         USER_NOT_FOUND: '使用者不存在',
         USER_EXISTS: '使用者名稱已存在',
         CANNOT_MODIFY_SELF: '無法修改自己的狀態',
@@ -6412,7 +6051,6 @@ export default {
         CANNOT_BAN_ADMIN: '無法封禁管理員帳號',
         CANNOT_DELETE_ADMIN: '無法刪除管理員帳號',
         USER_HAS_INSTANCES: '該使用者還有實例，請先刪除實例',
-        // 認證錯誤
         INVALID_CREDENTIALS: '使用者名稱或密碼錯誤',
         ACCOUNT_BANNED: '帳號已被停用',
         TOO_MANY_ATTEMPTS: '登入嘗試次數過多，請稍後再試',
@@ -6430,7 +6068,6 @@ export default {
         REFRESH_TOKEN_MISSING: '缺少重新整理權杖',
         REFRESH_TOKEN_INVALID: '重新整理權杖無效或已過期',
         SESSION_NOT_FOUND: '會話不存在',
-        // 驗證錯誤
         INVALID_EMAIL: '請輸入有效的電子郵件地址',
         EMAIL_CONTAINS_ILLEGAL: '電子郵件包含非法字元',
         USERNAME_CONTAINS_ILLEGAL: '使用者名稱包含非法字元',
@@ -6438,7 +6075,6 @@ export default {
         INVALID_SSH_KEY: '無效的 SSH 公鑰格式',
         SSH_KEY_EXISTS: '該公鑰已新增',
         INVALID_NAME: '名稱格式不正確',
-        // 實例錯誤
         INSTANCE_NOT_FOUND: '實例不存在',
         INSTANCE_ALREADY_RUNNING: '實例已在運行',
         INSTANCE_ALREADY_STOPPED: '實例已停止',
@@ -6447,21 +6083,17 @@ export default {
         INSTANCE_NOT_SUSPENDED: '實例未處於封停狀態',
         INSTANCE_SUSPENDED_EXPIRED: '實例因到期被封停，請續費後解封',
         INSTANCE_DESTROY_TRAFFIC_LIMIT_EXCEEDED: '當前月流量週期無法銷毀，已用流量已達方案設定上限',
-        // 主機錯誤
         HOST_NOT_FOUND: '主機不存在',
         HOST_OFFLINE: '主機離線',
         HOST_HAS_INSTANCES: '主機上有實例，請先刪除',
         HOST_ALREADY_OFFICIAL: '此節點已經是自營節點',
         HOST_TAKEOVER_PACKAGE_BINDING_CONFLICT: '接管失敗，部分方案會失去全部綁定節點',
         NO_AVAILABLE_HOSTS: '沒有可用的節點',
-        // 映像檔錯誤
         IMAGE_NOT_FOUND: '映像檔不存在',
         IMAGE_SYNCED_ON_HOSTS: '映像檔已在節點上同步，請先從節點刪除',
         IMAGE_TYPE_MISMATCH: '所選映像檔與方案實例類型不相容',
-        // 方案錯誤
         PACKAGE_NOT_FOUND: '方案不存在',
         PACKAGE_IN_USE: '方案正在被實例使用',
-        // 配額錯誤
         QUOTA_EXCEEDED: '配額不足',
         QUOTA_CPU_EXCEEDED: 'CPU 配額不足',
         QUOTA_MEMORY_EXCEEDED: '記憶體配額不足',
@@ -6471,43 +6103,32 @@ export default {
         QUOTA_SNAPSHOT_EXCEEDED: '快照配額不足',
         QUOTA_BACKUP_EXCEEDED: '備份配額不足',
         QUOTA_NOT_ALLOCATED: '請先分配配額',
-        // 快照錯誤
         SNAPSHOT_NOT_FOUND: '快照不存在',
         SNAPSHOT_RESTORE_REQUIRES_STOP: '請先停止實例再還原快照',
-        // 備份錯誤
         BACKUP_NOT_FOUND: '備份不存在',
         BACKUP_NOT_READY: '備份尚未就緒，無法匯出',
         EXPORT_TASK_NOT_FOUND: '匯出任務不存在或已過期',
         EXPORT_TASK_EXPIRED: '匯出任務已過期',
-        // 連接埠映射錯誤
         PORT_IN_USE: '該連接埠已被使用',
         PORT_OUT_OF_RANGE: '連接埠超出允許範圍',
         PORT_MAPPING_NOT_FOUND: '連接埠映射不存在',
-        // 節點組錯誤
         NODE_GROUP_NOT_FOUND: '節點組不存在',
         NODE_GROUP_HAS_HOSTS: '節點組下有主機，請先移除',
         NODE_GROUP_HAS_PACKAGES: '節點組被方案使用中',
-        // 通知錯誤
         NOTIFICATION_CHANNEL_NOT_FOUND: '通知管道不存在',
-        // 幫助錯誤
         ARTICLE_NOT_FOUND: '文件不存在',
         SLUG_EXISTS: 'Slug 已存在',
-        // 邀請碼錯誤
         INVITE_CODE_USED: '邀請碼已被使用',
         INVITE_CODE_NOT_FOUND: '邀請碼不存在',
-        // OAuth 錯誤
         OAUTH_PROVIDER_DISABLED: '該登入方式已被停用',
         OAUTH_ALREADY_BOUND: '該帳號已被其他使用者綁定',
         OAUTH_NOT_BOUND: '帳號未綁定',
         OAUTH_TOKEN_ERROR: '取得授權失敗',
-        // SSH 金鑰錯誤
         SSH_KEY_NOT_FOUND: 'SSH 金鑰不存在',
         SSH_KEY_REQUIRED: '必須選擇一個 SSH 金鑰，請先在個人設定中新增',
         SSH_KEY_NOT_OWNED: 'SSH 金鑰不存在或不屬於該使用者',
-        // 方案錯誤（補充）
         PACKAGE_UNAVAILABLE: '方案不可用或已下架',
         CANNOT_CREATE_OWN_PAID_PACKAGE: '不能使用自己的付費方案建立實例',
-        // 節點資源錯誤
         HOST_UNAVAILABLE: '選擇的主機不可用或資源不足',
         HOST_NO_ONLINE: '沒有線上的主機，請先在節點管理中測試連線',
         HOST_RESOURCES_NOT_SYNCED: '主機資源資訊未同步，請在節點管理中點擊「測試連線」',
@@ -6523,7 +6144,6 @@ export default {
         HOST_IPV6_ROUTE_REQUIRES_CONFIG: 'IPv6 路由模式需要提供子網路和父介面',
         HOST_CPU_BELOW_USED: 'CPU 最大額配不能低於實例已使用的資源',
         HOST_MEMORY_BELOW_USED: '記憶體最大值不能低於實例已使用的資源',
-        // 實例操作錯誤
         INSTANCE_STOP_REQUIRED: '請先停止實例',
         INSTANCE_IMAGE_REQUIRED: '請指定映像檔',
         INSTANCE_IMAGE_UNAVAILABLE: '選擇的映像檔在目前節點不可用',
@@ -6534,33 +6154,25 @@ export default {
         HOST_NO_IPV6_SUBNET: '主機未設定 IPv6 子網路',
         IPV6_POOL_EXHAUSTED: 'IPv6 位址池已耗盡，請稍後重試',
         IPV6_REASSIGN_COOLDOWN: '每實例每天只能重新分配一次 IPv6，請稍後再試',
-        // 連接埠映射錯誤（補充）
         PORT_MAPPING_NAT_ONLY: '僅 NAT 和雙棧模式支援連接埠映射',
         PORT_NO_AVAILABLE: '沒有可用連接埠，請聯繫管理員',
         PORT_CONFLICT: '連接埠已被佔用，請使用其他連接埠',
         PORT_MAPPING_INVALID_ID: '無效的實例或連接埠映射 ID',
-        // 映像檔錯誤（補充）
         IMAGE_CREATE_FAILED: '映像檔建立失敗',
         IMAGE_UPDATE_FAILED: '映像檔更新失敗',
         IMAGE_INVALID_HOST_ID: '無效的映像檔或節點 ID',
-        // 備份錯誤（補充）
         BACKUP_CREATE_FAILED: '建立備份失敗',
         BACKUP_DELETE_FAILED: '刪除備份失敗',
         BACKUP_EXPORT_FAILED: '匯出備份失敗',
         BACKUP_QUOTA_NOT_SET: '請先為該實例設定備份配額',
         BACKUP_EXPORT_STATUS_INVALID: '匯出任務狀態異常',
-        // 設定錯誤
         CONFIG_INVALID_KEY: '無效的設定鍵',
         CONFIG_INVALID_VALUE: '設定值必須是非負整數',
-        // 快照錯誤（補充）
         SNAPSHOT_QUOTA_NOT_SET: '請先為該實例設定快照配額',
-        // 方案錯誤（補充）
         PACKAGE_HAS_INSTANCES: '該方案正在被實例使用，無法刪除',
-        // 資源限制錯誤
         RESOURCE_CPU_EXCEEDS_PACKAGE: 'CPU 設定超出方案限制',
         RESOURCE_MEMORY_EXCEEDS_PACKAGE: '記憶體設定超出方案限制',
         RESOURCE_DISK_EXCEEDS_PACKAGE: '磁碟設定超出方案限制',
-        // 使用者配額錯誤（詳細）
         QUOTA_CPU_INSUFFICIENT: 'CPU 配額不足',
         QUOTA_MEMORY_INSUFFICIENT: '記憶體配額不足',
         QUOTA_DISK_INSUFFICIENT: '磁碟配額不足',
@@ -6573,23 +6185,16 @@ export default {
         QUOTA_PORT_TOTAL_EXCEEDED: '連接埠配額超出使用者總配額',
         QUOTA_SNAPSHOT_TOTAL_EXCEEDED: '快照配額超出使用者總配額',
         QUOTA_BACKUP_TOTAL_EXCEEDED: '備份配額超出使用者總配額',
-        // 映像檔錯誤（補充）
         IMAGE_NOT_SYNCED: '映像檔尚未同步到所選主機',
         IMAGE_SYNCING_CANNOT_DELETE: '映像檔正在同步中，無法刪除',
         IMAGE_NO_HOSTS: '沒有可用的節點，請先新增節點',
-        // 連接埠錯誤（補充）
         PORT_RANGE_INVALID: '連接埠必須在允許範圍內',
-        // 快照策略錯誤
         SNAPSHOT_MANUAL_FULL: '手動快照已達實例配額，無法啟用自動快照',
         SNAPSHOT_RETENTION_EXCEEDS: '保留數量超出可用配額',
-        // 備份策略錯誤
         BACKUP_MANUAL_FULL: '手動備份已達實例配額，無法啟用自動備份',
         BACKUP_RETENTION_EXCEEDS: '保留數量超出可用配額',
-        // OAuth 錯誤（補充）
         OAUTH_NOT_ENABLED: '該登入方式未啟用',
-        // 儲存池錯誤
         STORAGE_POOL_NOT_CONFIGURED: '主機未設定系統磁碟儲存池，無法建立實例',
-        // 好友系統錯誤
         CANNOT_ADD_SELF: '無法將自己加為好友',
         ALREADY_FRIENDS: '你們已經是好友了',
         FRIEND_REQUEST_PENDING: '好友請求已在待處理中',
@@ -6597,7 +6202,6 @@ export default {
         FRIEND_REQUEST_NOT_PENDING: '該請求已被處理',
         FRIENDSHIP_NOT_FOUND: '好友關係不存在',
         TARGET_FRIEND_QUOTA_FULL: '對方好友數量已達上限，無法新增',
-        // 方案共享錯誤
         CANNOT_SHARE_TO_SELF: '無法共享給自己',
         PACKAGE_ALREADY_SHARED: '方案已共享給該使用者',
         SHARE_NOT_FOUND: '共享記錄不存在',
@@ -6605,7 +6209,6 @@ export default {
         SHARE_QUOTA_CPU_EXCEEDED: '共享方案 CPU 配額已用完',
         SHARE_QUOTA_MEMORY_EXCEEDED: '共享方案記憶體配額已用完',
         SHARE_QUOTA_INSTANCES_EXCEEDED: '共享方案實例數量已達上限',
-        // 電子郵件驗證錯誤
         EMAIL_VERIFICATION_DISABLED: '電子郵件驗證功能未啟用',
         EMAIL_CODE_REQUIRED: '請輸入電子郵件驗證碼',
         INVALID_EMAIL_CODE: '驗證碼無效或已過期',
@@ -6613,7 +6216,6 @@ export default {
         EMAIL_SEND_FAILED: '驗證郵件發送失敗，請稍後再試',
         EMAIL_ALREADY_REGISTERED: '該電子郵件地址已被使用',
         EMAIL_DOMAIN_NOT_ALLOWED: '該電子郵件網域不允許註冊，請使用其他信箱',
-        // 移轉錯誤
         TRANSFER_NOT_FOUND: '移轉請求不存在',
         TRANSFER_TO_SELF: '無法移轉給自己',
         TRANSFER_TO_BANNED: '無法移轉給被封禁的使用者',
@@ -6625,17 +6227,14 @@ export default {
         TRANSFER_INSTANCE_LOCKED: '實例正在移轉中，暫時無法操作',
         TRANSFER_HOST_DISABLED: '該節點已禁止移轉操作',
         TRANSFER_INSUFFICIENT_BALANCE: '餘額不足，無法支付移轉手續費',
-        // 移轉過程錯誤
         INSTANCE_MUST_BE_STOPPED: '實例必須在移轉前停止',
         INCUS_RENAME_FAILED: '在主機上重新命名實例失敗',
         DATABASE_ERROR: '資料庫操作失敗，請重試',
-        // 敏感操作二次驗證錯誤
         VERIFICATION_REQUIRED: '此操作需要二次驗證',
         INVALID_CODE: '驗證碼無效或已過期',
         NO_NOTIFICATION_CHANNEL: '未綁定通知管道，無需二次驗證',
         EMAIL_NOT_CONFIGURED: '未設定電子郵件，無法發送驗證碼',
         SEND_FAILED: '驗證碼發送失敗',
-        // 簽到錯誤
         CHECKIN_NO_INSTANCE: '您需要至少擁有一個實例才能簽到',
         CHECKIN_ALREADY_TODAY: '今日已簽到',
         REDEEM_ALREADY_TODAY: '今日已兌換過兌換碼',
@@ -6652,7 +6251,6 @@ export default {
         REDEEM_EXCEEDS_PACKAGE_QUOTA: '兌換後將超出實例方案配額限制',
         REDEEM_ALREADY_AT_LIMIT: '實例資源已達到方案上限',
         CHECKIN_CODE_PAID_INSTANCE: '簽到兑換碼只能用於免費實例',
-        // 官方優惠券錯誤
         COUPON_NOT_FOUND: '官方優惠券不存在',
         COUPON_DISABLED: '此官方優惠券已被停用',
         COUPON_NOT_STARTED: '此官方優惠券尚未生效',
@@ -6665,7 +6263,6 @@ export default {
         COUPON_INVALID_DISCOUNT: '折扣比例必須在 0 到 1 之間',
         PAID_INSTANCE_DELETION_NOT_ALLOWED: '付費實例不允許刪除',
         INSTANCE_DELETION_NOT_ALLOWED: '此方案不支援使用者自行刪除及退款',
-        // 餘額錯誤
         BALANCE_INSUFFICIENT: '餘額不足，請先充值',
         BALANCE_TRANSFER_DISABLED: '餘額轉帳功能未開啟',
         BALANCE_TRANSFER_TO_SELF: '不能轉帳給自己',
@@ -6678,8 +6275,6 @@ export default {
         INSUFFICIENT_BALANCE: '餘額不足，請先充值',
         INTERNAL_ERROR: '伺服器內部錯誤',
     },
-
-    // 流量統計
     traffic: {
         title: '流量統計',
         monthlyUsage: '本月流量',
@@ -6717,8 +6312,6 @@ export default {
         resetSuccess: '流量已重置',
         resetFailed: '重置流量失敗',
     },
-
-    // 實例移轉
     transfer: {
         title: '實例移轉',
         sentTab: '移轉記錄',
@@ -6727,7 +6320,6 @@ export default {
         noTransfers: '暫無移轉記錄',
         noPendingTransfers: '暫無待接收的移轉',
         searchPlaceholder: '搜尋實例名稱、接收方使用者名稱或備註...',
-        // 狀態
         status: {
             pending: '等待接收',
             processing: '處理中',
@@ -6735,7 +6327,6 @@ export default {
             rejected: '已拒絕',
             cancelled: '已取消',
         },
-        // 操作
         actions: {
             transfer: '移轉',
             accept: '接受',
@@ -6743,11 +6334,9 @@ export default {
             cancel: '取消',
             push: '直接推送',
         },
-        // 完成時間
         completedAt: '完成時間',
         rejectedAt: '拒絕時間',
         cancelledAt: '取消時間',
-        // 移轉彈窗
         modal: {
             title: '移轉實例',
             targetUser: '接收方使用者名稱',
@@ -6771,13 +6360,11 @@ export default {
             insufficientBalance: '餘額不足，請先充值',
             feeRefundHint: '確認移轉時將扣除手續費，對方拒絕接收將自動退還',
         },
-        // 拒絕彈窗
         rejectModal: {
             title: '拒絕移轉',
             reason: '拒絕原因（選填）',
             reasonPlaceholder: '輸入拒絕原因',
         },
-        // 設定詳情彈窗
         configModal: {
             title: '移轉時設定詳情',
             instanceName: '實例名稱',
@@ -6789,7 +6376,6 @@ export default {
             package: '方案',
         },
         hasRemark: '有備註',
-        // 詳情
         detail: {
             fromUser: '發起方',
             toUser: '接收方',
@@ -6810,7 +6396,6 @@ export default {
             rejectedAt: '拒絕時間',
             cancelledAt: '取消時間',
         },
-        // 提示訊息
         messages: {
             transferSuccess: '移轉請求已發送',
             transferComplete: '移轉完成',
@@ -6820,7 +6405,6 @@ export default {
             pushSuccess: '已成功推送實例',
             instanceLocked: '該實例正在移轉中，暫時無法操作',
         },
-        // 錯誤
         errors: {
             TRANSFER_NOT_FOUND: '移轉請求不存在',
             TRANSFER_TO_SELF: '無法移轉給自己',
@@ -6836,8 +6420,6 @@ export default {
             PUSH_NOT_HOST_OWNER: '只有主機擁有者才能直接推送',
         },
     },
-
-    // 忘記密碼
     forgotPassword: {
         title: '忘記密碼',
         description: '輸入您的電子郵件地址，我們將發送重設密碼的連結。',
@@ -6851,8 +6433,6 @@ export default {
         resend: '重新發送',
         resendIn: '{seconds} 秒後可重新發送',
     },
-
-    // 重設密碼
     resetPassword: {
         title: '重設密碼',
         description: '輸入您的新密碼',
@@ -6867,8 +6447,6 @@ export default {
         tokenExpired: '重設連結已過期，請重新申請',
         backToLogin: '返回登入',
     },
-
-    // 管理後台 - 使用者管理
     adminUsers: {
         title: '使用者管理',
         description: '管理系統中的所有使用者',
@@ -6904,8 +6482,6 @@ export default {
         deleteSuccess: '使用者已刪除',
         updateSuccess: '使用者已更新',
     },
-
-    // 管理後台 - 主機管理
     adminHosts: {
         title: '主機管理',
         description: '管理系統中的所有主機',
@@ -6934,8 +6510,6 @@ export default {
         deleteSuccess: '主機已刪除',
         loadFailed: '載入主機失敗',
     },
-
-    // 管理後台 - 方案管理
     adminPackages: {
         title: '方案管理',
         description: '管理系統中的所有方案',
@@ -6961,8 +6535,6 @@ export default {
         deleteSuccess: '方案已刪除',
         loadFailed: '載入方案失敗',
     },
-
-    // 管理後台 - 實例管理
     adminInstances: {
         title: '實例管理',
         description: '管理系統中的所有實例',
@@ -6982,8 +6554,6 @@ export default {
         filterStopped: '已停止',
         loadFailed: '載入實例失敗',
     },
-
-    // 管理後台 - 系統設定
     adminSettings: {
         title: '系統設定',
         description: '管理系統設定',
@@ -7000,8 +6570,6 @@ export default {
             notification: '通知',
         },
     },
-
-    // 資源頁面（映像檔）
     resources: {
         hosts: {
             title: '我的節點',
@@ -7028,7 +6596,6 @@ export default {
             calibrateAllNoChange: '已對齊 {total} 個節點，無差異',
             nameHint: '節點名稱以 PEER + 您的用戶ID 作為前綴，後面可自訂',
             nameSuffixRequired: '請輸入節點名稱後綴',
-            // 管理員專用：節點切換器
             mine: '我的節點',
             official: '官方自營節點',
             hosted: '託管節點',
@@ -7040,7 +6607,6 @@ export default {
             takeoverOfficialSuccess: '已接管節點 {name}，轉移 {packages} 個方案，保留 {instances} 個實例',
             takeoverOfficialDetached: '其中 {count} 個方案仍綁定其他託管節點，已移除目前節點綁定：{names}',
             takeoverOfficialBlocked: '無法接管：有 {count} 個方案在移除目前節點後將失去全部綁定節點，請先手動處理這些方案：{names}',
-            // 詳情頁
             transferControl: '移轉控制',
             transferEnabled: '允許移轉',
             transferEnabledHint: '關閉後，該節點上的實例將無法發起移轉請求',
@@ -7084,7 +6650,6 @@ export default {
             searchFriend: '搜尋好友...',
             noAvailableFriends: '所有好友都已共享此方案',
             selectToShare: '選擇要共享的好友',
-            // 配額限制
             quotaSettings: '配額限制',
             quotaMultiplier: '資源配額倍數',
             quotaMultiplierHint: '限制好友可使用的 CPU/記憶體佔方案比例',
@@ -7097,7 +6662,6 @@ export default {
             updateQuota: '修改配額',
             updateQuotaSuccess: '配額已更新',
             updateQuotaFailed: '更新配額失敗',
-            // 美化彈窗新增
             shareToFriend: '分享方案給好友',
             noFriendsHint: '先新增好友才能共享方案',
             allFriendsShared: '已全部共享',
@@ -7121,14 +6685,11 @@ export default {
             searchPlaceholder: '搜尋方案名、節點名、描述...',
             noSearchResults: '未找到符合的方案',
             clearSearch: '清除搜尋',
-            // 通知渠道設定
             notifyChannel: '通知渠道',
             notifyChannelTitle: '資源釋放通知渠道',
             notifyChannelDesc: '當使用者刪除實例或主機所有者釋放配額時，系統會透過此渠道發送通知',
-            // 分享連結
             copyShareLink: '複製分享連結',
             shareLinkCopied: '購買連結已複製，使用者可先預覽套餐詳情再繼續開通',
-            // 管理員專用：套餐切換器
             mine: '我的套餐',
             hosted: '託管套餐',
             owner: '擁有者',
@@ -7157,7 +6718,6 @@ export default {
                 },
             },
         },
-        // 套餐方案管理
         plans: {
             title: '方案管理',
             manage: '管理方案',
@@ -7277,8 +6837,6 @@ export default {
             images: '映像檔',
         },
     },
-
-    // 實例設定標籤頁
     instanceConfig: {
         title: '進階設定',
         sections: {
@@ -7348,8 +6906,6 @@ export default {
             failed: '提升處理程序數上限失敗',
         },
     },
-
-    // 方案表單頁面
     packageForm: {
         createTitle: '建立方案',
         editTitle: '編輯方案',
@@ -7467,8 +7023,6 @@ export default {
             vmWindows: '可運行 Windows 等非 Linux 系統',
         },
     },
-
-    // 敏感操作二次驗證
     sensitiveVerification: {
         title: '敏感操作驗證',
         description: '此操作需要二次驗證以確保帳戶安全',
@@ -7492,8 +7046,6 @@ export default {
             delete_backup: '刪除備份',
         },
     },
-
-    // 站內信
     inbox: {
         title: '通知中心',
         description: '查看您的所有系統通知',
@@ -7523,9 +7075,13 @@ export default {
             ticket: '工單',
             system: '系統',
         },
+        clearConfirm: '確定清空所有已讀通知嗎？',
+        cleared: '已清空',
+        deleteConfirm: '確定刪除這條通知嗎？',
+        deleted: '已刪除',
+        markedAllRead: '已全部標記為已讀',
+        noCategoryMessages: '該型別暫無訊息',
     },
-
-    // 配額釋放
     quotaRelease: {
         title: '釋放配額',
         packageQuota: '方案配額',
@@ -7558,8 +7114,6 @@ export default {
         channelUpdated: '通知管道已更新',
         channelUpdateFailed: '更新通知管道失敗',
     },
-
-    // Web 終端機
     terminal: {
         title: '終端機',
         connecting: '正在連線...',
@@ -7696,8 +7250,6 @@ export default {
         paste: '貼上',
         hideKeyboard: '收起鍵盤',
     },
-
-    // 終端機管理頁面
     terminalPage: {
         newConnection: '新增連線',
         selectInstance: '選擇實例',
@@ -7719,8 +7271,6 @@ export default {
         noMatchingInstances: '沒有符合的實例',
         noMatchingInstancesHint: '請嘗試其他關鍵字，或清空搜尋條件查看全部運行中的實例。',
     },
-
-    // 工單系統
     tickets: {
         title: '工單中心',
         myTickets: '我的工單',
@@ -7764,7 +7314,7 @@ export default {
         selectInstanceHint: '選擇實例（可選）',
         noInstancesHint: '您還沒有實例，可直接提交工單',
         hostedInstanceHint: '如需針對託管實例提交工單，請務必選擇對應實例，工單將發送至該節點負責人處理。',
-            hostedInstanceHintTitle: '託管實例提示',
+        hostedInstanceHintTitle: '託管實例提示',
         selectCategory: '選擇分類',
         selectPriority: '選擇優先級',
         reply: '回覆',
@@ -7834,9 +7384,10 @@ export default {
             zoomOut: '縮小',
             resetZoom: '重設縮放',
         },
+        confirmDeleteMessage: '確定要刪除這條訊息嗎？刪除後所有人都將無法檢視。',
+        deleteMessage: '刪除訊息',
+        deleteMessageSuccess: '訊息已刪除',
     },
-
-    // 簽到系統
     checkin: {
         title: '每日簽到',
         checkinTab: '簽到',
@@ -7900,7 +7451,6 @@ export default {
         percent: '%',
         mb: 'MB',
         gb: 'GB',
-        // 資源池系統新增
         tabCheckin: '簽到',
         tabRedeem: '兌換',
         tabPool: '資源池',
@@ -7938,8 +7488,6 @@ export default {
         actionApply: '應用消耗',
         actionSystemRedeem: '系統兑換碼',
     },
-
-    // 兌換碼管理
     redeemCodes: {
         title: '兌換碼管理',
         create: '建立兌換碼',
@@ -8011,8 +7559,6 @@ export default {
         valueOutOfRange: '數值必須在 {min} 到 {max} 之間',
         valueMustBeInteger: '數值必須為整數',
     },
-
-    // 擴充
     extensions: {
         title: '腳本',
         description: '管理擴充功能',
@@ -8079,10 +7625,7 @@ export default {
             },
         },
     },
-
-    // 計費管理
     billing: {
-        // 通用
         balance: '餘額',
         frozen: '凍結',
         totalRecharge: '累計充值',
@@ -8097,8 +7640,6 @@ export default {
         traffic: '月流量',
         trafficBidirectional: '雙向',
         soldOut: '售罄',
-        
-        // 實例計費資訊
         billingInfo: '計費資訊',
         currentPlan: '當前方案',
         expiresAt: '到期時間',
@@ -8114,8 +7655,6 @@ export default {
         autoRenewHint: '到期前 24 小時將自動從餘額扣款續費',
         autoRenewDesc: '開啟自動續費後，實例將在到期前自動按 {cycle} 週期續費，每次續費 ￥{price}',
         currentStatus: '當前狀態',
-        
-        // 續費
         renew: '續費',
         renewInstance: '實例續費',
         renewTitle: '續費實例',
@@ -8142,8 +7681,6 @@ export default {
         renewFailed: '續費失敗',
         freeInstanceNoRenew: '免費實例無需續費',
         hostingRenewTooEarly: '託管實例僅可在到期前 7 天內續費（當前剩餘 {days} 天）',
-        
-        // 升降級
         changePlan: '升級',
         changePlanTitle: '變更套餐方案',
         upgrade: '升級',
@@ -8166,7 +7703,6 @@ export default {
         newConfig: '新配置',
         freeInstanceNoChange: '免費實例不支援升級',
         samePlan: '不能切換到相同方案',
-        // 變更規則
         viewRules: '變更規則',
         hideRules: '收起規則',
         changePlanRulesTitle: '方案升級規則',
@@ -8174,27 +7710,21 @@ export default {
         changePlanRule2: '剩餘天數 ≥ 15 天才可升級方案',
         changePlanRule3: '到期時間保持不變',
         changePlanRule4: '優惠碼折扣繼續享受',
-        // 已是最高方案
         alreadyHighestPlan: '當前已是最高方案',
         contactForCustomPlan: '更高配置可提交工單定制',
-        // KVM/LXC 重啟提示
         kvmRestartHint: 'KVM 實例升級後需重啟以套用新配置；若使用過重裝腳本，可能需自行擴容分割區',
         lxcInstantHint: 'LXC 實例升級後配置即時生效',
         kvmRestartRequired: 'KVM 實例方案已變更，請重啟實例以套用新配置',
-        // 不能變更原因
         cannotChange: '暫時無法升級',
         cannotChangeRemainingDays: '剩餘天數不足 {days} 天，無法升級方案',
         cannotChangeInstanceStatus: '當前實例狀態不允許升級方案，僅運行中或已停止的實例可以操作',
         cannotChangeUnknown: '當前無法升級方案',
-        // 計算詳情
         oldDailyPrice: '原方案日價',
         newDailyPrice: '新方案日價',
         day: '天',
         newPlanCostOriginal: '新方案剩餘費用',
         newPlanCostFinal: '新方案剩餘費用（折後）',
         discountAmount: '優惠碼折扣',
-        
-        // 計費記錄
         records: '計費記錄',
         billingRecords: '計費記錄',
         recordType: '類型',
@@ -8208,8 +7738,6 @@ export default {
             downgrade: '降級',
             admin_extension: '管理員延期',
         },
-        
-        // 充值
         recharge: '充值',
         rechargeTitle: '帳戶充值',
         rechargeAmount: '充值金額',
@@ -8234,13 +7762,9 @@ export default {
         orderStatus_cancelled: '已取消',
         orderStatus_expired: '已過期',
         orderStatus_refunded: '已退款',
-        
-        // 充值記錄
         rechargeRecords: '充值記錄',
         noRecords: '暫無記錄',
         viewDetails: '查看詳情',
-        
-        // 餘額記錄
         balanceLogs: '餘額明細',
         balanceLogTypes: {
             recharge: '充值',
@@ -8251,8 +7775,6 @@ export default {
             refund: '退款',
             admin_adjust: '管理員調整',
         },
-        
-        // 套餐方案
         plan: '方案',
         planName: '方案名稱',
         planPrice: '價格',
@@ -8267,9 +7789,15 @@ export default {
         perMonth: '/月',
         perQuarter: '/季',
         perYear: '/年',
+        expired: '已到期',
+        cycle: {
+            annual: '年付',
+            monthly: '月付',
+            months: '個月',
+            quarterly: '季付',
+            semiAnnual: '半年付',
+        },
     },
-
-    // 託管準入
     hosting: {
         accessDenied: {
             title: '暫不滿足託管條件',
@@ -8282,8 +7810,6 @@ export default {
             featureHiddenHint: '如需使用託管功能，請聯絡管理員開放，或等待功能重新開放。',
         },
     },
-
-    // 託管收益
     hostingWallet: {
         title: '託管收益',
         description: '查看您的節點託管收益和提現記錄',
@@ -8434,7 +7960,6 @@ export default {
             exceedBalance: '提現金額超過可用餘額',
         },
     },
-
     vipBenefits: {
         commonMember: '普通會員',
         overviewLabel: 'VIP 福利大廳',
@@ -8488,8 +8013,6 @@ export default {
             pending: '待發放',
         },
     },
-
-    // 福利系統
     entertainment: {
         title: '福利',
         description: '領取會員福利，管理積分和徽章獎勵',
@@ -8518,7 +8041,6 @@ export default {
         checkinSection: {
             title: '每日簽到',
         },
-        // 抽獎
         spin: '抽獎',
         spinCost: '消耗 {points} 積分',
         spinFailed: '抽獎失敗',
@@ -8528,7 +8050,6 @@ export default {
         prizeList: '獎品列表',
         probability: '概率',
         remaining: '剩餘',
-        // 十連抽
         multiDraw: '十連抽',
         multiDrawAgain: '再次十連',
         multiDrawFailed: '十連抽失敗',
@@ -8542,7 +8063,6 @@ export default {
         multiDrawBadgesTitle: '本次十連抽中了徽章',
         multiDrawBadgesSubtitle: '本輪十連共獲得 {count} 枚徽章，先看看這次的新收穫。',
         continueToMultiResults: '繼續查看十連結果',
-        // 獎品類型
         prizeTypes: {
             nothing: '再接再勵',
             points: '積分',
@@ -8554,7 +8074,6 @@ export default {
             disk: '硬碟資源',
             traffic: '流量資源',
         },
-        // 中獎結果
         congratulations: '恭喜中獎！',
         betterLuckNextTime: '再接再勵',
         wonPoints: '獲得 {points} 積分',
@@ -8565,7 +8084,6 @@ export default {
         wonMemory: '獲得 {value}MB 記憶體，已存入資源池',
         wonDisk: '獲得 {value}MB 硬碟，已存入資源池',
         wonTraffic: '獲得 {value}GB 流量，已存入資源池',
-        // 抽獎記錄
         lotteryName: '活動名稱',
         prize: '獎品',
         prizeType: '獎品類型',
@@ -8573,18 +8091,7 @@ export default {
         time: '時間',
         noRecords: '暫無抽獎記錄',
         loadRecordsFailed: '載入抽獎記錄失敗',
-        recordStatus: '發放狀態',
-        recordActions: '操作',
-        recordStatusPending: '待發放',
-        recordStatusDelivered: '已發放',
-        recordStatusClaimed: '已領取',
-        deliverButton: '發放實例',
-        deliverSuccess: '已標記為發放完成，請確認已為中獎使用者開通實例',
-        deliverFailed: '發放操作失敗',
-        invalidTicketId: '工單 ID 必須為正整數',
-        ticketIdPrompt: '為使用者 {username} 發放實例獎勵。如需關聯處理該獎勵的工單，請輸入工單 ID（可留空）：',
         loadLotteriesFailed: '載入抽獎活動失敗',
-        // 積分明細
         pointsLogType: '類型',
         pointsChange: '變動',
         pointsAfter: '變動後',
@@ -8649,8 +8156,17 @@ export default {
             applyInstanceSuccess: '已套用到實例圖示',
             unapplySuccess: '已取消套用',
         },
-        // 管理端
         admin: {
+            recordStatus: '發放狀態',
+            recordActions: '操作',
+            recordStatusPending: '待發放',
+            recordStatusDelivered: '已發放',
+            recordStatusClaimed: '已領取',
+            deliverButton: '發放實例',
+            deliverSuccess: '已標記為發放完成，請確認已為中獎使用者開通實例',
+            deliverFailed: '發放操作失敗',
+            invalidTicketId: '工單 ID 必須為正整數',
+            ticketIdPrompt: '為使用者 {username} 發放實例獎勵。如需關聯處理該獎勵的工單，請輸入工單 ID（可留空）：',
             title: '娛樂管理',
             description: '管理抽獎活動、獎品和用戶積分',
             tabs: {
@@ -8683,7 +8199,6 @@ export default {
             status: '狀態',
             active: '已啟用',
             inactive: '已停用',
-            // 獎品管理
             managePrizes: '管理獎品',
             addPrize: '新增獎品',
             prizeName: '獎品名稱',
@@ -8709,21 +8224,18 @@ export default {
             invalidProbability: '權重必須大於0',
             savePrizesSuccess: '獎品儲存成功',
             savePrizesFailed: '獎品儲存失敗',
-            // 中獎記錄
             user: '用戶',
             searchUser: '搜尋用戶名',
             noRecords: '暫無中獎記錄',
             loadRecordsFailed: '載入中獎記錄失敗',
             prize: '獎品',
             value: '獎勵值',
-            // 用戶積分
             currentPoints: '當前積分',
             totalEarned: '累計獲得',
             totalSpent: '累計消耗',
             lastConvertedAt: '最後兑換',
             noUsers: '暫無用戶積分資料',
             loadUsersFailed: '載入用戶積分失敗',
-            // 徽章目錄
             badgeCatalog: {
                 loadFailed: '載入徽章目錄失敗',
                 fillSeriesRequired: '請填寫系列 ID、標題、名稱和說明',
@@ -8793,7 +8305,6 @@ export default {
                     previewLabel: '完整標籤',
                 },
             },
-            // 通知配置
             notification: {
                 title: '中獎通知',
                 enabled: '啟用通知',
@@ -8811,8 +8322,6 @@ export default {
             },
         },
     },
-
-    // 郵箱模組
     mail: {
         title: '郵箱',
         description: '管理您的專業郵箱服務',
@@ -8903,9 +8412,9 @@ export default {
         renewMonths: '續費時長',
         monthlyPrice: '月單價',
         yearlyPrice: '年單價',
-                alreadyPurchased: '您已購買該地區的郵箱服務',
-                alreadyPurchasedDesc: '每個用戶僅可購買一個地區的郵箱服務。如需更換方案，請先到「我的郵箱」進行管理。',
-                viewMySubscription: '查看我的訂閱',
+        alreadyPurchased: '您已購買該地區的郵箱服務',
+        alreadyPurchasedDesc: '每個用戶僅可購買一個地區的郵箱服務。如需更換方案，請先到「我的郵箱」進行管理。',
+        viewMySubscription: '查看我的訂閱',
         renewDuration: '續費時長',
         months: '個月',
         renewSuccess: '續費成功',
