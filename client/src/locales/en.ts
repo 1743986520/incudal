@@ -29,6 +29,7 @@ export default {
         next: 'Next',
         previous: 'Previous',
         close: 'Close',
+        confirmInputHint: 'Type "{text}" to confirm',
         reset: 'Reset',
         refresh: 'Refresh',
         copy: 'Copy',
@@ -1040,6 +1041,7 @@ export default {
             updateFailed: 'Failed to save instance order',
         },
         confirmDelete: 'Are you sure to delete instance "{name}"? This action cannot be undone.',
+        confirmDeleteTitle: 'Delete Instance',
         forcePanelDeleteConfirm: 'The source host cannot be reached. Panel-only removal is allowed only for free instances, does not contact the host, and never issues a refund. Paid or hourly instances require confirmed remote deletion. Continue?',
         createPage: {
             title: 'Create Instance',

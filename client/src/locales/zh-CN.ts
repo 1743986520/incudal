@@ -29,6 +29,7 @@ export default {
         next: '下一步',
         previous: '上一步',
         close: '关闭',
+        confirmInputHint: '请输入 "{text}" 以确认',
         reset: '重置',
         refresh: '刷新',
         copy: '复制',
@@ -1039,6 +1040,7 @@ export default {
             updateFailed: '保存实例顺序失败',
         },
         confirmDelete: '确定删除实例 "{name}"？此操作不可恢复。',
+        confirmDeleteTitle: '删除实例',
         forcePanelDeleteConfirm: '源节点无法连接。仅面板删除只允许处理免费实例，不会连接主机，也不会退款；付费或按小时实例必须确认远端已删除。确定继续吗？',
         createPage: {
             title: '创建实例',

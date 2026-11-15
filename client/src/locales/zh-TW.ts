@@ -35,6 +35,7 @@ export default {
         next: '下一步',
         previous: '上一步',
         close: '關閉',
+        confirmInputHint: '請輸入 "{text}" 以確認',
         reset: '重設',
         refresh: '重新整理',
         copy: '複製',
@@ -1172,6 +1173,7 @@ export default {
             updateFailed: '儲存實例順序失敗',
         },
         confirmDelete: '確定刪除實例「{name}」？此操作不可回復。',
+        confirmDeleteTitle: '刪除實例',
         forcePanelDeleteConfirm: '來源節點無法連線。僅從面板刪除只允許處理免費實例，不會連線主機，也不會退款；付費或按小時計費實例必須確認遠端已刪除。確定繼續嗎？',
         createPage: {
             title: '建立實例',

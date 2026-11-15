@@ -8,6 +8,7 @@ import { useConfigStore } from '@/stores/config'
 import { useThemeStore } from '@/stores/theme'
 import { usePollingWhenVisible } from '@/composables/usePollingWhenVisible'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useToast } from '@/stores/toast'
 import { getLocalizedCountryName } from '@/utils/countryDisplay'
 import { formatMemory, formatDisk, formatBytes, getStatusInfo } from '@/utils/formatters'
@@ -37,6 +38,8 @@ void configStore.loadPublicConfig()
 const instances = ref<Instance[]>([])
 const loading = ref<boolean>(true)
 const actionLoading = ref<Record<number, string>>({})
+const pendingDelete = ref<{ id: number; name: string } | null>(null)
+const deleteConfirmLoading = ref(false)
 const orderLoading = ref<boolean>(false)
 const recentlyOrderedInstanceId = ref<number | null>(null)
 const batchActionLoading = ref<string>('')
@@ -859,15 +862,10 @@ async function handleAction(instance: Instance, action: InstanceAction): Promise
       toast.success(t('instance.retryCreateStarted', { name: instance.name }))
     }
     else if (action === 'delete') {
-      if (!confirm(t('instance.confirmDelete', { name: instance.name }))) {
-        delete actionLoading.value[instance.id]
-        return
-      }
-      await api.instances.delete(instance.id)
-      // 立即从本地列表移除，提供即时反馈
-      instances.value = instances.value.filter(i => i.id !== instance.id)
-      total.value = Math.max(0, total.value - 1)
-      toast.success(t('instance.deletedInstance', { name: instance.name }))
+      // 高危操作：弹出需输入实例名的确认弹窗（替代原生 confirm）
+      pendingDelete.value = { id: instance.id, name: instance.name }
+      delete actionLoading.value[instance.id]
+      return
     }
   } catch (error: any) {
     toast.error(`${t('instance.actionFailed')}: ${translateError(error)}`)
@@ -875,6 +873,25 @@ async function handleAction(instance: Instance, action: InstanceAction): Promise
     await loadInstances(true)
   } finally {
     delete actionLoading.value[instance.id]
+  }
+}
+
+async function confirmPendingDelete(): Promise<void> {
+  const target = pendingDelete.value
+  if (!target) return
+  deleteConfirmLoading.value = true
+  try {
+    await api.instances.delete(target.id)
+    // 立即从本地列表移除，提供即时反馈
+    instances.value = instances.value.filter(i => i.id !== target.id)
+    total.value = Math.max(0, total.value - 1)
+    toast.success(t('instance.deletedInstance', { name: target.name }))
+    pendingDelete.value = null
+  } catch (error: any) {
+    toast.error(`${t('instance.actionFailed')}: ${translateError(error)}`)
+    await loadInstances(true)
+  } finally {
+    deleteConfirmLoading.value = false
   }
 }
 
@@ -2675,6 +2692,17 @@ async function confirmBatchDestroy(force = false): Promise<void> {
         </div>
       </div>
     </Teleport>
+
+    <ConfirmDialog
+      :visible="pendingDelete !== null"
+      :title="t('instance.confirmDeleteTitle')"
+      :message="t('instance.confirmDelete', { name: pendingDelete?.name })"
+      :require-input="pendingDelete?.name"
+      danger
+      :loading="deleteConfirmLoading"
+      @confirm="confirmPendingDelete"
+      @close="pendingDelete = null"
+    />
   </div>
 </template>
 

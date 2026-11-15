@@ -13,6 +13,7 @@ import { usePollingWhenVisible } from '@/composables/usePollingWhenVisible'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useToast } from '@/stores/toast'
 import { useConfigStore } from '@/stores/config'
 import InstanceInfoTab from '@/components/instance/InstanceInfoTab.vue'
@@ -96,6 +97,8 @@ const activeTab = ref<TabType>('info')
 const instance = ref<InstanceWithDetails | null>(null)
 const loading = ref<boolean>(true)
 const actionLoading = ref<string>('')
+const pendingDelete = ref<{ id: number; name: string } | null>(null)
+const deleteConfirmLoading = ref(false)
 const copied = ref<string>('')
 const showPassword = ref<Record<string, boolean>>({})  // 用于控制密码显示/隐藏
 const instancePassword = ref<Record<string, string | null>>({})  // 存储实例密码
@@ -1499,14 +1502,8 @@ async function handleAction(action: InstanceAction): Promise<void> {
       startTaskPolling(response.taskId)
     }
     else if (action === 'delete') {
-      if (!confirm(t('instance.detail.actions.confirmDelete', { name: instance.value.name }))) {
-        actionLoading.value = ''
-        return
-      }
-      
-      await api.instances.delete(instance.value.id)
-      toast.success(t('instance.detail.actions.deleted'))
-      router.push(getReturnPath())
+      // 高危操作：弹出需输入实例名的确认弹窗（替代原生 confirm）
+      pendingDelete.value = { id: instance.value.id, name: instance.value.name }
       return
     }
     else if (action === 'clone') {
@@ -1528,6 +1525,33 @@ async function handleAction(action: InstanceAction): Promise<void> {
     toast.error(`${t('instance.detail.actions.actionFailed')}: ${translateError(error)}`)
   } finally {
     actionLoading.value = ''
+  }
+}
+
+// 确认删除实例（ConfirmDialog 回调）
+async function confirmPendingDelete(): Promise<void> {
+  const target = pendingDelete.value
+  if (!target) return
+  deleteConfirmLoading.value = true
+  try {
+    await api.instances.delete(target.id)
+    toast.success(t('instance.detail.actions.deleted'))
+    pendingDelete.value = null
+    router.push(getReturnPath())
+  } catch (error: any) {
+    // 检查是否有活跃任务
+    if (error?.code === 'TASK_IN_PROGRESS') {
+      toast.warning(t('instance.detail.actions.taskInProgress'))
+      if (error?.taskId) {
+        startTaskPolling(error.taskId)
+      }
+      pendingDelete.value = null
+      return
+    }
+    toast.error(`${t('instance.detail.actions.actionFailed')}: ${translateError(error)}`)
+    pendingDelete.value = null
+  } finally {
+    deleteConfirmLoading.value = false
   }
 }
 
@@ -3885,6 +3909,17 @@ function formatHourlyDate(value: string | null | undefined): string {
       :fallback-icon="getInstanceIconType(instance)"
       @close="showInstanceBadgeModal = false"
       @updated="handleInstanceBadgeUpdated"
+    />
+
+    <ConfirmDialog
+      :visible="pendingDelete !== null"
+      :title="t('instance.confirmDeleteTitle')"
+      :message="t('instance.confirmDelete', { name: pendingDelete?.name })"
+      :require-input="pendingDelete?.name"
+      danger
+      :loading="deleteConfirmLoading"
+      @confirm="confirmPendingDelete"
+      @close="pendingDelete = null"
     />
   </div>
 </template>
