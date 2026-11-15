@@ -532,9 +532,18 @@ export default async function hostingRoutes(fastify: FastifyInstance) {
 
     // 验证提现金额
     if (amount < WITHDRAWAL_CONFIG.minAmount) {
-      return reply.code(400).send({ 
+      return reply.code(400).send({
         error: `最低提现金额为 ¥${WITHDRAWAL_CONFIG.minAmount}`,
         code: 'AMOUNT_TOO_LOW'
+      })
+    }
+
+    // 金额必须落在两位小数内：DB 托管余额为 Decimal(10,2)，
+    // 更细的位数会被隐式舍入造成分位级账目不一致，直接拒绝而不是静默取整
+    if (!Number.isFinite(amount) || Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-9) {
+      return reply.code(400).send({
+        error: '提现金额最多支持两位小数',
+        code: 'INVALID_AMOUNT'
       })
     }
 
