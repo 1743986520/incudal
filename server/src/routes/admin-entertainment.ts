@@ -333,6 +333,15 @@ export default async function adminEntertainmentRoutes(fastify: FastifyInstance)
       return reply.code(400).send({ error: 'INVALID_PROBABILITY', message: 'Probability must be between 0 and 100' })
     }
 
+    // 余额/积分奖品必须为正数：负值会在开奖时直接从用户余额扣减
+    if ((type === 'balance' || type === 'points') &&
+        (typeof normalizedValue !== 'number' || !Number.isFinite(normalizedValue) || normalizedValue < 1)) {
+      return reply.code(400).send({
+        error: 'INVALID_VALUE',
+        message: 'Balance and points prizes require a positive value (>= 1)'
+      })
+    }
+
     // 只有 balance 和 instance 类型可以设置总数量，points 和 nothing 类型不能设置数量
     if ((type === 'points' || type === 'nothing') && totalQuantity !== undefined && totalQuantity !== null) {
       return reply.code(400).send({ 
@@ -413,12 +422,23 @@ export default async function adminEntertainmentRoutes(fastify: FastifyInstance)
     // 检查奖品类型与数量限制的匹配性
     const prizeType = type ?? existing.type
     const normalizedValue = prizeType === 'badge' || prizeType === 'nothing' ? 0 : value
-    if ((prizeType === 'points' || prizeType === 'nothing') && 
+    if ((prizeType === 'points' || prizeType === 'nothing') &&
         (totalQuantity !== undefined && totalQuantity !== null)) {
-      return reply.code(400).send({ 
-        error: 'INVALID_QUANTITY', 
-        message: 'Points and nothing prizes cannot have quantity limits' 
+      return reply.code(400).send({
+        error: 'INVALID_QUANTITY',
+        message: 'Points and nothing prizes cannot have quantity limits'
       })
+    }
+
+    // 余额/积分奖品必须为正数：负值会在开奖时直接从用户余额扣减
+    if (prizeType === 'balance' || prizeType === 'points') {
+      const effectiveValue = normalizedValue ?? existing.value
+      if (typeof effectiveValue !== 'number' || !Number.isFinite(effectiveValue) || effectiveValue < 1) {
+        return reply.code(400).send({
+          error: 'INVALID_VALUE',
+          message: 'Balance and points prizes require a positive value (>= 1)'
+        })
+      }
     }
 
     await db.updatePrize(prizeId, {
