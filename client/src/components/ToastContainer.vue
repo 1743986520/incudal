@@ -7,7 +7,7 @@ const { toasts, remove } = useToast()
 
 <template>
   <Teleport to="body">
-    <div class="toast-container">
+    <div class="toast-container" aria-live="polite">
       <Toast
         v-for="toast in toasts"
         :key="toast.id"
