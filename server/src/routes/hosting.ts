@@ -33,6 +33,19 @@ export default async function hostingRoutes(fastify: FastifyInstance) {
     return result.allowed
   }
 
+  /**
+   * 托管屏蔽搜索对全站用户可见，邮箱只回传脱敏形式（保留首 2 字符与域名），
+   * 避免以关键词枚举全站用户完整邮箱。
+   */
+  function maskEmailForHostingSearch(email: string | null): string | null {
+    if (!email) return null
+    const atIndex = email.indexOf('@')
+    if (atIndex <= 0) return '***'
+    const local = email.slice(0, atIndex)
+    const domain = email.slice(atIndex)
+    return `${local.slice(0, Math.min(2, local.length))}***${domain}`
+  }
+
   // ==================== 托管准入检查 ====================
 
   // 检查当前用户是否满足托管准入条件
@@ -125,7 +138,7 @@ export default async function hostingRoutes(fastify: FastifyInstance) {
       users: users.map(item => ({
         id: item.id,
         username: item.username,
-        email: item.email,
+        email: maskEmailForHostingSearch(item.email),
         avatarStyle: item.avatarStyle,
         avatarBadgeId: item.avatarBadgeId ?? null,
         blocked: item.hostingBlocksReceived.length > 0
