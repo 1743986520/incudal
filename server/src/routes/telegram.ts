@@ -17,6 +17,7 @@ interface TelegramWebhookUser {
 }
 
 interface TelegramWebhookUpdate {
+  update_id?: number
   message?: {
     chat?: {
       id: number
@@ -102,6 +103,13 @@ const telegramGroupCommandAliases = ['join', 'group', 'apply_group']
 const telegramGroupCommands = new Set(telegramGroupCommandAliases.map(command => `/${command}`))
 const telegramVipGroupCommands = new Set(['/join_vip'])
 
+// webhook update_id 去重：Telegram 对同一 update 可能因网络重试重复投递，
+// 重放不应再次触发指令处理（绑定走一次性 token 兜底，去重属纵深防御）。
+// 单副本内存实现即可满足；多副本部署需换 Redis 共享。
+const webhookUpdateDedupe = new Map<number, number>()
+const WEBHOOK_UPDATE_DEDUPE_TTL_MS = 10 * 60 * 1000
+const WEBHOOK_UPDATE_DEDUPE_MAX = 4096
+
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
@@ -113,6 +121,26 @@ function secureEquals(a: string, b: string): boolean {
     return false
   }
   return timingSafeEqual(aBuffer, bBuffer)
+}
+
+/**
+ * 判定 webhook update 是否为 TTL 内已处理过的重放；首次见到则记录。
+ */
+function isDuplicateWebhookUpdate(updateId: number): boolean {
+  const now = Date.now()
+  if (webhookUpdateDedupe.size >= WEBHOOK_UPDATE_DEDUPE_MAX) {
+    for (const [id, seenAt] of webhookUpdateDedupe) {
+      if (now - seenAt > WEBHOOK_UPDATE_DEDUPE_TTL_MS) {
+        webhookUpdateDedupe.delete(id)
+      }
+    }
+  }
+  const seenAt = webhookUpdateDedupe.get(updateId)
+  if (seenAt !== undefined && now - seenAt <= WEBHOOK_UPDATE_DEDUPE_TTL_MS) {
+    return true
+  }
+  webhookUpdateDedupe.set(updateId, now)
+  return false
 }
 
 function normalizeBotUsername(value: string | null): string | null {
@@ -536,7 +564,7 @@ export default async function telegramRoutes(fastify: FastifyInstance) {
     const group = target === 'vip' ? config.vipGroup : config.group
     const groupName = target === 'vip' ? '高级用户群' : '普通用户群'
     const command = target === 'vip' ? '/join_vip' : '/join'
-    const inviteName = target === 'vip' ? 'Incudal VIP access' : 'Incudal user access'
+    const inviteName = target === 'vip' ? '黃帝云VIP群' : '黃帝云用户群'
 
     if (chatType && chatType !== 'private') {
       await notifyTelegram(config.botToken, chatId, `请私聊机器人发送 ${command} 申请${groupName}，避免邀请链接泄露到群聊。`)
@@ -890,6 +918,12 @@ export default async function telegramRoutes(fastify: FastifyInstance) {
       if (!secretFromHeader || !secureEquals(secretFromHeader, config.webhookSecret)) {
         return reply.code(401).send({ error: 'Unauthorized' })
       }
+    }
+
+    // 同一 update 在 TTL 内只处理一次
+    const updateId = request.body?.update_id
+    if (typeof updateId === 'number' && Number.isFinite(updateId) && isDuplicateWebhookUpdate(updateId)) {
+      return { ok: true }
     }
 
     const message = request.body?.message
