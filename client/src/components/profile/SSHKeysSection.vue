@@ -3,6 +3,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useToast } from '@/stores/toast'
 import type { SshKey } from '@/types/api'
 import { validateName } from '@/utils/validation'
@@ -12,6 +13,8 @@ const toast = useToast()
 
 const sshKeys = ref<SshKey[]>([])
 const showAddKey = ref<boolean>(false)
+const pendingDeleteKey = ref<SshKey | null>(null)
+const deleteKeyLoading = ref(false)
 
 // 分页相关
 const currentPage = ref<number>(1)
@@ -85,19 +88,28 @@ async function addKey(): Promise<void> {
   }
 }
 
-async function deleteKey(keyId: number): Promise<void> {
-  if (!confirm(t('profile.sshKeys.confirmDelete'))) return
-  
+function deleteKey(key: SshKey): void {
+  pendingDeleteKey.value = key
+}
+
+async function confirmDeleteKey(): Promise<void> {
+  const key = pendingDeleteKey.value
+  if (!key) return
+  deleteKeyLoading.value = true
   try {
-    await api.sshKeys.delete(keyId)
+    await api.sshKeys.delete(key.id)
     toast.success(t('profile.sshKeys.deleteSuccess'))
     await loadSSHKeys()
     // 删除后如果当前页已无数据，返回上一页
     if (paginatedKeys.value.length === 0 && currentPage.value > 1) {
       currentPage.value--
     }
+    pendingDeleteKey.value = null
   } catch (error: any) {
     toast.error(t('profile.sshKeys.deleteFailed') + ': ' + (error?.message || String(error)))
+    pendingDeleteKey.value = null
+  } finally {
+    deleteKeyLoading.value = false
   }
 }
 
@@ -265,7 +277,7 @@ defineExpose({ loadSSHKeys })
           <span class="text-xs text-themed-faint hidden sm:inline">{{ key.created_at }}</span>
           <button 
             class="text-themed-faint hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-all" 
-            @click="deleteKey(key.id)"
+            @click="deleteKey(key)"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -379,5 +391,15 @@ defineExpose({ loadSSHKeys })
         </div>
       </Transition>
     </Teleport>
+
+    <ConfirmDialog
+      :visible="pendingDeleteKey !== null"
+      :title="t('common.delete')"
+      :message="t('profile.sshKeys.confirmDelete')"
+      danger
+      :loading="deleteKeyLoading"
+      @confirm="confirmDeleteKey"
+      @close="pendingDeleteKey = null"
+    />
   </div>
 </template>

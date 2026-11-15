@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import PackagePlanCard from '@/components/package/PackagePlanCard.vue'
 import { useToast } from '@/stores/toast'
 import { useThemeStore } from '@/stores/theme'
@@ -29,6 +30,8 @@ const plans = ref<PackagePlan[]>([])
 const plansLoading = ref(false)
 const updatingStatusId = ref<number | null>(null)
 const deletingPlanId = ref<number | null>(null)
+const pendingDeletePlan = ref<PackagePlan | null>(null)
+const deletePlanConfirmLoading = ref(false)
 
 const availableCount = computed(() => plans.value.filter(plan => plan.isActive && !plan.isSoldOut).length)
 const soldOutCount = computed(() => plans.value.filter(plan => plan.isActive && plan.isSoldOut).length)
@@ -94,19 +97,27 @@ async function updatePlanStatus(plan: PackagePlan, status: PlanStatus): Promise<
   }
 }
 
-async function deletePlan(plan: PackagePlan): Promise<void> {
+function deletePlan(plan: PackagePlan): void {
   if (deletingPlanId.value !== null) return
-  if (!confirm(t('resources.plans.confirmDelete', { name: plan.name }))) return
+  pendingDeletePlan.value = plan
+}
 
+async function confirmDeletePlan(): Promise<void> {
+  const plan = pendingDeletePlan.value
+  if (!plan) return
+  deletePlanConfirmLoading.value = true
   deletingPlanId.value = plan.id
   try {
     await api.packages.deletePlan(props.pkg.id, plan.id)
     toast.success(t('resources.plans.deleteSuccess'))
     await loadPlans()
     emit('changed')
+    pendingDeletePlan.value = null
   } catch (err: any) {
     toast.error(translateError(err) || t('resources.plans.deleteFailed'))
+    pendingDeletePlan.value = null
   } finally {
+    deletePlanConfirmLoading.value = false
     deletingPlanId.value = null
   }
 }
@@ -175,5 +186,15 @@ async function deletePlan(plan: PackagePlan): Promise<void> {
         @status-change="updatePlanStatus"
       />
     </div>
+
+    <ConfirmDialog
+      :visible="pendingDeletePlan !== null"
+      :title="t('common.delete')"
+      :message="t('resources.plans.confirmDelete', { name: pendingDeletePlan?.name })"
+      danger
+      :loading="deletePlanConfirmLoading"
+      @confirm="confirmDeletePlan"
+      @close="pendingDeletePlan = null"
+    />
   </div>
 </template>

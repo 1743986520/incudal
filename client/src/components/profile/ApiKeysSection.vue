@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useToast } from '@/stores/toast'
 import { translateError } from '@/utils/errorHandler'
 
@@ -23,6 +24,8 @@ const loading = ref<boolean>(false)
 const creating = ref<boolean>(false)
 const keyName = ref<string>('')
 const actionBusyId = ref<number | null>(null)
+const pendingRemove = ref<ApiKeyItem | null>(null)
+const removeConfirmLoading = ref(false)
 
 onMounted(loadKeys)
 
@@ -67,17 +70,26 @@ async function toggleStatus(item: ApiKeyItem): Promise<void> {
   }
 }
 
-async function removeKey(item: ApiKeyItem): Promise<void> {
+function removeKey(item: ApiKeyItem): void {
   if (actionBusyId.value !== null) return
-  if (!window.confirm(t('profile.apiKeys.deleteConfirm', { prefix: item.prefix }))) return
+  pendingRemove.value = item
+}
+
+async function confirmRemove(): Promise<void> {
+  const item = pendingRemove.value
+  if (!item) return
+  removeConfirmLoading.value = true
   actionBusyId.value = item.id
   try {
     await api.apiKeys.remove(item.id)
     keys.value = keys.value.filter(k => k.id !== item.id)
     toast.success(t('profile.apiKeys.deleted'))
+    pendingRemove.value = null
   } catch (err: any) {
     toast.error(translateError(err))
+    pendingRemove.value = null
   } finally {
+    removeConfirmLoading.value = false
     actionBusyId.value = null
   }
 }
@@ -169,5 +181,15 @@ function formatDateTime(value: string | null): string {
         </tbody>
       </table>
     </div>
+
+    <ConfirmDialog
+      :visible="pendingRemove !== null"
+      :title="t('profile.apiKeys.delete')"
+      :message="t('profile.apiKeys.deleteConfirm', { prefix: pendingRemove?.prefix })"
+      danger
+      :loading="removeConfirmLoading"
+      @confirm="confirmRemove"
+      @close="pendingRemove = null"
+    />
   </div>
 </template>
