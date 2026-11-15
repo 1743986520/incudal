@@ -58,6 +58,17 @@ export interface CallbackData {
   [key: string]: unknown
 }
 
+/**
+ * 常量时间比较签名串，避免逐字节比较的时序侧信道；
+ * 长度不一致直接不等（先比较长度，再比较内容）。
+ */
+function timingSafeSignEquals(expected: string, actual: string): boolean {
+  const a = Buffer.from(String(expected ?? '').trim().toLowerCase(), 'utf8')
+  const b = Buffer.from(String(actual ?? '').trim().toLowerCase(), 'utf8')
+  if (a.length !== b.length || a.length === 0) return false
+  return crypto.timingSafeEqual(a, b)
+}
+
 // 回调验证结果
 export interface VerifyResult {
   valid: boolean           // 签名是否有效
@@ -119,7 +130,7 @@ export class EpayCoreV1 implements IEpayClient {
   verify(data: CallbackData): boolean {
     if (!data || !data.sign) return false
     const sign = this.getSign(data as unknown as Record<string, string>)
-    return sign === data.sign
+    return timingSafeSignEquals(sign, data.sign)
   }
 
   /**
@@ -133,7 +144,7 @@ export class EpayCoreV1 implements IEpayClient {
 
     // 验证签名
     const sign = this.getSign(data as unknown as Record<string, string>)
-    if (sign !== data.sign) {
+    if (!timingSafeSignEquals(sign, data.sign)) {
       return { valid: false, tradeSuccess: false, error: '签名验证失败' }
     }
 
@@ -277,13 +288,15 @@ export class EpayCoreV2 implements IEpayClient {
    */
   verify(data: CallbackData): boolean {
     if (!data || !data.sign) return false
-    
-    // 检查时间戳（允许 5 分钟误差）
-    if (data.timestamp) {
-      const timestamp = parseInt(data.timestamp, 10)
-      if (Math.abs(Date.now() / 1000 - timestamp) > 300) {
-        return false
-      }
+
+    // 时间戳必须存在（V2 协议下单请求必带 timestamp，回调同规格），
+    // 缺失视为不合规回调，避免无时效约束的可重放窗口
+    if (!data.timestamp) {
+      return false
+    }
+    const timestamp = parseInt(data.timestamp, 10)
+    if (!Number.isFinite(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) {
+      return false
     }
 
     const sign = data.sign
@@ -299,12 +312,13 @@ export class EpayCoreV2 implements IEpayClient {
       return { valid: false, tradeSuccess: false, error: '缺少签名参数' }
     }
 
-    // 检查时间戳（允许 5 分钟误差）
-    if (data.timestamp) {
-      const timestamp = parseInt(data.timestamp, 10)
-      if (Math.abs(Date.now() / 1000 - timestamp) > 300) {
-        return { valid: false, tradeSuccess: false, error: '时间戳已过期' }
-      }
+    // 时间戳必须存在且在 5 分钟窗口内，缺失直接拒绝（防重放）
+    if (!data.timestamp) {
+      return { valid: false, tradeSuccess: false, error: '缺少时间戳' }
+    }
+    const timestamp = parseInt(data.timestamp, 10)
+    if (!Number.isFinite(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) {
+      return { valid: false, tradeSuccess: false, error: '时间戳已过期' }
     }
 
     // 验证RSA签名

@@ -4,7 +4,6 @@
 
 import { FastifyInstance } from 'fastify'
 import * as db from '../db/index.js'
-import * as crypto from 'crypto'
 import { registerFormUrlencodedParser } from '../lib/form-urlencoded.js'
 import { createEpayClient, type EpayConfig, type EpayConfigV1, type EpayConfigV2, type CallbackData, type EpayVersion, type VerifyResult } from '../lib/epay.js'
 import {
@@ -596,8 +595,7 @@ function validateYipayMethodFees(config: Record<string, unknown>): { valid: bool
  */
 function verifyCallbackSignature(
   provider: { type: string; config: Record<string, unknown> },
-  data: Record<string, unknown>,
-  signature: string
+  data: Record<string, unknown>
 ): boolean {
   // 易支付签名验证（支持 V1 和 V2）
   if (provider.type === 'yipay') {
@@ -620,34 +618,12 @@ function verifyCallbackSignature(
     return heleket.verifyWebhookSignature(data)
   }
 
-  const signKey = provider.config?.signKey as string
-  if (!signKey) {
-    return false
-  }
-
-  // 根据不同支付渠道实现不同的签名验证算法
-  switch (provider.type) {
-    case 'alipay_direct': {
-      return false
-    }
-    case 'wechat_direct': {
-      // 微信支付: HMAC-SHA256 签名验证
-      const sortedKeys = Object.keys(data).filter(k => k !== 'sign').sort()
-      const signStr = sortedKeys.map(k => `${k}=${data[k]}`).join('&') + `&key=${signKey}`
-      const computedSign = crypto.createHash('md5').update(signStr).digest('hex').toUpperCase()
-      return computedSign === signature.toUpperCase()
-    }
-    case 'stripe': {
-      return false
-    }
-    default: {
-      // 通用 MD5 签名验证
-      const sortedKeys = Object.keys(data).filter(k => k !== 'sign').sort()
-      const signStr = sortedKeys.map(k => `${k}=${data[k]}`).join('&') + signKey
-      const computedSign = crypto.createHash('md5').update(signStr).digest('hex')
-      return computedSign.toLowerCase() === signature.toLowerCase()
-    }
-  }
+  // 其余渠道类型（manual / alipay_direct / wechat_direct / stripe 及任何未知类型）
+  // 均无已实现的回调验签算法：一律 fail-closed。
+  // 历史上的 wechat_direct 实为 MD5（与注释声称的 HMAC-SHA256 不符）、default 分支
+  // 会给任意自定义类型启用弱 MD5 通路，均属攻击面，直接移除。
+  // manual 渠道的订单仅允许管理员在后台手工完成，不走回调入账。
+  return false
 }
 
 // ==================== 用户接口 ====================
@@ -2232,9 +2208,10 @@ export default async function rechargeRoutes(app: FastifyInstance): Promise<void
       heleketPaymentStatus = extractHeleketStatus(callbackData)
       heleketPaymentState = getHeleketPaymentState(callbackData)
     } else {
-      // 其他支付渠道使用原有验证
-      const signature = (callbackData.sign || callbackData.signature || request.headers['x-signature'] || '') as string
-      if (!verifyCallbackSignature({ type: provider.type, config }, callbackData, signature)) {
+      // 其他支付渠道（manual/alipay_direct/wechat_direct/stripe 等）无已实现
+      // 的回调验签算法，verifyCallbackSignature 一律 fail-closed 拒绝；
+      // manual 渠道订单仅允许管理员后台手工完成
+      if (!verifyCallbackSignature({ type: provider.type, config }, callbackData)) {
         request.log.warn({ providerId, ip: clientIp }, '支付回调签名验证失败')
         return reply.status(400).send({ error: '签名验证失败' })
       }
