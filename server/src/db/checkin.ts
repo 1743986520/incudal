@@ -5,6 +5,19 @@
 
 import { prisma } from './prisma.js'
 import type { RedeemCodeType } from '@prisma/client'
+import { CHECKIN_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
+
+/**
+ * 并发竞态下签到已被同日领取时抛出，由路由转换为 400 响应
+ */
+export class CheckinAlreadyDoneError extends Error {
+  readonly code = 'CHECKIN_ALREADY_TODAY'
+
+  constructor() {
+    super('User has already checked in today')
+    this.name = 'CheckinAlreadyDoneError'
+  }
+}
 
 // 各类型可选数值
 const CODE_VALUES: Record<RedeemCodeType, number[]> = {
@@ -136,9 +149,16 @@ export async function performCheckin(userId: number): Promise<{
   }
   const field = fieldMap[type]
 
-  await prisma.$transaction([
+  return prisma.$transaction(async (tx) => {
+    // 串行化同一用户的签到，锁内复查今日状态，杜绝并发重复领取
+    await advisoryTransactionLock(tx, CHECKIN_LOCK_NAMESPACE, userId)
+    const stats = await tx.checkinStats.findUnique({ where: { userId } })
+    if (stats?.lastCheckinDate && toBeijingMidnight(stats.lastCheckinDate).getTime() >= getBeijingMidnight().getTime()) {
+      throw new CheckinAlreadyDoneError()
+    }
+
     // 更新资源池
-    prisma.userResourcePool.upsert({
+    await tx.userResourcePool.upsert({
       where: { userId },
       update: {
         [field]: field === 'traffic'
@@ -149,9 +169,9 @@ export async function performCheckin(userId: number): Promise<{
         userId,
         [field]: field === 'traffic' ? BigInt(value) : value
       }
-    }),
+    })
     // 记录资源池日志
-    prisma.resourcePoolLog.create({
+    await tx.resourcePoolLog.create({
       data: {
         userId,
         action: 'checkin',
@@ -159,9 +179,9 @@ export async function performCheckin(userId: number): Promise<{
         amount: value,
         remark: '签到获得'
       }
-    }),
+    })
     // 更新签到统计
-    prisma.checkinStats.upsert({
+    await tx.checkinStats.upsert({
       where: { userId },
       update: { lastCheckinDate: now },
       create: {
@@ -169,9 +189,9 @@ export async function performCheckin(userId: number): Promise<{
         lastCheckinDate: now
       }
     })
-  ])
 
-  return { codeType: type, codeValue: value }
+    return { codeType: type, codeValue: value }
+  })
 }
 
 /**

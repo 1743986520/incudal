@@ -12,6 +12,8 @@ export const USER_ADMIN_ROLE_LOCK_NAMESPACE = 4108
 export const USER_CREATE_EMAIL_LOCK_NAMESPACE = 4109
 export const USER_BALANCE_LOCK_NAMESPACE = 4110
 export const OFFICIAL_COUPON_LOCK_NAMESPACE = 4111
+export const POINTS_CONVERT_LOCK_NAMESPACE = 4112
+export const CHECKIN_LOCK_NAMESPACE = 4113
 
 /**
  * Blocking pg_advisory_xact_lock calls consume one pool connection per waiter.

@@ -100,6 +100,10 @@ export default async function checkinRoutes(fastify: FastifyInstance) {
         bonusPoints
       }
     } catch (error) {
+      // 并发竞态下已被同日领取：与前置检查一致返回 400，不记失败日志
+      if (error instanceof db.CheckinAlreadyDoneError) {
+        return reply.code(400).send(apiError(ErrorCode.CHECKIN_ALREADY_TODAY))
+      }
       const errorMessage = error instanceof Error ? error.message : String(error)
       await createLog(
         user.id,
