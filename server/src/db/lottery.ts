@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 import type { LotteryPrizeType, LotteryRecordStatus } from '@prisma/client'
 import { createBadgeOwnership, selectRandomBadgeOrThrow } from './badges.js'
 import type { BadgeOwnershipView } from './badges.js'
+import { USER_POINTS_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
 
 // ==================== 抽奖活动 ====================
 
@@ -496,6 +497,10 @@ export async function performDraw(userId: number, lotteryId: number): Promise<{
   // 事务冲突会在路由层通过指数退避重试机制处理
   return prisma.$transaction(
     async (tx) => {
+    // 串行化同一用户的抽奖：同一 user_points 热行的并发扣减会触发 P2034 风暴，
+    // 重试耗尽后路由层只能 500。锁忙时按 409 RESOURCE_BUSY 快速失败。
+    await advisoryTransactionLock(tx, USER_POINTS_LOCK_NAMESPACE, userId)
+
     // 1. 检查抽奖是否有效
     const lottery = await tx.lottery.findUnique({
       where: { id: lotteryId },

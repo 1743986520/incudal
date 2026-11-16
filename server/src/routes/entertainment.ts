@@ -212,8 +212,7 @@ export default async function entertainmentRoutes(fastify: FastifyInstance) {
 
     // 执行抽奖（带重试机制，处理事务冲突/死锁）
     const maxRetries = 5
-    let lastError: Error | null = null
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const result = await db.performDraw(userId, lotteryId)
@@ -272,7 +271,6 @@ export default async function entertainmentRoutes(fastify: FastifyInstance) {
               : `恭喜中奖！${prize.name}`
         }
       } catch (err: any) {
-        lastError = err
         // 检查是否为事务冲突/死锁错误
         const isRetryable = err.code === 'P2034' || // Prisma 事务冲突
           err.message?.includes('deadlock') ||
@@ -293,8 +291,12 @@ export default async function entertainmentRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // 所有重试都失败
-    throw lastError
+    // 所有重试都失败：以 409 慢忙返回而非 500（客户端可稍后重试）
+    return reply.code(409).send({
+      error: 'Resource is busy, please retry',
+      code: 'RESOURCE_BUSY',
+      retryAfter: '1'
+    })
   })
 
   /**

@@ -4,7 +4,7 @@
 import { prisma } from './prisma.js'
 import type { PointsLogType, Prisma } from '@prisma/client'
 import { getUserTotalConsume } from './balance.js'
-import { POINTS_CONVERT_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
+import { USER_POINTS_LOCK_NAMESPACE, advisoryTransactionLock } from './advisory-locks.js'
 
 // ==================== 用户积分 ====================
 
@@ -62,7 +62,7 @@ export async function convertPointsFromConsumption(userId: number): Promise<{
 }> {
   return prisma.$transaction(async (tx) => {
     // 串行化同一用户的兑换，避免并发请求读到同一 convertedConsume 造成双兑
-    await advisoryTransactionLock(tx, POINTS_CONVERT_LOCK_NAMESPACE, userId)
+    await advisoryTransactionLock(tx, USER_POINTS_LOCK_NAMESPACE, userId)
 
     // 使用 upsert 避免并发时的唯一约束冲突
     const userPoints = await tx.userPoints.upsert({
