@@ -238,6 +238,7 @@ function isHandledTicketPayloadError(error: unknown): error is Error {
     'Only JPG',
     'A ticket message can contain at most',
     'Each image must be no larger than',
+    'Uploaded file content does not match',
     'Lsky',
     'image bed'
   ].some(fragment => error.message.includes(fragment))
