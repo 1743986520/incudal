@@ -24,10 +24,10 @@ type PopupPromoPackage = {
 
 export const useConfigStore = defineStore('config', () => {
     const avatarApiBase = ref('https://api.dicebear.com/9.x')
-    const brandName = ref('Incudal')
-    const brandSubtitle = ref('基于 Incus 的低价 NAT VPS')
+    const brandName = ref('黃帝云')
+    const brandSubtitle = ref('黃帝云 · 低价 NAT VPS')
     const brandLogoUrl = ref('/incudal_logo.webp')
-    const seoSiteUrl = ref('https://incudal.di0.uk')
+    const seoSiteUrl = ref('https://di0.uk')
     const registrationEnabled = ref(true)
     const requireInviteCode = ref(true)
     const ticketEnabled = ref(true)
@@ -38,8 +38,8 @@ export const useConfigStore = defineStore('config', () => {
     const transferFee = ref(0)
     const balanceTransferEnabled = ref(false)
     const balanceTransferFee = ref(0)
-    const footerContactEmail = ref<string | null>('incudal@sent.com')
-    const footerTelegramLink = ref<string | null>('https://t.me/incudal_com')
+    const footerContactEmail = ref<string | null>(null)
+    const footerTelegramLink = ref<string | null>(null)
     const hostingMarketEntryEnabled = ref(true)
     const hostingNotice = ref<string | null>(null)
     const seoTrackingEnabled = ref(false)
@@ -70,10 +70,10 @@ export const useConfigStore = defineStore('config', () => {
                 turnstileEnabled.value = config.turnstileEnabled || false
                 turnstileSiteKey.value = config.turnstileSiteKey || null
                 avatarApiBase.value = config.avatarApiBase || 'https://api.dicebear.com/9.x'
-                brandName.value = config.brandName?.trim() || 'Incudal'
-                brandSubtitle.value = config.brandSubtitle?.trim() || '基于 Incus 的低价 NAT VPS'
+                brandName.value = config.brandName?.trim() || '黃帝云'
+                brandSubtitle.value = config.brandSubtitle?.trim() || '黃帝云 · 低价 NAT VPS'
                 brandLogoUrl.value = config.brandLogoUrl?.trim() || '/incudal_logo.webp'
-                seoSiteUrl.value = config.seoSiteUrl?.trim() || 'https://incudal.di0.uk'
+                seoSiteUrl.value = config.seoSiteUrl?.trim() || 'https://di0.uk'
                 transferFee.value = config.transferFee || 0
                 balanceTransferEnabled.value = config.balanceTransferEnabled ?? false
                 balanceTransferFee.value = config.balanceTransferFee || 0

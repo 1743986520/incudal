@@ -1217,7 +1217,7 @@ async function sendDiscord(
           color,
           timestamp: new Date().toISOString(),
           footer: {
-            text: 'Incudal'
+            text: '黃帝云'
           }
         }]
       }),
@@ -1307,19 +1307,19 @@ export async function testNotificationChannel(channel: NotificationChannel): Pro
   switch (channel.type) {
     case 'telegram':
       result = await sendWithRetry(
-        () => sendTelegram(config as TelegramConfig, '🔔 测试通知', '这是一条来自 Incudal 的测试通知。\n如果您收到此消息，说明通知配置正确！'),
+        () => sendTelegram(config as TelegramConfig, '🔔 测试通知', '这是一条来自黃帝云的测试通知。\n如果您收到此消息，说明通知配置正确！'),
         'Telegram'
       )
       break
     case 'discord':
       result = await sendWithRetry(
-        () => sendDiscord(config as DiscordConfig, '🔔 测试通知', '这是一条来自 Incudal 的测试通知。\n如果您收到此消息，说明通知配置正确！'),
+        () => sendDiscord(config as DiscordConfig, '🔔 测试通知', '这是一条来自黃帝云的测试通知。\n如果您收到此消息，说明通知配置正确！'),
         'Discord'
       )
       break
     case 'webhook':
       result = await sendWithRetry(
-        () => sendWebhook(config as WebhookConfig, 'test' as EventType, '🔔 测试通知', '这是一条来自 Incudal 的测试通知。', testData),
+        () => sendWebhook(config as WebhookConfig, 'test' as EventType, '🔔 测试通知', '这是一条来自黃帝云的测试通知。', testData),
         'Webhook'
       )
       break

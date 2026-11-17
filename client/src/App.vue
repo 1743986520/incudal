@@ -47,8 +47,8 @@ watchEffect(() => {
   const translatedTitle = titleKey ? t(titleKey) : ''
   const pageTitle = translatedTitle && translatedTitle !== titleKey ? translatedTitle : fallbackTitle
 
-  const brandName = configStore.brandName?.trim() || 'Incudal'
-  const brandSubtitle = configStore.brandSubtitle?.trim() || '基于 Incus 的低价 NAT VPS'
+  const brandName = configStore.brandName?.trim() || '黃帝云'
+  const brandSubtitle = configStore.brandSubtitle?.trim() || '黃帝云 · 低价 NAT VPS'
   document.title = pageTitle ? `${brandName} - ${pageTitle}` : `${brandName} - ${brandSubtitle}`
 })
 

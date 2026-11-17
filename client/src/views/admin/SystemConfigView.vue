@@ -98,9 +98,9 @@ const form = ref({
   smtp_username: '',
   smtp_password: '',
   smtp_from_email: '',
-  smtp_from_name: 'Incudal',
-  brand_name: 'Incudal',
-  brand_subtitle: '基于 Incus 的低价 NAT VPS',
+  smtp_from_name: '黃帝云',
+  brand_name: '黃帝云',
+  brand_subtitle: '黃帝云 · 低价 NAT VPS',
   brand_logo_url: '/incudal_logo.webp',
   seo_site_url: 'https://incudal.di0.uk',
   seo_sitemap_path: '/sitemap.xml',
@@ -119,7 +119,7 @@ const form = ref({
   balance_transfer_enabled: false,
   balance_transfer_fee: 0,
   // 侧边栏底部联系方式
-  footer_contact_email: 'incudal@sent.com',
+  footer_contact_email: '',
   // 工单图片 Lsky 配置
   ticket_image_lsky_base_url: '',
   ticket_image_lsky_token: '',
@@ -1327,7 +1327,7 @@ async function sendTestEmail() {
                 v-model="form.brand_name"
                 type="text"
                 class="input"
-                placeholder="Incudal"
+                placeholder="黃帝云"
               />
             </div>
             <div class="space-y-2">
@@ -1338,7 +1338,7 @@ async function sendTestEmail() {
                 v-model="form.brand_subtitle"
                 type="text"
                 class="input"
-                :placeholder="t('admin.system.brand.subtitlePlaceholder') || '基于 Incus 的低价 NAT VPS'"
+                :placeholder="t('admin.system.brand.subtitlePlaceholder') || '黃帝云 · 低价 NAT VPS'"
               />
               <p class="text-xs text-themed-muted">{{ t('admin.system.brand.subtitleDesc') || '显示在公开站头部/底部、浏览器默认标题和 SEO 默认描述中。' }}</p>
             </div>
@@ -2074,7 +2074,7 @@ async function sendTestEmail() {
                 v-model="form.smtp_from_name"
                 type="text"
                 class="input"
-                placeholder="Incudal"
+                placeholder="黃帝云"
               />
             </div>
           </div>

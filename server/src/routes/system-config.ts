@@ -231,10 +231,10 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
             footerTelegramLink: getSafeTelegramUrl(footerTelegramLink),
             hostingMarketEntryEnabled,
             hostingNotice,
-            brandName: brandName || 'Incudal',
+            brandName: brandName || '黃帝云',
             brandSubtitle: brandSubtitle || '基于 Incus 的低价 NAT VPS',
             brandLogoUrl: brandLogoUrl || '/incudal_logo.webp',
-            seoSiteUrl: seoSiteUrl || 'https://incudal.di0.uk',
+            seoSiteUrl: seoSiteUrl || 'https://di0.uk',
             seoSitemapPath: seoSitemapPath || '/sitemap.xml',
             seoVerificationPath: seoVerificationPath || null,
             seoIndexNowEndpoint: seoIndexNowEndpoint || 'https://api.indexnow.org/IndexNow',
@@ -256,7 +256,7 @@ export default async function systemConfigRoutes(fastify: FastifyInstance) {
     fastify.post('/seo/indexnow/submit', {
         onRequest: [fastify.authenticateAdmin]
     }, async (_request: FastifyRequest, reply: FastifyReply) => {
-        const configuredSiteUrl = (await db.getSystemConfig('seo_site_url'))?.trim() || 'https://incudal.di0.uk'
+        const configuredSiteUrl = (await db.getSystemConfig('seo_site_url'))?.trim() || 'https://di0.uk'
         const sitemapPath = (await db.getSystemConfig('seo_sitemap_path'))?.trim() || '/sitemap.xml'
         const endpoint = (await db.getSystemConfig('seo_indexnow_endpoint'))?.trim() || 'https://api.indexnow.org/IndexNow'
         const key = (await db.getSystemConfig('seo_indexnow_key'))?.trim() || ''

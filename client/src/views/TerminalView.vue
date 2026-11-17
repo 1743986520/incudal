@@ -234,11 +234,11 @@ function generateTabId(): string {
     return `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-// 生成酷炫的 Incudal 欢迎信息
+// 生成酷炫的黃帝云欢迎信息
 function printWelcomeBanner(terminal: Terminal, instanceName: string) {
     const banner = [
         '',
-        '\x1b[1;38;5;39m  ◆\x1b[38;5;44m INCUDAL\x1b[0m',
+        '\x1b[1;38;5;39m  ◆\x1b[38;5;44m 黃帝云\x1b[0m',
         '',
         '\x1b[38;5;245m  ─────────────────────\x1b[0m',
         `\x1b[38;5;250m  ${instanceName}\x1b[0m`,

@@ -344,7 +344,7 @@ onMounted(() => {
 
             <div class="mt-6 rounded-lg p-5 font-mono text-xs leading-6" :class="ui.terminalCard">
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <span>root@incudal</span>
+                <span>root@huangdi</span>
                 <span :class="ui.terminalMeta">incus console</span>
               </div>
               <div class="mt-4 space-y-1">

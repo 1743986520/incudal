@@ -68,7 +68,7 @@ const telegramBindingGroup = ref<TelegramAdminBindingsResponse['group'] | null>(
 const telegramBindingVipGroup = ref<TelegramAdminBindingsResponse['vipGroup'] | null>(null)
 
 const form = ref({
-  footer_telegram_link: 'https://t.me/incudal_com',
+  footer_telegram_link: '',
   telegram_bot_enabled: false,
   telegram_bot_username: '',
   telegram_bot_token: '',

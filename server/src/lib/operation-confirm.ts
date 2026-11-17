@@ -51,7 +51,7 @@ export async function resolveConfirmBaseUrl(): Promise<string> {
         const configured = (await getSystemConfig('seo_site_url', false))?.trim()
         if (configured) return configured.replace(/\/+$/, '')
     } catch { /* 配置读取失败时退回默认值 */ }
-    return 'https://incudal.di0.uk'
+    return 'https://di0.uk'
 }
 
 export interface RequestConfirmParams {

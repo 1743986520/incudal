@@ -24,7 +24,7 @@ export function generateSshKeyPair(): GeneratedSshKeyPair {
   const randomSuffix = crypto.randomBytes(4).toString('base64url').slice(0, 5)
 
   return {
-    name: `Incudal-${randomSuffix}`,
+    name: `Huangdi-${randomSuffix}`,
     publicKey: sshPublicKey,
     privateKey,
     fingerprint

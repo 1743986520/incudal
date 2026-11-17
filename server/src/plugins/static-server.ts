@@ -18,7 +18,7 @@ interface StaticServerOptions {
   clientDistPath: string
 }
 
-const SEO_SITE_URL_FALLBACK = 'https://incudal.di0.uk'
+const SEO_SITE_URL_FALLBACK = 'https://di0.uk'
 const SEO_HTML_CACHE_TTL_MS = 5 * 60 * 1000
 const SEO_HTML_CACHE_MAX = 200
 
@@ -59,7 +59,7 @@ async function getSeoSiteUrl(): Promise<string> {
 
 async function getBrandName(): Promise<string> {
   if (brandNameCache && brandNameCache.expiresAt > Date.now()) return brandNameCache.value
-  let value = 'Incudal'
+  let value = '黃帝云'
   try {
     const configured = (await getSystemConfig('brand_name') || '').trim()
     if (configured) value = configured

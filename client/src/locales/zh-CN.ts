@@ -394,7 +394,7 @@ export default {
         },
     },
     publicSite: {
-        brandTagline: '基于 Incus 的低价 NAT VPS',
+        brandTagline: '黃帝云 · 低价 NAT VPS',
         nav: {
             home: '首页',
             overview: '概览',
@@ -417,8 +417,8 @@ export default {
             account: '账户',
         },
         seo: {
-            keywords: 'Incus,NAT VPS,LXC,KVM,VPS 面板,云服务器,NAT云主机',
-            homeTitle: '基于 Incus 的低价 NAT VPS 平台',
+            keywords: '黃帝云,NAT VPS,LXC,KVM,VPS 面板,云服务器,NAT云主机',
+            homeTitle: '黃帝云VPS · 低价 NAT VPS 平台',
             homeDescription: '精选全球多节点 LXC / KVM 套餐，配置丰富、方案齐全，持续提供高性价比 NAT VPS 选择。',
             marketTitle: '套餐列表',
             marketDescription: '浏览全部公开套餐，按地区、配置、价格与来源筛选 NAT VPS。',
@@ -426,8 +426,8 @@ export default {
             marketPackageDescription: '查看 {name} 的 {type} 配置、月流量与套餐信息，确认后即可继续购买。',
         },
         portal: {
-            badge: 'INCUS NAT VPS',
-            title: '基于 Incus 的低价 NAT VPS 平台',
+            badge: '黃帝云 NAT VPS',
+            title: '黃帝云VPS · 低价 NAT VPS 平台',
             description: '精选全球多节点 LXC / KVM 套餐，覆盖直营与托管供给，配置档位丰富，持续提供高性价比 NAT VPS 选择。',
             authPanelDescription: '把稳定供给、更多地区和更丰富价格带放在同一个入口里，让挑套餐这一步更直接。',
             authPanelFlowLabel: 'ORDER FLOW',
@@ -3145,7 +3145,7 @@ export default {
                 name: '系统名称',
                 nameDesc: '显示在侧边栏、顶部栏、登录注册页和 SEO 信息中。',
                 subtitle: '网站副标题',
-                subtitlePlaceholder: '基于 Incus 的低价 NAT VPS',
+                subtitlePlaceholder: '黃帝云 · 低价 NAT VPS',
                 subtitleDesc: '显示在公开站头部/底部、浏览器默认标题和 SEO 默认描述中。',
                 logo: 'Logo 地址',
                 logoDesc: '支持 http(s) 图片地址或站内绝对路径，留空则使用默认 Logo。',

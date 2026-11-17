@@ -72,11 +72,11 @@ export async function initSystemConfig(): Promise<void> {
         { key: 'free_site_register_gift_enabled', value: 'false', type: 'boolean', label: '注册自动赠送', description: '白嫖站开启后，新用户注册成功自动赠送余额和积分' },
         { key: 'free_site_register_gift_balance', value: '0', type: 'number', label: '注册赠送余额', description: '白嫖站注册自动赠送的账户余额（元）' },
         { key: 'free_site_register_gift_points', value: '0', type: 'number', label: '注册赠送积分', description: '白嫖站注册自动赠送的积分数量' },
-        { key: 'brand_name', value: 'Incudal', type: 'string', label: '系统名称', description: '站点顶部、登录页、SEO 等位置展示的系统名称，留空则使用默认值' },
-        { key: 'brand_subtitle', value: '基于 Incus 的低价 NAT VPS', type: 'string', label: '网站副标题', description: '站点顶部、公共页、SEO 默认描述等位置展示的品牌副标题，留空则使用默认值' },
+        { key: 'brand_name', value: '黃帝云', type: 'string', label: '系统名称', description: '站点顶部、登录页、SEO 等位置展示的系统名称，留空则使用默认值' },
+        { key: 'brand_subtitle', value: '黃帝云 · 低价 NAT VPS', type: 'string', label: '网站副标题', description: '站点顶部、公共页、SEO 默认描述等位置展示的品牌副标题，留空则使用默认值' },
         { key: 'brand_logo_url', value: '/incudal_logo.webp', type: 'string', label: '系统 Logo 地址', description: '站点顶部、登录页、SEO 等位置展示的 Logo 图片地址，留空则使用默认值' },
         // 网站 SEO 与追踪配置
-        { key: 'seo_site_url', value: 'https://incudal.di0.uk', type: 'string', label: 'SEO 站点地址', description: '用于 canonical、Sitemap 和搜索引擎提交的站点根地址' },
+        { key: 'seo_site_url', value: 'https://di0.uk', type: 'string', label: 'SEO 站点地址', description: '用于 canonical、Sitemap 和搜索引擎提交的站点根地址' },
         { key: 'seo_sitemap_path', value: '/sitemap.xml', type: 'string', label: 'Sitemap 路径', description: '公开 Sitemap 的访问路径，必须是站内绝对路径' },
         { key: 'seo_verification_path', value: '/google3dea696cbb38c37d.html', type: 'string', label: '搜索引擎验证路径', description: '搜索引擎验证文件的站内路径，留空则关闭动态验证文件' },
         { key: 'seo_verification_content', value: 'google-site-verification: google3dea696cbb38c37d.html', type: 'string', label: '搜索引擎验证内容', description: '访问验证路径时返回的纯文本或 HTML 文件内容' },
@@ -95,8 +95,8 @@ export async function initSystemConfig(): Promise<void> {
         // 头像 API 配置
         { key: 'avatar_api_base', value: 'https://api.dicebear.com/9.x', type: 'string', label: '头像 API 地址', description: 'DiceBear 头像 API 基础地址，可自建服务' },
         // 侧边栏底部联系方式
-        { key: 'footer_contact_email', value: 'incudal@sent.com', type: 'string', label: '底部联系邮箱', description: '侧边栏底部邮箱按钮显示的邮箱地址或 mailto 链接' },
-        { key: 'footer_telegram_link', value: 'https://t.me/incudal_com', type: 'string', label: '底部 Telegram 群链接', description: '侧边栏底部 Telegram 按钮跳转地址' },
+        { key: 'footer_contact_email', value: '', type: 'string', label: '底部联系邮箱', description: '侧边栏底部邮箱按钮显示的邮箱地址或 mailto 链接' },
+        { key: 'footer_telegram_link', value: '', type: 'string', label: '底部 Telegram 群链接', description: '侧边栏底部 Telegram 按钮跳转地址' },
         // Telegram 专用机器人配置
         { key: 'telegram_bot_enabled', value: 'false', type: 'boolean', label: 'Telegram 专用机器人', description: '是否启用 Telegram 账号绑定机器人' },
         { key: 'telegram_bot_username', value: '', type: 'string', label: 'Telegram Bot 用户名', description: '机器人用户名，不含 @，用于生成绑定链接' },
@@ -122,7 +122,7 @@ export async function initSystemConfig(): Promise<void> {
         { key: 'smtp_username', value: '', type: 'string', label: 'SMTP 用户名', description: 'SMTP 认证用户名' },
         { key: 'smtp_password', value: '', type: 'secret', label: 'SMTP 密码', description: 'SMTP 认证密码' },
         { key: 'smtp_from_email', value: '', type: 'string', label: '发件人邮箱', description: '邮件发件人地址' },
-        { key: 'smtp_from_name', value: 'Incudal', type: 'string', label: '发件人名称', description: '邮件发件人显示名称' },
+        { key: 'smtp_from_name', value: '黃帝云', type: 'string', label: '发件人名称', description: '邮件发件人显示名称' },
         // 邮箱域名白名单配置
         { key: 'email_domain_whitelist_enabled', value: 'false', type: 'boolean', label: '邮箱域名白名单', description: '是否启用邮箱域名白名单限制' },
         { key: 'email_allowed_domains', value: '', type: 'string', label: '允许的邮箱域名', description: '允许注册的邮箱域名列表，逗号分隔' },

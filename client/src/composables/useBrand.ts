@@ -5,10 +5,10 @@ export function useBrand() {
 
   return {
     get brandName() {
-      return configStore.brandName?.trim() || 'Incudal'
+      return configStore.brandName?.trim() || '黃帝云'
     },
     get brandSubtitle() {
-      return configStore.brandSubtitle?.trim() || '基于 Incus 的低价 NAT VPS'
+      return configStore.brandSubtitle?.trim() || '黃帝云 · 低价 NAT VPS'
     },
     get brandLogoUrl() {
       return configStore.brandLogoUrl?.trim() || '/incudal_logo.webp'

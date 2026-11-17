@@ -524,7 +524,7 @@ const start = async (): Promise<void> => {
     const host = process.env.HOST || '127.0.0.1'
 
     await fastify.listen({ port, host })
-    console.log(`🚀 Incudal 服务已启动: http://localhost:${port}`)
+    console.log(`🚀 黃帝云 服务已启动: http://localhost:${port}`)
 
     // 启动所有调度器
     await startSchedulers()

@@ -194,7 +194,7 @@ async function sendDiscord(
         color,
         timestamp: new Date().toISOString(),
         footer: {
-          text: 'Incudal 抽奖系统'
+          text: '黃帝云抽奖系统'
         }
       }]
     }),

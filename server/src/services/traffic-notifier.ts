@@ -323,7 +323,7 @@ async function sendDiscord(
                     color: title.includes('预警') ? 0xffa500 : 0xff0000,
                     timestamp: new Date().toISOString(),
                     footer: {
-                        text: 'Incudal'
+                        text: '黃帝云'
                     }
                 }]
             }),

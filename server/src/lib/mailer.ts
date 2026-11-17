@@ -36,7 +36,7 @@ export interface SmtpConfig {
 let transporterCache: Transporter | null = null
 let configCacheTime: number = 0
 const CONFIG_CACHE_TTL = 60000 // 缓存时间：1 分钟
-const DEFAULT_BRAND_NAME = 'Incudal'
+const DEFAULT_BRAND_NAME = '黃帝云'
 const DEFAULT_BRAND_LOGO_URL = '/incudal_logo.webp'
 
 async function getMailBrandName(): Promise<string> {

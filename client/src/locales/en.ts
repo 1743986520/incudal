@@ -394,7 +394,7 @@ export default {
         },
     },
     publicSite: {
-        brandTagline: 'Incus-powered NAT VPS platform',
+        brandTagline: 'Huangdi Cloud VPS platform',
         nav: {
             home: 'Home',
             overview: 'Overview',
@@ -417,8 +417,8 @@ export default {
             account: 'Account',
         },
         seo: {
-            keywords: 'Incus,NAT VPS,LXC,KVM,VPS panel,cloud server',
-            homeTitle: 'Incus-powered NAT VPS portal and control plane',
+            keywords: 'Huangdi Cloud,NAT VPS,LXC,KVM,VPS panel,cloud server',
+            homeTitle: 'Huangdi Cloud VPS portal and control plane',
             homeDescription: 'Curated global LXC and KVM plans across multiple locations, with broad configurations and tiers for high-value NAT VPS choices.',
             marketTitle: 'Browse Products',
             marketDescription: 'Browse every public product and filter NAT VPS offers by source, region, resource profile, and billing plan.',
@@ -426,8 +426,8 @@ export default {
             marketPackageDescription: 'Review the {type} profile, traffic, and product details for {name} on the public catalog.',
         },
         portal: {
-            badge: 'Incus Driven NAT Platform',
-            title: 'An Incus-powered NAT VPS portal and control plane',
+            badge: 'Huangdi Cloud NAT Platform',
+            title: 'A Huangdi Cloud VPS portal and control plane',
             description: 'Curated global LXC and KVM plans across official and hosted supply, with broader tiers and strong value NAT VPS choices.',
             authPanelDescription: 'Stable supply, wider region coverage, and broader price bands are brought into one place so choosing a package feels more direct.',
             authPanelFlowLabel: 'ORDER FLOW',
@@ -3146,7 +3146,7 @@ export default {
                 name: 'System Name',
                 nameDesc: 'Shown in the sidebar, top bar, auth pages, and SEO metadata.',
                 subtitle: 'Site Subtitle',
-                subtitlePlaceholder: 'Incus-powered NAT VPS platform',
+                subtitlePlaceholder: 'Huangdi Cloud VPS platform',
                 subtitleDesc: 'Shown in the public header/footer, default browser title, and default SEO description.',
                 logo: 'Logo URL',
                 logoDesc: 'Supports http(s) image URLs or absolute site paths. Leave empty to use the default logo.',

@@ -399,7 +399,7 @@ export default {
         },
     },
     publicSite: {
-        brandTagline: 'Incus 驅動的 NAT VPS 平台',
+        brandTagline: '黃帝云 · 低價 NAT VPS 平台',
         nav: {
             home: '首頁',
             overview: '概覽',
@@ -422,8 +422,8 @@ export default {
             account: '帳戶',
         },
         seo: {
-            keywords: 'Incus,NAT VPS,LXC,KVM,VPS 面板,雲伺服器',
-            homeTitle: '基於 Incus 的 NAT VPS 入口與控制台',
+            keywords: '黃帝云,NAT VPS,LXC,KVM,VPS 面板,雲伺服器',
+            homeTitle: '黃帝云VPS · NAT VPS 入口與控制台',
             homeDescription: '精選全球多節點 LXC / KVM 商品，配置豐富、方案齊全，持續提供高性價比 NAT VPS 選擇。',
             marketTitle: '商品瀏覽',
             marketDescription: '瀏覽全部公開商品，並依來源、地區、資源配置與計費方案篩選 NAT VPS。',
@@ -431,8 +431,8 @@ export default {
             marketPackageDescription: '查看 {name} 的 {type} 配置、月流量與商品資訊，並在商品瀏覽頁延續開通流程。',
         },
         portal: {
-            badge: 'Incus Driven NAT Platform',
-            title: '基於 Incus 的 NAT VPS 入口與控制台',
+            badge: '黃帝云 NAT VPS 平台',
+            title: '黃帝云VPS · NAT VPS 入口與控制台',
             description: '精選全球多節點 LXC / KVM 商品，覆蓋直營與託管供給，配置檔位豐富，持續提供高性價比 NAT VPS 選擇。',
             authPanelDescription: '把穩定供給、更多地區與更豐富價格帶放在同一入口，讓挑選套餐這一步更直接。',
             authPanelFlowLabel: 'ORDER FLOW',
@@ -4164,7 +4164,7 @@ export default {
                 name: '系統名稱',
                 nameDesc: '顯示在側邊欄、頂部列、登入註冊頁和 SEO 資訊中。',
                 subtitle: '網站副標題',
-                subtitlePlaceholder: 'Incus 驅動的 NAT VPS 平台',
+                subtitlePlaceholder: '黃帝云 · 低價 NAT VPS 平台',
                 subtitleDesc: '顯示在公開站頭部/底部、瀏覽器預設標題和 SEO 預設描述中。',
                 logo: 'Logo 位址',
                 logoDesc: '支援 http(s) 圖片位址或站內絕對路徑，留空則使用預設 Logo。',

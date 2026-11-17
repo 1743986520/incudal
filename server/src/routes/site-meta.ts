@@ -9,7 +9,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { getHelpArticles, getSystemConfig } from '../db/index.js'
 
-const DEFAULT_SITE_URL = 'https://incudal.di0.uk'
+const DEFAULT_SITE_URL = 'https://di0.uk'
 const DEFAULT_SITEMAP_PATH = '/sitemap.xml'
 const BUILT_IN_HELP_SLUGS = [
   'platform-overview',
